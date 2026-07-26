@@ -1,0 +1,157 @@
+# Accepted Framework
+
+This document is the working contract for building Harness.NET and for the agent
+behavior Harness.NET will provide.
+
+## Engineering baseline
+
+| Area | Accepted decision |
+|---|---|
+| Product | Support .NET software development for one local developer. |
+| Runtime | Start on .NET 10 and modern, idiomatic C#. |
+| Correctness | Enable nullable analysis and treat compiler warnings as errors. |
+| Architecture | Prefer Data Access, Business Logic, and Presentation layers where sensible. |
+| Boundaries | Only interfaces and records cross layer boundaries, moving upward except for DI composition. |
+| Delivery | Implement new behavior as end-to-end feature slices. |
+| Style | Prefer functional composition, immutable data, and LINQ where idiomatic. |
+| Reactivity | Use Rx.NET for event streams and state management where it fits. |
+| Observability | Use structured logging and OpenTelemetry. |
+| Persistence | Use Dapper, explicit SQL, SQLite, and DbUp embedded migrations. |
+| Testing | Use xUnit, architecture enforcement, integration tests, and opt-in model evaluations. |
+| Presentation | Start with Terminal.Gui v2; allow future Avalonia and gRPC adapters; avoid web frontends. |
+| Process | Remain in one application process as long as practical. |
+
+## Layer and dependency rules
+
+The direct project-reference direction is:
+
+```text
+Data Access -> Business Logic -> Presentation
+```
+
+- Data Access exposes only interfaces and record contracts upward and contains the
+  corresponding implementations.
+- Business Logic references Data Access contracts and exposes its own interfaces
+  and records to Presentation.
+- Presentation references Business Logic contracts and contains no business rules.
+- A composition root may reference all implementations only to configure DI.
+- A custom Roslyn analyzer enforces reference direction and boundary type rules.
+- The reviewer role also treats violations as explicit findings.
+
+## Collaboration model
+
+- A persistent lead owns the goal, repository inspection, plan, delegation, and
+  user communication.
+- An implementer owns approved changes and verification.
+- An independent reviewer owns diff, architecture, and evidence review.
+- Specialist exchanges are summarized in the activity timeline and fully expandable.
+- Each goal requires a review-cycle limit. Reaching it pauses the run for user input.
+- Local inference, elapsed time, and typed tool calls have no automatic quota but
+  remain visible and cancellable.
+- OpenRouter goals require an aggregate monetary cap. The connector reserves an
+  estimated maximum before each request and reconciles it with returned usage cost.
+
+## Approval and trust policy
+
+- A repository must be explicitly trusted once before build or test execution.
+- Plan approval grants repository-local edits, builds, tests, searches, and
+  inspection through typed tools in the goal worktree.
+- Network access, package changes/restores, destructive actions, budget extensions,
+  and Git commits require explicit approval.
+- Selecting OpenRouter models for a goal authorizes model calls for that goal only.
+- Accepted work is committed to the isolated goal branch after approval. Harness.NET
+  does not merge, rebase, or cherry-pick it automatically.
+
+## Framework representation
+
+The framework is layered:
+
+- Markdown records intent, conventions, architecture, and decisions.
+- Typed configuration records enforceable capabilities, providers, budgets, locks,
+  and privacy settings.
+- Skills record reusable procedures.
+
+Instruction precedence, from general to specific, is:
+
+```text
+global user -> repository guidance -> private workspace overlay -> goal -> task -> agent role
+```
+
+The more specific rule wins unless a rule is locked at the layer that defines it.
+Conflicting rules at the same specificity pause for clarification.
+
+`AGENTS.md` and existing repository documentation are the native shared workspace
+sources. Harness.NET does not create a `.harness` directory. Private workspace
+preferences and summaries live in Harness.NET storage.
+
+When promoting a conversational preference, the lead proposes a diff and rationale.
+The user chooses its destination: global private framework, private workspace
+overlay, `AGENTS.md`, or a suitable existing documentation file.
+
+## Models and providers
+
+- Microsoft Agent Framework is the agent engine.
+- Business Logic defines an agent-role abstraction around Microsoft's agent
+  abstractions; Microsoft types do not cross into Presentation.
+- Data Access provides Ollama and OpenRouter chat and embedding connectors.
+- Models are configurable per role through provider-neutral Business Logic records.
+- The current development Ollama endpoint is `http://192.168.1.101:11434`.
+- `gemma4:latest` is the current default chat model for all roles.
+- `embeddinggemma` is the default local embedding model and must be installed before
+  local semantic indexing is available.
+- OpenRouter discovers available chat and embedding models dynamically.
+- OpenRouter uses normal routing by default. A workspace may require both
+  no-collection and zero-data-retention routing.
+- Provider API keys use Linux Secret Service with environment-variable fallback and
+  are never persisted in SQLite, logs, checkpoints, or framework files.
+
+## Context, memory, and persistence
+
+- SQLite retains full prompts, responses, tool requests/results, approvals,
+  checkpoints, usage, summaries, and artifact references until explicit deletion.
+- Step checkpoints are written after each completed workflow boundary. Interrupted
+  work resumes only from a safe boundary, never by replaying an uncertain tool call.
+- Approved summaries and private workspace notes may influence later goals.
+- Semantic retrieval indexes eligible Git-tracked source, project, Markdown, and
+  text configuration files while excluding ignored, generated, binary, secret, and
+  oversized content.
+- Index partitions include provider, model, vector dimensions, and chunking version.
+  Changing any of them creates or rebuilds a compatible partition.
+- Embedding generation is configurable between Ollama and OpenRouter.
+- The SQLite vector connector remains isolated inside Data Access.
+
+## Repository and tool policy
+
+- The first version accepts Git repositories containing at least one `.slnx`,
+  `.sln`, or `.csproj` entry point.
+- Multiple entry points require explicit selection.
+- Every approved goal receives a dedicated branch and worktree.
+- Typed tools cover file reads, tracked-file listing, text search, patch application,
+  .NET build/test/restore/package operations, Git status/diff, and worktree lifecycle.
+- No unrestricted shell is available to agents.
+- LibGit2Sharp handles supported Git operations. A structured Git CLI adapter handles
+  worktrees or other required operations LibGit2Sharp does not support.
+
+## Presentation and operations
+
+- Terminal.Gui v2 provides an adaptive full-screen layout: workspace/goals on the
+  left, transcript/activity in the center, plan/diff/evidence tabs on the right,
+  and a composer plus status/budget footer.
+- Side regions collapse on narrow terminals while the active workflow remains usable.
+- The initial release is a self-contained Linux x64 binary and keeps process, path,
+  and presentation contracts portable for later platforms.
+- Harness.NET uses XDG-managed config, data, state, and cache locations.
+- Serilog implements `Microsoft.Extensions.Logging.ILogger` and writes redacted
+  rolling JSON logs. OTLP export is optional and model content is disabled by default.
+- Normal tests use deterministic fake model and agent clients. Opt-in Ollama
+  evaluations cover planning, tool selection, and review behavior.
+
+## Environment observation
+
+Observed on 2026-07-26:
+
+| Service | Observation |
+|---|---|
+| Ollama | Version `0.32.3` at `http://192.168.1.101:11434`. |
+| Chat model | `gemma4:latest`, 8B, `Q4_K_M`, advertising completion, tools, and thinking. |
+| Embedding model | `embeddinggemma` selected but not installed during discovery. |

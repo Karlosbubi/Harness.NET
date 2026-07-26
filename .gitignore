@@ -1,0 +1,37 @@
+# .NET build output
+[Bb]in/
+[Oo]bj/
+artifacts/
+[Tt]est[Rr]esults/
+*.binlog
+*.nupkg
+*.snupkg
+
+# IDE and user state
+.idea/
+.vs/
+.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+_ReSharper.Caches/
+
+# Local configuration and data
+.env
+.env.*
+!.env.example
+*.db
+*.db-shm
+*.db-wal
+logs/
+
+# Frontend output (if a separate frontend is selected)
+node_modules/
+.svelte-kit/
+dist/
+coverage/
+
+# OS/editor temporary files
+.DS_Store
+*~
