@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using Harness.BusinessLogic.Dashboard;
 using Harness.BusinessLogic.Workspaces;
 using Terminal.Gui.App;
+using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
 
@@ -23,6 +24,7 @@ internal sealed class HarnessWindow : Window
     private readonly Label workspaceText;
     private readonly Button manageWorkspaces;
     private readonly Button trustWorkspace;
+    private readonly MenuItem trustWorkspaceMenuItem;
     private readonly Label activityText;
     private readonly Label detailsText;
     private readonly ListView modelList;
@@ -33,6 +35,7 @@ internal sealed class HarnessWindow : Window
     private readonly Label status;
     private string[] availableModelIds = [];
     private WorkspaceView? activeWorkspace;
+    private DashboardSnapshot latestSnapshot;
 
     internal HarnessWindow(
         IApplication application,
@@ -46,6 +49,7 @@ internal sealed class HarnessWindow : Window
         this.dashboardService = dashboardService;
         this.workspaceService = workspaceService;
         this.activeWorkspace = activeWorkspace;
+        latestSnapshot = initialSnapshot;
         this.cancellationToken = cancellationToken;
         Title = "Harness.NET";
 
@@ -70,9 +74,23 @@ internal sealed class HarnessWindow : Window
             Width = 10,
             Enabled = activeWorkspace is { IsTrusted: false },
         };
-        manageWorkspaces.Accepted += async (_, _) => await ManageWorkspacesAsync(initialSnapshot);
-        trustWorkspace.Accepted += async (_, _) => await TrustWorkspaceAsync(initialSnapshot);
+        manageWorkspaces.Accepted += async (_, _) => await ManageWorkspacesAsync();
+        trustWorkspace.Accepted += async (_, _) => await TrustWorkspaceAsync();
         workspaceFrame.Add(manageWorkspaces, trustWorkspace);
+
+        MenuItem manageWorkspacesMenuItem = new(
+            "_Manage",
+            Key.Empty,
+            () => _ = ManageWorkspacesAsync());
+        trustWorkspaceMenuItem = new(
+            "_Trust",
+            Key.Empty,
+            () => _ = TrustWorkspaceAsync())
+        {
+            Enabled = activeWorkspace is { IsTrusted: false },
+        };
+        MenuBar menuBar = new(
+            [new MenuBarItem("_Workspace", [manageWorkspacesMenuItem, trustWorkspaceMenuItem])]);
         activityFrame = CreateFrame("Activity", activityText);
         detailsFrame = CreateFrame("Plan | Diff | Evidence", detailsText);
         detailsText.Height = Dim.Fill(7);
@@ -136,7 +154,7 @@ internal sealed class HarnessWindow : Window
             Height = FooterHeight,
         };
 
-        Add(workspaceFrame, activityFrame, detailsFrame, composerFrame, status);
+        Add(menuBar, workspaceFrame, activityFrame, detailsFrame, composerFrame, status);
         Render(initialSnapshot);
         ViewportChanged += (_, _) => ApplyLayout(Viewport.Width);
         Initialized += (_, _) => composer.SetFocus();
@@ -186,6 +204,7 @@ internal sealed class HarnessWindow : Window
 
     private void Render(DashboardSnapshot snapshot)
     {
+        latestSnapshot = snapshot;
         RenderWorkspace(snapshot);
 
         activityText.Text = string.Join(
@@ -231,6 +250,7 @@ internal sealed class HarnessWindow : Window
                 string.Empty,
                 snapshot.Goal);
             trustWorkspace.Enabled = false;
+            trustWorkspaceMenuItem.Enabled = false;
             return;
         }
 
@@ -245,9 +265,10 @@ internal sealed class HarnessWindow : Window
             string.Empty,
             snapshot.Goal);
         trustWorkspace.Enabled = !activeWorkspace.IsTrusted;
+        trustWorkspaceMenuItem.Enabled = !activeWorkspace.IsTrusted;
     }
 
-    private async Task ManageWorkspacesAsync(DashboardSnapshot snapshot)
+    private async Task ManageWorkspacesAsync()
     {
         try
         {
@@ -257,13 +278,13 @@ internal sealed class HarnessWindow : Window
                 application,
                 workspaceService,
                 registered,
-                activeWorkspace?.RootPath ?? snapshot.Workspace.Path,
+                activeWorkspace?.RootPath ?? latestSnapshot.Workspace.Path,
                 cancellationToken);
             await application.RunAsync(dialog, cancellationToken);
             if (dialog.Result is not null)
             {
                 activeWorkspace = dialog.Result;
-                application.Invoke(() => RenderWorkspace(snapshot));
+                application.Invoke(() => RenderWorkspace(latestSnapshot));
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -275,7 +296,7 @@ internal sealed class HarnessWindow : Window
         }
     }
 
-    private async Task TrustWorkspaceAsync(DashboardSnapshot snapshot)
+    private async Task TrustWorkspaceAsync()
     {
         if (activeWorkspace is null || activeWorkspace.IsTrusted)
         {
@@ -300,7 +321,7 @@ internal sealed class HarnessWindow : Window
                 isTrusted: true,
                 cancellationToken);
             activeWorkspace = result.Workspace;
-            application.Invoke(() => RenderWorkspace(snapshot));
+            application.Invoke(() => RenderWorkspace(latestSnapshot));
         }
         catch (Exception exception)
         {
@@ -375,7 +396,7 @@ internal sealed class HarnessWindow : Window
         FrameView frame = new()
         {
             Title = title,
-            Y = 0,
+            Y = 1,
             Height = Dim.Fill(ComposerHeight + FooterHeight),
         };
         frame.Add(content);

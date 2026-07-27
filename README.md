@@ -15,9 +15,9 @@ provider adapter.
 The current usable workflow is a durable local-model conversation: instructions
 submitted in the TUI are persisted before inference, streamed through Business Logic,
 and reloaded from SQLite on restart. Provider failures are recorded in the transcript.
-Compact and wide layouts can also inspect, register, select, and explicitly trust a
-Git-backed .NET workspace. Repository tools and multi-agent execution are not
-implemented yet.
+The workspace modal can also inspect, register, select, and explicitly trust a
+Git-backed .NET workspace; the Workspace menu remains available in narrow layouts.
+Repository tools and multi-agent execution are not implemented yet.
 
 Start with:
 
