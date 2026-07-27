@@ -47,7 +47,7 @@ but the end-user workflow is not complete.
 | 015 | Done | Register and trust a .NET workspace | - | A user can add a Git repository, select a solution/project, explicitly trust it, reopen it, and see dirty/base state. |
 | 016 | Done | Load the user's engineering framework | - | Global, repository, and private framework layers load with precedence, locks, validation, and an inspectable effective view. |
 | 017 | Done | Let agents inspect safely | - | Typed, path-confined read/search/status/diff/project/build-information tools run only in a trusted workspace and return bounded records. |
-| 018 | Missing | Let agents implement and verify | No editing, build, test, restore, or mutation policy exists. | Approved runs can use typed edit/build/test tools with cancellation, output limits, correlation, and separate restore/network approval. |
+| 018 | Partial | Let agents implement and verify | Approved, correlated, path-confined compare-and-swap file editing exists; build/test tools, restore/network approval, and durable tool evidence remain. | Approved runs can use typed edit/build/test tools with cancellation, output limits, correlation, and separate restore/network approval. |
 | 019 | Done | Isolate work with Git | - | Each approved goal uses a validated branch/worktree, preserves dirty user state, and never merges/rebases automatically. |
 | 020 | Partial | Create goals and approve plans | Goals, caps, versioned plans, atomic approval/denial transitions, and worktree-bound grants exist below Presentation; the TUI workflow remains. | Goals, caps, plans, revisions, approvals, and denials persist and every consequential transition is validated. |
 | 021 | Missing | Coordinate lead, implementer, and reviewer agents | Microsoft Agent Framework is not integrated and no roles execute. | Role prompts and tool scopes are wrapped behind Business Logic interfaces and a lead can delegate bounded tasks. |
@@ -132,3 +132,8 @@ Harness.NET state auditable.
   while dirty state in the user's original worktree remains unchanged. Approval
   provisions the worktree before atomically persisting the approval and active grant;
   provisioning failure leaves the plan pending and grants no mutation capability.
+- Task 018 has an approved mutation boundary for file creation and replacement.
+  Business Logic requires an approved goal, active persisted worktree grant, active
+  workspace, current trust, and correlation identifier. Data Access independently
+  confines paths, rejects symbolic links and stale SHA-256 expectations, caps UTF-8
+  content at 1 MiB, and atomically replaces the destination.
