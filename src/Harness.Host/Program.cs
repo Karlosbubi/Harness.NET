@@ -1,10 +1,12 @@
 using Harness.BusinessLogic.Dashboard;
 using Harness.BusinessLogic.Framework;
+using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Workspaces;
 using Harness.DataAccess.Configuration;
 using Harness.DataAccess.Conversations;
 using Harness.DataAccess.Framework;
+using Harness.DataAccess.Goals;
 using Harness.DataAccess.Inspection;
 using Harness.DataAccess.Models;
 using Harness.DataAccess.Models.Ollama;
@@ -38,6 +40,8 @@ builder.Services.AddSingleton<IFrameworkOverlayStore, SqliteFrameworkOverlayStor
 builder.Services.AddSingleton<IWorkspaceInspector, GitWorkspaceInspector>();
 builder.Services.AddSingleton<IWorkspaceStore, SqliteWorkspaceStore>();
 builder.Services.AddSingleton<IWorkspaceService, WorkspaceService>();
+builder.Services.AddSingleton<IGoalStore, SqliteGoalStore>();
+builder.Services.AddSingleton<IGoalService, GoalService>();
 builder.Services.AddSingleton<IWorkspaceFileReader, WorkspaceFileReader>();
 builder.Services.AddSingleton<IWorkspaceTextSearcher, GitWorkspaceTextSearcher>();
 builder.Services.AddSingleton<IWorkspaceGitInspector, LibGitWorkspaceGitInspector>();

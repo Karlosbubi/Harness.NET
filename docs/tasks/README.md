@@ -49,7 +49,7 @@ but the end-user workflow is not complete.
 | 017 | Done | Let agents inspect safely | - | Typed, path-confined read/search/status/diff/project/build-information tools run only in a trusted workspace and return bounded records. |
 | 018 | Missing | Let agents implement and verify | No editing, build, test, restore, or mutation policy exists. | Approved runs can use typed edit/build/test tools with cancellation, output limits, correlation, and separate restore/network approval. |
 | 019 | Missing | Isolate work with Git | No branches or worktrees are created. | Each approved goal uses a validated branch/worktree, preserves dirty user state, and never merges/rebases automatically. |
-| 020 | Missing | Create goals and approve plans | There is no goal, plan, approval, or policy state machine. | Goals, caps, plans, revisions, approvals, and denials persist and every consequential transition is validated. |
+| 020 | Partial | Create goals and approve plans | Durable draft goals and validated caps exist; plan revisions, approval/denial transitions, and UI remain. | Goals, caps, plans, revisions, approvals, and denials persist and every consequential transition is validated. |
 | 021 | Missing | Coordinate lead, implementer, and reviewer agents | Microsoft Agent Framework is not integrated and no roles execute. | Role prompts and tool scopes are wrapped behind Business Logic interfaces and a lead can delegate bounded tasks. |
 | 022 | Missing | Resume interrupted work safely | Only schema state persists; there are no run checkpoints. | Runs checkpoint at safe boundaries, resume completed steps, and mark uncertain calls without automatic replay. |
 | 023 | Missing | Review evidence and accept results | There is no independent review loop or commit approval. | Diff, tests, tool evidence, review findings, cycle caps, and explicit commit approval work end to end. |
@@ -120,3 +120,6 @@ Harness.NET state auditable.
   combined index/worktree diff capped at 128 KiB. Non-evaluating .NET metadata
   inspection uses the MSBuild solution parser plus bounded XML/JSON readers for
   projects, target frameworks, SDK/language settings, references, and `global.json`.
+- Task 020 has durable draft goals tied to the active workspace. Goal creation
+  validates title/objective bounds, review-cycle limits, and optional remote-model
+  budgets before schema-versioned SQLite persistence.
