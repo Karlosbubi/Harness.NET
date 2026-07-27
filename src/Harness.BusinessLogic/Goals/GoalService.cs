@@ -1,11 +1,13 @@
 using Harness.DataAccess.Goals;
 using Harness.DataAccess.Workspaces;
+using Harness.DataAccess.Worktrees;
 
 namespace Harness.BusinessLogic.Goals;
 
 internal sealed class GoalService(
     IGoalStore goalStore,
-    IWorkspaceStore workspaceStore) : IGoalService
+    IWorkspaceStore workspaceStore,
+    IGoalWorktreeManager worktreeManager) : IGoalService
 {
     private const int MaximumTitleCharacters = 160;
     private const int MaximumObjectiveCharacters = 16 * 1024;
@@ -160,6 +162,31 @@ internal sealed class GoalService(
         }
 
         string decision = approve ? "Approved" : "Denied";
+        DateTimeOffset decidedAt = DateTimeOffset.UtcNow;
+        StoredGoalWorktree? storedWorktree = null;
+        if (approve)
+        {
+            GoalWorktreeResult worktree = await worktreeManager.CreateAsync(
+                goal.Id,
+                workspace.RootPath,
+                cancellationToken);
+            if (worktree.Error is not null)
+            {
+                return PlanFailure(
+                    worktree.ErrorCode ?? "worktree_failed",
+                    worktree.Error);
+            }
+
+            storedWorktree = new(
+                goal.Id,
+                workspace.Id,
+                worktree.Branch,
+                worktree.Path,
+                worktree.BaseCommit,
+                "Active",
+                decidedAt);
+        }
+
         StoredApproval approval = new(
             Guid.NewGuid().ToString("N"),
             goal.Id,
@@ -167,11 +194,12 @@ internal sealed class GoalService(
             "Plan",
             decision,
             string.IsNullOrWhiteSpace(request.Reason) ? null : request.Reason.Trim(),
-            DateTimeOffset.UtcNow);
+            decidedAt);
         try
         {
             return (await goalStore.DecidePlanAsync(
                 approval,
+                storedWorktree,
                 "AwaitingPlanApproval",
                 "Pending",
                 approve ? "Approved" : "NeedsPlanRevision",
@@ -213,7 +241,7 @@ internal sealed class GoalService(
     }
 
     private static PlanResult PlanFailure(string code, string error) =>
-        new(null, null, null, code, error);
+        new(null, null, null, null, code, error);
 }
 
 internal static class StoredGoalMapping
@@ -251,6 +279,16 @@ internal static class StoredGoalMapping
         snapshot.Goal.ToView(),
         snapshot.Plan.ToView(),
         snapshot.Approval?.ToView(),
+        snapshot.Worktree is null
+            ? null
+            : new(
+                snapshot.Worktree.GoalId,
+                snapshot.Worktree.WorkspaceId,
+                snapshot.Worktree.Branch,
+                snapshot.Worktree.Path,
+                snapshot.Worktree.BaseCommit,
+                snapshot.Worktree.State,
+                snapshot.Worktree.CreatedAt),
         ErrorCode: null,
         Error: null);
 }

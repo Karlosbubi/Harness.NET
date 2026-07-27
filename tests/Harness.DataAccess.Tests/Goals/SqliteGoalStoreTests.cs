@@ -2,6 +2,7 @@ using Harness.DataAccess.Configuration;
 using Harness.DataAccess.Goals;
 using Harness.DataAccess.Persistence;
 using Harness.DataAccess.Workspaces;
+using Harness.DataAccess.Worktrees;
 using Microsoft.Data.Sqlite;
 
 namespace Harness.DataAccess.Tests.Goals;
@@ -82,20 +83,32 @@ public sealed class SqliteGoalStoreTests : IDisposable
             plan,
             "Draft",
             "AwaitingPlanApproval");
+        StoredGoalWorktree worktree = new(
+            goal.Id,
+            workspace.Id,
+            "harness/goal-goal-id",
+            Path.Combine(root, "worktrees", goal.Id),
+            "abc123",
+            "Active",
+            now);
         StoredPlanSnapshot decided = await store.DecidePlanAsync(
-            new("approval-id", goal.Id, plan.Id, "Plan", "Denied", "Revise it.", now),
+            new("approval-id", goal.Id, plan.Id, "Plan", "Approved", "Proceed.", now),
+            worktree,
             "AwaitingPlanApproval",
             "Pending",
-            "NeedsPlanRevision",
-            "Denied");
+            "Approved",
+            "Approved");
 
         Assert.Equal("AwaitingPlanApproval", proposed.Goal.State);
-        Assert.Equal("NeedsPlanRevision", decided.Goal.State);
-        Assert.Equal("Denied", decided.Plan.State);
-        Assert.Equal("Revise it.", decided.Approval?.Reason);
-        Assert.Equal("Denied", (await store.GetCurrentPlanAsync(goal.Id))?.State);
+        Assert.Equal("Approved", decided.Goal.State);
+        Assert.Equal("Approved", decided.Plan.State);
+        Assert.Equal("Proceed.", decided.Approval?.Reason);
+        Assert.Equal("Active", decided.Worktree?.State);
+        Assert.Equal(worktree.Path, (await store.GetWorktreeAsync(goal.Id))?.Path);
+        Assert.Equal("Approved", (await store.GetCurrentPlanAsync(goal.Id))?.State);
         await Assert.ThrowsAsync<InvalidOperationException>(() => store.DecidePlanAsync(
             new("second-approval", goal.Id, plan.Id, "Plan", "Approved", null, now),
+            null,
             "AwaitingPlanApproval",
             "Pending",
             "Approved",

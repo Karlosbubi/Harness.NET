@@ -52,10 +52,12 @@ Exit evidence: accepted framework and architecture decision records.
 - In progress: schema-versioned draft goals persist against the active workspace
   with validated review-cycle and optional remote-cost caps. Versioned plan
   proposals and atomic approval/denial transitions now exist below Presentation;
-  the TUI workflow and worktree-bound capability grant remain.
-- In progress: a structured, cancellable Git adapter creates deterministic goal
+  approval also persists a worktree-bound capability grant. The TUI workflow remains.
+- Completed: a structured, cancellable Git adapter creates deterministic goal
   branches/worktrees under XDG state, records the base commit, retries idempotently,
-  and preserves dirty original-worktree state. Approval binding and recovery remain.
+  and preserves dirty original-worktree state. Approval provisions isolation first,
+  then persists the decision and active worktree grant atomically; failed provisioning
+  leaves the plan pending. Interrupted-run reconciliation remains part of Task 022.
 - Connect OpenRouter and add typed tool-call mapping behind the same boundary.
 - Prove one checkpointed fake workflow through the TUI.
 

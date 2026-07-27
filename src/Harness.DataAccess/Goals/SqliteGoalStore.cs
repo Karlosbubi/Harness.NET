@@ -1,6 +1,7 @@
 using System.Globalization;
 using Dapper;
 using Harness.DataAccess.Configuration;
+using Harness.DataAccess.Worktrees;
 using Microsoft.Data.Sqlite;
 
 namespace Harness.DataAccess.Goals;
@@ -120,11 +121,12 @@ internal sealed class SqliteGoalStore(IApplicationPaths applicationPaths) : IGoa
         }, transaction, cancellationToken: cancellationToken));
         GoalRow goalRow = await ReadGoalAsync(connection, transaction, plan.GoalId, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-        return new(goalRow.ToRecord(), planRow.ToRecord(), Approval: null);
+        return new(goalRow.ToRecord(), planRow.ToRecord(), Approval: null, Worktree: null);
     }
 
     public async ValueTask<StoredPlanSnapshot> DecidePlanAsync(
         StoredApproval approval,
+        StoredGoalWorktree? worktree,
         string expectedGoalState,
         string expectedPlanState,
         string nextGoalState,
@@ -178,6 +180,28 @@ internal sealed class SqliteGoalStore(IApplicationPaths applicationPaths) : IGoa
             approval.Reason,
             DecidedAt = decidedAt,
         }, transaction, cancellationToken: cancellationToken));
+        WorktreeRow? worktreeRow = null;
+        if (worktree is not null)
+        {
+            worktreeRow = await connection.QuerySingleAsync<WorktreeRow>(new CommandDefinition("""
+                INSERT INTO goal_worktrees (
+                    goal_id, workspace_id, branch, path, base_commit, state, created_at)
+                VALUES (
+                    @GoalId, @WorkspaceId, @Branch, @Path, @BaseCommit, @State, @CreatedAt)
+                RETURNING goal_id AS GoalId, workspace_id AS WorkspaceId, branch, path,
+                          base_commit AS BaseCommit, state, created_at AS CreatedAt;
+                """, new
+            {
+                worktree.GoalId,
+                worktree.WorkspaceId,
+                worktree.Branch,
+                worktree.Path,
+                worktree.BaseCommit,
+                worktree.State,
+                CreatedAt = Format(worktree.CreatedAt),
+            }, transaction, cancellationToken: cancellationToken));
+        }
+
         GoalRow goalRow = await ReadGoalAsync(connection, transaction, approval.GoalId, cancellationToken);
         PlanRow planRow = await connection.QuerySingleAsync<PlanRow>(new CommandDefinition("""
             SELECT id, goal_id AS GoalId, revision, content, state,
@@ -185,7 +209,24 @@ internal sealed class SqliteGoalStore(IApplicationPaths applicationPaths) : IGoa
             FROM goal_plans WHERE id = @planId;
             """, new { planId = approval.PlanId }, transaction, cancellationToken: cancellationToken));
         await transaction.CommitAsync(cancellationToken);
-        return new(goalRow.ToRecord(), planRow.ToRecord(), approvalRow.ToRecord());
+        return new(
+            goalRow.ToRecord(),
+            planRow.ToRecord(),
+            approvalRow.ToRecord(),
+            worktreeRow?.ToRecord());
+    }
+
+    public async ValueTask<StoredGoalWorktree?> GetWorktreeAsync(
+        string goalId,
+        CancellationToken cancellationToken = default)
+    {
+        await using SqliteConnection connection = await OpenAsync(cancellationToken);
+        WorktreeRow? row = await connection.QuerySingleOrDefaultAsync<WorktreeRow>(new CommandDefinition("""
+            SELECT goal_id AS GoalId, workspace_id AS WorkspaceId, branch, path,
+                   base_commit AS BaseCommit, state, created_at AS CreatedAt
+            FROM goal_worktrees WHERE goal_id = @goalId;
+            """, new { goalId }, cancellationToken: cancellationToken));
+        return row?.ToRecord();
     }
 
     private static async ValueTask<GoalRow> ReadGoalAsync(
@@ -285,5 +326,25 @@ internal sealed class SqliteGoalStore(IApplicationPaths applicationPaths) : IGoa
             Decision,
             Reason,
             DateTimeOffset.Parse(DecidedAt, CultureInfo.InvariantCulture));
+    }
+
+    private sealed class WorktreeRow
+    {
+        public string GoalId { get; init; } = string.Empty;
+        public string WorkspaceId { get; init; } = string.Empty;
+        public string Branch { get; init; } = string.Empty;
+        public string Path { get; init; } = string.Empty;
+        public string BaseCommit { get; init; } = string.Empty;
+        public string State { get; init; } = string.Empty;
+        public string CreatedAt { get; init; } = string.Empty;
+
+        internal StoredGoalWorktree ToRecord() => new(
+            GoalId,
+            WorkspaceId,
+            Branch,
+            Path,
+            BaseCommit,
+            State,
+            DateTimeOffset.Parse(CreatedAt, CultureInfo.InvariantCulture));
     }
 }

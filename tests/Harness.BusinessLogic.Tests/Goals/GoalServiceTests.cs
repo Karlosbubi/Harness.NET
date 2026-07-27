@@ -1,6 +1,7 @@
 using Harness.BusinessLogic.Goals;
 using Harness.DataAccess.Goals;
 using Harness.DataAccess.Workspaces;
+using Harness.DataAccess.Worktrees;
 
 namespace Harness.BusinessLogic.Tests.Goals;
 
@@ -10,7 +11,7 @@ public sealed class GoalServiceTests
     public async Task Creates_a_draft_goal_for_the_active_workspace()
     {
         FakeGoalStore store = new();
-        GoalService service = new(store, new FakeWorkspaceStore(CreateWorkspace()));
+        GoalService service = CreateService(store, CreateWorkspace());
 
         GoalResult result = await service.CreateAsync(new(
             "workspace-id",
@@ -30,7 +31,7 @@ public sealed class GoalServiceTests
     public async Task Rejects_invalid_caps_without_persisting()
     {
         FakeGoalStore store = new();
-        GoalService service = new(store, new FakeWorkspaceStore(CreateWorkspace()));
+        GoalService service = CreateService(store, CreateWorkspace());
 
         GoalResult result = await service.CreateAsync(new(
             "workspace-id",
@@ -47,7 +48,7 @@ public sealed class GoalServiceTests
     public async Task Rejects_a_goal_for_a_non_active_workspace()
     {
         FakeGoalStore store = new();
-        GoalService service = new(store, new FakeWorkspaceStore(CreateWorkspace()));
+        GoalService service = CreateService(store, CreateWorkspace());
 
         GoalResult result = await service.CreateAsync(new(
             "another-workspace",
@@ -65,7 +66,7 @@ public sealed class GoalServiceTests
     {
         StoredGoal goal = CreateGoal("Draft");
         FakeGoalStore store = new(goal);
-        GoalService service = new(store, new FakeWorkspaceStore(CreateWorkspace()));
+        GoalService service = CreateService(store, CreateWorkspace());
 
         PlanResult result = await service.ProposePlanAsync(new(goal.Id, "1. Implement\n2. Test"));
 
@@ -80,7 +81,7 @@ public sealed class GoalServiceTests
     {
         StoredGoal goal = CreateGoal("Draft");
         FakeGoalStore store = new(goal);
-        GoalService service = new(store, new FakeWorkspaceStore(CreateWorkspace()));
+        GoalService service = CreateService(store, CreateWorkspace());
         PlanResult proposal = await service.ProposePlanAsync(new(goal.Id, "Implement and test."));
 
         PlanResult result = await service.DecidePlanAsync(new(
@@ -98,7 +99,7 @@ public sealed class GoalServiceTests
     {
         StoredGoal goal = CreateGoal("Draft");
         FakeGoalStore store = new(goal);
-        GoalService service = new(store, new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)));
+        GoalService service = CreateService(store, CreateWorkspace(isTrusted: true));
         PlanResult first = await service.ProposePlanAsync(new(goal.Id, "First plan"));
 
         PlanResult denied = await service.DecidePlanAsync(new(
@@ -119,7 +120,7 @@ public sealed class GoalServiceTests
     {
         StoredGoal goal = CreateGoal("Draft");
         FakeGoalStore store = new(goal);
-        GoalService service = new(store, new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)));
+        GoalService service = CreateService(store, CreateWorkspace(isTrusted: true));
         PlanResult proposal = await service.ProposePlanAsync(new(goal.Id, "Implement and test."));
 
         PlanResult approved = await service.DecidePlanAsync(new(
@@ -136,8 +137,47 @@ public sealed class GoalServiceTests
         Assert.Equal("Approved", approved.Goal?.State);
         Assert.Equal("Approved", approved.Plan?.State);
         Assert.Equal("Approved", approved.Approval?.Decision);
+        Assert.Equal("Active", approved.Worktree?.State);
+        Assert.Equal("/state/worktrees/goal-id", approved.Worktree?.Path);
         Assert.Equal("invalid_transition", duplicate.ErrorCode);
     }
+
+    [Fact]
+    public async Task Worktree_failure_leaves_the_plan_pending_without_a_grant()
+    {
+        StoredGoal goal = CreateGoal("Draft");
+        FakeGoalStore store = new(goal);
+        FakeGoalWorktreeManager manager = new(new(
+            goal.Id,
+            string.Empty,
+            string.Empty,
+            string.Empty,
+            WasCreated: false,
+            "worktree_create_failed",
+            "Git failed."));
+        GoalService service = CreateService(store, CreateWorkspace(isTrusted: true), manager);
+        PlanResult proposal = await service.ProposePlanAsync(new(goal.Id, "Implement and test."));
+
+        PlanResult result = await service.DecidePlanAsync(new(
+            goal.Id,
+            proposal.Plan!.Id,
+            "Approve",
+            null));
+
+        Assert.Equal("worktree_create_failed", result.ErrorCode);
+        Assert.Equal("AwaitingPlanApproval", store.Created?.State);
+        Assert.Equal("Pending", store.CurrentPlan?.State);
+        Assert.Null(store.Worktree);
+    }
+
+    private static GoalService CreateService(
+        FakeGoalStore store,
+        RegisteredWorkspace workspace,
+        IGoalWorktreeManager? worktreeManager = null) =>
+        new(
+            store,
+            new FakeWorkspaceStore(workspace),
+            worktreeManager ?? new FakeGoalWorktreeManager());
 
     private static RegisteredWorkspace CreateWorkspace(bool isTrusted = false) => new(
         "workspace-id",
@@ -204,11 +244,12 @@ public sealed class GoalServiceTests
 
             Created = Created with { State = nextGoalState, UpdatedAt = plan.UpdatedAt };
             CurrentPlan = plan;
-            return ValueTask.FromResult(new StoredPlanSnapshot(Created, plan, null));
+            return ValueTask.FromResult(new StoredPlanSnapshot(Created, plan, null, null));
         }
 
         public ValueTask<StoredPlanSnapshot> DecidePlanAsync(
             StoredApproval approval,
+            StoredGoalWorktree? worktree,
             string expectedGoalState,
             string expectedPlanState,
             string nextGoalState,
@@ -226,8 +267,33 @@ public sealed class GoalServiceTests
                 State = nextPlanState,
                 UpdatedAt = approval.DecidedAt,
             };
-            return ValueTask.FromResult(new StoredPlanSnapshot(Created, CurrentPlan, approval));
+            Worktree = worktree;
+            return ValueTask.FromResult(new StoredPlanSnapshot(Created, CurrentPlan, approval, worktree));
         }
+
+        internal StoredGoalWorktree? Worktree { get; private set; }
+
+        public ValueTask<StoredGoalWorktree?> GetWorktreeAsync(
+            string goalId,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(Worktree?.GoalId == goalId ? Worktree : null);
+    }
+
+    private sealed class FakeGoalWorktreeManager(GoalWorktreeResult? result = null)
+        : IGoalWorktreeManager
+    {
+        public ValueTask<GoalWorktreeResult> CreateAsync(
+            string goalId,
+            string repositoryRoot,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(result ?? new GoalWorktreeResult(
+                goalId,
+                "harness/goal-test",
+                $"/state/worktrees/{goalId}",
+                "abc123",
+                WasCreated: true,
+                ErrorCode: null,
+                Error: null));
     }
 
     private sealed class FakeWorkspaceStore(RegisteredWorkspace? workspace) : IWorkspaceStore

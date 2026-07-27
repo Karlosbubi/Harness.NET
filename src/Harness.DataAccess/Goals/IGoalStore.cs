@@ -1,3 +1,5 @@
+using Harness.DataAccess.Worktrees;
+
 namespace Harness.DataAccess.Goals;
 
 public interface IGoalStore
@@ -26,9 +28,14 @@ public interface IGoalStore
 
     ValueTask<StoredPlanSnapshot> DecidePlanAsync(
         StoredApproval approval,
+        StoredGoalWorktree? worktree,
         string expectedGoalState,
         string expectedPlanState,
         string nextGoalState,
         string nextPlanState,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<StoredGoalWorktree?> GetWorktreeAsync(
+        string goalId,
         CancellationToken cancellationToken = default);
 }
