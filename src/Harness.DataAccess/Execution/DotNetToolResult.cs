@@ -1,7 +1,7 @@
 namespace Harness.DataAccess.Execution;
 
 public sealed record DotNetToolResult(
-    string Operation,
+    DotNetToolOperation Operation,
     string EntryPoint,
     int? ExitCode,
     string StandardOutput,

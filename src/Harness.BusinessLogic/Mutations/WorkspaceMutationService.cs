@@ -1,3 +1,6 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using Harness.DataAccess.Evidence;
 using Harness.DataAccess.Execution;
 using Harness.DataAccess.Goals;
 using Harness.DataAccess.Mutations;
@@ -10,13 +13,18 @@ internal sealed class WorkspaceMutationService(
     IGoalStore goalStore,
     IWorkspaceStore workspaceStore,
     IWorkspaceFileEditor fileEditor,
-    IDotNetToolRunner dotNetToolRunner) : IWorkspaceMutationService
+    IDotNetToolRunner dotNetToolRunner,
+    IToolEvidenceStore evidenceStore) : IWorkspaceMutationService
 {
+    private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
+
     public async ValueTask<FileEditView> ApplyFileEditAsync(
         FileEditRequest request,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(request.CorrelationId) || request.CorrelationId.Length > 128)
+        if (request.CorrelationId is null ||
+            string.IsNullOrWhiteSpace(request.CorrelationId.Value) ||
+            request.CorrelationId.Value.Length > 128)
         {
             return Failure(request, "invalid_correlation", "A correlation identifier of at most 128 characters is required.");
         }
@@ -39,11 +47,22 @@ internal sealed class WorkspaceMutationService(
             return Failure(request, "workspace_not_trusted", "The goal workspace must remain trusted.");
         }
 
+        StoredToolCallStart started = await StartEvidenceAsync(
+            goal.Id,
+            request.CorrelationId,
+            ToolKind.FileEdit,
+            request,
+            cancellationToken);
+        if (!started.WasCreated)
+        {
+            return Failure(request, "duplicate_correlation", "This goal already has a tool call with that correlation identifier.");
+        }
+
         WorkspaceFileEditResult result = await fileEditor.ApplyAsync(
             worktree.Path,
             new(request.Path, request.ExpectedSha256, request.Content),
             cancellationToken);
-        return new(
+        FileEditView view = new(
             goal.Id,
             request.CorrelationId,
             result.Path,
@@ -53,15 +72,27 @@ internal sealed class WorkspaceMutationService(
             result.WasCreated,
             result.ErrorCode,
             result.Error);
+        await CompleteEvidenceAsync(
+            started.ToolCall.Id,
+            result.ErrorCode is null ? ToolCallState.Succeeded : ToolCallState.Failed,
+            view);
+        return view;
     }
 
     public async ValueTask<DotNetOperationView> RunDotNetAsync(
         DotNetOperationRequest request,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(request.CorrelationId) || request.CorrelationId.Length > 128)
+        if (request.CorrelationId is null ||
+            string.IsNullOrWhiteSpace(request.CorrelationId.Value) ||
+            request.CorrelationId.Value.Length > 128)
         {
             return DotNetFailure(request, "invalid_correlation", "A correlation identifier of at most 128 characters is required.");
+        }
+
+        if (!Enum.IsDefined(request.Operation))
+        {
+            return DotNetFailure(request, "invalid_operation", "The operation must be Build or Test.");
         }
 
         StoredGoal? goal = await goalStore.GetAsync(request.GoalId, cancellationToken);
@@ -83,14 +114,29 @@ internal sealed class WorkspaceMutationService(
         }
 
         string entryPoint = Path.GetRelativePath(workspace.RootPath, workspace.EntryPoint);
-        DotNetToolResult result = await dotNetToolRunner.RunAsync(
-            worktree.Path,
-            new(request.Operation, entryPoint),
-            cancellationToken);
-        return new(
+        StoredToolCallStart started = await StartEvidenceAsync(
             goal.Id,
             request.CorrelationId,
-            result.Operation,
+            request.Operation is DotNetOperation.Build ? ToolKind.Build : ToolKind.Test,
+            request,
+            cancellationToken);
+        if (!started.WasCreated)
+        {
+            return DotNetFailure(request, "duplicate_correlation", "This goal already has a tool call with that correlation identifier.");
+        }
+
+        DotNetToolResult result = await dotNetToolRunner.RunAsync(
+            worktree.Path,
+            new(request.Operation is DotNetOperation.Build
+                ? DotNetToolOperation.Build
+                : DotNetToolOperation.Test, entryPoint),
+            cancellationToken);
+        DotNetOperationView view = new(
+            goal.Id,
+            request.CorrelationId,
+            result.Operation is DotNetToolOperation.Build
+                ? DotNetOperation.Build
+                : DotNetOperation.Test,
             result.EntryPoint,
             result.ExitCode,
             result.StandardOutput,
@@ -101,6 +147,55 @@ internal sealed class WorkspaceMutationService(
             result.DurationMilliseconds,
             result.ErrorCode,
             result.Error);
+        ToolCallState state = result.WasCancelled
+            ? ToolCallState.Cancelled
+            : result.ErrorCode is null && result.ExitCode == 0
+                ? ToolCallState.Succeeded
+                : ToolCallState.Failed;
+        await CompleteEvidenceAsync(
+            started.ToolCall.Id,
+            state,
+            view);
+        return view;
+    }
+
+    private async ValueTask<StoredToolCallStart> StartEvidenceAsync<TRequest>(
+        string goalId,
+        Tools.ToolCorrelationId correlationId,
+        ToolKind tool,
+        TRequest request,
+        CancellationToken cancellationToken)
+    {
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        return await evidenceStore.StartAsync(new(
+            new(Guid.NewGuid().ToString("N")),
+            goalId,
+            new DataAccess.Evidence.ToolCorrelationId(correlationId.Value),
+            tool,
+            JsonSerializer.Serialize(request, JsonOptions),
+            ToolCallState.Running,
+            ResultJson: null,
+            now,
+            CompletedAt: null), cancellationToken);
+    }
+
+    private async ValueTask CompleteEvidenceAsync<TResult>(
+        ToolCallId toolCallId,
+        ToolCallState state,
+        TResult result) =>
+        await evidenceStore.CompleteAsync(
+            toolCallId,
+            ToolCallState.Running,
+            state,
+            JsonSerializer.Serialize(result, JsonOptions),
+            DateTimeOffset.UtcNow,
+            CancellationToken.None);
+
+    private static JsonSerializerOptions CreateJsonOptions()
+    {
+        JsonSerializerOptions options = new(JsonSerializerDefaults.Web);
+        options.Converters.Add(new JsonStringEnumConverter());
+        return options;
     }
 
     private static FileEditView Failure(FileEditRequest request, string code, string error) =>

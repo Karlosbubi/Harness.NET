@@ -22,7 +22,9 @@ provenance, privacy, and validation issues, and edits the private workspace over
 Trusted-workspace tools now provide confined file reads, tracked-text search,
 bounded Git status/diff evidence, non-evaluating .NET metadata, approved atomic file
 edits, and cancellable build/test execution in isolated goal worktrees. Agent role
-execution, restore approval, and durable tool evidence are not implemented yet.
+execution and restore approval are not implemented yet. Approved file edits and
+build/test calls now retain durable request/result evidence for later workflow and
+GUI presentation.
 
 Start with:
 

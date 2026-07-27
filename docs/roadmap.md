@@ -62,8 +62,9 @@ Exit evidence: accepted framework and architecture decision records.
   text creation/replacement and typed build/test execution only inside their
   persisted worktree grant. Builds and tests are cancellable, bound their output,
   and disable implicit restore; stale hashes, symlinks, oversized content, inactive
-  workspaces, and revoked trust are rejected. Restore approval and durable tool
-  evidence remain.
+  workspaces, and revoked trust are rejected. Requests are persisted before tool
+  execution and completed with correlated result evidence; incomplete calls remain
+  visible for recovery. Restore approval remains.
 - Connect OpenRouter and add typed tool-call mapping behind the same boundary.
 - Prove one checkpointed fake workflow through the TUI.
 

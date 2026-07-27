@@ -24,7 +24,7 @@ public sealed class DotNetToolRunnerTests : IDisposable
 
         DotNetToolResult result = await runner.RunAsync(
             root,
-            new("Build", "Repository.slnx"));
+            new(DotNetToolOperation.Build, "Repository.slnx"));
 
         Assert.Null(result.Error);
         Assert.Equal(0, result.ExitCode);
@@ -43,7 +43,7 @@ public sealed class DotNetToolRunnerTests : IDisposable
 
         DotNetToolResult result = await runner.RunAsync(
             root,
-            new("Restore", "Repository.slnx"));
+            new((DotNetToolOperation)999, "Repository.slnx"));
 
         Assert.Equal("invalid_operation", result.ErrorCode);
         Assert.Null(result.ExitCode);
@@ -64,7 +64,7 @@ public sealed class DotNetToolRunnerTests : IDisposable
 
         DotNetToolResult result = await runner.RunAsync(
             root,
-            new("Test", "Repository.slnx"));
+            new(DotNetToolOperation.Test, "Repository.slnx"));
 
         Assert.Null(result.Error);
         Assert.True(result.IsOutputTruncated);
@@ -87,7 +87,7 @@ public sealed class DotNetToolRunnerTests : IDisposable
 
         DotNetToolResult result = await runner.RunAsync(
             root,
-            new("Test", "Repository.slnx"),
+            new(DotNetToolOperation.Test, "Repository.slnx"),
             cancellation.Token);
 
         Assert.True(result.WasCancelled);

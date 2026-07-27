@@ -24,9 +24,7 @@ internal sealed class DotNetToolRunner : IDotNetToolRunner
         DotNetToolRequest request,
         CancellationToken cancellationToken = default)
     {
-        string operation = request.Operation.Trim();
-        if (!operation.Equals("Build", StringComparison.Ordinal) &&
-            !operation.Equals("Test", StringComparison.Ordinal))
+        if (!Enum.IsDefined(request.Operation))
         {
             return Failure(request, "invalid_operation", "The operation must be Build or Test.");
         }
@@ -59,7 +57,7 @@ internal sealed class DotNetToolRunner : IDotNetToolRunner
             UseShellExecute = false,
             CreateNoWindow = true,
         };
-        startInfo.ArgumentList.Add(operation.ToLowerInvariant());
+        startInfo.ArgumentList.Add(request.Operation.ToString().ToLowerInvariant());
         startInfo.ArgumentList.Add(targetEntryPoint);
         startInfo.ArgumentList.Add("--no-restore");
         startInfo.ArgumentList.Add("--nologo");
@@ -75,7 +73,7 @@ internal sealed class DotNetToolRunner : IDotNetToolRunner
             if (!process.Start())
             {
                 return Failure(
-                    request with { Operation = operation, EntryPoint = confinedEntryPoint },
+                    request with { EntryPoint = confinedEntryPoint },
                     "process_start_failed",
                     "The dotnet process did not start.");
             }
@@ -83,7 +81,7 @@ internal sealed class DotNetToolRunner : IDotNetToolRunner
         catch (Exception exception) when (exception is InvalidOperationException or Win32Exception)
         {
             return Failure(
-                request with { Operation = operation, EntryPoint = confinedEntryPoint },
+                request with { EntryPoint = confinedEntryPoint },
                 "process_start_failed",
                 exception.Message);
         }
@@ -110,7 +108,7 @@ internal sealed class DotNetToolRunner : IDotNetToolRunner
         BoundedText standardError = await diagnostic;
         duration.Stop();
         return new(
-            operation,
+            request.Operation,
             confinedEntryPoint,
             process.ExitCode,
             standardOutput.Value,

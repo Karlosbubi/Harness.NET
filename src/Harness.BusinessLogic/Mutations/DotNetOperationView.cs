@@ -1,9 +1,11 @@
+using Harness.BusinessLogic.Tools;
+
 namespace Harness.BusinessLogic.Mutations;
 
 public sealed record DotNetOperationView(
     string GoalId,
-    string CorrelationId,
-    string Operation,
+    ToolCorrelationId CorrelationId,
+    DotNetOperation Operation,
     string EntryPoint,
     int? ExitCode,
     string StandardOutput,

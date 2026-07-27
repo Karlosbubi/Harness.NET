@@ -47,12 +47,12 @@ but the end-user workflow is not complete.
 | 015 | Done | Register and trust a .NET workspace | - | A user can add a Git repository, select a solution/project, explicitly trust it, reopen it, and see dirty/base state. |
 | 016 | Done | Load the user's engineering framework | - | Global, repository, and private framework layers load with precedence, locks, validation, and an inspectable effective view. |
 | 017 | Done | Let agents inspect safely | - | Typed, path-confined read/search/status/diff/project/build-information tools run only in a trusted workspace and return bounded records. |
-| 018 | Partial | Let agents implement and verify | Approved, correlated file edits and bounded, cancellable build/test tools exist; restore/network approval and durable tool evidence remain. | Approved runs can use typed edit/build/test tools with cancellation, output limits, correlation, and separate restore/network approval. |
+| 018 | Partial | Let agents implement and verify | Approved edit/build/test calls are bounded, cancellable, correlated, and durable; separate restore/network approval remains. | Approved runs can use typed edit/build/test tools with cancellation, output limits, correlation, and separate restore/network approval. |
 | 019 | Done | Isolate work with Git | - | Each approved goal uses a validated branch/worktree, preserves dirty user state, and never merges/rebases automatically. |
 | 020 | Partial | Create goals and approve plans | Goals, caps, versioned plans, atomic approval/denial transitions, and worktree-bound grants exist below Presentation; the TUI workflow remains. | Goals, caps, plans, revisions, approvals, and denials persist and every consequential transition is validated. |
 | 021 | Missing | Coordinate lead, implementer, and reviewer agents | Microsoft Agent Framework is not integrated and no roles execute. | Role prompts and tool scopes are wrapped behind Business Logic interfaces and a lead can delegate bounded tasks. |
-| 022 | Missing | Resume interrupted work safely | Only schema state persists; there are no run checkpoints. | Runs checkpoint at safe boundaries, resume completed steps, and mark uncertain calls without automatic replay. |
-| 023 | Missing | Review evidence and accept results | There is no independent review loop or commit approval. | Diff, tests, tool evidence, review findings, cycle caps, and explicit commit approval work end to end. |
+| 022 | Partial | Resume interrupted work safely | Incomplete tool calls remain durably identifiable, but run checkpoints, reconciliation, and resume are absent. | Runs checkpoint at safe boundaries, resume completed steps, and mark uncertain calls without automatic replay. |
+| 023 | Partial | Review evidence and accept results | Tool requests/results are durable and queryable, but there is no independent review loop or commit approval. | Diff, tests, tool evidence, review findings, cycle caps, and explicit commit approval work end to end. |
 | 024 | Missing | Retrieve relevant repository context | The embedding adapter exists but no tracked-text index does. | Eligible Git-tracked text is chunked, partitioned by embedding configuration, rebuilt, searched, and filtered by policy. |
 | 025 | Partial | Use remote models under a cost cap | Secret storage exists; OpenRouter, routing, pricing, and reconciliation do not. | Remote use requires approval, streams through the provider boundary, and enforces estimated plus reconciled per-goal caps. |
 | 026 | Partial | Operate and distribute v1.0 reliably | Logging and cancellation exist, but packaging, upgrades, backup/export, and recovery tests do not. | A self-contained Linux x64 release passes clean-install, migration, outage, cancellation, recovery, and representative-repository acceptance tests. |
@@ -140,4 +140,9 @@ Harness.NET state auditable.
   boundary now exposes only typed Build and Test operations against the registered
   entry point in the goal worktree. The process adapter disables implicit restore,
   confines the entry point, cancels the process tree, and returns exit, duration,
-  bounded output, and truncation evidence.
+  bounded output, and truncation evidence. Schema version 9 persists every approved
+  tool request before execution and completes it with full correlated result evidence.
+  Duplicate correlations cannot replay a tool, incomplete calls remain identifiable
+  for recovery, and a presentation-neutral Business Logic service exposes the audit
+  trail. Tool operations, kinds, states, identifiers, and correlations use semantic
+  enums and single-value records under ADR 007.

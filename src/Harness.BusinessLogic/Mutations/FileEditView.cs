@@ -1,8 +1,10 @@
+using Harness.BusinessLogic.Tools;
+
 namespace Harness.BusinessLogic.Mutations;
 
 public sealed record FileEditView(
     string GoalId,
-    string CorrelationId,
+    ToolCorrelationId CorrelationId,
     string Path,
     string? PreviousSha256,
     string? NewSha256,
