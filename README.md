@@ -62,6 +62,29 @@ routing, conversation defaults, and optional OTLP export are defined in the ship
 [runtime configuration](docs/configuration.md) and
 [implementation tasks](docs/tasks/README.md) for details.
 
+## Linux x64 publish
+
+Publish the self-contained walking skeleton with:
+
+```bash
+dotnet publish src/Harness.Host/Harness.Host.csproj \
+  -p:PublishProfile=linux-x64 \
+  --output artifacts/linux-x64
+```
+
+The output contains a compressed executable, the native libraries that remain
+external to avoid runtime extraction outside XDG storage, and the shipped
+`harness.xml`. It does not require an installed .NET runtime. Run the repeatable
+isolated-XDG startup and SIGTERM shutdown check with:
+
+```bash
+./eng/verify-linux-x64-publish.sh
+```
+
+`--wait-for-shutdown` is a non-interactive operational mode used by lifecycle
+checks and service supervisors. It initializes storage, reports readiness, waits,
+and exits cleanly when the host receives SIGINT or SIGTERM.
+
 The wide TUI model panel can refresh the Ollama catalog, display capabilities, and
 persist the selected conversation model. Live provider verification can be repeated
 with:

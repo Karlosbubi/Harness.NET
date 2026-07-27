@@ -17,7 +17,8 @@ internal static class HarnessConfigurationLoader
             .AddXmlFile(defaultConfigurationPath, optional: false, reloadOnChange: false)
             .AddXmlFile(userConfigurationPath, optional: true, reloadOnChange: false)
             .AddEnvironmentVariables("HARNESS_")
-            .AddCommandLine(args.Where(static argument => argument != "--no-ui").ToArray())
+            .AddCommandLine(args.Where(static argument =>
+                !HostRunModeResolver.IsOperationalArgument(argument)).ToArray())
             .Build();
 
         IReadOnlyDictionary<string, ModelProviderConfiguration> providers = configuration

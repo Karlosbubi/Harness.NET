@@ -25,6 +25,7 @@ using Harness.DataAccess.Secrets;
 using Harness.DataAccess.Workspaces;
 using Harness.DataAccess.Worktrees;
 using Harness.DataAccess.Workflows;
+using Harness.Host;
 using Harness.Host.Configuration;
 using Harness.Presentation.Terminal;
 using Microsoft.Extensions.DependencyInjection;
@@ -120,7 +121,10 @@ builder.Services.AddSingleton<IDashboardService, ConversationDashboardService>()
 builder.Services.AddSingleton<ITerminalShell, TerminalGuiShell>();
 
 using IHost host = builder.Build();
-using CancellationTokenSource shutdown = new();
+IHostApplicationLifetime applicationLifetime =
+    host.Services.GetRequiredService<IHostApplicationLifetime>();
+using CancellationTokenSource shutdown = CancellationTokenSource.CreateLinkedTokenSource(
+    applicationLifetime.ApplicationStopping);
 ConsoleCancelEventHandler cancelHandler = (_, eventArgs) =>
 {
     eventArgs.Cancel = true;
@@ -141,14 +145,21 @@ try
         database.SchemaVersion,
         database.DatabasePath);
 
-    bool noUi = args.Contains("--no-ui", StringComparer.Ordinal);
-    if (!noUi && !Console.IsInputRedirected && !Console.IsOutputRedirected)
+    HostRunMode runMode = HostRunModeResolver.Resolve(
+        args,
+        Console.IsInputRedirected,
+        Console.IsOutputRedirected);
+    if (runMode is HostRunMode.Interactive)
     {
         await host.Services.GetRequiredService<ITerminalShell>().RunAsync(shutdown.Token);
     }
     else
     {
         Console.WriteLine($"Harness.NET ready (schema {database.SchemaVersion})");
+        if (runMode is HostRunMode.WaitForShutdown)
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, shutdown.Token);
+        }
     }
 
     await host.StopAsync(CancellationToken.None);

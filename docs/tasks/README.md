@@ -32,7 +32,7 @@ passes and its documentation is current.
 | 009 | Done | Wrap Microsoft Agent Framework in agent roles | 001, 007 | Lead, implementer, and reviewer run behind Business Logic interfaces. |
 | 010 | Pending | Add tracked-text semantic indexing | 004, 007, 008 | Compatible index partitions rebuild and retrieve eligible repository chunks. |
 | 011 | Done | Run a checkpointed fake workflow through the TUI | 004, 006, 009 | A persisted fake run pauses, resumes, and exposes expandable evidence. |
-| 012 | Pending | Publish the Linux x64 walking skeleton | 011 | A self-contained binary starts with correct XDG storage and graceful shutdown. |
+| 012 | Done | Publish the Linux x64 walking skeleton | 011 | A self-contained binary starts with correct XDG storage and graceful shutdown. |
 
 ## v1.0 usability backlog
 
@@ -55,7 +55,7 @@ but the end-user workflow is not complete.
 | 023 | Partial | Review evidence and accept results | Tool requests/results are durable and queryable, but there is no independent review loop or commit approval. | Diff, tests, tool evidence, review findings, cycle caps, and explicit commit approval work end to end. |
 | 024 | Missing | Retrieve relevant repository context | The embedding adapter exists but no tracked-text index does. | Eligible Git-tracked text is chunked, partitioned by embedding configuration, rebuilt, searched, and filtered by policy. |
 | 025 | Partial | Use remote models under a cost cap | Secret storage exists; OpenRouter, routing, pricing, and reconciliation do not. | Remote use requires approval, streams through the provider boundary, and enforces estimated plus reconciled per-goal caps. |
-| 026 | Partial | Operate and distribute v1.0 reliably | Logging and cancellation exist, but packaging, upgrades, backup/export, and recovery tests do not. | A self-contained Linux x64 release passes clean-install, migration, outage, cancellation, recovery, and representative-repository acceptance tests. |
+| 026 | Partial | Operate and distribute v1.0 reliably | A verified self-contained walking-skeleton package exists, but upgrades, backup/export, hardening, and production recovery acceptance remain. | A self-contained Linux x64 release passes clean-install, migration, outage, cancellation, recovery, and representative-repository acceptance tests. |
 
 ### v1.0 release gate
 
@@ -104,6 +104,12 @@ Harness.NET state auditable.
   boundary, independent review completion, and stale-transition rejection. The TUI
   Workflow menu starts or resumes the run and expands full checkpoint evidence in a
   scrollable view through presentation-neutral Business Logic contracts.
+- Task 012 has a checked-in linux-x64 publish profile and repeatable lifecycle
+  verifier. The compressed self-contained executable starts with `PATH` and
+  `DOTNET_ROOT` pointing to nonexistent locations, loads the shipped XML defaults,
+  creates its database and logs only under isolated XDG data/state roots, and exits
+  with status zero after SIGTERM. Native libraries remain beside the executable so
+  the runtime does not extract bundle content into a non-XDG home directory.
 - The XML-selected `MainLlm` was verified through the composed TUI against Ollama;
   it persisted `HARNESS_XML_OK` with 34 input and 7 output tokens.
 - Task 015 has deterministic Git inspection, SQLite registry, single-active-workspace

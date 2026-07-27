@@ -62,3 +62,10 @@ Linux Secret Service with narrowly scoped environment fallback.
 Each child of `Framework/Rules` is a named typed rule. Higher precedence values are
 more specific. A locked effective rule blocks later overrides; conflicting values at
 the same precedence make the effective framework invalid until resolved.
+
+## Operational modes
+
+`--no-ui` initializes and migrates Harness.NET, prints its ready/schema status, and
+exits. `--wait-for-shutdown` performs the same non-interactive initialization and
+then waits for SIGINT or SIGTERM. These flags are host operations rather than
+configuration keys and are removed before command-line configuration binding.

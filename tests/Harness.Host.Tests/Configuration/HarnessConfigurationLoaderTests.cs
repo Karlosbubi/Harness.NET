@@ -60,6 +60,14 @@ public sealed class HarnessConfigurationLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Ignores_host_operational_arguments_during_configuration_binding()
+    {
+        HarnessConfiguration configuration = Load("--no-ui", "--wait-for-shutdown");
+
+        Assert.Equal("default", configuration.Conversation.Id);
+    }
+
+    [Fact]
     public void Rejects_route_to_unknown_provider()
     {
         InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>

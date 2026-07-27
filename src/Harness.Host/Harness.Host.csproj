@@ -13,7 +13,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="harness.xml" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="harness.xml"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

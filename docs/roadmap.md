@@ -74,6 +74,10 @@ Exit evidence: accepted framework and architecture decision records.
 - Completed: a deterministic walking-skeleton workflow persists every safe boundary
   in SQLite, pauses after the lead plan, resumes implementation and review after a
   restart, and exposes full checkpoint evidence through the adaptive TUI.
+- Completed: a repeatable linux-x64 publish profile produces a self-contained,
+  compressed executable with external native libraries and shipped XML defaults.
+  The artifact starts without an installed .NET runtime, uses isolated XDG storage,
+  and shuts down cleanly on SIGTERM.
 - Connect OpenRouter and add typed tool-call mapping behind the same boundary.
 
 Exit evidence: clean build, architecture diagnostics, deterministic tests, and a
@@ -102,7 +106,8 @@ committed only after approval.
 - Add opt-in Ollama behavioral evaluations and regression datasets.
 - Exercise large repositories, index rebuilds, dirty bases, conflicts, cancellations,
   model outages, budget exhaustion, and corrupted/interrupted state.
-- Publish a self-contained Linux x64 release using XDG directories.
+- Harden the self-contained Linux x64 package with clean-install, upgrade,
+  backup/export, and recovery acceptance coverage.
 - Add other platforms, Avalonia, or gRPC only through existing Business Logic
   contracts and only when a concrete workflow justifies them.
 
