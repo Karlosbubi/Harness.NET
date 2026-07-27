@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using Harness.BusinessLogic.Dashboard;
+using Harness.BusinessLogic.Workspaces;
 using Terminal.Gui.App;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
@@ -14,11 +15,14 @@ internal sealed class HarnessWindow : Window
 
     private readonly IApplication application;
     private readonly IDashboardService dashboardService;
+    private readonly IWorkspaceService workspaceService;
     private readonly CancellationToken cancellationToken;
     private readonly FrameView workspaceFrame;
     private readonly FrameView activityFrame;
     private readonly FrameView detailsFrame;
     private readonly Label workspaceText;
+    private readonly Button manageWorkspaces;
+    private readonly Button trustWorkspace;
     private readonly Label activityText;
     private readonly Label detailsText;
     private readonly ListView modelList;
@@ -28,15 +32,20 @@ internal sealed class HarnessWindow : Window
     private readonly Button send;
     private readonly Label status;
     private string[] availableModelIds = [];
+    private WorkspaceView? activeWorkspace;
 
     internal HarnessWindow(
         IApplication application,
         IDashboardService dashboardService,
+        IWorkspaceService workspaceService,
         DashboardSnapshot initialSnapshot,
+        WorkspaceView? activeWorkspace,
         CancellationToken cancellationToken)
     {
         this.application = application;
         this.dashboardService = dashboardService;
+        this.workspaceService = workspaceService;
+        this.activeWorkspace = activeWorkspace;
         this.cancellationToken = cancellationToken;
         Title = "Harness.NET";
 
@@ -45,6 +54,25 @@ internal sealed class HarnessWindow : Window
         detailsText = CreateContentLabel();
 
         workspaceFrame = CreateFrame("Workspace", workspaceText);
+        workspaceText.Height = Dim.Fill(3);
+        manageWorkspaces = new()
+        {
+            Title = "_Manage",
+            X = 0,
+            Y = Pos.AnchorEnd(2),
+            Width = 11,
+        };
+        trustWorkspace = new()
+        {
+            Title = "_Trust",
+            X = Pos.Right(manageWorkspaces) + 1,
+            Y = Pos.AnchorEnd(2),
+            Width = 10,
+            Enabled = activeWorkspace is { IsTrusted: false },
+        };
+        manageWorkspaces.Accepted += async (_, _) => await ManageWorkspacesAsync(initialSnapshot);
+        trustWorkspace.Accepted += async (_, _) => await TrustWorkspaceAsync(initialSnapshot);
+        workspaceFrame.Add(manageWorkspaces, trustWorkspace);
         activityFrame = CreateFrame("Activity", activityText);
         detailsFrame = CreateFrame("Plan | Diff | Evidence", detailsText);
         detailsText.Height = Dim.Fill(7);
@@ -158,14 +186,7 @@ internal sealed class HarnessWindow : Window
 
     private void Render(DashboardSnapshot snapshot)
     {
-        workspaceText.Text = string.Join('\n',
-            snapshot.Workspace.Name,
-            snapshot.Workspace.Path,
-            string.Empty,
-            $"Branch  {snapshot.Workspace.Branch}",
-            $"Trust   {snapshot.Workspace.Trust}",
-            string.Empty,
-            snapshot.Goal);
+        RenderWorkspace(snapshot);
 
         activityText.Text = string.Join(
             "\n\n",
@@ -198,6 +219,93 @@ internal sealed class HarnessWindow : Window
         }
 
         status.Text = $"{snapshot.Status} | {snapshot.Budget}";
+    }
+
+    private void RenderWorkspace(DashboardSnapshot snapshot)
+    {
+        if (activeWorkspace is null)
+        {
+            workspaceText.Text = string.Join('\n',
+                "No workspace selected",
+                snapshot.Workspace.Path,
+                string.Empty,
+                snapshot.Goal);
+            trustWorkspace.Enabled = false;
+            return;
+        }
+
+        workspaceText.Text = string.Join('\n',
+            activeWorkspace.Name,
+            activeWorkspace.RootPath,
+            string.Empty,
+            $"Entry   {Path.GetFileName(activeWorkspace.EntryPoint)}",
+            $"Branch  {activeWorkspace.Branch}",
+            $"State   {(activeWorkspace.IsDirty ? "dirty" : "clean")}",
+            $"Trust   {(activeWorkspace.IsTrusted ? "trusted" : "untrusted")}",
+            string.Empty,
+            snapshot.Goal);
+        trustWorkspace.Enabled = !activeWorkspace.IsTrusted;
+    }
+
+    private async Task ManageWorkspacesAsync(DashboardSnapshot snapshot)
+    {
+        try
+        {
+            IReadOnlyList<WorkspaceView> registered =
+                await workspaceService.ListAsync(cancellationToken);
+            using WorkspaceDialog dialog = new(
+                application,
+                workspaceService,
+                registered,
+                activeWorkspace?.RootPath ?? snapshot.Workspace.Path,
+                cancellationToken);
+            await application.RunAsync(dialog, cancellationToken);
+            if (dialog.Result is not null)
+            {
+                activeWorkspace = dialog.Result;
+                application.Invoke(() => RenderWorkspace(snapshot));
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception)
+        {
+            application.Invoke(() => status.Text = $"Workspace command failed | {exception.Message}");
+        }
+    }
+
+    private async Task TrustWorkspaceAsync(DashboardSnapshot snapshot)
+    {
+        if (activeWorkspace is null || activeWorkspace.IsTrusted)
+        {
+            return;
+        }
+
+        int? choice = MessageBox.Query(
+            application,
+            "Trust workspace",
+            $"Trust '{activeWorkspace.Name}' for repository-local build and test execution?",
+            "_Trust",
+            "_Cancel");
+        if (choice != 0)
+        {
+            return;
+        }
+
+        try
+        {
+            WorkspaceResult result = await workspaceService.SetTrustAsync(
+                activeWorkspace.Id,
+                isTrusted: true,
+                cancellationToken);
+            activeWorkspace = result.Workspace;
+            application.Invoke(() => RenderWorkspace(snapshot));
+        }
+        catch (Exception exception)
+        {
+            application.Invoke(() => status.Text = $"Trust failed | {exception.Message}");
+        }
     }
 
     private async Task RefreshProviderAsync() => await RunProviderCommandAsync(

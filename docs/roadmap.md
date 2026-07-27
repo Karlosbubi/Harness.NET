@@ -35,7 +35,8 @@ Exit evidence: accepted framework and architecture decision records.
   main/reviewer/tool routing; only the main route is consumed today.
 - In progress: Git-backed workspace inspection, durable registration, active
   selection, entry-point validation, and explicit trust exist behind Business Logic
-  contracts; TUI exposure remains.
+  contracts. A compact/wide TUI modal exposes registration and selection with a
+  separate trust confirmation; narrow access and context binding remain.
 - Connect OpenRouter and add typed tool-call mapping behind the same boundary.
 - Prove one checkpointed fake workflow through the TUI.
 
