@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Text;
+using Harness.BusinessLogic.Workspaces;
 using Harness.DataAccess.Conversations;
 using Harness.DataAccess.Models;
 
@@ -8,6 +9,7 @@ namespace Harness.BusinessLogic.Dashboard;
 internal sealed class ConversationDashboardService(
     IConversationStore conversationStore,
     IModelProvider modelProvider,
+    IWorkspaceService workspaceService,
     ConversationOptions options) : IDashboardService
 {
     private ProviderSnapshot providerSnapshot = new(
@@ -27,7 +29,8 @@ internal sealed class ConversationDashboardService(
             cancellationToken);
         IReadOnlyList<ConversationMessage> messages = await conversationStore
             .GetMessagesAsync(conversation.Id, cancellationToken);
-        return CreateSnapshot(conversation, messages, transient: null, "Ready");
+        WorkspaceSummary workspace = await GetWorkspaceSummaryAsync(cancellationToken);
+        return CreateSnapshot(conversation, messages, workspace, transient: null, "Ready");
     }
 
     public async ValueTask<DashboardSnapshot> RefreshProviderAsync(
@@ -37,10 +40,11 @@ internal sealed class ConversationDashboardService(
         await DiscoverModelsAsync(conversation.Model, cancellationToken);
         IReadOnlyList<ConversationMessage> messages = await conversationStore
             .GetMessagesAsync(conversation.Id, cancellationToken);
+        WorkspaceSummary workspace = await GetWorkspaceSummaryAsync(cancellationToken);
         string status = providerSnapshot.Error is null
             ? $"Provider ready: {providerSnapshot.Models.Count} model(s)"
             : $"Provider unavailable: {providerSnapshot.Error}";
-        return CreateSnapshot(conversation, messages, transient: null, status);
+        return CreateSnapshot(conversation, messages, workspace, transient: null, status);
     }
 
     public async ValueTask<DashboardSnapshot> SelectModelAsync(
@@ -57,11 +61,13 @@ internal sealed class ConversationDashboardService(
             available => string.Equals(available.Id, model, StringComparison.Ordinal));
         IReadOnlyList<ConversationMessage> messages = await conversationStore
             .GetMessagesAsync(conversation.Id, cancellationToken);
+        WorkspaceSummary workspace = await GetWorkspaceSummaryAsync(cancellationToken);
         if (selected is null)
         {
             return CreateSnapshot(
                 conversation,
                 messages,
+                workspace,
                 transient: null,
                 $"Model unavailable: {model}");
         }
@@ -74,6 +80,7 @@ internal sealed class ConversationDashboardService(
         return CreateSnapshot(
             conversation,
             messages,
+            workspace,
             transient: null,
             $"Selected model: {selected.Id}");
     }
@@ -92,6 +99,7 @@ internal sealed class ConversationDashboardService(
             options.Title,
             options.Model,
             cancellationToken);
+        WorkspaceSummary workspace = await GetWorkspaceSummaryAsync(cancellationToken);
         await conversationStore.AppendMessageAsync(
             conversation.Id,
             "user",
@@ -102,7 +110,12 @@ internal sealed class ConversationDashboardService(
         IReadOnlyList<ConversationMessage> messages = await conversationStore
             .GetMessagesAsync(conversation.Id, cancellationToken);
 
-        yield return CreateSnapshot(conversation, messages, transient: null, "Waiting for model");
+        yield return CreateSnapshot(
+            conversation,
+            messages,
+            workspace,
+            transient: null,
+            "Waiting for model");
 
         ChatRequest request = new(
             conversation.Model,
@@ -135,6 +148,7 @@ internal sealed class ConversationDashboardService(
             yield return CreateSnapshot(
                 conversation,
                 messages,
+                workspace,
                 CreateTransientActivity(content, thinking, error),
                 state,
                 usage);
@@ -170,6 +184,7 @@ internal sealed class ConversationDashboardService(
         yield return CreateSnapshot(
             conversation,
             messages,
+            workspace,
             transient: null,
             error is null ? "Ready" : $"Provider error: {error.Code}");
     }
@@ -177,6 +192,7 @@ internal sealed class ConversationDashboardService(
     private DashboardSnapshot CreateSnapshot(
         Conversation conversation,
         IReadOnlyList<ConversationMessage> messages,
+        WorkspaceSummary workspace,
         ActivityItem? transient,
         string status,
         Harness.DataAccess.Models.ProviderUsage? currentUsage = null)
@@ -196,11 +212,7 @@ internal sealed class ConversationDashboardService(
                            (currentUsage?.OutputTokens ?? 0);
 
         return new(
-            new(
-                Path.GetFileName(options.WorkspacePath.TrimEnd(Path.DirectorySeparatorChar)),
-                options.WorkspacePath,
-                "unregistered",
-                "Not trusted"),
+            workspace,
             conversation.Title,
             activities,
             [$"Model: {conversation.Model}", $"Messages: {messages.Count}"],
@@ -209,6 +221,23 @@ internal sealed class ConversationDashboardService(
             providerSnapshot with { SelectedModel = conversation.Model },
             status,
             $"Local model | {inputTokens} input | {outputTokens} output tokens");
+    }
+
+    private async ValueTask<WorkspaceSummary> GetWorkspaceSummaryAsync(
+        CancellationToken cancellationToken)
+    {
+        WorkspaceView? active = await workspaceService.GetActiveAsync(cancellationToken);
+        return active is null
+            ? new(
+                Path.GetFileName(options.WorkspacePath.TrimEnd(Path.DirectorySeparatorChar)),
+                options.WorkspacePath,
+                "unregistered",
+                "Not trusted")
+            : new(
+                active.Name,
+                active.RootPath,
+                active.Branch + (active.IsDirty ? " (dirty)" : ""),
+                active.IsTrusted ? "Trusted" : "Not trusted");
     }
 
     private ValueTask<Conversation> GetConversationAsync(CancellationToken cancellationToken) =>

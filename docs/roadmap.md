@@ -36,7 +36,8 @@ Exit evidence: accepted framework and architecture decision records.
 - In progress: Git-backed workspace inspection, durable registration, active
   selection, entry-point validation, and explicit trust exist behind Business Logic
   contracts. A compact/wide TUI modal exposes registration and selection with a
-  separate trust confirmation; narrow access and context binding remain.
+  separate trust confirmation, and the dashboard consumes the active workspace;
+  narrow access remains.
 - Connect OpenRouter and add typed tool-call mapping behind the same boundary.
 - Prove one checkpointed fake workflow through the TUI.
 

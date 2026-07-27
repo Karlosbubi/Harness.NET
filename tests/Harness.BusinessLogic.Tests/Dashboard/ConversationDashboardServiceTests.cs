@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using Harness.BusinessLogic.Dashboard;
+using Harness.BusinessLogic.Workspaces;
 using Harness.DataAccess.Conversations;
 using Harness.DataAccess.Models;
 
@@ -130,12 +131,73 @@ public sealed class ConversationDashboardServiceTests
         Assert.Equal("tool-model", reloaded.Provider.SelectedModel);
     }
 
+    [Fact]
+    public async Task Uses_the_active_workspace_in_dashboard_snapshots()
+    {
+        WorkspaceView activeWorkspace = new(
+            "workspace-id",
+            "/workspace/active",
+            "Active",
+            "/workspace/active/Active.slnx",
+            IsTrusted: true,
+            IsActive: true,
+            Branch: "feature/workspace",
+            IsDirty: true);
+        ConversationDashboardService service = CreateService(
+            new FakeConversationStore(),
+            new FakeModelProvider(null, []),
+            activeWorkspace);
+
+        DashboardSnapshot snapshot = await service.GetSnapshotAsync();
+
+        Assert.Equal("Active", snapshot.Workspace.Name);
+        Assert.Equal("/workspace/active", snapshot.Workspace.Path);
+        Assert.Equal("feature/workspace (dirty)", snapshot.Workspace.Branch);
+        Assert.Equal("Trusted", snapshot.Workspace.Trust);
+    }
+
     private static ConversationDashboardService CreateService(
         IConversationStore store,
-        IModelProvider provider) => new(
+        IModelProvider provider,
+        WorkspaceView? activeWorkspace = null) => new(
             store,
             provider,
+            new FakeWorkspaceService(activeWorkspace),
             new("default", "Conversation", "model", "/workspace/sample"));
+
+    private sealed class FakeWorkspaceService(WorkspaceView? activeWorkspace)
+        : IWorkspaceService
+    {
+        public ValueTask<WorkspaceResult> InspectAsync(
+            string path,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new WorkspaceResult(null, [], "Not implemented"));
+
+        public ValueTask<WorkspaceResult> RegisterAsync(
+            string path,
+            string entryPoint,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new WorkspaceResult(null, [], "Not implemented"));
+
+        public ValueTask<WorkspaceResult> SetTrustAsync(
+            string workspaceId,
+            bool isTrusted,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new WorkspaceResult(null, [], "Not implemented"));
+
+        public ValueTask<IReadOnlyList<WorkspaceView>> ListAsync(
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<IReadOnlyList<WorkspaceView>>([]);
+
+        public ValueTask<WorkspaceView?> GetActiveAsync(
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(activeWorkspace);
+
+        public ValueTask<WorkspaceView> SelectAsync(
+            string workspaceId,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromException<WorkspaceView>(new NotSupportedException());
+    }
 
     private sealed class FakeConversationStore : IConversationStore
     {

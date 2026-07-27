@@ -44,7 +44,7 @@ but the end-user workflow is not complete.
 |---|---|---|---|---|
 | 013 | Done | Hold a durable local-model conversation | Successful live inference still depends on the configured server being reachable. | TUI instructions stream through Business Logic to Ollama, persist, reload after restart, and show actionable provider failures. |
 | 014 | Partial | Configure and verify model providers | Named XML modules and per-role routing validate at startup, but only Ollama/MainLlm is consumed and TUI model selection remains conversation-wide and wide-layout only. | Configuration validates endpoints, discovers capabilities, selects models per role, and reports health without exposing secrets. |
-| 015 | Partial | Register and trust a .NET workspace | The TUI supports inspection, registration, active selection, and explicit trust in compact/wide layouts, but management is inaccessible in narrow layout and conversation context still uses its configured path. | A user can add a Git repository, select a solution/project, explicitly trust it, reopen it, and see dirty/base state. |
+| 015 | Partial | Register and trust a .NET workspace | The TUI supports inspection, registration, active selection, explicit trust, reopening, and dashboard context in compact/wide layouts, but management is inaccessible in narrow layout. | A user can add a Git repository, select a solution/project, explicitly trust it, reopen it, and see dirty/base state. |
 | 016 | Missing | Load the user's engineering framework | Preferences exist only in Harness.NET's design documents. | Global, repository, and private framework layers load with precedence, locks, validation, and an inspectable effective view. |
 | 017 | Missing | Let agents inspect safely | No repository, Git, or .NET inspection tools are available to agents. | Typed, path-confined read/search/status/diff/project/build-information tools run only in a trusted workspace and return bounded records. |
 | 018 | Missing | Let agents implement and verify | No editing, build, test, restore, or mutation policy exists. | Approved runs can use typed edit/build/test tools with cancellation, output limits, correlation, and separate restore/network approval. |
@@ -98,4 +98,5 @@ Harness.NET state auditable.
 - Task 015 has deterministic Git inspection, SQLite registry, single-active-workspace
   selection, entry-point validation, and explicit trust-transition coverage. The TUI
   now provides a workspace-management modal and separate trust confirmation; narrow
-  access and conversation-context binding remain open.
+  access remains open. Dashboard snapshots resolve active workspace context once per
+  operation and retain a stable value throughout streaming.
