@@ -1,4 +1,5 @@
 using Harness.BusinessLogic.Dashboard;
+using Harness.BusinessLogic.Framework;
 using Harness.BusinessLogic.Workspaces;
 using Harness.DataAccess.Configuration;
 using Harness.DataAccess.Conversations;
@@ -32,6 +33,7 @@ builder.Services.AddSingleton<IConversationStore, SqliteConversationStore>();
 builder.Services.AddSingleton<IWorkspaceInspector, GitWorkspaceInspector>();
 builder.Services.AddSingleton<IWorkspaceStore, SqliteWorkspaceStore>();
 builder.Services.AddSingleton<IWorkspaceService, WorkspaceService>();
+builder.Services.AddSingleton<IFrameworkResolver, FrameworkResolver>();
 foreach (ModelProviderConfiguration provider in configuration.Providers.Values)
 {
     builder.Services.AddKeyedSingleton<IModelProvider>(

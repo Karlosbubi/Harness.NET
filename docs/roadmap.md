@@ -38,6 +38,9 @@ Exit evidence: accepted framework and architecture decision records.
   contracts. A compact/wide TUI modal exposes registration and selection with a
   separate trust confirmation, and the dashboard consumes the active workspace;
   a top-level menu preserves access in narrow layouts.
+- In progress: typed framework rules resolve precedence, provenance, locks,
+  validation failures, and same-level conflicts; XDG/repository/private source
+  loading and effective-view presentation remain.
 - Connect OpenRouter and add typed tool-call mapping behind the same boundary.
 - Prove one checkpointed fake workflow through the TUI.
 
