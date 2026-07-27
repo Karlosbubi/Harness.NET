@@ -1,7 +1,9 @@
 using System.Collections.ObjectModel;
 using Harness.BusinessLogic.Dashboard;
+using Harness.BusinessLogic.Framework;
 using Harness.BusinessLogic.Workspaces;
 using Terminal.Gui.App;
+using Terminal.Gui.Editor;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
@@ -17,6 +19,7 @@ internal sealed class HarnessWindow : Window
     private readonly IApplication application;
     private readonly IDashboardService dashboardService;
     private readonly IWorkspaceService workspaceService;
+    private readonly IFrameworkService frameworkService;
     private readonly CancellationToken cancellationToken;
     private readonly FrameView workspaceFrame;
     private readonly FrameView activityFrame;
@@ -41,6 +44,7 @@ internal sealed class HarnessWindow : Window
         IApplication application,
         IDashboardService dashboardService,
         IWorkspaceService workspaceService,
+        IFrameworkService frameworkService,
         DashboardSnapshot initialSnapshot,
         WorkspaceView? activeWorkspace,
         CancellationToken cancellationToken)
@@ -48,6 +52,7 @@ internal sealed class HarnessWindow : Window
         this.application = application;
         this.dashboardService = dashboardService;
         this.workspaceService = workspaceService;
+        this.frameworkService = frameworkService;
         this.activeWorkspace = activeWorkspace;
         latestSnapshot = initialSnapshot;
         this.cancellationToken = cancellationToken;
@@ -90,7 +95,14 @@ internal sealed class HarnessWindow : Window
             Enabled = activeWorkspace is { IsTrusted: false },
         };
         MenuBar menuBar = new(
-            [new MenuBarItem("_Workspace", [manageWorkspacesMenuItem, trustWorkspaceMenuItem])]);
+        [
+            new MenuBarItem("_Workspace", [manageWorkspacesMenuItem, trustWorkspaceMenuItem]),
+            new MenuBarItem("_Framework",
+            [
+                new MenuItem("_Inspect effective", Key.Empty, () => _ = InspectFrameworkAsync()),
+                new MenuItem("_Edit private overlay", Key.Empty, () => _ = EditPrivateOverlayAsync()),
+            ]),
+        ]);
         activityFrame = CreateFrame("Activity", activityText);
         detailsFrame = CreateFrame("Plan | Diff | Evidence", detailsText);
         detailsText.Height = Dim.Fill(7);
@@ -326,6 +338,115 @@ internal sealed class HarnessWindow : Window
         catch (Exception exception)
         {
             application.Invoke(() => status.Text = $"Trust failed | {exception.Message}");
+        }
+    }
+
+    private async Task InspectFrameworkAsync()
+    {
+        if (activeWorkspace is null)
+        {
+            MessageBox.Query(
+                application,
+                "Framework",
+                "Select a workspace before inspecting its effective framework.",
+                "_Close");
+            return;
+        }
+
+        try
+        {
+            FrameworkSnapshot snapshot = await frameworkService.GetEffectiveAsync(
+                activeWorkspace.Id,
+                activeWorkspace.RootPath,
+                cancellationToken);
+            using Dialog dialog = new()
+            {
+                Title = "Effective framework",
+                Width = Dim.Percent(90),
+                Height = Dim.Percent(85),
+            };
+            Editor content = new()
+            {
+                Text = FrameworkTextFormatter.Format(snapshot),
+                ReadOnly = true,
+                X = 0,
+                Y = 0,
+                Width = Dim.Fill(),
+                Height = Dim.Fill(),
+                ViewportSettings = ViewportSettingsFlags.HasVerticalScrollBar |
+                                   ViewportSettingsFlags.HasHorizontalScrollBar,
+            };
+            dialog.Add(content);
+            dialog.AddButton(new Button { Title = "_Close" });
+            await application.RunAsync(dialog, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception)
+        {
+            application.Invoke(() => status.Text = $"Framework failed | {exception.Message}");
+        }
+    }
+
+    private async Task EditPrivateOverlayAsync()
+    {
+        if (activeWorkspace is null)
+        {
+            MessageBox.Query(
+                application,
+                "Framework",
+                "Select a workspace before editing its private overlay.",
+                "_Close");
+            return;
+        }
+
+        try
+        {
+            FrameworkSnapshot snapshot = await frameworkService.GetEffectiveAsync(
+                activeWorkspace.Id,
+                activeWorkspace.RootPath,
+                cancellationToken);
+            string current = snapshot.Documents
+                .FirstOrDefault(document => document.Layer == "private-workspace")
+                ?.Content ?? string.Empty;
+            using Dialog dialog = new()
+            {
+                Title = "Private workspace overlay",
+                Width = Dim.Percent(90),
+                Height = Dim.Percent(85),
+            };
+            Editor editor = new()
+            {
+                Text = current,
+                X = 0,
+                Y = 0,
+                Width = Dim.Fill(),
+                Height = Dim.Fill(),
+                ViewportSettings = ViewportSettingsFlags.HasVerticalScrollBar,
+            };
+            dialog.Add(editor);
+            dialog.AddButton(new Button { Title = "_Cancel" });
+            dialog.AddButton(new Button { Title = "_Save" });
+            await application.RunAsync(dialog, cancellationToken);
+            if (dialog.Result != 1)
+            {
+                return;
+            }
+
+            await frameworkService.SetPrivateOverlayAsync(
+                activeWorkspace.Id,
+                activeWorkspace.RootPath,
+                editor.Text?.ToString(),
+                cancellationToken);
+            application.Invoke(() => status.Text = "Private framework overlay updated");
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception)
+        {
+            application.Invoke(() => status.Text = $"Framework failed | {exception.Message}");
         }
     }
 

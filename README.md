@@ -17,6 +17,8 @@ submitted in the TUI are persisted before inference, streamed through Business L
 and reloaded from SQLite on restart. Provider failures are recorded in the transcript.
 The workspace modal can also inspect, register, select, and explicitly trust a
 Git-backed .NET workspace; the Workspace menu remains available in narrow layouts.
+The Framework menu shows the resolved engineering rules and guidance with locks,
+provenance, privacy, and validation issues, and edits the private workspace overlay.
 Repository tools and multi-agent execution are not implemented yet.
 
 Start with:

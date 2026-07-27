@@ -38,12 +38,12 @@ Exit evidence: accepted framework and architecture decision records.
   contracts. A compact/wide TUI modal exposes registration and selection with a
   separate trust confirmation, and the dashboard consumes the active workspace;
   a top-level menu preserves access in narrow layouts.
-- In progress: typed framework rules resolve precedence, provenance, locks,
+- Completed: typed framework rules resolve precedence, provenance, locks,
   validation failures, and same-level conflicts. Bounded XDG `framework.md` and
   repository `AGENTS.md` loading preserve provenance and privacy, while private
   overlays persist in SQLite. Business Logic composes these with resolved rules and
-  source failures, and named XML rules supply typed precedence and locks;
-  effective-view presentation remains.
+  source failures, and named XML rules supply typed precedence and locks. A
+  top-level TUI menu exposes the effective view and private-overlay editor.
 - Connect OpenRouter and add typed tool-call mapping behind the same boundary.
 - Prove one checkpointed fake workflow through the TUI.
 

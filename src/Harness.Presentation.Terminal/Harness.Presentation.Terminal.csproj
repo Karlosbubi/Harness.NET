@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
     <PackageReference Include="Terminal.Gui" />
+    <PackageReference Include="Terminal.Gui.Editor" />
   </ItemGroup>
 
   <ItemGroup>

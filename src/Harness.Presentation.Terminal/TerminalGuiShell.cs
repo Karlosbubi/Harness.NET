@@ -1,4 +1,5 @@
 using Harness.BusinessLogic.Dashboard;
+using Harness.BusinessLogic.Framework;
 using Harness.BusinessLogic.Workspaces;
 using Terminal.Gui.App;
 
@@ -6,7 +7,8 @@ namespace Harness.Presentation.Terminal;
 
 internal sealed class TerminalGuiShell(
     IDashboardService dashboardService,
-    IWorkspaceService workspaceService) : ITerminalShell
+    IWorkspaceService workspaceService,
+    IFrameworkService frameworkService) : ITerminalShell
 {
     public async ValueTask RunAsync(CancellationToken cancellationToken = default)
     {
@@ -19,6 +21,7 @@ internal sealed class TerminalGuiShell(
             application,
             dashboardService,
             workspaceService,
+            frameworkService,
             snapshot,
             activeWorkspace,
             cancellationToken);
