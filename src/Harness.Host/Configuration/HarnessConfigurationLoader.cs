@@ -42,7 +42,24 @@ internal static class HarnessConfigurationLoader
                 Required(configuration, "Conversation:Id"),
                 Required(configuration, "Conversation:Title"),
                 Path.GetFullPath(Required(configuration, "Conversation:WorkspacePath"))),
-            new(ParseOptionalUri(configuration["Observability:OtlpEndpoint"])));
+            new(ParseOptionalUri(configuration["Observability:OtlpEndpoint"])),
+            ParseFramework(configuration));
+    }
+
+    private static FrameworkConfiguration ParseFramework(IConfiguration configuration)
+    {
+        FrameworkRuleConfiguration[] rules = configuration
+            .GetSection("Framework:Rules")
+            .GetChildren()
+            .Select(section => new FrameworkRuleConfiguration(
+                section.Key,
+                Required(section, "Value"),
+                RequiredNonNegativeInt(section, "Precedence"),
+                Required(section, "Layer"),
+                ParseBoolean(section, "Locked"),
+                $"harness.xml:Framework:Rules:{section.Key}"))
+            .ToArray();
+        return new(rules);
     }
 
     private static ModelProviderConfiguration ParseProvider(IConfigurationSection section)
@@ -92,6 +109,26 @@ internal static class HarnessConfigurationLoader
             ? parsed
             : throw new InvalidOperationException(
                 $"Configuration value '{key}' must be a positive integer.");
+    }
+
+    private static int RequiredNonNegativeInt(IConfiguration configuration, string key)
+    {
+        string value = Required(configuration, key);
+        return int.TryParse(value, out int parsed) && parsed >= 0
+            ? parsed
+            : throw new InvalidOperationException(
+                $"Configuration value '{key}' must be a non-negative integer.");
+    }
+
+    private static bool ParseBoolean(IConfiguration configuration, string key)
+    {
+        string? value = configuration[key];
+        return string.IsNullOrWhiteSpace(value)
+            ? false
+            : bool.TryParse(value, out bool parsed)
+                ? parsed
+                : throw new InvalidOperationException(
+                    $"Configuration value '{key}' must be true or false.");
     }
 
     private static void ValidateRoute(

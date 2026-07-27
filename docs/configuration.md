@@ -30,6 +30,16 @@ example. A user override may contain only the values it changes:
     <Reviewer>LocalCoding</Reviewer>
     <ToolLlm>LocalCoding</ToolLlm>
   </Routing>
+  <Framework>
+    <Rules>
+      <ApprovalPolicy>
+        <Value>explicit</Value>
+        <Precedence>0</Precedence>
+        <Layer>global</Layer>
+        <Locked>true</Locked>
+      </ApprovalPolicy>
+    </Rules>
+  </Framework>
 </Harness>
 ```
 
@@ -48,3 +58,7 @@ dotnet run --project src/Harness.Host/Harness.Host.csproj
 
 Provider credentials do not belong in XML. They remain references resolved through
 Linux Secret Service with narrowly scoped environment fallback.
+
+Each child of `Framework/Rules` is a named typed rule. Higher precedence values are
+more specific. A locked effective rule blocks later overrides; conflicting values at
+the same precedence make the effective framework invalid until resolved.

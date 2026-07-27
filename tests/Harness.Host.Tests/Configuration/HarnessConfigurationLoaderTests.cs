@@ -19,6 +19,7 @@ public sealed class HarnessConfigurationLoaderTests : IDisposable
         Assert.Equal(new Uri("http://192.168.1.101:11434"), provider.Endpoint);
         Assert.Equal("gemma4:latest", provider.ChatModel);
         Assert.Equal(TimeSpan.FromMinutes(10), provider.RequestTimeout);
+        Assert.Empty(configuration.Framework.Rules);
     }
 
     [Fact]
@@ -65,6 +66,37 @@ public sealed class HarnessConfigurationLoaderTests : IDisposable
             Load("--Routing:MainLlm=Missing"));
 
         Assert.Contains("unknown provider 'Missing'", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Loads_named_typed_framework_rules_from_XDG_configuration()
+    {
+        Directory.CreateDirectory(ConfigDirectory);
+        File.WriteAllText(
+            Path.Combine(ConfigDirectory, "harness.xml"),
+            """
+            <?xml version="1.0" encoding="utf-8" ?>
+            <Harness>
+              <Framework>
+                <Rules>
+                  <ApprovalPolicy>
+                    <Value>explicit</Value>
+                    <Precedence>0</Precedence>
+                    <Layer>global</Layer>
+                    <Locked>true</Locked>
+                  </ApprovalPolicy>
+                </Rules>
+              </Framework>
+            </Harness>
+            """);
+
+        HarnessConfiguration configuration = Load();
+
+        FrameworkRuleConfiguration rule = Assert.Single(configuration.Framework.Rules);
+        Assert.Equal("ApprovalPolicy", rule.Key);
+        Assert.Equal("explicit", rule.Value);
+        Assert.True(rule.IsLocked);
+        Assert.Contains("ApprovalPolicy", rule.Source, StringComparison.Ordinal);
     }
 
     public void Dispose()

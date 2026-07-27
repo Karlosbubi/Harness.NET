@@ -42,7 +42,8 @@ Exit evidence: accepted framework and architecture decision records.
   validation failures, and same-level conflicts. Bounded XDG `framework.md` and
   repository `AGENTS.md` loading preserve provenance and privacy, while private
   overlays persist in SQLite. Business Logic composes these with resolved rules and
-  source failures; XML rule binding and effective-view presentation remain.
+  source failures, and named XML rules supply typed precedence and locks;
+  effective-view presentation remains.
 - Connect OpenRouter and add typed tool-call mapping behind the same boundary.
 - Prove one checkpointed fake workflow through the TUI.
 

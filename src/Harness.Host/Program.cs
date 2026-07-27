@@ -37,7 +37,15 @@ builder.Services.AddSingleton<IWorkspaceInspector, GitWorkspaceInspector>();
 builder.Services.AddSingleton<IWorkspaceStore, SqliteWorkspaceStore>();
 builder.Services.AddSingleton<IWorkspaceService, WorkspaceService>();
 builder.Services.AddSingleton<IFrameworkResolver, FrameworkResolver>();
-builder.Services.AddSingleton(new FrameworkOptions([]));
+builder.Services.AddSingleton(new FrameworkOptions(configuration.Framework.Rules
+    .Select(rule => new FrameworkRule(
+        rule.Key,
+        rule.Value,
+        rule.Precedence,
+        rule.Layer,
+        rule.IsLocked,
+        rule.Source))
+    .ToArray()));
 builder.Services.AddSingleton<IFrameworkService, FrameworkService>();
 foreach (ModelProviderConfiguration provider in configuration.Providers.Values)
 {

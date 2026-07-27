@@ -23,4 +23,7 @@
   <Observability>
     <OtlpEndpoint></OtlpEndpoint>
   </Observability>
+  <Framework>
+    <Rules></Rules>
+  </Framework>
 </Harness>

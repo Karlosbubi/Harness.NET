@@ -4,7 +4,8 @@ internal readonly record struct HarnessConfiguration(
     IReadOnlyDictionary<string, ModelProviderConfiguration> Providers,
     ProviderRoutingConfiguration Routing,
     ConversationConfiguration Conversation,
-    ObservabilityConfiguration Observability);
+    ObservabilityConfiguration Observability,
+    FrameworkConfiguration Framework);
 
 internal readonly record struct ModelProviderConfiguration(
     string Name,
@@ -26,3 +27,14 @@ internal readonly record struct ConversationConfiguration(
     string WorkspacePath);
 
 internal readonly record struct ObservabilityConfiguration(Uri? OtlpEndpoint);
+
+internal readonly record struct FrameworkConfiguration(
+    IReadOnlyList<FrameworkRuleConfiguration> Rules);
+
+internal readonly record struct FrameworkRuleConfiguration(
+    string Key,
+    string Value,
+    int Precedence,
+    string Layer,
+    bool IsLocked,
+    string Source);
