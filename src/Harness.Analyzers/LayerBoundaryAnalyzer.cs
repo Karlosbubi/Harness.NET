@@ -22,8 +22,8 @@ public sealed class LayerBoundaryAnalyzer : DiagnosticAnalyzer
 
     private static readonly DiagnosticDescriptor InvalidBoundaryType = new(
         InvalidBoundaryTypeId,
-        "Public layer contract must be an interface or record",
-        "Public type '{0}' must be an interface or record to cross layer boundaries",
+        "Public layer contract must be an interface, record, or enum",
+        "Public type '{0}' must be an interface, record, or enum to cross layer boundaries",
         "Architecture",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
@@ -78,7 +78,9 @@ public sealed class LayerBoundaryAnalyzer : DiagnosticAnalyzer
     private static void AnalyzePublicType(SymbolAnalysisContext context)
     {
         INamedTypeSymbol type = (INamedTypeSymbol)context.Symbol;
-        if (!IsEffectivelyPublic(type) || type.TypeKind is TypeKind.Interface || type.IsRecord)
+        if (!IsEffectivelyPublic(type) ||
+            type.TypeKind is TypeKind.Interface or TypeKind.Enum ||
+            type.IsRecord)
         {
             return;
         }

@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-07-26
+- Boundary type shape amended by: [ADR 007](007-semantic-contract-types.md)
 
 ## Context
 
@@ -18,9 +19,9 @@ Data Access -> Business Logic -> Presentation
 ```
 
 Project references and contracts move directly upward: Business Logic references
-Data Access, and Presentation references Business Logic. Only interfaces and records
-may cross those boundaries. A composition root may reference all implementations
-only to configure dependency injection.
+Data Access, and Presentation references Business Logic. Only interfaces, records,
+and enums may cross those boundaries. A composition root may reference all
+implementations only to configure dependency injection.
 
 New behavior is delivered as end-to-end feature slices spanning the necessary layers.
 A custom Roslyn analyzer enforces reference direction and boundary type shape; the

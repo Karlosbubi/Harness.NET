@@ -67,6 +67,19 @@ public sealed class LayerBoundaryAnalyzerTests
             diagnostic.Id == LayerBoundaryAnalyzer.InvalidBoundaryTypeId);
     }
 
+    [Fact]
+    public async Task Public_semantic_enum_is_allowed()
+    {
+        const string source = "namespace Harness.BusinessLogic; public enum GoalState { Draft, Approved }";
+
+        ImmutableArray<Diagnostic> diagnostics = await AnalyzeAsync(
+            "Harness.BusinessLogic",
+            source);
+
+        Assert.DoesNotContain(diagnostics, diagnostic =>
+            diagnostic.Id == LayerBoundaryAnalyzer.InvalidBoundaryTypeId);
+    }
+
     private static async Task<ImmutableArray<Diagnostic>> AnalyzeAsync(
         string assemblyName,
         string source,

@@ -15,8 +15,10 @@ The solution contains Data Access, Business Logic, Terminal Presentation, Host, 
 architecture-test projects with central package management. A Roslyn analyzer now
 enforces layer direction and public contract shape during every runtime build.
 
-Only interfaces and records form layer contracts. Implementations remain internal
-where practical; DI composition is the documented exception. Provider SDK payloads
+Only interfaces, records, and enums form layer contracts. Prefer enums for closed
+sets and immutable single-value records where primitive values have distinct domain
+meaning. Implementations remain internal where practical; DI composition is the
+documented exception. Provider SDK payloads
 remain inside Data Access. Microsoft Agent Framework objects remain behind the
 Business Logic agent-role boundary.
 

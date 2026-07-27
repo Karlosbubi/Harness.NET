@@ -11,7 +11,8 @@ behavior Harness.NET will provide.
 | Runtime | Start on .NET 10 and modern, idiomatic C#. |
 | Correctness | Enable nullable analysis and treat compiler warnings as errors. |
 | Architecture | Prefer Data Access, Business Logic, and Presentation layers where sensible. |
-| Boundaries | Only interfaces and records cross layer boundaries, moving upward except for DI composition. |
+| Boundaries | Only interfaces, records, and enums cross layer boundaries, moving upward except for DI composition. |
+| Domain types | Prefer semantic enums and immutable single-value records over ambiguous primitives. |
 | Delivery | Implement new behavior as end-to-end feature slices. |
 | Style | Prefer functional composition, immutable data, and LINQ where idiomatic. |
 | Reactivity | Use Rx.NET for event streams and state management where it fits. |
@@ -29,10 +30,10 @@ The direct project-reference direction is:
 Data Access -> Business Logic -> Presentation
 ```
 
-- Data Access exposes only interfaces and record contracts upward and contains the
-  corresponding implementations.
-- Business Logic references Data Access contracts and exposes its own interfaces
-  and records to Presentation.
+- Data Access exposes only interface, record, and enum contracts upward and contains
+  the corresponding implementations.
+- Business Logic references Data Access contracts and exposes its own interfaces,
+  records, and enums to Presentation.
 - Presentation references Business Logic contracts and contains no business rules.
 - A composition root may reference all implementations only to configure DI.
 - A custom Roslyn analyzer enforces reference direction and boundary type rules.
