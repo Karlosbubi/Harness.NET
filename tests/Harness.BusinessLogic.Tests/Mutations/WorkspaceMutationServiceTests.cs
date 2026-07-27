@@ -1,5 +1,6 @@
 using Harness.BusinessLogic.Mutations;
 using Harness.BusinessLogic.Tools;
+using Harness.DataAccess.Approvals;
 using Harness.DataAccess.Evidence;
 using Harness.DataAccess.Execution;
 using Harness.DataAccess.Goals;
@@ -21,7 +22,8 @@ public sealed class WorkspaceMutationServiceTests
             new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)),
             editor,
             new FakeDotNetToolRunner(),
-            evidence);
+            evidence,
+            new FakeCapabilityApprovalStore());
 
         FileEditView result = await service.ApplyFileEditAsync(new(
             "goal-id",
@@ -48,7 +50,8 @@ public sealed class WorkspaceMutationServiceTests
             new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)),
             editor,
             new FakeDotNetToolRunner(),
-            new FakeToolEvidenceStore());
+            new FakeToolEvidenceStore(),
+            new FakeCapabilityApprovalStore());
 
         FileEditView result = await service.ApplyFileEditAsync(new(
             "goal-id",
@@ -70,7 +73,8 @@ public sealed class WorkspaceMutationServiceTests
             new FakeWorkspaceStore(CreateWorkspace(isTrusted: false)),
             editor,
             new FakeDotNetToolRunner(),
-            new FakeToolEvidenceStore());
+            new FakeToolEvidenceStore(),
+            new FakeCapabilityApprovalStore());
 
         FileEditView result = await service.ApplyFileEditAsync(new(
             "goal-id",
@@ -93,7 +97,8 @@ public sealed class WorkspaceMutationServiceTests
             new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)),
             new FakeFileEditor(),
             runner,
-            evidence);
+            evidence,
+            new FakeCapabilityApprovalStore());
 
         DotNetOperationView result = await service.RunDotNetAsync(new(
             "goal-id",
@@ -118,7 +123,8 @@ public sealed class WorkspaceMutationServiceTests
             new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)),
             new FakeFileEditor(),
             runner,
-            new FakeToolEvidenceStore());
+            new FakeToolEvidenceStore(),
+            new FakeCapabilityApprovalStore());
 
         DotNetOperationView result = await service.RunDotNetAsync(new(
             "goal-id",
@@ -139,7 +145,8 @@ public sealed class WorkspaceMutationServiceTests
             new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)),
             new FakeFileEditor(),
             runner,
-            evidence);
+            evidence,
+            new FakeCapabilityApprovalStore());
 
         DotNetOperationView result = await service.RunDotNetAsync(new(
             "goal-id",
@@ -171,7 +178,8 @@ public sealed class WorkspaceMutationServiceTests
             new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)),
             editor,
             new FakeDotNetToolRunner(),
-            evidence);
+            evidence,
+            new FakeCapabilityApprovalStore());
 
         FileEditView result = await service.ApplyFileEditAsync(new(
             "goal-id",
@@ -194,7 +202,8 @@ public sealed class WorkspaceMutationServiceTests
             new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)),
             editor,
             new FakeDotNetToolRunner(),
-            evidence);
+            evidence,
+            new FakeCapabilityApprovalStore());
 
         await Assert.ThrowsAsync<OperationCanceledException>(() => service.ApplyFileEditAsync(new(
             "goal-id",
@@ -207,6 +216,109 @@ public sealed class WorkspaceMutationServiceTests
         Assert.Equal(ToolCallState.Running, item.State);
         Assert.Null(item.ResultJson);
         Assert.Null(item.CompletedAt);
+    }
+
+    [Fact]
+    public async Task Restore_is_blocked_without_exact_explicit_approval()
+    {
+        FakeDotNetToolRunner runner = new();
+        FakeToolEvidenceStore evidence = new();
+        WorkspaceMutationService service = new(
+            new FakeGoalStore(CreateGoal("Approved"), CreateWorktree()),
+            new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)),
+            new FakeFileEditor(),
+            runner,
+            evidence,
+            new FakeCapabilityApprovalStore());
+
+        DotNetOperationView result = await service.RunDotNetAsync(new(
+            "goal-id",
+            new("restore-call"),
+            DotNetOperation.Restore));
+
+        Assert.Equal("restore_not_approved", result.ErrorCode);
+        Assert.Equal(0, runner.CallCount);
+        Assert.Empty(evidence.Items);
+    }
+
+    [Fact]
+    public async Task Exact_restore_approval_runs_once_through_the_evidence_boundary()
+    {
+        FakeDotNetToolRunner runner = new();
+        FakeToolEvidenceStore evidence = new();
+        FakeCapabilityApprovalStore approvals = new(CreateRestoreApproval(
+            "restore-call",
+            "Repository.slnx"));
+        WorkspaceMutationService service = new(
+            new FakeGoalStore(CreateGoal("Approved"), CreateWorktree()),
+            new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)),
+            new FakeFileEditor(),
+            runner,
+            evidence,
+            approvals);
+
+        DotNetOperationView result = await service.RunDotNetAsync(new(
+            "goal-id",
+            new("restore-call"),
+            DotNetOperation.Restore));
+        DotNetOperationView replay = await service.RunDotNetAsync(new(
+            "goal-id",
+            new("restore-call"),
+            DotNetOperation.Restore));
+
+        Assert.Null(result.Error);
+        Assert.Equal(DotNetToolOperation.Restore, runner.Request?.Operation);
+        Assert.Equal(ToolKind.Restore, Assert.Single(evidence.Items).Tool);
+        Assert.Equal(ToolCallState.Succeeded, evidence.Items[0].State);
+        Assert.Equal("duplicate_correlation", replay.ErrorCode);
+        Assert.Equal(1, runner.CallCount);
+    }
+
+    [Fact]
+    public async Task Restore_approval_for_another_target_does_not_grant_execution()
+    {
+        FakeDotNetToolRunner runner = new();
+        WorkspaceMutationService service = new(
+            new FakeGoalStore(CreateGoal("Approved"), CreateWorktree()),
+            new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)),
+            new FakeFileEditor(),
+            runner,
+            new FakeToolEvidenceStore(),
+            new FakeCapabilityApprovalStore(CreateRestoreApproval(
+                "restore-call",
+                "Other.slnx")));
+
+        DotNetOperationView result = await service.RunDotNetAsync(new(
+            "goal-id",
+            new("restore-call"),
+            DotNetOperation.Restore));
+
+        Assert.Equal("restore_not_approved", result.ErrorCode);
+        Assert.Equal(0, runner.CallCount);
+    }
+
+    [Fact]
+    public async Task Denied_restore_approval_does_not_grant_execution()
+    {
+        FakeDotNetToolRunner runner = new();
+        WorkspaceMutationService service = new(
+            new FakeGoalStore(CreateGoal("Approved"), CreateWorktree()),
+            new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)),
+            new FakeFileEditor(),
+            runner,
+            new FakeToolEvidenceStore(),
+            new FakeCapabilityApprovalStore(CreateRestoreApproval(
+                "restore-call",
+                "Repository.slnx",
+                CapabilityApprovalState.Denied)));
+
+        DotNetOperationView result = await service.RunDotNetAsync(new(
+            "goal-id",
+            new("restore-call"),
+            DotNetOperation.Restore));
+
+        Assert.Equal("restore_not_approved", result.ErrorCode);
+        Assert.Equal(0, runner.CallCount);
     }
 
     private static StoredGoal CreateGoal(string state) => new(
@@ -238,6 +350,21 @@ public sealed class WorkspaceMutationServiceTests
         IsActive: true,
         "main",
         IsDirty: false,
+        DateTimeOffset.UtcNow,
+        DateTimeOffset.UtcNow);
+
+    private static StoredCapabilityApproval CreateRestoreApproval(
+        string correlationId,
+        string target,
+        CapabilityApprovalState state = CapabilityApprovalState.Approved) => new(
+        new("approval-id"),
+        "goal-id",
+        new(correlationId),
+        CapabilityKind.Restore,
+        target,
+        "Packages are required for the approved plan.",
+        state,
+        DecisionReason: state is CapabilityApprovalState.Denied ? "Denied." : null,
         DateTimeOffset.UtcNow,
         DateTimeOffset.UtcNow);
 
@@ -349,6 +476,31 @@ public sealed class WorkspaceMutationServiceTests
             CancellationToken cancellationToken = default) =>
             ValueTask.FromResult<IReadOnlyList<StoredToolCall>>(
                 Items.Where(item => item.GoalId == goalId).ToArray());
+    }
+
+    private sealed class FakeCapabilityApprovalStore(
+        StoredCapabilityApproval? approval = null) : ICapabilityApprovalStore
+    {
+        public ValueTask<StoredCapabilityApproval?> GetAsync(
+            string goalId,
+            Harness.DataAccess.Tools.ToolCorrelationId correlationId,
+            CapabilityKind capability,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(
+                approval?.GoalId == goalId &&
+                approval.CorrelationId == correlationId &&
+                approval.Capability == capability
+                    ? approval
+                    : null);
+
+        public ValueTask<StoredCapabilityApprovalStart> StartAsync(StoredCapabilityApproval value, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+        public ValueTask<StoredCapabilityApproval> DecideAsync(CapabilityApprovalId approvalId, CapabilityApprovalState expectedState, CapabilityApprovalState nextState, string? decisionReason, DateTimeOffset decidedAt, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+        public ValueTask<StoredCapabilityApproval?> GetByIdAsync(CapabilityApprovalId approvalId, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+        public ValueTask<IReadOnlyList<StoredCapabilityApproval>> ListAsync(string goalId, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
     }
 
     private sealed class FakeGoalStore(

@@ -58,13 +58,15 @@ Exit evidence: accepted framework and architecture decision records.
   and preserves dirty original-worktree state. Approval provisions isolation first,
   then persists the decision and active worktree grant atomically; failed provisioning
   leaves the plan pending. Interrupted-run reconciliation remains part of Task 022.
-- In progress: approved goals can perform correlated, path-confined compare-and-swap
+- Completed: approved goals can perform correlated, path-confined compare-and-swap
   text creation/replacement and typed build/test execution only inside their
   persisted worktree grant. Builds and tests are cancellable, bound their output,
   and disable implicit restore; stale hashes, symlinks, oversized content, inactive
   workspaces, and revoked trust are rejected. Requests are persisted before tool
   execution and completed with correlated result evidence; incomplete calls remain
-  visible for recovery. Restore approval remains.
+  visible for recovery. Restore requires a separate durable user decision bound to
+  the exact goal, correlation, and registered entry point before the network-capable
+  process can start.
 - Connect OpenRouter and add typed tool-call mapping behind the same boundary.
 - Prove one checkpointed fake workflow through the TUI.
 

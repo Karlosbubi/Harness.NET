@@ -2,6 +2,7 @@ using Harness.DataAccess.Configuration;
 using Harness.DataAccess.Evidence;
 using Harness.DataAccess.Goals;
 using Harness.DataAccess.Persistence;
+using Harness.DataAccess.Tools;
 using Harness.DataAccess.Workspaces;
 
 namespace Harness.DataAccess.Tests.Evidence;

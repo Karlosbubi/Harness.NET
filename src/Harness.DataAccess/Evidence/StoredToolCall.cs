@@ -1,3 +1,5 @@
+using Harness.DataAccess.Tools;
+
 namespace Harness.DataAccess.Evidence;
 
 public sealed record StoredToolCall(

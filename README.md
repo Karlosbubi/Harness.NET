@@ -21,10 +21,10 @@ The Framework menu shows the resolved engineering rules and guidance with locks,
 provenance, privacy, and validation issues, and edits the private workspace overlay.
 Trusted-workspace tools now provide confined file reads, tracked-text search,
 bounded Git status/diff evidence, non-evaluating .NET metadata, approved atomic file
-edits, and cancellable build/test execution in isolated goal worktrees. Agent role
-execution and restore approval are not implemented yet. Approved file edits and
-build/test calls now retain durable request/result evidence for later workflow and
-GUI presentation.
+edits, and cancellable .NET execution in isolated goal worktrees. Agent role
+execution is not implemented yet. Restore is available only after a durable,
+correlation- and target-bound user approval. Approved edit/build/test/restore calls
+retain durable request/result evidence for later workflow and GUI presentation.
 
 Start with:
 

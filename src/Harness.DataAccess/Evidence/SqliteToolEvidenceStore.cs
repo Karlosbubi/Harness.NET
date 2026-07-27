@@ -1,6 +1,7 @@
 using System.Globalization;
 using Dapper;
 using Harness.DataAccess.Configuration;
+using Harness.DataAccess.Tools;
 using Microsoft.Data.Sqlite;
 
 namespace Harness.DataAccess.Evidence;

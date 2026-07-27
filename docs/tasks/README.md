@@ -22,7 +22,7 @@ passes and its documentation is current.
 | ID | Status | Task | Depends on | Done when |
 |---|---|---|---|---|
 | 001 | Done | Scaffold layer projects and boundary tests | - | The solution builds and reference-direction tests pass. |
-| 002 | Done | Add the layer-boundary Roslyn analyzer | 001 | Invalid references and non-interface/record contracts produce diagnostics. |
+| 002 | Done | Add the layer-boundary Roslyn analyzer | 001 | Invalid references and non-interface/record/enum contracts produce diagnostics. |
 | 003 | Done | Add XDG configuration and Secret Service access | 001 | Paths resolve predictably and secrets never enter ordinary configuration. |
 | 004 | Done | Initialize SQLite with Dapper and DbUp | 001, 003 | Startup creates and migrates a versioned database idempotently. |
 | 005 | Done | Configure Serilog and OpenTelemetry | 003 | Redacted JSON logs work locally and OTLP remains opt-in. |
@@ -47,9 +47,9 @@ but the end-user workflow is not complete.
 | 015 | Done | Register and trust a .NET workspace | - | A user can add a Git repository, select a solution/project, explicitly trust it, reopen it, and see dirty/base state. |
 | 016 | Done | Load the user's engineering framework | - | Global, repository, and private framework layers load with precedence, locks, validation, and an inspectable effective view. |
 | 017 | Done | Let agents inspect safely | - | Typed, path-confined read/search/status/diff/project/build-information tools run only in a trusted workspace and return bounded records. |
-| 018 | Partial | Let agents implement and verify | Approved edit/build/test calls are bounded, cancellable, correlated, and durable; separate restore/network approval remains. | Approved runs can use typed edit/build/test tools with cancellation, output limits, correlation, and separate restore/network approval. |
+| 018 | Done | Let agents implement and verify | - | Approved runs can use typed edit/build/test tools with cancellation, output limits, correlation, and separate restore/network approval. |
 | 019 | Done | Isolate work with Git | - | Each approved goal uses a validated branch/worktree, preserves dirty user state, and never merges/rebases automatically. |
-| 020 | Partial | Create goals and approve plans | Goals, caps, versioned plans, atomic approval/denial transitions, and worktree-bound grants exist below Presentation; the TUI workflow remains. | Goals, caps, plans, revisions, approvals, and denials persist and every consequential transition is validated. |
+| 020 | Partial | Create goals and approve plans | Goals, caps, versioned plans, worktree grants, and scoped restore approvals exist below Presentation; the TUI workflow remains. | Goals, caps, plans, revisions, approvals, and denials persist and every consequential transition is validated. |
 | 021 | Missing | Coordinate lead, implementer, and reviewer agents | Microsoft Agent Framework is not integrated and no roles execute. | Role prompts and tool scopes are wrapped behind Business Logic interfaces and a lead can delegate bounded tasks. |
 | 022 | Partial | Resume interrupted work safely | Incomplete tool calls remain durably identifiable, but run checkpoints, reconciliation, and resume are absent. | Runs checkpoint at safe boundaries, resume completed steps, and mark uncertain calls without automatic replay. |
 | 023 | Partial | Review evidence and accept results | Tool requests/results are durable and queryable, but there is no independent review loop or commit approval. | Diff, tests, tool evidence, review findings, cycle caps, and explicit commit approval work end to end. |
@@ -137,12 +137,17 @@ Harness.NET state auditable.
   workspace, current trust, and correlation identifier. Data Access independently
   confines paths, rejects symbolic links and stale SHA-256 expectations, caps UTF-8
   content at 1 MiB, and atomically replaces the destination. The same authorization
-  boundary now exposes only typed Build and Test operations against the registered
-  entry point in the goal worktree. The process adapter disables implicit restore,
-  confines the entry point, cancels the process tree, and returns exit, duration,
-  bounded output, and truncation evidence. Schema version 9 persists every approved
+  boundary now exposes typed Build, Test, and separately approved Restore operations
+  against the registered entry point in the goal worktree. The process adapter
+  disables implicit restore for Build and Test, confines the entry point, cancels
+  the process tree, and returns exit, duration, bounded output, and truncation
+  evidence. Schema version 9 persists every approved
   tool request before execution and completes it with full correlated result evidence.
   Duplicate correlations cannot replay a tool, incomplete calls remain identifiable
   for recovery, and a presentation-neutral Business Logic service exposes the audit
   trail. Tool operations, kinds, states, identifiers, and correlations use semantic
-  enums and single-value records under ADR 007.
+  enums and single-value records under ADR 007. Schema version 10 adds durable
+  Restore approval requests and decisions. Approval is scoped to one goal,
+  correlation, capability, and registered entry point; denied, missing, mismatched,
+  or replayed requests cannot start the process. Build and Test continue to force
+  `--no-restore`, while only an explicitly approved Restore may resolve dependencies.

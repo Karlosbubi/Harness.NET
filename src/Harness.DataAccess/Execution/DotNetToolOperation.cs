@@ -4,4 +4,5 @@ public enum DotNetToolOperation
 {
     Build,
     Test,
+    Restore,
 }

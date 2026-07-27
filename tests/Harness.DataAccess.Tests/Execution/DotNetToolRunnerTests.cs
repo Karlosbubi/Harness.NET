@@ -50,6 +50,28 @@ public sealed class DotNetToolRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task Restore_is_the_only_operation_allowed_to_resolve_dependencies()
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        Directory.CreateDirectory(root);
+        await File.WriteAllTextAsync(Path.Combine(root, "Repository.slnx"), "<Solution />");
+        string executable = await CreateExecutableAsync("printf '%s\\n' \"$@\"");
+        DotNetToolRunner runner = new(executable);
+
+        DotNetToolResult result = await runner.RunAsync(
+            root,
+            new(DotNetToolOperation.Restore, "Repository.slnx"));
+
+        Assert.Null(result.Error);
+        Assert.Contains("restore", result.StandardOutput, StringComparison.Ordinal);
+        Assert.DoesNotContain("--no-restore", result.StandardOutput, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Drains_but_bounds_process_output()
     {
         if (!OperatingSystem.IsLinux())

@@ -5,4 +5,5 @@ public enum ToolKind
     FileEdit,
     Build,
     Test,
+    Restore,
 }

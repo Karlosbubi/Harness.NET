@@ -26,7 +26,7 @@ internal sealed class DotNetToolRunner : IDotNetToolRunner
     {
         if (!Enum.IsDefined(request.Operation))
         {
-            return Failure(request, "invalid_operation", "The operation must be Build or Test.");
+            return Failure(request, "invalid_operation", "The operation must be Build, Test, or Restore.");
         }
 
         if (!WorkspacePathPolicy.TryResolve(
@@ -59,7 +59,10 @@ internal sealed class DotNetToolRunner : IDotNetToolRunner
         };
         startInfo.ArgumentList.Add(request.Operation.ToString().ToLowerInvariant());
         startInfo.ArgumentList.Add(targetEntryPoint);
-        startInfo.ArgumentList.Add("--no-restore");
+        if (request.Operation is not DotNetToolOperation.Restore)
+        {
+            startInfo.ArgumentList.Add("--no-restore");
+        }
         startInfo.ArgumentList.Add("--nologo");
         startInfo.ArgumentList.Add("--verbosity");
         startInfo.ArgumentList.Add("minimal");

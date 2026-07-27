@@ -1,9 +1,11 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Harness.DataAccess.Approvals;
 using Harness.DataAccess.Evidence;
 using Harness.DataAccess.Execution;
 using Harness.DataAccess.Goals;
 using Harness.DataAccess.Mutations;
+using Harness.DataAccess.Tools;
 using Harness.DataAccess.Workspaces;
 using Harness.DataAccess.Worktrees;
 
@@ -14,7 +16,8 @@ internal sealed class WorkspaceMutationService(
     IWorkspaceStore workspaceStore,
     IWorkspaceFileEditor fileEditor,
     IDotNetToolRunner dotNetToolRunner,
-    IToolEvidenceStore evidenceStore) : IWorkspaceMutationService
+    IToolEvidenceStore evidenceStore,
+    ICapabilityApprovalStore approvalStore) : IWorkspaceMutationService
 {
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
 
@@ -92,7 +95,7 @@ internal sealed class WorkspaceMutationService(
 
         if (!Enum.IsDefined(request.Operation))
         {
-            return DotNetFailure(request, "invalid_operation", "The operation must be Build or Test.");
+            return DotNetFailure(request, "invalid_operation", "The operation must be Build, Test, or Restore.");
         }
 
         StoredGoal? goal = await goalStore.GetAsync(request.GoalId, cancellationToken);
@@ -114,10 +117,27 @@ internal sealed class WorkspaceMutationService(
         }
 
         string entryPoint = Path.GetRelativePath(workspace.RootPath, workspace.EntryPoint);
+        if (request.Operation is DotNetOperation.Restore)
+        {
+            StoredCapabilityApproval? approval = await approvalStore.GetAsync(
+                goal.Id,
+                new Harness.DataAccess.Tools.ToolCorrelationId(request.CorrelationId.Value),
+                CapabilityKind.Restore,
+                cancellationToken);
+            if (approval?.State is not CapabilityApprovalState.Approved ||
+                !approval.Target.Equals(entryPoint, StringComparison.Ordinal))
+            {
+                return DotNetFailure(
+                    request,
+                    "restore_not_approved",
+                    "This restore requires explicit approval for the same correlation and entry point.");
+            }
+        }
+
         StoredToolCallStart started = await StartEvidenceAsync(
             goal.Id,
             request.CorrelationId,
-            request.Operation is DotNetOperation.Build ? ToolKind.Build : ToolKind.Test,
+            ToToolKind(request.Operation),
             request,
             cancellationToken);
         if (!started.WasCreated)
@@ -127,16 +147,12 @@ internal sealed class WorkspaceMutationService(
 
         DotNetToolResult result = await dotNetToolRunner.RunAsync(
             worktree.Path,
-            new(request.Operation is DotNetOperation.Build
-                ? DotNetToolOperation.Build
-                : DotNetToolOperation.Test, entryPoint),
+            new(ToDataAccessOperation(request.Operation), entryPoint),
             cancellationToken);
         DotNetOperationView view = new(
             goal.Id,
             request.CorrelationId,
-            result.Operation is DotNetToolOperation.Build
-                ? DotNetOperation.Build
-                : DotNetOperation.Test,
+            ToBusinessOperation(result.Operation),
             result.EntryPoint,
             result.ExitCode,
             result.StandardOutput,
@@ -170,7 +186,7 @@ internal sealed class WorkspaceMutationService(
         return await evidenceStore.StartAsync(new(
             new(Guid.NewGuid().ToString("N")),
             goalId,
-            new DataAccess.Evidence.ToolCorrelationId(correlationId.Value),
+            new Harness.DataAccess.Tools.ToolCorrelationId(correlationId.Value),
             tool,
             JsonSerializer.Serialize(request, JsonOptions),
             ToolCallState.Running,
@@ -197,6 +213,32 @@ internal sealed class WorkspaceMutationService(
         options.Converters.Add(new JsonStringEnumConverter());
         return options;
     }
+
+    private static ToolKind ToToolKind(DotNetOperation operation) => operation switch
+    {
+        DotNetOperation.Build => ToolKind.Build,
+        DotNetOperation.Test => ToolKind.Test,
+        DotNetOperation.Restore => ToolKind.Restore,
+        _ => throw new ArgumentOutOfRangeException(nameof(operation)),
+    };
+
+    private static DotNetToolOperation ToDataAccessOperation(DotNetOperation operation) =>
+        operation switch
+        {
+            DotNetOperation.Build => DotNetToolOperation.Build,
+            DotNetOperation.Test => DotNetToolOperation.Test,
+            DotNetOperation.Restore => DotNetToolOperation.Restore,
+            _ => throw new ArgumentOutOfRangeException(nameof(operation)),
+        };
+
+    private static DotNetOperation ToBusinessOperation(DotNetToolOperation operation) =>
+        operation switch
+        {
+            DotNetToolOperation.Build => DotNetOperation.Build,
+            DotNetToolOperation.Test => DotNetOperation.Test,
+            DotNetToolOperation.Restore => DotNetOperation.Restore,
+            _ => throw new ArgumentOutOfRangeException(nameof(operation)),
+        };
 
     private static FileEditView Failure(FileEditRequest request, string code, string error) =>
         new(

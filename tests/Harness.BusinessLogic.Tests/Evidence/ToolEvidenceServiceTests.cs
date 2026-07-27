@@ -16,7 +16,7 @@ public sealed class ToolEvidenceServiceTests
         StoredToolCall evidence = new(
             new Harness.DataAccess.Evidence.ToolCallId("call-id"),
             goal.Id,
-            new Harness.DataAccess.Evidence.ToolCorrelationId("correlation-id"),
+            new Harness.DataAccess.Tools.ToolCorrelationId("correlation-id"),
             Harness.DataAccess.Evidence.ToolKind.Build,
             "{\"operation\":\"Build\"}",
             ToolCallState.Succeeded,
