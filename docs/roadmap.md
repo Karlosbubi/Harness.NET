@@ -53,6 +53,9 @@ Exit evidence: accepted framework and architecture decision records.
   with validated review-cycle and optional remote-cost caps. Versioned plan
   proposals and atomic approval/denial transitions now exist below Presentation;
   the TUI workflow and worktree-bound capability grant remain.
+- In progress: a structured, cancellable Git adapter creates deterministic goal
+  branches/worktrees under XDG state, records the base commit, retries idempotently,
+  and preserves dirty original-worktree state. Approval binding and recovery remain.
 - Connect OpenRouter and add typed tool-call mapping behind the same boundary.
 - Prove one checkpointed fake workflow through the TUI.
 
