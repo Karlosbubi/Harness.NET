@@ -81,6 +81,10 @@ Exit evidence: accepted framework and architecture decision records.
 - OpenRouter discovery, streaming, embeddings, strict privacy routing, goal-scoped
   cost reservation/reconciliation, and structured cost reports are implemented.
   Typed tool-call mapping remains behind the same boundary.
+- Completed: bounded Git-tracked UTF-8 ingestion filters generated, binary, secret,
+  and oversized content; deterministic overlapping chunks are embedded through the
+  configured provider. SQLite vector generations are partitioned by provider, model,
+  dimensions, and chunking version and switch atomically after successful rebuilds.
 
 Exit evidence: clean build, architecture diagnostics, deterministic tests, and a
 usable TUI shell that exercises a persisted fake run.

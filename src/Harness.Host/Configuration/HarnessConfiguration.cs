@@ -15,6 +15,7 @@ internal readonly record struct ModelProviderConfiguration(
     Uri Endpoint,
     string ChatModel,
     string EmbeddingModel,
+    int EmbeddingDimensions,
     TimeSpan ConnectTimeout,
     TimeSpan RequestTimeout,
     SecretReference? ApiKeyReference);
@@ -22,7 +23,8 @@ internal readonly record struct ModelProviderConfiguration(
 internal readonly record struct ProviderRoutingConfiguration(
     string MainLlm,
     string Reviewer,
-    string ToolLlm);
+    string ToolLlm,
+    string Embedding);
 
 internal readonly record struct ConversationConfiguration(
     string Id,

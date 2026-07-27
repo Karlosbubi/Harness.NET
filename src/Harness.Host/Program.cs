@@ -7,6 +7,7 @@ using Harness.BusinessLogic.Framework;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Mutations;
+using Harness.BusinessLogic.Retrieval;
 using Harness.BusinessLogic.Workspaces;
 using Harness.BusinessLogic.Workflows;
 using Harness.DataAccess.Approvals;
@@ -24,6 +25,7 @@ using Harness.DataAccess.Mutations;
 using Harness.DataAccess.Observability;
 using Harness.DataAccess.Persistence;
 using Harness.DataAccess.Secrets;
+using Harness.DataAccess.SemanticIndex;
 using Harness.DataAccess.Workspaces;
 using Harness.DataAccess.Worktrees;
 using Harness.DataAccess.Workflows;
@@ -71,6 +73,8 @@ builder.Services.AddSingleton<IWorkspaceTextSearcher, GitWorkspaceTextSearcher>(
 builder.Services.AddSingleton<IWorkspaceGitInspector, LibGitWorkspaceGitInspector>();
 builder.Services.AddSingleton<IWorkspaceDotNetInspector, WorkspaceDotNetInspector>();
 builder.Services.AddSingleton<IWorkspaceInspectionService, WorkspaceInspectionService>();
+builder.Services.AddSingleton<ITrackedTextCatalogReader, GitTrackedTextCatalogReader>();
+builder.Services.AddSingleton<ISemanticIndexStore, SqliteSemanticIndexStore>();
 builder.Services.AddSingleton<IFrameworkResolver, FrameworkResolver>();
 builder.Services.AddSingleton(new FrameworkOptions(configuration.Framework.Rules
     .Select(rule => new FrameworkRule(
@@ -116,6 +120,20 @@ builder.Services.AddSingleton<IAgentRoleRunner>(services =>
         ],
         services.GetRequiredService<ILoggerFactory>());
 });
+ModelProviderConfiguration embeddingProvider =
+    configuration.Providers[configuration.Routing.Embedding];
+builder.Services.AddSingleton(new SemanticIndexOptions(
+    new(embeddingProvider.Name),
+    new(embeddingProvider.EmbeddingModel),
+    new(embeddingProvider.EmbeddingDimensions),
+    new("line-window-v1"),
+    EmbeddingBatchSize: 16));
+builder.Services.AddSingleton<ISemanticIndexService>(services => new SemanticIndexService(
+    services.GetRequiredService<IWorkspaceStore>(),
+    services.GetRequiredService<ITrackedTextCatalogReader>(),
+    services.GetRequiredService<ISemanticIndexStore>(),
+    services.GetRequiredKeyedService<IModelProvider>(embeddingProvider.Name),
+    services.GetRequiredService<SemanticIndexOptions>()));
 builder.Services.AddSingleton(new ConversationOptions(
     configuration.Conversation.Id,
     configuration.Conversation.Title,

@@ -2,6 +2,49 @@ using System.Text.Json.Serialization;
 
 namespace Harness.DataAccess.Models.OpenRouter;
 
+internal sealed class OpenRouterChatRequestPayload
+{
+    public string Model { get; init; } = string.Empty;
+
+    public OpenRouterRequestMessage[] Messages { get; init; } = [];
+
+    public bool Stream { get; init; }
+
+    [JsonPropertyName("max_tokens")]
+    public int MaxTokens { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public OpenRouterProviderPreferences? Provider { get; init; }
+}
+
+internal sealed class OpenRouterEmbeddingRequestPayload
+{
+    public string Model { get; init; } = string.Empty;
+
+    public IReadOnlyList<string> Input { get; init; } = [];
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? Dimensions { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public OpenRouterProviderPreferences? Provider { get; init; }
+}
+
+internal sealed class OpenRouterRequestMessage
+{
+    public string Role { get; init; } = string.Empty;
+
+    public string Content { get; init; } = string.Empty;
+}
+
+internal sealed class OpenRouterProviderPreferences
+{
+    [JsonPropertyName("data_collection")]
+    public string DataCollection { get; init; } = "deny";
+
+    public bool Zdr { get; init; }
+}
+
 internal sealed class OpenRouterModelsResponse
 {
     public OpenRouterModel[] Data { get; init; } = [];

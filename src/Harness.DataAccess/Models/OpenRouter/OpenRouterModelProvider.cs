@@ -114,17 +114,17 @@ internal sealed class OpenRouterModelProvider(
                 HttpMethod.Post,
                 "api/v1/chat/completions",
                 apiKey);
-            message.Content = JsonContent.Create(new
+            message.Content = JsonContent.Create(new OpenRouterChatRequestPayload
             {
-                model = request.Model,
-                messages = request.Messages.Select(item => new
+                Model = request.Model,
+                Messages = request.Messages.Select(item => new OpenRouterRequestMessage
                 {
-                    role = item.Role,
-                    content = item.Content,
-                }),
-                stream = true,
-                max_tokens = request.MaximumOutputTokens!.Value,
-                provider = CreateRouting(request.RemoteScope.PrivacyPolicy),
+                    Role = item.Role,
+                    Content = item.Content,
+                }).ToArray(),
+                Stream = true,
+                MaxTokens = request.MaximumOutputTokens!.Value,
+                Provider = CreateRouting(request.RemoteScope.PrivacyPolicy),
             });
 
             HttpResponseMessage? response = null;
@@ -305,12 +305,12 @@ internal sealed class OpenRouterModelProvider(
                 HttpMethod.Post,
                 "api/v1/embeddings",
                 apiKey);
-            message.Content = JsonContent.Create(new
+            message.Content = JsonContent.Create(new OpenRouterEmbeddingRequestPayload
             {
-                model = request.Model,
-                input = request.Inputs,
-                dimensions = request.Dimensions,
-                provider = CreateRouting(request.RemoteScope.PrivacyPolicy),
+                Model = request.Model,
+                Input = request.Inputs,
+                Dimensions = request.Dimensions,
+                Provider = CreateRouting(request.RemoteScope.PrivacyPolicy),
             });
 
             HttpResponseMessage? response = null;
@@ -544,9 +544,9 @@ internal sealed class OpenRouterModelProvider(
     private static MicroUsd? ToMicroUsd(decimal? usd) =>
         usd is null ? null : ToMicroUsdCeiling(usd.Value);
 
-    private static object? CreateRouting(ProviderPrivacyPolicy policy) =>
+    private static OpenRouterProviderPreferences? CreateRouting(ProviderPrivacyPolicy policy) =>
         policy is ProviderPrivacyPolicy.NoCollectionAndZeroDataRetention
-            ? new { data_collection = "deny", zdr = true }
+            ? new() { Zdr = true }
             : null;
 
     private static ProviderError? ValidateRemoteRequest(

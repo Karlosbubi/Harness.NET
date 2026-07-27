@@ -21,6 +21,7 @@ example. A user override may contain only the values it changes:
       <Endpoint>http://192.168.1.101:11434</Endpoint>
       <ChatModel>gemma4:latest</ChatModel>
       <EmbeddingModel>embeddinggemma</EmbeddingModel>
+      <EmbeddingDimensions>768</EmbeddingDimensions>
       <ConnectTimeoutSeconds>5</ConnectTimeoutSeconds>
       <RequestTimeoutSeconds>600</RequestTimeoutSeconds>
     </LocalCoding>
@@ -29,6 +30,7 @@ example. A user override may contain only the values it changes:
     <MainLlm>LocalCoding</MainLlm>
     <Reviewer>LocalCoding</Reviewer>
     <ToolLlm>LocalCoding</ToolLlm>
+    <Embedding>LocalCoding</Embedding>
   </Routing>
   <Framework>
     <Rules>
@@ -57,6 +59,7 @@ of XML:
   <Endpoint>https://openrouter.ai</Endpoint>
   <ChatModel>openai/gpt-5-mini</ChatModel>
   <EmbeddingModel>openai/text-embedding-3-small</EmbeddingModel>
+  <EmbeddingDimensions>1536</EmbeddingDimensions>
   <ApiKeySecret>openrouter-api-key</ApiKeySecret>
   <ApiKeyEnvironmentVariable>OPENROUTER_API_KEY</ApiKeyEnvironmentVariable>
   <ConnectTimeoutSeconds>10</ConnectTimeoutSeconds>
@@ -69,6 +72,11 @@ remote budget. Chat requests require a positive maximum-output-token value so th
 connector can reserve a conservative estimate before sending content. Strict
 workspace privacy is represented as a typed policy and sends both no-collection and
 zero-data-retention routing constraints.
+
+`Routing:Embedding` selects the named module used for semantic indexing and query
+embeddings independently of the three chat roles. `EmbeddingDimensions` is required
+because vector dimensions are part of the durable partition identity; changing the
+provider, model, dimensions, or chunking version never mixes incompatible vectors.
 
 For temporary overrides, configuration key separators become double underscores:
 

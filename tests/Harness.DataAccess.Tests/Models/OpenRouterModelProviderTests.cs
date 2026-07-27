@@ -85,15 +85,23 @@ public sealed class OpenRouterModelProviderTests
     [Fact]
     public async Task Embeds_and_reconciles_cost()
     {
-        using HttpClient httpClient = CreateClient((request, _) =>
-            request.Method == HttpMethod.Get
-                ? JsonResponse(ModelsJson("openai/text-embedding-3-small", "embeddings"))
-                : JsonResponse("""
+        using HttpClient httpClient = CreateClient(async (request, cancellationToken) =>
+        {
+            if (request.Method == HttpMethod.Get)
+            {
+                return JsonResponse(ModelsJson("openai/text-embedding-3-small", "embeddings"));
+            }
+
+            using JsonDocument body = JsonDocument.Parse(
+                await request.Content!.ReadAsStringAsync(cancellationToken));
+            Assert.False(body.RootElement.TryGetProperty("provider", out _));
+            return JsonResponse("""
                     {
                       "data": [{"index": 0, "embedding": [0.25, -0.5]}],
                       "usage": {"prompt_tokens": 1, "total_tokens": 1, "cost": 0.000003}
                     }
-                    """));
+                    """);
+        });
         StubRemoteCostStore costs = new();
         OpenRouterModelProvider provider = CreateProvider(httpClient, costs);
 

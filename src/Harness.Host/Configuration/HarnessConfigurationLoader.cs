@@ -31,11 +31,13 @@ internal static class HarnessConfigurationLoader
         ProviderRoutingConfiguration routing = new(
             Required(configuration, "Routing:MainLlm"),
             Required(configuration, "Routing:Reviewer"),
-            Required(configuration, "Routing:ToolLlm"));
+            Required(configuration, "Routing:ToolLlm"),
+            Required(configuration, "Routing:Embedding"));
 
         ValidateRoute(providers, nameof(routing.MainLlm), routing.MainLlm);
         ValidateRoute(providers, nameof(routing.Reviewer), routing.Reviewer);
         ValidateRoute(providers, nameof(routing.ToolLlm), routing.ToolLlm);
+        ValidateRoute(providers, nameof(routing.Embedding), routing.Embedding);
 
         return new(
             providers,
@@ -85,6 +87,7 @@ internal static class HarnessConfigurationLoader
             RequiredUri(section, "Endpoint"),
             Required(section, "ChatModel"),
             Required(section, "EmbeddingModel"),
+            RequiredPositiveInt(section, "EmbeddingDimensions"),
             TimeSpan.FromSeconds(RequiredPositiveInt(section, "ConnectTimeoutSeconds")),
             TimeSpan.FromSeconds(RequiredPositiveInt(section, "RequestTimeoutSeconds")),
             apiKeyReference);

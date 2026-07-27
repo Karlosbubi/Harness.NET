@@ -15,6 +15,12 @@ streaming, strict privacy routing, and fail-closed goal budgets with attributed
 reservation and reconciled-spend reports; remote goal/model selection is not yet a
 complete TUI workflow.
 
+Semantic indexing now reads bounded eligible text directly from the Git index,
+filters generated, binary, sensitive, and oversized content, and creates deterministic
+overlapping chunks. The configured embedding route writes atomically replaceable
+SQLite vector partitions keyed by provider, model, dimensions, and chunking version;
+Business Logic exposes rebuild and retrieval records ready for presentation adapters.
+
 The current usable workflow is a durable local-model conversation: instructions
 submitted in the TUI are persisted before inference, streamed through Business Logic,
 and reloaded from SQLite on restart. Provider failures are recorded in the transcript.
@@ -104,4 +110,13 @@ model request. Export `OPENROUTER_API_KEY` without printing it, then run:
 ```bash
 dotnet test tests/Harness.DataAccess.Tests \
   --filter Category=OpenRouterLiveIntegration
+```
+
+A separately gated embedding smoke sends one short input and refuses any reservation
+above five microdollars. Run it only when explicitly testing paid inference:
+
+```bash
+HARNESS_RUN_OPENROUTER_PAID_TESTS=1 \
+dotnet test tests/Harness.DataAccess.Tests \
+  --filter Category=OpenRouterPaidLiveIntegration
 ```

@@ -52,10 +52,10 @@ Data Access -> Business Logic -> Presentation
 - OpenRouter goals require an aggregate monetary cap. The connector reserves an
   estimated maximum before each request and reconciles it with returned usage cost.
 - Remote-cost evidence distinguishes active reservations, reconciled charges, and
-  released reservations. The goal cost report exposes the cap, reserved exposure, actual
-  spend, remaining budget, and any overage, with provider, model, operation, and
-  request attribution. Remote calls fail closed when pricing or authorization is
-  unavailable; live provider checks must use the smallest practical bounded request.
+  released reservations. The goal cost report exposes the cap, reserved exposure,
+  actual spend, remaining budget, and any overage, with provider, model, operation,
+  and request attribution. Remote calls fail closed when pricing or authorization
+  is unavailable; live provider checks must use the smallest practical bounded request.
 
 ## Approval and trust policy
 
@@ -124,6 +124,10 @@ overlay, `AGENTS.md`, or a suitable existing documentation file.
 - Semantic retrieval indexes eligible Git-tracked source, project, Markdown, and
   text configuration files while excluding ignored, generated, binary, secret, and
   oversized content.
+- Tracked-text ingestion is bounded to 10,000 index entries, 1 MiB per file, and
+  32 MiB of accepted UTF-8 text per rebuild. A newly built generation becomes active
+  only after every chunk and vector is durable, so cancellation or failure preserves
+  the preceding compatible partition.
 - Index partitions include provider, model, vector dimensions, and chunking version.
   Changing any of them creates or rebuilds a compatible partition.
 - Embedding generation is configurable between Ollama and OpenRouter.

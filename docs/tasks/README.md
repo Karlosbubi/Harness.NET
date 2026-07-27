@@ -30,7 +30,7 @@ passes and its documentation is current.
 | 007 | Done | Add the Ollama chat/embedding connector | 001, 003, 005 | Model discovery, streaming chat, embeddings, cancellation, and failures map to records. |
 | 008 | Done | Add the OpenRouter connector and cost accounting | 001, 003, 005 | Discovery, streaming, embeddings, routing policy, and cost caps are verified. |
 | 009 | Done | Wrap Microsoft Agent Framework in agent roles | 001, 007 | Lead, implementer, and reviewer run behind Business Logic interfaces. |
-| 010 | Pending | Add tracked-text semantic indexing | 004, 007, 008 | Compatible index partitions rebuild and retrieve eligible repository chunks. |
+| 010 | Done | Add tracked-text semantic indexing | 004, 007, 008 | Compatible index partitions rebuild and retrieve eligible repository chunks. |
 | 011 | Done | Run a checkpointed fake workflow through the TUI | 004, 006, 009 | A persisted fake run pauses, resumes, and exposes expandable evidence. |
 | 012 | Done | Publish the Linux x64 walking skeleton | 011 | A self-contained binary starts with correct XDG storage and graceful shutdown. |
 
@@ -53,7 +53,7 @@ but the end-user workflow is not complete.
 | 021 | Partial | Coordinate lead, implementer, and reviewer agents | All roles execute behind Business Logic contracts, but bounded delegation and role-specific tool scopes are not coordinated. | Role prompts and tool scopes are wrapped behind Business Logic interfaces and a lead can delegate bounded tasks. |
 | 022 | Partial | Resume interrupted work safely | The deterministic walking skeleton resumes from persisted safe boundaries and incomplete tool calls remain identifiable, but production-run reconciliation is absent. | Runs checkpoint at safe boundaries, resume completed steps, and mark uncertain calls without automatic replay. |
 | 023 | Partial | Review evidence and accept results | Tool requests/results are durable and queryable, but there is no independent review loop or commit approval. | Diff, tests, tool evidence, review findings, cycle caps, and explicit commit approval work end to end. |
-| 024 | Missing | Retrieve relevant repository context | The embedding adapter exists but no tracked-text index does. | Eligible Git-tracked text is chunked, partitioned by embedding configuration, rebuilt, searched, and filtered by policy. |
+| 024 | Partial | Retrieve relevant repository context | A presentation-neutral service now filters and chunks tracked text, atomically rebuilds compatible SQLite vector partitions, and retrieves matches; production context assembly and workflow/TUI controls remain. | Eligible Git-tracked text is chunked, partitioned by embedding configuration, rebuilt, searched, and filtered by policy. |
 | 025 | Partial | Use remote models under a cost cap | OpenRouter now fails closed without an approved budget, reserves discovered worst-case estimates, reconciles returned charges, and exposes an attributed cost report; goal-specific model selection and TUI authorization remain. | Remote use requires approval, streams through the provider boundary, and enforces estimated plus reconciled per-goal caps. |
 | 026 | Partial | Operate and distribute v1.0 reliably | A verified self-contained walking-skeleton package exists, but upgrades, backup/export, hardening, and production recovery acceptance remain. | A self-contained Linux x64 release passes clean-install, migration, outage, cancellation, recovery, and representative-repository acceptance tests. |
 
@@ -92,7 +92,18 @@ Harness.NET state auditable.
   service. Successful token streaming is now also covered by the opt-in live test.
 - Task 014 now exposes provider health, discovered capabilities, refresh, and durable
   model selection in the wide TUI. Typed XML defines named provider modules and
-  validates main/reviewer/tool routing; all routes are consumed by agent roles.
+  validates main/reviewer/tool/embedding routing; all chat routes are consumed by
+  agent roles and the embedding route is consumed by semantic indexing.
+- Task 010 uses the pinned Microsoft SQLite vector connector solely inside Data
+  Access. Deterministic tests prove Git-index eligibility and secret/generated/binary
+  filtering, stable bounded chunks, provider/model/dimension/version partitioning,
+  native cosine retrieval, atomic compatible replacement, and preservation of the
+  ready generation when a rebuild is aborted. Business Logic enforces active trust,
+  batches provider-neutral embeddings, validates vector shapes, accounts for remote
+  usage, and exposes rebuild/search records without connector types.
+- On 2026-07-28, the OpenRouter embedding path returned a 1,536-dimensional vector
+  from `openai/text-embedding-3-small` for one short input. The opt-in live test
+  enforced a five-microdollar reservation ceiling before sending the request.
 - Task 009 wraps Microsoft Agent Framework's `ChatClientAgent` behind semantic
   Business Logic contracts. Deterministic tests run lead, implementer, and reviewer
   prompts through separate configured provider/model routes and verify invalid
