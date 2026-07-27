@@ -40,8 +40,9 @@ Exit evidence: accepted framework and architecture decision records.
   a top-level menu preserves access in narrow layouts.
 - In progress: typed framework rules resolve precedence, provenance, locks,
   validation failures, and same-level conflicts. Bounded XDG `framework.md` and
-  repository `AGENTS.md` loading preserve provenance and privacy; private overlays,
-  XML rule binding, and effective-view presentation remain.
+  repository `AGENTS.md` loading preserve provenance and privacy, while private
+  overlays persist in SQLite; composition, XML rule binding, and effective-view
+  presentation remain.
 - Connect OpenRouter and add typed tool-call mapping behind the same boundary.
 - Prove one checkpointed fake workflow through the TUI.
 

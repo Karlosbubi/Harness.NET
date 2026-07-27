@@ -32,6 +32,7 @@ builder.Services.AddSingleton<IDatabaseInitializer, SqliteDatabaseInitializer>()
 builder.Services.AddSingleton<ISecretStore, SecretServiceSecretStore>();
 builder.Services.AddSingleton<IConversationStore, SqliteConversationStore>();
 builder.Services.AddSingleton<IFrameworkSourceReader, FileFrameworkSourceReader>();
+builder.Services.AddSingleton<IFrameworkOverlayStore, SqliteFrameworkOverlayStore>();
 builder.Services.AddSingleton<IWorkspaceInspector, GitWorkspaceInspector>();
 builder.Services.AddSingleton<IWorkspaceStore, SqliteWorkspaceStore>();
 builder.Services.AddSingleton<IWorkspaceService, WorkspaceService>();
