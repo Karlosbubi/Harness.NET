@@ -46,7 +46,8 @@ Exit evidence: accepted framework and architecture decision records.
   top-level TUI menu exposes the effective view and private-overlay editor.
 - In progress: typed repository inspection now includes trusted-workspace identity
   checks, path-confined bounded UTF-8 file reads, and bounded search over Git-indexed
-  text. Git and .NET project/build-information inspection remain.
+  text. Git inspection supplies bounded status and diff evidence with branch and
+  HEAD identity. .NET project/build-information inspection remains.
 - Connect OpenRouter and add typed tool-call mapping behind the same boundary.
 - Prove one checkpointed fake workflow through the TUI.
 

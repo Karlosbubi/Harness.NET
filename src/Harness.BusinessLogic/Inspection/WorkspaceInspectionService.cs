@@ -6,7 +6,8 @@ namespace Harness.BusinessLogic.Inspection;
 internal sealed class WorkspaceInspectionService(
     IWorkspaceStore workspaceStore,
     IWorkspaceFileReader fileReader,
-    IWorkspaceTextSearcher textSearcher) : IWorkspaceInspectionService
+    IWorkspaceTextSearcher textSearcher,
+    IWorkspaceGitInspector gitInspector) : IWorkspaceInspectionService
 {
     public async ValueTask<WorkspaceFileView> ReadFileAsync(
         string workspaceId,
@@ -68,9 +69,42 @@ internal sealed class WorkspaceInspectionService(
             result.Error);
     }
 
+    public async ValueTask<WorkspaceGitStateView> InspectGitAsync(
+        string workspaceId,
+        CancellationToken cancellationToken = default)
+    {
+        RegisteredWorkspace? workspace = await workspaceStore.GetActiveAsync(cancellationToken);
+        if (workspace is null || !workspace.Id.Equals(workspaceId, StringComparison.Ordinal))
+        {
+            return GitFailure("workspace_not_active", "The requested workspace is not active.");
+        }
+
+        if (!workspace.IsTrusted)
+        {
+            return GitFailure("workspace_not_trusted", "Trust the workspace before inspecting Git state.");
+        }
+
+        WorkspaceGitState result = await gitInspector.InspectAsync(
+            workspace.RootPath,
+            cancellationToken);
+        return new(
+            result.Branch,
+            result.HeadSha,
+            result.Changes.Select(change => new WorkspaceGitFileChangeView(
+                change.Path,
+                change.Status)).ToArray(),
+            result.Diff,
+            result.IsTruncated,
+            result.ErrorCode,
+            result.Error);
+    }
+
     private static WorkspaceFileView Failure(string path, string code, string error) =>
         new(path, string.Empty, 0, IsTruncated: false, code, error);
 
     private static WorkspaceTextSearchView SearchFailure(string code, string error) =>
         new([], 0, IsTruncated: false, code, error);
+
+    private static WorkspaceGitStateView GitFailure(string code, string error) =>
+        new(string.Empty, null, [], string.Empty, IsTruncated: false, code, error);
 }

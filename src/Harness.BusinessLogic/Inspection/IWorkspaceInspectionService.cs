@@ -11,4 +11,8 @@ public interface IWorkspaceInspectionService
         string workspaceId,
         string query,
         CancellationToken cancellationToken = default);
+
+    ValueTask<WorkspaceGitStateView> InspectGitAsync(
+        string workspaceId,
+        CancellationToken cancellationToken = default);
 }

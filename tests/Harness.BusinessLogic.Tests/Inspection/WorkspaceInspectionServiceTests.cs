@@ -13,7 +13,8 @@ public sealed class WorkspaceInspectionServiceTests
         WorkspaceInspectionService service = new(
             new FakeWorkspaceStore(CreateWorkspace(isTrusted: false)),
             reader,
-            new FakeTextSearcher());
+            new FakeTextSearcher(),
+            new FakeGitInspector());
 
         WorkspaceFileView result = await service.ReadFileAsync("workspace-id", "Program.cs");
 
@@ -28,7 +29,8 @@ public sealed class WorkspaceInspectionServiceTests
         WorkspaceInspectionService service = new(
             new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)),
             reader,
-            new FakeTextSearcher());
+            new FakeTextSearcher(),
+            new FakeGitInspector());
 
         WorkspaceFileView result = await service.ReadFileAsync("workspace-id", "Program.cs");
 
@@ -45,7 +47,8 @@ public sealed class WorkspaceInspectionServiceTests
         WorkspaceInspectionService service = new(
             new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)),
             reader,
-            new FakeTextSearcher());
+            new FakeTextSearcher(),
+            new FakeGitInspector());
 
         WorkspaceFileView result = await service.ReadFileAsync("other-id", "Program.cs");
 
@@ -60,7 +63,8 @@ public sealed class WorkspaceInspectionServiceTests
         WorkspaceInspectionService service = new(
             new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)),
             new FakeFileReader(),
-            searcher);
+            searcher,
+            new FakeGitInspector());
 
         WorkspaceTextSearchView result = await service.SearchTextAsync("workspace-id", "needle");
 
@@ -68,6 +72,24 @@ public sealed class WorkspaceInspectionServiceTests
         WorkspaceTextMatchView match = Assert.Single(result.Matches);
         Assert.Equal("Program.cs", match.Path);
         Assert.Equal(1, searcher.SearchCount);
+    }
+
+    [Fact]
+    public async Task Trusted_active_workspace_can_inspect_git_state()
+    {
+        FakeGitInspector inspector = new();
+        WorkspaceInspectionService service = new(
+            new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)),
+            new FakeFileReader(),
+            new FakeTextSearcher(),
+            inspector);
+
+        WorkspaceGitStateView result = await service.InspectGitAsync("workspace-id");
+
+        Assert.Null(result.Error);
+        Assert.Equal("main", result.Branch);
+        Assert.Single(result.Changes);
+        Assert.Equal(1, inspector.InspectCount);
     }
 
     private static RegisteredWorkspace CreateWorkspace(bool isTrusted) => new(
@@ -117,6 +139,26 @@ public sealed class WorkspaceInspectionServiceTests
             return ValueTask.FromResult(new WorkspaceTextSearch(
                 [new("Program.cs", 12, "// needle")],
                 1,
+                IsTruncated: false,
+                ErrorCode: null,
+                Error: null));
+        }
+    }
+
+    private sealed class FakeGitInspector : IWorkspaceGitInspector
+    {
+        internal int InspectCount { get; private set; }
+
+        public ValueTask<WorkspaceGitState> InspectAsync(
+            string workspaceRoot,
+            CancellationToken cancellationToken = default)
+        {
+            InspectCount++;
+            return ValueTask.FromResult(new WorkspaceGitState(
+                "main",
+                "abc123",
+                [new("Program.cs", "ModifiedInWorkdir")],
+                "diff --git a/Program.cs b/Program.cs",
                 IsTruncated: false,
                 ErrorCode: null,
                 Error: null));
