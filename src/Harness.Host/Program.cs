@@ -37,6 +37,8 @@ builder.Services.AddSingleton<IWorkspaceInspector, GitWorkspaceInspector>();
 builder.Services.AddSingleton<IWorkspaceStore, SqliteWorkspaceStore>();
 builder.Services.AddSingleton<IWorkspaceService, WorkspaceService>();
 builder.Services.AddSingleton<IFrameworkResolver, FrameworkResolver>();
+builder.Services.AddSingleton(new FrameworkOptions([]));
+builder.Services.AddSingleton<IFrameworkService, FrameworkService>();
 foreach (ModelProviderConfiguration provider in configuration.Providers.Values)
 {
     builder.Services.AddKeyedSingleton<IModelProvider>(

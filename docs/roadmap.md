@@ -41,8 +41,8 @@ Exit evidence: accepted framework and architecture decision records.
 - In progress: typed framework rules resolve precedence, provenance, locks,
   validation failures, and same-level conflicts. Bounded XDG `framework.md` and
   repository `AGENTS.md` loading preserve provenance and privacy, while private
-  overlays persist in SQLite; composition, XML rule binding, and effective-view
-  presentation remain.
+  overlays persist in SQLite. Business Logic composes these with resolved rules and
+  source failures; XML rule binding and effective-view presentation remain.
 - Connect OpenRouter and add typed tool-call mapping behind the same boundary.
 - Prove one checkpointed fake workflow through the TUI.
 

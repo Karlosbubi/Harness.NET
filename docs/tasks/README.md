@@ -45,7 +45,7 @@ but the end-user workflow is not complete.
 | 013 | Done | Hold a durable local-model conversation | Successful live inference still depends on the configured server being reachable. | TUI instructions stream through Business Logic to Ollama, persist, reload after restart, and show actionable provider failures. |
 | 014 | Partial | Configure and verify model providers | Named XML modules and per-role routing validate at startup, but only Ollama/MainLlm is consumed and TUI model selection remains conversation-wide and wide-layout only. | Configuration validates endpoints, discovers capabilities, selects models per role, and reports health without exposing secrets. |
 | 015 | Done | Register and trust a .NET workspace | - | A user can add a Git repository, select a solution/project, explicitly trust it, reopen it, and see dirty/base state. |
-| 016 | Partial | Load the user's engineering framework | Typed resolution, bounded XDG/repository loading, and SQLite private-overlay persistence exist, but source composition, XML rule binding, and an effective-view UI are not implemented. | Global, repository, and private framework layers load with precedence, locks, validation, and an inspectable effective view. |
+| 016 | Partial | Load the user's engineering framework | Business Logic composes global, repository, and private documents with resolved rules and source errors, but XML rule binding and an effective-view UI are not implemented. | Global, repository, and private framework layers load with precedence, locks, validation, and an inspectable effective view. |
 | 017 | Missing | Let agents inspect safely | No repository, Git, or .NET inspection tools are available to agents. | Typed, path-confined read/search/status/diff/project/build-information tools run only in a trusted workspace and return bounded records. |
 | 018 | Missing | Let agents implement and verify | No editing, build, test, restore, or mutation policy exists. | Approved runs can use typed edit/build/test tools with cancellation, output limits, correlation, and separate restore/network approval. |
 | 019 | Missing | Isolate work with Git | No branches or worktrees are created. | Each approved goal uses a validated branch/worktree, preserves dirty user state, and never merges/rebases automatically. |
@@ -105,5 +105,6 @@ Harness.NET state auditable.
   provenance, locks, validation, and unresolved same-level conflict reporting.
   Bounded readers load global XDG Markdown and root repository `AGENTS.md` with
   privacy and provenance metadata. Workspace-private overlays persist in SQLite
-  without repository metadata. Source composition, XML rules, and presentation remain
-  open.
+  without repository metadata. Business Logic composes all three document layers,
+  effective rules, and source failures into one snapshot. XML rule binding and
+  presentation remain open.
