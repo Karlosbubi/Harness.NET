@@ -12,7 +12,8 @@ public sealed class WorkspaceInspectionServiceTests
         FakeFileReader reader = new();
         WorkspaceInspectionService service = new(
             new FakeWorkspaceStore(CreateWorkspace(isTrusted: false)),
-            reader);
+            reader,
+            new FakeTextSearcher());
 
         WorkspaceFileView result = await service.ReadFileAsync("workspace-id", "Program.cs");
 
@@ -26,7 +27,8 @@ public sealed class WorkspaceInspectionServiceTests
         FakeFileReader reader = new();
         WorkspaceInspectionService service = new(
             new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)),
-            reader);
+            reader,
+            new FakeTextSearcher());
 
         WorkspaceFileView result = await service.ReadFileAsync("workspace-id", "Program.cs");
 
@@ -42,12 +44,30 @@ public sealed class WorkspaceInspectionServiceTests
         FakeFileReader reader = new();
         WorkspaceInspectionService service = new(
             new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)),
-            reader);
+            reader,
+            new FakeTextSearcher());
 
         WorkspaceFileView result = await service.ReadFileAsync("other-id", "Program.cs");
 
         Assert.Equal("workspace_not_active", result.ErrorCode);
         Assert.Equal(0, reader.ReadCount);
+    }
+
+    [Fact]
+    public async Task Trusted_active_workspace_can_search_tracked_text()
+    {
+        FakeTextSearcher searcher = new();
+        WorkspaceInspectionService service = new(
+            new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)),
+            new FakeFileReader(),
+            searcher);
+
+        WorkspaceTextSearchView result = await service.SearchTextAsync("workspace-id", "needle");
+
+        Assert.Null(result.Error);
+        WorkspaceTextMatchView match = Assert.Single(result.Matches);
+        Assert.Equal("Program.cs", match.Path);
+        Assert.Equal(1, searcher.SearchCount);
     }
 
     private static RegisteredWorkspace CreateWorkspace(bool isTrusted) => new(
@@ -78,6 +98,25 @@ public sealed class WorkspaceInspectionServiceTests
                 relativePath,
                 "source",
                 6,
+                IsTruncated: false,
+                ErrorCode: null,
+                Error: null));
+        }
+    }
+
+    private sealed class FakeTextSearcher : IWorkspaceTextSearcher
+    {
+        internal int SearchCount { get; private set; }
+
+        public ValueTask<WorkspaceTextSearch> SearchAsync(
+            string workspaceRoot,
+            string query,
+            CancellationToken cancellationToken = default)
+        {
+            SearchCount++;
+            return ValueTask.FromResult(new WorkspaceTextSearch(
+                [new("Program.cs", 12, "// needle")],
+                1,
                 IsTruncated: false,
                 ErrorCode: null,
                 Error: null));

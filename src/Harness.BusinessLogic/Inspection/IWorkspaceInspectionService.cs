@@ -6,4 +6,9 @@ public interface IWorkspaceInspectionService
         string workspaceId,
         string relativePath,
         CancellationToken cancellationToken = default);
+
+    ValueTask<WorkspaceTextSearchView> SearchTextAsync(
+        string workspaceId,
+        string query,
+        CancellationToken cancellationToken = default);
 }
