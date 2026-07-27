@@ -2,6 +2,7 @@ using Harness.DataAccess.Configuration;
 using Harness.DataAccess.Goals;
 using Harness.DataAccess.Persistence;
 using Harness.DataAccess.Workspaces;
+using Microsoft.Data.Sqlite;
 
 namespace Harness.DataAccess.Tests.Goals;
 
@@ -44,6 +45,67 @@ public sealed class SqliteGoalStoreTests : IDisposable
         Assert.Equal(expected.Title, loaded?.Title);
         Assert.Equal(expected.RemoteBudgetMicrousd, loaded?.RemoteBudgetMicrousd);
         Assert.Equal(expected.Id, Assert.Single(listed).Id);
+    }
+
+    [Fact]
+    public async Task Saves_plan_revisions_and_decisions_atomically()
+    {
+        StubApplicationPaths paths = new(CreatePaths());
+        await new SqliteDatabaseInitializer(paths).InitializeAsync();
+        string workspaceRoot = Path.Combine(root, "repository");
+        string entryPoint = Path.Combine(workspaceRoot, "Repository.slnx");
+        RegisteredWorkspace workspace = await new SqliteWorkspaceStore(paths).SaveAsync(
+            new(workspaceRoot, "repository", "main", false, [entryPoint], Error: null),
+            entryPoint);
+        SqliteGoalStore store = new(paths);
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        StoredGoal goal = await store.CreateAsync(new(
+            "goal-id",
+            workspace.Id,
+            "Goal",
+            "Objective",
+            3,
+            null,
+            "Draft",
+            now,
+            now));
+        StoredPlan plan = new(
+            "plan-id",
+            goal.Id,
+            1,
+            "Implement and test.",
+            "Pending",
+            now,
+            now);
+
+        StoredPlanSnapshot proposed = await store.SavePlanAsync(
+            plan,
+            "Draft",
+            "AwaitingPlanApproval");
+        StoredPlanSnapshot decided = await store.DecidePlanAsync(
+            new("approval-id", goal.Id, plan.Id, "Plan", "Denied", "Revise it.", now),
+            "AwaitingPlanApproval",
+            "Pending",
+            "NeedsPlanRevision",
+            "Denied");
+
+        Assert.Equal("AwaitingPlanApproval", proposed.Goal.State);
+        Assert.Equal("NeedsPlanRevision", decided.Goal.State);
+        Assert.Equal("Denied", decided.Plan.State);
+        Assert.Equal("Revise it.", decided.Approval?.Reason);
+        Assert.Equal("Denied", (await store.GetCurrentPlanAsync(goal.Id))?.State);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => store.DecidePlanAsync(
+            new("second-approval", goal.Id, plan.Id, "Plan", "Approved", null, now),
+            "AwaitingPlanApproval",
+            "Pending",
+            "Approved",
+            "Approved").AsTask());
+
+        using SqliteConnection connection = new($"Data Source={paths.Current.DatabasePath}");
+        connection.Open();
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM approvals WHERE plan_id = 'plan-id';";
+        Assert.Equal(1L, (long)command.ExecuteScalar()!);
     }
 
     public void Dispose()

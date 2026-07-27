@@ -50,8 +50,9 @@ Exit evidence: accepted framework and architecture decision records.
   HEAD identity. Non-evaluating .NET inspection parses solution, project, reference,
   target-framework, language, and SDK-policy metadata into bounded records.
 - In progress: schema-versioned draft goals persist against the active workspace
-  with validated review-cycle and optional remote-cost caps. Versioned plans and
-  approval transitions remain.
+  with validated review-cycle and optional remote-cost caps. Versioned plan
+  proposals and atomic approval/denial transitions now exist below Presentation;
+  the TUI workflow and worktree-bound capability grant remain.
 - Connect OpenRouter and add typed tool-call mapping behind the same boundary.
 - Prove one checkpointed fake workflow through the TUI.
 
