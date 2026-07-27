@@ -1,4 +1,5 @@
 using Harness.BusinessLogic.Mutations;
+using Harness.DataAccess.Execution;
 using Harness.DataAccess.Goals;
 using Harness.DataAccess.Mutations;
 using Harness.DataAccess.Workspaces;
@@ -15,7 +16,8 @@ public sealed class WorkspaceMutationServiceTests
         WorkspaceMutationService service = new(
             new FakeGoalStore(CreateGoal("Approved"), CreateWorktree()),
             new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)),
-            editor);
+            editor,
+            new FakeDotNetToolRunner());
 
         FileEditView result = await service.ApplyFileEditAsync(new(
             "goal-id",
@@ -37,7 +39,8 @@ public sealed class WorkspaceMutationServiceTests
         WorkspaceMutationService service = new(
             new FakeGoalStore(CreateGoal("Draft"), worktree: null),
             new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)),
-            editor);
+            editor,
+            new FakeDotNetToolRunner());
 
         FileEditView result = await service.ApplyFileEditAsync(new(
             "goal-id",
@@ -57,7 +60,8 @@ public sealed class WorkspaceMutationServiceTests
         WorkspaceMutationService service = new(
             new FakeGoalStore(CreateGoal("Approved"), CreateWorktree()),
             new FakeWorkspaceStore(CreateWorkspace(isTrusted: false)),
-            editor);
+            editor,
+            new FakeDotNetToolRunner());
 
         FileEditView result = await service.ApplyFileEditAsync(new(
             "goal-id",
@@ -68,6 +72,47 @@ public sealed class WorkspaceMutationServiceTests
 
         Assert.Equal("workspace_not_trusted", result.ErrorCode);
         Assert.Equal(0, editor.CallCount);
+    }
+
+    [Fact]
+    public async Task Approved_goal_runs_dotnet_in_its_worktree_with_the_registered_entry_point()
+    {
+        FakeDotNetToolRunner runner = new();
+        WorkspaceMutationService service = new(
+            new FakeGoalStore(CreateGoal("Approved"), CreateWorktree()),
+            new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)),
+            new FakeFileEditor(),
+            runner);
+
+        DotNetOperationView result = await service.RunDotNetAsync(new(
+            "goal-id",
+            "tool-call-45",
+            "Build"));
+
+        Assert.Null(result.Error);
+        Assert.Equal("tool-call-45", result.CorrelationId);
+        Assert.Equal("/state/worktrees/goal-id", runner.Root);
+        Assert.Equal("Repository.slnx", runner.Request?.EntryPoint);
+        Assert.Equal("Build", runner.Request?.Operation);
+    }
+
+    [Fact]
+    public async Task Dotnet_execution_requires_an_active_approved_grant()
+    {
+        FakeDotNetToolRunner runner = new();
+        WorkspaceMutationService service = new(
+            new FakeGoalStore(CreateGoal("Planned"), CreateWorktree()),
+            new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)),
+            new FakeFileEditor(),
+            runner);
+
+        DotNetOperationView result = await service.RunDotNetAsync(new(
+            "goal-id",
+            "tool-call-46",
+            "Test"));
+
+        Assert.Equal("goal_not_approved", result.ErrorCode);
+        Assert.Equal(0, runner.CallCount);
     }
 
     private static StoredGoal CreateGoal(string state) => new(
@@ -120,6 +165,35 @@ public sealed class WorkspaceMutationServiceTests
                 "new-hash",
                 11,
                 WasCreated: false,
+                ErrorCode: null,
+                Error: null));
+        }
+    }
+
+    private sealed class FakeDotNetToolRunner : IDotNetToolRunner
+    {
+        internal int CallCount { get; private set; }
+        internal string? Root { get; private set; }
+        internal DotNetToolRequest? Request { get; private set; }
+
+        public ValueTask<DotNetToolResult> RunAsync(
+            string worktreeRoot,
+            DotNetToolRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            CallCount++;
+            Root = worktreeRoot;
+            Request = request;
+            return ValueTask.FromResult(new DotNetToolResult(
+                request.Operation,
+                request.EntryPoint,
+                0,
+                "Build succeeded.",
+                string.Empty,
+                IsOutputTruncated: false,
+                IsErrorTruncated: false,
+                WasCancelled: false,
+                DurationMilliseconds: 10,
                 ErrorCode: null,
                 Error: null));
         }
