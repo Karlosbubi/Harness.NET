@@ -37,7 +37,8 @@ internal sealed class SqliteWorkspaceStore(IApplicationPaths applicationPaths) :
                 is_dirty = excluded.is_dirty,
                 updated_at = excluded.updated_at
             RETURNING id, root_path AS RootPath, name, entry_point AS EntryPoint,
-                      is_trusted AS IsTrusted, branch, is_dirty AS IsDirty,
+                      is_trusted AS IsTrusted, is_active AS IsActive,
+                      branch, is_dirty AS IsDirty,
                       created_at AS CreatedAt, updated_at AS UpdatedAt;
             """, parameters, cancellationToken: cancellationToken);
         WorkspaceRow row = await connection.QuerySingleAsync<WorkspaceRow>(command);
@@ -66,6 +67,41 @@ internal sealed class SqliteWorkspaceStore(IApplicationPaths applicationPaths) :
         return rows.Select(row => row.ToRecord()).ToArray();
     }
 
+    public async ValueTask<RegisteredWorkspace?> GetActiveAsync(
+        CancellationToken cancellationToken = default)
+    {
+        await using SqliteConnection connection = await OpenAsync(cancellationToken);
+        CommandDefinition command = new(SelectSql + " WHERE is_active = 1;",
+            cancellationToken: cancellationToken);
+        WorkspaceRow? row = await connection.QuerySingleOrDefaultAsync<WorkspaceRow>(command);
+        return row?.ToRecord();
+    }
+
+    public async ValueTask<RegisteredWorkspace> SetActiveAsync(
+        string workspaceId,
+        CancellationToken cancellationToken = default)
+    {
+        string now = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture);
+        await using SqliteConnection connection = await OpenAsync(cancellationToken);
+        await using SqliteTransaction transaction =
+            (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        await connection.ExecuteAsync(new CommandDefinition(
+            "UPDATE workspaces SET is_active = 0 WHERE is_active = 1;",
+            transaction: transaction,
+            cancellationToken: cancellationToken));
+        WorkspaceRow row = await connection.QuerySingleAsync<WorkspaceRow>(new CommandDefinition("""
+            UPDATE workspaces
+            SET is_active = 1, updated_at = @now
+            WHERE id = @workspaceId
+            RETURNING id, root_path AS RootPath, name, entry_point AS EntryPoint,
+                      is_trusted AS IsTrusted, is_active AS IsActive,
+                      branch, is_dirty AS IsDirty,
+                      created_at AS CreatedAt, updated_at AS UpdatedAt;
+            """, new { workspaceId, now }, transaction, cancellationToken: cancellationToken));
+        await transaction.CommitAsync(cancellationToken);
+        return row.ToRecord();
+    }
+
     public async ValueTask<RegisteredWorkspace> SetTrustAsync(
         string workspaceId,
         bool isTrusted,
@@ -78,7 +114,8 @@ internal sealed class SqliteWorkspaceStore(IApplicationPaths applicationPaths) :
             SET is_trusted = @isTrusted, updated_at = @now
             WHERE id = @workspaceId
             RETURNING id, root_path AS RootPath, name, entry_point AS EntryPoint,
-                      is_trusted AS IsTrusted, branch, is_dirty AS IsDirty,
+                      is_trusted AS IsTrusted, is_active AS IsActive,
+                      branch, is_dirty AS IsDirty,
                       created_at AS CreatedAt, updated_at AS UpdatedAt;
             """, new { workspaceId, isTrusted, now }, cancellationToken: cancellationToken);
         WorkspaceRow row = await connection.QuerySingleAsync<WorkspaceRow>(command);
@@ -100,7 +137,8 @@ internal sealed class SqliteWorkspaceStore(IApplicationPaths applicationPaths) :
 
     private const string SelectSql = """
         SELECT id, root_path AS RootPath, name, entry_point AS EntryPoint,
-               is_trusted AS IsTrusted, branch, is_dirty AS IsDirty,
+               is_trusted AS IsTrusted, is_active AS IsActive,
+               branch, is_dirty AS IsDirty,
                created_at AS CreatedAt, updated_at AS UpdatedAt
         FROM workspaces
         """;
@@ -112,6 +150,7 @@ internal sealed class SqliteWorkspaceStore(IApplicationPaths applicationPaths) :
         public string Name { get; init; } = string.Empty;
         public string EntryPoint { get; init; } = string.Empty;
         public bool IsTrusted { get; init; }
+        public bool IsActive { get; init; }
         public string Branch { get; init; } = string.Empty;
         public bool IsDirty { get; init; }
         public string CreatedAt { get; init; } = string.Empty;
@@ -123,6 +162,7 @@ internal sealed class SqliteWorkspaceStore(IApplicationPaths applicationPaths) :
             Name,
             EntryPoint,
             IsTrusted,
+            IsActive,
             Branch,
             IsDirty,
             DateTimeOffset.Parse(CreatedAt, CultureInfo.InvariantCulture),

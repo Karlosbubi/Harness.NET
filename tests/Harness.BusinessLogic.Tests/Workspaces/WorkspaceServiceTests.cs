@@ -51,6 +51,7 @@ public sealed class WorkspaceServiceTests
             isTrusted: true);
 
         Assert.False(registered.Workspace.IsTrusted);
+        Assert.True(registered.Workspace.IsActive);
         Assert.True(trusted.Workspace!.IsTrusted);
         Assert.Equal("feature/configuration", trusted.Workspace.Branch);
         Assert.True(trusted.Workspace.IsDirty);
@@ -84,6 +85,7 @@ public sealed class WorkspaceServiceTests
                 inspection.Name,
                 entryPoint,
                 false,
+                false,
                 inspection.Branch,
                 inspection.IsDirty,
                 now,
@@ -100,6 +102,22 @@ public sealed class WorkspaceServiceTests
             CancellationToken cancellationToken = default) =>
             ValueTask.FromResult<IReadOnlyList<RegisteredWorkspace>>(
                 workspace is null ? [] : [workspace]);
+
+        public ValueTask<RegisteredWorkspace?> GetActiveAsync(
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(workspace?.IsActive is true ? workspace : null);
+
+        public ValueTask<RegisteredWorkspace> SetActiveAsync(
+            string workspaceId,
+            CancellationToken cancellationToken = default)
+        {
+            workspace = (workspace ?? throw new InvalidOperationException()) with
+            {
+                IsActive = true,
+                UpdatedAt = DateTimeOffset.UtcNow,
+            };
+            return ValueTask.FromResult(workspace);
+        }
 
         public ValueTask<RegisteredWorkspace> SetTrustAsync(
             string workspaceId,

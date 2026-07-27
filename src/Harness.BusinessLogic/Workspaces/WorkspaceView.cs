@@ -6,5 +6,6 @@ public sealed record WorkspaceView(
     string Name,
     string EntryPoint,
     bool IsTrusted,
+    bool IsActive,
     string Branch,
     bool IsDirty);

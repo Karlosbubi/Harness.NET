@@ -33,9 +33,9 @@ Exit evidence: accepted framework and architecture decision records.
 - In progress: provider health, capability discovery, and persisted model selection
   are available in the wide TUI. Typed XML supplies named provider modules and
   main/reviewer/tool routing; only the main route is consumed today.
-- In progress: Git-backed workspace inspection, durable registration, entry-point
-  validation, and explicit trust exist behind Business Logic contracts; TUI exposure
-  remains.
+- In progress: Git-backed workspace inspection, durable registration, active
+  selection, entry-point validation, and explicit trust exist behind Business Logic
+  contracts; TUI exposure remains.
 - Connect OpenRouter and add typed tool-call mapping behind the same boundary.
 - Prove one checkpointed fake workflow through the TUI.
 

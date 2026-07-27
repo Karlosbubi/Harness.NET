@@ -18,4 +18,11 @@ public interface IWorkspaceService
 
     ValueTask<IReadOnlyList<WorkspaceView>> ListAsync(
         CancellationToken cancellationToken = default);
+
+    ValueTask<WorkspaceView?> GetActiveAsync(
+        CancellationToken cancellationToken = default);
+
+    ValueTask<WorkspaceView> SelectAsync(
+        string workspaceId,
+        CancellationToken cancellationToken = default);
 }

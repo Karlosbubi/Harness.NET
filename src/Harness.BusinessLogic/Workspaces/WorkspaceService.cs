@@ -37,10 +37,11 @@ internal sealed class WorkspaceService(
                 "The selected entry point is not a tracked .NET solution or project in this repository.");
         }
 
-        RegisteredWorkspace workspace = await store.SaveAsync(
+        RegisteredWorkspace saved = await store.SaveAsync(
             inspection,
             canonicalEntryPoint,
             cancellationToken);
+        RegisteredWorkspace workspace = await store.SetActiveAsync(saved.Id, cancellationToken);
         return new(workspace.ToView(), inspection.EntryPoints, Error: null);
     }
 
@@ -62,6 +63,15 @@ internal sealed class WorkspaceService(
         IReadOnlyList<RegisteredWorkspace> workspaces = await store.ListAsync(cancellationToken);
         return workspaces.Select(workspace => workspace.ToView()).ToArray();
     }
+
+    public async ValueTask<WorkspaceView?> GetActiveAsync(
+        CancellationToken cancellationToken = default) =>
+        (await store.GetActiveAsync(cancellationToken))?.ToView();
+
+    public async ValueTask<WorkspaceView> SelectAsync(
+        string workspaceId,
+        CancellationToken cancellationToken = default) =>
+        (await store.SetActiveAsync(workspaceId, cancellationToken)).ToView();
 }
 
 internal static class RegisteredWorkspaceMapping
@@ -72,6 +82,7 @@ internal static class RegisteredWorkspaceMapping
         workspace.Name,
         workspace.EntryPoint,
         workspace.IsTrusted,
+        workspace.IsActive,
         workspace.Branch,
         workspace.IsDirty);
 }
