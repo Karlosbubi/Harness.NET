@@ -14,7 +14,8 @@ public sealed class WorkspaceInspectionServiceTests
             new FakeWorkspaceStore(CreateWorkspace(isTrusted: false)),
             reader,
             new FakeTextSearcher(),
-            new FakeGitInspector());
+            new FakeGitInspector(),
+            new FakeDotNetInspector());
 
         WorkspaceFileView result = await service.ReadFileAsync("workspace-id", "Program.cs");
 
@@ -30,7 +31,8 @@ public sealed class WorkspaceInspectionServiceTests
             new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)),
             reader,
             new FakeTextSearcher(),
-            new FakeGitInspector());
+            new FakeGitInspector(),
+            new FakeDotNetInspector());
 
         WorkspaceFileView result = await service.ReadFileAsync("workspace-id", "Program.cs");
 
@@ -48,7 +50,8 @@ public sealed class WorkspaceInspectionServiceTests
             new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)),
             reader,
             new FakeTextSearcher(),
-            new FakeGitInspector());
+            new FakeGitInspector(),
+            new FakeDotNetInspector());
 
         WorkspaceFileView result = await service.ReadFileAsync("other-id", "Program.cs");
 
@@ -64,7 +67,8 @@ public sealed class WorkspaceInspectionServiceTests
             new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)),
             new FakeFileReader(),
             searcher,
-            new FakeGitInspector());
+            new FakeGitInspector(),
+            new FakeDotNetInspector());
 
         WorkspaceTextSearchView result = await service.SearchTextAsync("workspace-id", "needle");
 
@@ -82,13 +86,33 @@ public sealed class WorkspaceInspectionServiceTests
             new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)),
             new FakeFileReader(),
             new FakeTextSearcher(),
-            inspector);
+            inspector,
+            new FakeDotNetInspector());
 
         WorkspaceGitStateView result = await service.InspectGitAsync("workspace-id");
 
         Assert.Null(result.Error);
         Assert.Equal("main", result.Branch);
         Assert.Single(result.Changes);
+        Assert.Equal(1, inspector.InspectCount);
+    }
+
+    [Fact]
+    public async Task Trusted_active_workspace_can_inspect_dotnet_metadata()
+    {
+        FakeDotNetInspector inspector = new();
+        WorkspaceInspectionService service = new(
+            new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)),
+            new FakeFileReader(),
+            new FakeTextSearcher(),
+            new FakeGitInspector(),
+            inspector);
+
+        WorkspaceDotNetInfoView result = await service.InspectDotNetAsync("workspace-id");
+
+        Assert.Null(result.Error);
+        DotNetProjectView project = Assert.Single(result.Projects);
+        Assert.Equal("net10.0", Assert.Single(project.TargetFrameworks));
         Assert.Equal(1, inspector.InspectCount);
     }
 
@@ -159,6 +183,33 @@ public sealed class WorkspaceInspectionServiceTests
                 "abc123",
                 [new("Program.cs", "ModifiedInWorkdir")],
                 "diff --git a/Program.cs b/Program.cs",
+                IsTruncated: false,
+                ErrorCode: null,
+                Error: null));
+        }
+    }
+
+    private sealed class FakeDotNetInspector : IWorkspaceDotNetInspector
+    {
+        internal int InspectCount { get; private set; }
+
+        public ValueTask<WorkspaceDotNetInfo> InspectAsync(
+            string workspaceRoot,
+            string entryPoint,
+            CancellationToken cancellationToken = default)
+        {
+            InspectCount++;
+            return ValueTask.FromResult(new WorkspaceDotNetInfo(
+                "Repository.slnx",
+                "slnx",
+                new("10.0.201", "latestPatch", false),
+                [new(
+                    "Sample.csproj",
+                    "Microsoft.NET.Sdk",
+                    ["net10.0"],
+                    "latest",
+                    "enable",
+                    [new("package", "xunit", "2.9.3")])],
                 IsTruncated: false,
                 ErrorCode: null,
                 Error: null));

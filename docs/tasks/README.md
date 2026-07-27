@@ -46,7 +46,7 @@ but the end-user workflow is not complete.
 | 014 | Partial | Configure and verify model providers | Named XML modules and per-role routing validate at startup, but only Ollama/MainLlm is consumed and TUI model selection remains conversation-wide and wide-layout only. | Configuration validates endpoints, discovers capabilities, selects models per role, and reports health without exposing secrets. |
 | 015 | Done | Register and trust a .NET workspace | - | A user can add a Git repository, select a solution/project, explicitly trust it, reopen it, and see dirty/base state. |
 | 016 | Done | Load the user's engineering framework | - | Global, repository, and private framework layers load with precedence, locks, validation, and an inspectable effective view. |
-| 017 | Partial | Let agents inspect safely | Trusted, bounded file reads, tracked-text search, and Git status/diff exist; .NET project/build-information tools remain. | Typed, path-confined read/search/status/diff/project/build-information tools run only in a trusted workspace and return bounded records. |
+| 017 | Done | Let agents inspect safely | - | Typed, path-confined read/search/status/diff/project/build-information tools run only in a trusted workspace and return bounded records. |
 | 018 | Missing | Let agents implement and verify | No editing, build, test, restore, or mutation policy exists. | Approved runs can use typed edit/build/test tools with cancellation, output limits, correlation, and separate restore/network approval. |
 | 019 | Missing | Isolate work with Git | No branches or worktrees are created. | Each approved goal uses a validated branch/worktree, preserves dirty user state, and never merges/rebases automatically. |
 | 020 | Missing | Create goals and approve plans | There is no goal, plan, approval, or policy state machine. | Goals, caps, plans, revisions, approvals, and denials persist and every consequential transition is validated. |
@@ -117,4 +117,6 @@ Harness.NET state auditable.
   search enumerates the Git index, shares the confinement policy, skips oversized or
   non-text files, and returns bounded line records with truncation metadata. Git
   inspection returns branch and HEAD identity, bounded status records, and a
-  combined index/worktree diff capped at 128 KiB.
+  combined index/worktree diff capped at 128 KiB. Non-evaluating .NET metadata
+  inspection uses the MSBuild solution parser plus bounded XML/JSON readers for
+  projects, target frameworks, SDK/language settings, references, and `global.json`.

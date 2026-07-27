@@ -19,7 +19,9 @@ The workspace modal can also inspect, register, select, and explicitly trust a
 Git-backed .NET workspace; the Workspace menu remains available in narrow layouts.
 The Framework menu shows the resolved engineering rules and guidance with locks,
 provenance, privacy, and validation issues, and edits the private workspace overlay.
-Repository tools and multi-agent execution are not implemented yet.
+Trusted-workspace inspection services now provide confined file reads, tracked-text
+search, bounded Git status/diff evidence, and non-evaluating .NET metadata. Agent
+role execution and mutation tools are not implemented yet.
 
 Start with:
 

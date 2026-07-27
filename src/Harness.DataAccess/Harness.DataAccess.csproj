@@ -6,6 +6,7 @@
     <PackageReference Include="dbup-core" />
     <PackageReference Include="dbup-sqlite" />
     <PackageReference Include="Microsoft.Data.Sqlite" />
+    <PackageReference Include="Microsoft.Build" />
     <PackageReference Include="Microsoft.Extensions.Logging" />
     <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
     <PackageReference Include="OpenTelemetry.Extensions.Hosting" />

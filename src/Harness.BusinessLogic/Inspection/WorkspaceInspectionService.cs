@@ -7,7 +7,8 @@ internal sealed class WorkspaceInspectionService(
     IWorkspaceStore workspaceStore,
     IWorkspaceFileReader fileReader,
     IWorkspaceTextSearcher textSearcher,
-    IWorkspaceGitInspector gitInspector) : IWorkspaceInspectionService
+    IWorkspaceGitInspector gitInspector,
+    IWorkspaceDotNetInspector dotNetInspector) : IWorkspaceInspectionService
 {
     public async ValueTask<WorkspaceFileView> ReadFileAsync(
         string workspaceId,
@@ -99,6 +100,49 @@ internal sealed class WorkspaceInspectionService(
             result.Error);
     }
 
+    public async ValueTask<WorkspaceDotNetInfoView> InspectDotNetAsync(
+        string workspaceId,
+        CancellationToken cancellationToken = default)
+    {
+        RegisteredWorkspace? workspace = await workspaceStore.GetActiveAsync(cancellationToken);
+        if (workspace is null || !workspace.Id.Equals(workspaceId, StringComparison.Ordinal))
+        {
+            return DotNetFailure("workspace_not_active", "The requested workspace is not active.");
+        }
+
+        if (!workspace.IsTrusted)
+        {
+            return DotNetFailure("workspace_not_trusted", "Trust the workspace before inspecting .NET metadata.");
+        }
+
+        WorkspaceDotNetInfo result = await dotNetInspector.InspectAsync(
+            workspace.RootPath,
+            workspace.EntryPoint,
+            cancellationToken);
+        return new(
+            result.EntryPoint,
+            result.EntryPointKind,
+            result.SdkPolicy is null
+                ? null
+                : new(
+                    result.SdkPolicy.Version,
+                    result.SdkPolicy.RollForward,
+                    result.SdkPolicy.AllowPrerelease),
+            result.Projects.Select(project => new DotNetProjectView(
+                project.Path,
+                project.Sdk,
+                project.TargetFrameworks,
+                project.LanguageVersion,
+                project.Nullable,
+                project.References.Select(reference => new DotNetReferenceView(
+                    reference.Kind,
+                    reference.Identity,
+                    reference.Version)).ToArray())).ToArray(),
+            result.IsTruncated,
+            result.ErrorCode,
+            result.Error);
+    }
+
     private static WorkspaceFileView Failure(string path, string code, string error) =>
         new(path, string.Empty, 0, IsTruncated: false, code, error);
 
@@ -107,4 +151,7 @@ internal sealed class WorkspaceInspectionService(
 
     private static WorkspaceGitStateView GitFailure(string code, string error) =>
         new(string.Empty, null, [], string.Empty, IsTruncated: false, code, error);
+
+    private static WorkspaceDotNetInfoView DotNetFailure(string code, string error) =>
+        new(string.Empty, string.Empty, null, [], IsTruncated: false, code, error);
 }

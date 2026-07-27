@@ -41,6 +41,7 @@ builder.Services.AddSingleton<IWorkspaceService, WorkspaceService>();
 builder.Services.AddSingleton<IWorkspaceFileReader, WorkspaceFileReader>();
 builder.Services.AddSingleton<IWorkspaceTextSearcher, GitWorkspaceTextSearcher>();
 builder.Services.AddSingleton<IWorkspaceGitInspector, LibGitWorkspaceGitInspector>();
+builder.Services.AddSingleton<IWorkspaceDotNetInspector, WorkspaceDotNetInspector>();
 builder.Services.AddSingleton<IWorkspaceInspectionService, WorkspaceInspectionService>();
 builder.Services.AddSingleton<IFrameworkResolver, FrameworkResolver>();
 builder.Services.AddSingleton(new FrameworkOptions(configuration.Framework.Rules
