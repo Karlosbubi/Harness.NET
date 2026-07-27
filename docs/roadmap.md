@@ -3,6 +3,11 @@
 The roadmap is stage-gated. A stage completes through its decisions and evidence,
 not merely because code exists.
 
+Delivery proceeds in bite-sized, independently verifiable chunks. Each completed
+chunk is committed regularly using a Conventional Commits description, with its
+tests and relevant plan/task updates included. Unrelated roadmap work is kept in
+separate commits.
+
 ## Stage 0: Framework discovery (complete)
 
 - Defined product scope, first workflow, and success boundary.
@@ -13,15 +18,25 @@ not merely because code exists.
 
 Exit evidence: accepted framework and architecture decision records.
 
-## Stage 1: Walking skeleton
+## Stage 1: Walking skeleton (current)
 
-- Scaffold the accepted layers, composition root, analyzer, tests, and central
-  dependency management.
-- Add startup configuration, XDG paths, keyring access, SQLite/DbUp initialization,
-  Serilog, OpenTelemetry, and graceful cancellation.
-- Add the Terminal.Gui adaptive shell using fake Business Logic contracts.
-- Connect Ollama and OpenRouter behind Data Access interfaces and verify streaming,
-  usage mapping, tool-call mapping, and provider failure handling.
+- Completed: scaffolded the runtime layers, composition root, central dependency
+  management, architecture tests, and compile-time boundary analyzer.
+- Completed: XDG paths, Secret Service access, SQLite/DbUp initialization, redacted
+  Serilog output, optional OpenTelemetry, and graceful cancellation.
+- Completed: adaptive Terminal.Gui shell using fake Business Logic contracts.
+- Completed: Ollama discovery, streaming chat, embeddings, usage, cancellation, and
+  provider failure mapping behind Data Access records, with live LAN verification.
+- Completed: durable local conversation path from the TUI through Business Logic to
+  Ollama, including schema-versioned history, incremental snapshots, token usage,
+  reload, scrollable transcript, and persisted provider failures.
+- In progress: provider health, capability discovery, and persisted model selection
+  are available in the wide TUI. Typed XML supplies named provider modules and
+  main/reviewer/tool routing; only the main route is consumed today.
+- In progress: Git-backed workspace inspection, durable registration, entry-point
+  validation, and explicit trust exist behind Business Logic contracts; TUI exposure
+  remains.
+- Connect OpenRouter and add typed tool-call mapping behind the same boundary.
 - Prove one checkpointed fake workflow through the TUI.
 
 Exit evidence: clean build, architecture diagnostics, deterministic tests, and a

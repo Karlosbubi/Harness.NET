@@ -11,9 +11,9 @@ Data Access -> Business Logic -> Presentation
        +---------- Host/DI ----------+
 ```
 
-The future solution will contain Data Access, Business Logic, Terminal Presentation,
-Host, Analyzer, and test projects. Project creation and package pinning are deferred
-until application scaffolding is authorized.
+The solution contains Data Access, Business Logic, Terminal Presentation, Host, and
+architecture-test projects with central package management. A Roslyn analyzer now
+enforces layer direction and public contract shape during every runtime build.
 
 Only interfaces and records form layer contracts. Implementations remain internal
 where practical; DI composition is the documented exception. Provider SDK payloads

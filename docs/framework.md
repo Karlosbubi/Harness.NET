@@ -95,6 +95,9 @@ overlay, `AGENTS.md`, or a suitable existing documentation file.
   abstractions; Microsoft types do not cross into Presentation.
 - Data Access provides Ollama and OpenRouter chat and embedding connectors.
 - Models are configurable per role through provider-neutral Business Logic records.
+- Provider instances are named XML modules. Global routing selects a configured
+  module for the main, reviewer, and tool roles without coupling upper layers to an
+  implementation type.
 - The current development Ollama endpoint is `http://192.168.1.101:11434`.
 - `gemma4:latest` is the current default chat model for all roles.
 - `embeddinggemma` is the default local embedding model and must be installed before
@@ -141,6 +144,8 @@ overlay, `AGENTS.md`, or a suitable existing documentation file.
 - The initial release is a self-contained Linux x64 binary and keeps process, path,
   and presentation contracts portable for later platforms.
 - Harness.NET uses XDG-managed config, data, state, and cache locations.
+- Typed runtime defaults ship as XML; an XDG XML file overrides them. Environment
+  and command-line values remain optional, higher-precedence operational overrides.
 - Serilog implements `Microsoft.Extensions.Logging.ILogger` and writes redacted
   rolling JSON logs. OTLP export is optional and model content is disabled by default.
 - Normal tests use deterministic fake model and agent clients. Opt-in Ollama

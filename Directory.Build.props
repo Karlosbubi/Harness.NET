@@ -1,8 +1,19 @@
 <Project>
   <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <Deterministic>true</Deterministic>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <MSBuildTreatWarningsAsErrors>false</MSBuildTreatWarningsAsErrors>
   </PropertyGroup>
+
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'Harness.DataAccess' Or
+                        '$(MSBuildProjectName)' == 'Harness.BusinessLogic' Or
+                        '$(MSBuildProjectName)' == 'Harness.Presentation.Terminal' Or
+                        '$(MSBuildProjectName)' == 'Harness.Host'">
+    <ProjectReference Include="$(MSBuildThisFileDirectory)src/Harness.Analyzers/Harness.Analyzers.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
 </Project>

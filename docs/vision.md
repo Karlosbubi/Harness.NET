@@ -43,8 +43,10 @@ optimizes for useful, inspectable outcomes rather than maximum autonomy.
 9. Repeat within the configured review-cycle limit or pause for user direction.
 10. Inspect the outcome and explicitly approve a commit on the goal branch.
 
-## Initialization boundary
+## Current implementation boundary
 
-Framework discovery and documentation are complete. Application projects, package
-installation, schemas, and runtime behavior remain out of scope until scaffolding
-is explicitly authorized.
+Framework discovery and documentation are complete. The walking skeleton now includes
+enforced layer boundaries, XDG storage, SQLite migrations, local observability, an
+adaptive Terminal.Gui shell, an Ollama provider adapter, and durable local-model
+conversations with SQLite history. Agent roles, goal workflows, repository tools,
+retrieval, and OpenRouter remain staged as bite-sized tasks.

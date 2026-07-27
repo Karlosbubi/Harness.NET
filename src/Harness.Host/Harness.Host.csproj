@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Configuration.Xml" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+
+    <ProjectReference Include="../Harness.DataAccess/Harness.DataAccess.csproj" />
+    <ProjectReference Include="../Harness.BusinessLogic/Harness.BusinessLogic.csproj" />
+    <ProjectReference Include="../Harness.Presentation.Terminal/Harness.Presentation.Terminal.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="harness.xml" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Harness.Host.Tests" />
+  </ItemGroup>
+</Project>

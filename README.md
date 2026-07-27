@@ -2,19 +2,27 @@
 
 Harness.NET is a local-first workspace for collaborating with AI agents on .NET
 software development under an explicit, user-owned engineering framework. The
-detailed product workflow is intentionally still in discovery.
+detailed product workflow and architectural constraints are documented in this
+repository.
 
 ## Current status
 
-Framework discovery is complete and the documentation foundation records the
-accepted product, architecture, workflow, and operational decisions. No application
-projects have been created yet.
+Framework discovery is complete and the Stage 1 walking skeleton is running. It has
+compile-time layer enforcement, XDG paths, Secret Service access, SQLite migrations,
+redacted local logs, optional OTLP, an adaptive Terminal.Gui shell, and an Ollama
+provider adapter.
+
+The current usable workflow is a durable local-model conversation: instructions
+submitted in the TUI are persisted before inference, streamed through Business Logic,
+and reloaded from SQLite on restart. Provider failures are recorded in the transcript.
+Repository tools and multi-agent execution are not implemented yet.
 
 Start with:
 
 - [Product vision](docs/vision.md)
 - [Framework discovery](docs/framework.md)
-- [Architecture questions](docs/architecture.md)
+- [Accepted architecture](docs/architecture.md)
+- [Runtime configuration](docs/configuration.md)
 - [Delivery outline](docs/roadmap.md)
 - [Decision records](docs/decisions/README.md)
 
@@ -24,5 +32,27 @@ Start with:
 - Solution format: XML `.slnx`
 - Nullable reference types and warnings-as-errors are shared defaults
 
-Application build and run instructions will be added when scaffolding is explicitly
-authorized.
+## Development
+
+```bash
+dotnet restore Harness.slnx
+dotnet build Harness.slnx --no-restore
+dotnet test Harness.slnx --no-build --no-restore
+dotnet run --project src/Harness.Host/Harness.Host.csproj
+```
+
+Use `--no-ui` for a non-interactive startup smoke test. Provider modules, role
+routing, conversation defaults, and optional OTLP export are defined in the shipped
+`harness.xml` and may be overridden through XDG configuration. See
+[runtime configuration](docs/configuration.md) and
+[implementation tasks](docs/tasks/README.md) for details.
+
+The wide TUI model panel can refresh the Ollama catalog, display capabilities, and
+persist the selected conversation model. Live provider verification can be repeated
+with:
+
+```bash
+HARNESS_OLLAMA_INTEGRATION_ENDPOINT=http://192.168.1.101:11434 \
+HARNESS_OLLAMA_INTEGRATION_MODEL=gemma4:latest \
+dotnet test tests/Harness.DataAccess.Tests --filter Category=LiveIntegration
+```

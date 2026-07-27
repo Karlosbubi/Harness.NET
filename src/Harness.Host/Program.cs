@@ -1,0 +1,109 @@
+using Harness.BusinessLogic.Dashboard;
+using Harness.BusinessLogic.Workspaces;
+using Harness.DataAccess.Configuration;
+using Harness.DataAccess.Conversations;
+using Harness.DataAccess.Models;
+using Harness.DataAccess.Models.Ollama;
+using Harness.DataAccess.Observability;
+using Harness.DataAccess.Persistence;
+using Harness.DataAccess.Secrets;
+using Harness.DataAccess.Workspaces;
+using Harness.Host.Configuration;
+using Harness.Presentation.Terminal;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+
+HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
+XdgApplicationPaths applicationPaths = new();
+HarnessConfiguration configuration = HarnessConfigurationLoader.Load(
+    args,
+    applicationPaths.Current,
+    AppContext.BaseDirectory);
+ObservabilityOptions observabilityOptions = new(
+    applicationPaths.Current.LogDirectory,
+    configuration.Observability.OtlpEndpoint);
+
+ObservabilityBootstrap.Configure(builder.Services, observabilityOptions);
+builder.Services.AddSingleton<IApplicationPaths>(applicationPaths);
+builder.Services.AddSingleton<IDatabaseInitializer, SqliteDatabaseInitializer>();
+builder.Services.AddSingleton<ISecretStore, SecretServiceSecretStore>();
+builder.Services.AddSingleton<IConversationStore, SqliteConversationStore>();
+builder.Services.AddSingleton<IWorkspaceInspector, GitWorkspaceInspector>();
+builder.Services.AddSingleton<IWorkspaceStore, SqliteWorkspaceStore>();
+builder.Services.AddSingleton<IWorkspaceService, WorkspaceService>();
+foreach (ModelProviderConfiguration provider in configuration.Providers.Values)
+{
+    builder.Services.AddKeyedSingleton<IModelProvider>(
+        provider.Name,
+        (_, _) => CreateModelProvider(provider));
+}
+
+string mainProviderName = configuration.Providers[configuration.Routing.MainLlm].Name;
+builder.Services.AddSingleton<IModelProvider>(services =>
+    services.GetRequiredKeyedService<IModelProvider>(mainProviderName));
+
+ModelProviderConfiguration mainProvider = configuration.Providers[mainProviderName];
+builder.Services.AddSingleton(new ConversationOptions(
+    configuration.Conversation.Id,
+    configuration.Conversation.Title,
+    mainProvider.ChatModel,
+    configuration.Conversation.WorkspacePath));
+builder.Services.AddSingleton<IDashboardService, ConversationDashboardService>();
+builder.Services.AddSingleton<ITerminalShell, TerminalGuiShell>();
+
+using IHost host = builder.Build();
+using CancellationTokenSource shutdown = new();
+ConsoleCancelEventHandler cancelHandler = (_, eventArgs) =>
+{
+    eventArgs.Cancel = true;
+    shutdown.Cancel();
+};
+Console.CancelKeyPress += cancelHandler;
+
+try
+{
+    await host.StartAsync(shutdown.Token);
+    DatabaseInitializationResult database = await host.Services
+        .GetRequiredService<IDatabaseInitializer>()
+        .InitializeAsync(shutdown.Token);
+
+    ILogger logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
+    logger.LogInformation(
+        "Harness.NET initialized schema {SchemaVersion} at {DatabasePath}",
+        database.SchemaVersion,
+        database.DatabasePath);
+
+    bool noUi = args.Contains("--no-ui", StringComparer.Ordinal);
+    if (!noUi && !Console.IsInputRedirected && !Console.IsOutputRedirected)
+    {
+        await host.Services.GetRequiredService<ITerminalShell>().RunAsync(shutdown.Token);
+    }
+    else
+    {
+        Console.WriteLine($"Harness.NET ready (schema {database.SchemaVersion})");
+    }
+
+    await host.StopAsync(CancellationToken.None);
+}
+catch (OperationCanceledException) when (shutdown.IsCancellationRequested)
+{
+    await host.StopAsync(CancellationToken.None);
+}
+finally
+{
+    Console.CancelKeyPress -= cancelHandler;
+}
+
+static IModelProvider CreateModelProvider(ModelProviderConfiguration provider) =>
+    provider.Kind.Equals("Ollama", StringComparison.OrdinalIgnoreCase)
+        ? new OllamaModelProvider(new HttpClient(new SocketsHttpHandler
+        {
+            ConnectTimeout = provider.ConnectTimeout,
+        })
+        {
+            BaseAddress = provider.Endpoint,
+            Timeout = provider.RequestTimeout,
+        })
+        : throw new InvalidOperationException(
+            $"Provider '{provider.Name}' has unsupported kind '{provider.Kind}'.");

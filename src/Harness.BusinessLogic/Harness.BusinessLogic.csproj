@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <InternalsVisibleTo Include="Harness.BusinessLogic.Tests" />
+    <InternalsVisibleTo Include="Harness.Host" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Harness.DataAccess/Harness.DataAccess.csproj" />
+  </ItemGroup>
+</Project>
