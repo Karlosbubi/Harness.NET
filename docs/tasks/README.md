@@ -46,7 +46,7 @@ but the end-user workflow is not complete.
 | 014 | Partial | Configure and verify model providers | Named XML modules and per-role routing validate at startup, but only Ollama/MainLlm is consumed and TUI model selection remains conversation-wide and wide-layout only. | Configuration validates endpoints, discovers capabilities, selects models per role, and reports health without exposing secrets. |
 | 015 | Done | Register and trust a .NET workspace | - | A user can add a Git repository, select a solution/project, explicitly trust it, reopen it, and see dirty/base state. |
 | 016 | Done | Load the user's engineering framework | - | Global, repository, and private framework layers load with precedence, locks, validation, and an inspectable effective view. |
-| 017 | Missing | Let agents inspect safely | No repository, Git, or .NET inspection tools are available to agents. | Typed, path-confined read/search/status/diff/project/build-information tools run only in a trusted workspace and return bounded records. |
+| 017 | Partial | Let agents inspect safely | Trusted, path-confined bounded file reads exist; repository search, Git status/diff, and .NET project/build-information tools remain. | Typed, path-confined read/search/status/diff/project/build-information tools run only in a trusted workspace and return bounded records. |
 | 018 | Missing | Let agents implement and verify | No editing, build, test, restore, or mutation policy exists. | Approved runs can use typed edit/build/test tools with cancellation, output limits, correlation, and separate restore/network approval. |
 | 019 | Missing | Isolate work with Git | No branches or worktrees are created. | Each approved goal uses a validated branch/worktree, preserves dirty user state, and never merges/rebases automatically. |
 | 020 | Missing | Create goals and approve plans | There is no goal, plan, approval, or policy state machine. | Goals, caps, plans, revisions, approvals, and denials persist and every consequential transition is validated. |
@@ -110,3 +110,7 @@ Harness.NET state auditable.
   immutable configuration and the resolver. The top-level Framework menu renders
   the effective snapshot in a scrollable view and edits the private workspace
   overlay with a supported multiline editor.
+- Task 017 has begun with a typed file-inspection boundary. Business Logic requires
+  the requested workspace to be active and explicitly trusted. Data Access accepts
+  only confined relative paths, rejects symbolic-link hops and non-UTF-8 files, and
+  bounds returned content to 64 KiB with explicit truncation metadata.

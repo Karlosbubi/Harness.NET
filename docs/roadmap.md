@@ -44,6 +44,9 @@ Exit evidence: accepted framework and architecture decision records.
   overlays persist in SQLite. Business Logic composes these with resolved rules and
   source failures, and named XML rules supply typed precedence and locks. A
   top-level TUI menu exposes the effective view and private-overlay editor.
+- In progress: typed repository inspection now includes trusted-workspace identity
+  checks and path-confined, symlink-safe, bounded UTF-8 file reads. Search, Git, and
+  .NET project/build-information inspection remain.
 - Connect OpenRouter and add typed tool-call mapping behind the same boundary.
 - Prove one checkpointed fake workflow through the TUI.
 
