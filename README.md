@@ -22,9 +22,12 @@ provenance, privacy, and validation issues, and edits the private workspace over
 Trusted-workspace tools now provide confined file reads, tracked-text search,
 bounded Git status/diff evidence, non-evaluating .NET metadata, approved atomic file
 edits, and cancellable .NET execution in isolated goal worktrees. Agent role
-execution is not implemented yet. Restore is available only after a durable,
-correlation- and target-bound user approval. Approved edit/build/test/restore calls
-retain durable request/result evidence for later workflow and GUI presentation.
+execution now runs lead, implementer, and reviewer prompts through Microsoft Agent
+Framework behind semantic Business Logic contracts, with each role using its
+configured model route. Role delegation and tool scopes are not coordinated yet.
+Restore is available only after a durable, correlation- and target-bound user
+approval. Approved edit/build/test/restore calls retain durable request/result
+evidence for later workflow and GUI presentation.
 
 Start with:
 

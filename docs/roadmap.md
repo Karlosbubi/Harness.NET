@@ -31,8 +31,8 @@ Exit evidence: accepted framework and architecture decision records.
   Ollama, including schema-versioned history, incremental snapshots, token usage,
   reload, scrollable transcript, and persisted provider failures.
 - In progress: provider health, capability discovery, and persisted model selection
-  are available in the wide TUI. Typed XML supplies named provider modules and
-  main/reviewer/tool routing; only the main route is consumed today.
+  are available in the wide TUI. Typed XML supplies named provider modules and all
+  main/reviewer/tool routes are consumed by their corresponding agent roles.
 - Completed: Git-backed workspace inspection, durable registration, active
   selection, entry-point validation, and explicit trust exist behind Business Logic
   contracts. A compact/wide TUI modal exposes registration and selection with a
@@ -67,6 +67,10 @@ Exit evidence: accepted framework and architecture decision records.
   visible for recovery. Restore requires a separate durable user decision bound to
   the exact goal, correlation, and registered entry point before the network-capable
   process can start.
+- Completed: Microsoft Agent Framework is wrapped behind semantic Business Logic
+  contracts. Lead, implementer, and reviewer agents run with distinct prompts and
+  consume the configured main, tool, and reviewer model routes without exposing
+  framework types to Presentation.
 - Connect OpenRouter and add typed tool-call mapping behind the same boundary.
 - Prove one checkpointed fake workflow through the TUI.
 
@@ -82,7 +86,8 @@ usable TUI shell that exercises a persisted fake run.
   approval.
 - Create isolated branches/worktrees and expose the typed inspection, edit, .NET,
   and Git tools.
-- Run lead, implementer, and reviewer roles through Microsoft Agent Framework.
+- Coordinate lead, implementer, and reviewer roles with bounded delegation and
+  role-specific tool scopes.
 - Persist step checkpoints, expandable exchanges, artifacts, evidence, and cost.
 - Commit accepted work to the goal branch after explicit approval.
 

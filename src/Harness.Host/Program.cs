@@ -1,4 +1,5 @@
 using Harness.BusinessLogic.Approvals;
+using Harness.BusinessLogic.Agents;
 using Harness.BusinessLogic.Dashboard;
 using Harness.BusinessLogic.Evidence;
 using Harness.BusinessLogic.Framework;
@@ -86,6 +87,25 @@ builder.Services.AddSingleton<IModelProvider>(services =>
     services.GetRequiredKeyedService<IModelProvider>(mainProviderName));
 
 ModelProviderConfiguration mainProvider = configuration.Providers[mainProviderName];
+builder.Services.AddSingleton<IAgentRoleRunner>(services =>
+{
+    AgentRoleRegistration Registration(AgentRole role, string providerRoute)
+    {
+        ModelProviderConfiguration provider = configuration.Providers[providerRoute];
+        return new(
+            role,
+            new(provider.ChatModel),
+            services.GetRequiredKeyedService<IModelProvider>(provider.Name));
+    }
+
+    return new AgentRoleRunner(
+        [
+            Registration(AgentRole.Lead, configuration.Routing.MainLlm),
+            Registration(AgentRole.Implementer, configuration.Routing.ToolLlm),
+            Registration(AgentRole.Reviewer, configuration.Routing.Reviewer),
+        ],
+        services.GetRequiredService<ILoggerFactory>());
+});
 builder.Services.AddSingleton(new ConversationOptions(
     configuration.Conversation.Id,
     configuration.Conversation.Title,

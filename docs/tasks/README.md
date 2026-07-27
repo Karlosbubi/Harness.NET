@@ -29,7 +29,7 @@ passes and its documentation is current.
 | 006 | Done | Build the adaptive Terminal.Gui shell | 001, 003 | Fake workspace, activity, detail, composer, and status regions render and collapse. |
 | 007 | Done | Add the Ollama chat/embedding connector | 001, 003, 005 | Model discovery, streaming chat, embeddings, cancellation, and failures map to records. |
 | 008 | Pending | Add the OpenRouter connector and cost accounting | 001, 003, 005 | Discovery, streaming, embeddings, routing policy, and cost caps are verified. |
-| 009 | Pending | Wrap Microsoft Agent Framework in agent roles | 001, 007 | Lead, implementer, and reviewer run behind Business Logic interfaces. |
+| 009 | Done | Wrap Microsoft Agent Framework in agent roles | 001, 007 | Lead, implementer, and reviewer run behind Business Logic interfaces. |
 | 010 | Pending | Add tracked-text semantic indexing | 004, 007, 008 | Compatible index partitions rebuild and retrieve eligible repository chunks. |
 | 011 | Pending | Run a checkpointed fake workflow through the TUI | 004, 006, 009 | A persisted fake run pauses, resumes, and exposes expandable evidence. |
 | 012 | Pending | Publish the Linux x64 walking skeleton | 011 | A self-contained binary starts with correct XDG storage and graceful shutdown. |
@@ -43,14 +43,14 @@ but the end-user workflow is not complete.
 | ID | Status | User capability | Current gap | Done when |
 |---|---|---|---|---|
 | 013 | Done | Hold a durable local-model conversation | Successful live inference still depends on the configured server being reachable. | TUI instructions stream through Business Logic to Ollama, persist, reload after restart, and show actionable provider failures. |
-| 014 | Partial | Configure and verify model providers | Named XML modules and per-role routing validate at startup, but only Ollama/MainLlm is consumed and TUI model selection remains conversation-wide and wide-layout only. | Configuration validates endpoints, discovers capabilities, selects models per role, and reports health without exposing secrets. |
+| 014 | Partial | Configure and verify model providers | Named XML modules and all per-role routes are consumed, but only Ollama exists and TUI model selection remains conversation-wide and wide-layout only. | Configuration validates endpoints, discovers capabilities, selects models per role, and reports health without exposing secrets. |
 | 015 | Done | Register and trust a .NET workspace | - | A user can add a Git repository, select a solution/project, explicitly trust it, reopen it, and see dirty/base state. |
 | 016 | Done | Load the user's engineering framework | - | Global, repository, and private framework layers load with precedence, locks, validation, and an inspectable effective view. |
 | 017 | Done | Let agents inspect safely | - | Typed, path-confined read/search/status/diff/project/build-information tools run only in a trusted workspace and return bounded records. |
 | 018 | Done | Let agents implement and verify | - | Approved runs can use typed edit/build/test tools with cancellation, output limits, correlation, and separate restore/network approval. |
 | 019 | Done | Isolate work with Git | - | Each approved goal uses a validated branch/worktree, preserves dirty user state, and never merges/rebases automatically. |
 | 020 | Partial | Create goals and approve plans | Goals, caps, versioned plans, worktree grants, and scoped restore approvals exist below Presentation; the TUI workflow remains. | Goals, caps, plans, revisions, approvals, and denials persist and every consequential transition is validated. |
-| 021 | Missing | Coordinate lead, implementer, and reviewer agents | Microsoft Agent Framework is not integrated and no roles execute. | Role prompts and tool scopes are wrapped behind Business Logic interfaces and a lead can delegate bounded tasks. |
+| 021 | Partial | Coordinate lead, implementer, and reviewer agents | All roles execute behind Business Logic contracts, but bounded delegation and role-specific tool scopes are not coordinated. | Role prompts and tool scopes are wrapped behind Business Logic interfaces and a lead can delegate bounded tasks. |
 | 022 | Partial | Resume interrupted work safely | Incomplete tool calls remain durably identifiable, but run checkpoints, reconciliation, and resume are absent. | Runs checkpoint at safe boundaries, resume completed steps, and mark uncertain calls without automatic replay. |
 | 023 | Partial | Review evidence and accept results | Tool requests/results are durable and queryable, but there is no independent review loop or commit approval. | Diff, tests, tool evidence, review findings, cycle caps, and explicit commit approval work end to end. |
 | 024 | Missing | Retrieve relevant repository context | The embedding adapter exists but no tracked-text index does. | Eligible Git-tracked text is chunked, partitioned by embedding configuration, rebuilt, searched, and filtered by policy. |
@@ -92,7 +92,12 @@ Harness.NET state auditable.
   service. Successful token streaming is now also covered by the opt-in live test.
 - Task 014 now exposes provider health, discovered capabilities, refresh, and durable
   model selection in the wide TUI. Typed XML defines named provider modules and
-  validates main/reviewer/tool routing; consuming non-main routes remains incomplete.
+  validates main/reviewer/tool routing; all routes are consumed by agent roles.
+- Task 009 wraps Microsoft Agent Framework's `ChatClientAgent` behind semantic
+  Business Logic contracts. Deterministic tests run lead, implementer, and reviewer
+  prompts through separate configured provider/model routes and verify invalid
+  requests, incomplete composition, and provider-failure mapping without exposing
+  framework types to Presentation.
 - The XML-selected `MainLlm` was verified through the composed TUI against Ollama;
   it persisted `HARNESS_XML_OK` with 34 input and 7 output tokens.
 - Task 015 has deterministic Git inspection, SQLite registry, single-active-workspace
