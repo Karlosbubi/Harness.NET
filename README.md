@@ -27,7 +27,10 @@ Framework behind semantic Business Logic contracts, with each role using its
 configured model route. Role delegation and tool scopes are not coordinated yet.
 Restore is available only after a durable, correlation- and target-bound user
 approval. Approved edit/build/test/restore calls retain durable request/result
-evidence for later workflow and GUI presentation.
+evidence for later workflow and GUI presentation. A deterministic walking-skeleton
+workflow can now be started, paused, resumed after restart, and inspected through
+the TUI using the same presentation-neutral checkpoint contracts intended for a
+future Avalonia adapter.
 
 Start with:
 

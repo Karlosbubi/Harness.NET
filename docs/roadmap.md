@@ -71,8 +71,10 @@ Exit evidence: accepted framework and architecture decision records.
   contracts. Lead, implementer, and reviewer agents run with distinct prompts and
   consume the configured main, tool, and reviewer model routes without exposing
   framework types to Presentation.
+- Completed: a deterministic walking-skeleton workflow persists every safe boundary
+  in SQLite, pauses after the lead plan, resumes implementation and review after a
+  restart, and exposes full checkpoint evidence through the adaptive TUI.
 - Connect OpenRouter and add typed tool-call mapping behind the same boundary.
-- Prove one checkpointed fake workflow through the TUI.
 
 Exit evidence: clean build, architecture diagnostics, deterministic tests, and a
 usable TUI shell that exercises a persisted fake run.

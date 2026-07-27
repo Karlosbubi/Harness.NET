@@ -7,6 +7,7 @@ using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Mutations;
 using Harness.BusinessLogic.Workspaces;
+using Harness.BusinessLogic.Workflows;
 using Harness.DataAccess.Approvals;
 using Harness.DataAccess.Configuration;
 using Harness.DataAccess.Conversations;
@@ -23,6 +24,7 @@ using Harness.DataAccess.Persistence;
 using Harness.DataAccess.Secrets;
 using Harness.DataAccess.Workspaces;
 using Harness.DataAccess.Worktrees;
+using Harness.DataAccess.Workflows;
 using Harness.Host.Configuration;
 using Harness.Presentation.Terminal;
 using Microsoft.Extensions.DependencyInjection;
@@ -75,6 +77,9 @@ builder.Services.AddSingleton(new FrameworkOptions(configuration.Framework.Rules
         rule.Source))
     .ToArray()));
 builder.Services.AddSingleton<IFrameworkService, FrameworkService>();
+builder.Services.AddSingleton<IWorkflowCheckpointStore, SqliteWorkflowCheckpointStore>();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<IWalkingSkeletonWorkflowService, WalkingSkeletonWorkflowService>();
 foreach (ModelProviderConfiguration provider in configuration.Providers.Values)
 {
     builder.Services.AddKeyedSingleton<IModelProvider>(

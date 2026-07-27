@@ -48,5 +48,8 @@ optimizes for useful, inspectable outcomes rather than maximum autonomy.
 Framework discovery and documentation are complete. The walking skeleton now includes
 enforced layer boundaries, XDG storage, SQLite migrations, local observability, an
 adaptive Terminal.Gui shell, an Ollama provider adapter, and durable local-model
-conversations with SQLite history. Agent roles, goal workflows, repository tools,
-retrieval, and OpenRouter remain staged as bite-sized tasks.
+conversations with SQLite history. Typed repository tools and Microsoft Agent
+Framework roles are available below Presentation. A deterministic checkpointed
+workflow now proves TUI start, pause, restart-safe resume, and expandable evidence;
+the production goal workflow, retrieval, and OpenRouter remain staged as bite-sized
+tasks.
