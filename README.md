@@ -10,7 +10,10 @@ repository.
 Framework discovery is complete and the Stage 1 walking skeleton is running. It has
 compile-time layer enforcement, XDG paths, Secret Service access, SQLite migrations,
 redacted local logs, optional OTLP, an adaptive Terminal.Gui shell, and an Ollama
-provider adapter.
+provider adapter. The OpenRouter adapter adds dynamic chat/embedding discovery,
+streaming, strict privacy routing, and fail-closed goal budgets with attributed
+reservation and reconciled-spend reports; remote goal/model selection is not yet a
+complete TUI workflow.
 
 The current usable workflow is a durable local-model conversation: instructions
 submitted in the TUI are persisted before inference, streamed through Business Logic,
@@ -93,4 +96,12 @@ with:
 HARNESS_OLLAMA_INTEGRATION_ENDPOINT=http://192.168.1.101:11434 \
 HARNESS_OLLAMA_INTEGRATION_MODEL=gemma4:latest \
 dotnet test tests/Harness.DataAccess.Tests --filter Category=LiveIntegration
+```
+
+OpenRouter catalog verification performs no inference and therefore makes no billed
+model request. Export `OPENROUTER_API_KEY` without printing it, then run:
+
+```bash
+dotnet test tests/Harness.DataAccess.Tests \
+  --filter Category=OpenRouterLiveIntegration
 ```

@@ -78,7 +78,9 @@ Exit evidence: accepted framework and architecture decision records.
   compressed executable with external native libraries and shipped XML defaults.
   The artifact starts without an installed .NET runtime, uses isolated XDG storage,
   and shuts down cleanly on SIGTERM.
-- Connect OpenRouter and add typed tool-call mapping behind the same boundary.
+- OpenRouter discovery, streaming, embeddings, strict privacy routing, goal-scoped
+  cost reservation/reconciliation, and structured cost reports are implemented.
+  Typed tool-call mapping remains behind the same boundary.
 
 Exit evidence: clean build, architecture diagnostics, deterministic tests, and a
 usable TUI shell that exercises a persisted fake run.

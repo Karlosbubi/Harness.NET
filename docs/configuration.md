@@ -44,10 +44,31 @@ example. A user override may contain only the values it changes:
 ```
 
 Each child of `Providers` is a named module. Routing refers to module names, not
-implementation types, so several differently configured modules may eventually use
-the same provider implementation. All routes are validated at startup. `Ollama` is
-the only implemented provider kind today; OpenRouter-named modules become valid when
-that connector lands.
+implementation types, so several differently configured modules can use the same
+provider implementation. All routes are validated at startup. Supported kinds are
+`Ollama` and `OpenRouter`.
+
+OpenRouter modules add semantic secret references while keeping the credential out
+of XML:
+
+```xml
+<OpenRouter>
+  <Kind>OpenRouter</Kind>
+  <Endpoint>https://openrouter.ai</Endpoint>
+  <ChatModel>openai/gpt-5-mini</ChatModel>
+  <EmbeddingModel>openai/text-embedding-3-small</EmbeddingModel>
+  <ApiKeySecret>openrouter-api-key</ApiKeySecret>
+  <ApiKeyEnvironmentVariable>OPENROUTER_API_KEY</ApiKeyEnvironmentVariable>
+  <ConnectTimeoutSeconds>10</ConnectTimeoutSeconds>
+  <RequestTimeoutSeconds>600</RequestTimeoutSeconds>
+</OpenRouter>
+```
+
+Every OpenRouter inference request also requires an approved goal with a persisted
+remote budget. Chat requests require a positive maximum-output-token value so the
+connector can reserve a conservative estimate before sending content. Strict
+workspace privacy is represented as a typed policy and sends both no-collection and
+zero-data-retention routing constraints.
 
 For temporary overrides, configuration key separators become double underscores:
 

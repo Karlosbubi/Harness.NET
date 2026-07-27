@@ -3,4 +3,5 @@ namespace Harness.DataAccess.Models;
 public sealed record EmbeddingRequest(
     string Model,
     IReadOnlyList<string> Inputs,
-    int? Dimensions = null);
+    int? Dimensions = null,
+    RemoteModelScope? RemoteScope = null);

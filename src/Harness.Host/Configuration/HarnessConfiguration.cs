@@ -1,3 +1,5 @@
+using Harness.DataAccess.Secrets;
+
 namespace Harness.Host.Configuration;
 
 internal readonly record struct HarnessConfiguration(
@@ -9,12 +11,13 @@ internal readonly record struct HarnessConfiguration(
 
 internal readonly record struct ModelProviderConfiguration(
     string Name,
-    string Kind,
+    ModelProviderKind Kind,
     Uri Endpoint,
     string ChatModel,
     string EmbeddingModel,
     TimeSpan ConnectTimeout,
-    TimeSpan RequestTimeout);
+    TimeSpan RequestTimeout,
+    SecretReference? ApiKeyReference);
 
 internal readonly record struct ProviderRoutingConfiguration(
     string MainLlm,

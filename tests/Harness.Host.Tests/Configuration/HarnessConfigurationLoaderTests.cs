@@ -16,10 +16,15 @@ public sealed class HarnessConfigurationLoaderTests : IDisposable
 
         ModelProviderConfiguration provider = configuration.Providers["Ollama"];
         Assert.Equal("Ollama", configuration.Routing.MainLlm);
+        Assert.Equal(ModelProviderKind.Ollama, provider.Kind);
         Assert.Equal(new Uri("http://192.168.1.101:11434"), provider.Endpoint);
         Assert.Equal("gemma4:latest", provider.ChatModel);
         Assert.Equal(TimeSpan.FromMinutes(10), provider.RequestTimeout);
         Assert.Empty(configuration.Framework.Rules);
+        ModelProviderConfiguration openRouter = configuration.Providers["OpenRouter"];
+        Assert.Equal(ModelProviderKind.OpenRouter, openRouter.Kind);
+        Assert.Equal("openrouter-api-key", openRouter.ApiKeyReference?.Name);
+        Assert.Equal("OPENROUTER_API_KEY", openRouter.ApiKeyReference?.EnvironmentVariable);
     }
 
     [Fact]

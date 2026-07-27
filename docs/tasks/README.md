@@ -28,7 +28,7 @@ passes and its documentation is current.
 | 005 | Done | Configure Serilog and OpenTelemetry | 003 | Redacted JSON logs work locally and OTLP remains opt-in. |
 | 006 | Done | Build the adaptive Terminal.Gui shell | 001, 003 | Fake workspace, activity, detail, composer, and status regions render and collapse. |
 | 007 | Done | Add the Ollama chat/embedding connector | 001, 003, 005 | Model discovery, streaming chat, embeddings, cancellation, and failures map to records. |
-| 008 | Pending | Add the OpenRouter connector and cost accounting | 001, 003, 005 | Discovery, streaming, embeddings, routing policy, and cost caps are verified. |
+| 008 | Done | Add the OpenRouter connector and cost accounting | 001, 003, 005 | Discovery, streaming, embeddings, routing policy, and cost caps are verified. |
 | 009 | Done | Wrap Microsoft Agent Framework in agent roles | 001, 007 | Lead, implementer, and reviewer run behind Business Logic interfaces. |
 | 010 | Pending | Add tracked-text semantic indexing | 004, 007, 008 | Compatible index partitions rebuild and retrieve eligible repository chunks. |
 | 011 | Done | Run a checkpointed fake workflow through the TUI | 004, 006, 009 | A persisted fake run pauses, resumes, and exposes expandable evidence. |
@@ -43,7 +43,7 @@ but the end-user workflow is not complete.
 | ID | Status | User capability | Current gap | Done when |
 |---|---|---|---|---|
 | 013 | Done | Hold a durable local-model conversation | Successful live inference still depends on the configured server being reachable. | TUI instructions stream through Business Logic to Ollama, persist, reload after restart, and show actionable provider failures. |
-| 014 | Partial | Configure and verify model providers | Named XML modules and all per-role routes are consumed, but only Ollama exists and TUI model selection remains conversation-wide and wide-layout only. | Configuration validates endpoints, discovers capabilities, selects models per role, and reports health without exposing secrets. |
+| 014 | Partial | Configure and verify model providers | Typed Ollama and OpenRouter modules and all per-role routes are consumed, but TUI model selection remains conversation-wide and remote roles still need production goal-scope binding. | Configuration validates endpoints, discovers capabilities, selects models per role, and reports health without exposing secrets. |
 | 015 | Done | Register and trust a .NET workspace | - | A user can add a Git repository, select a solution/project, explicitly trust it, reopen it, and see dirty/base state. |
 | 016 | Done | Load the user's engineering framework | - | Global, repository, and private framework layers load with precedence, locks, validation, and an inspectable effective view. |
 | 017 | Done | Let agents inspect safely | - | Typed, path-confined read/search/status/diff/project/build-information tools run only in a trusted workspace and return bounded records. |
@@ -54,7 +54,7 @@ but the end-user workflow is not complete.
 | 022 | Partial | Resume interrupted work safely | The deterministic walking skeleton resumes from persisted safe boundaries and incomplete tool calls remain identifiable, but production-run reconciliation is absent. | Runs checkpoint at safe boundaries, resume completed steps, and mark uncertain calls without automatic replay. |
 | 023 | Partial | Review evidence and accept results | Tool requests/results are durable and queryable, but there is no independent review loop or commit approval. | Diff, tests, tool evidence, review findings, cycle caps, and explicit commit approval work end to end. |
 | 024 | Missing | Retrieve relevant repository context | The embedding adapter exists but no tracked-text index does. | Eligible Git-tracked text is chunked, partitioned by embedding configuration, rebuilt, searched, and filtered by policy. |
-| 025 | Partial | Use remote models under a cost cap | Secret storage exists; OpenRouter, routing, pricing, and reconciliation do not. | Remote use requires approval, streams through the provider boundary, and enforces estimated plus reconciled per-goal caps. |
+| 025 | Partial | Use remote models under a cost cap | OpenRouter now fails closed without an approved budget, reserves discovered worst-case estimates, reconciles returned charges, and exposes an attributed cost report; goal-specific model selection and TUI authorization remain. | Remote use requires approval, streams through the provider boundary, and enforces estimated plus reconciled per-goal caps. |
 | 026 | Partial | Operate and distribute v1.0 reliably | A verified self-contained walking-skeleton package exists, but upgrades, backup/export, hardening, and production recovery acceptance remain. | A self-contained Linux x64 release passes clean-install, migration, outage, cancellation, recovery, and representative-repository acceptance tests. |
 
 ### v1.0 release gate

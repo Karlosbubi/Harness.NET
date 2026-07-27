@@ -51,6 +51,11 @@ Data Access -> Business Logic -> Presentation
   remain visible and cancellable.
 - OpenRouter goals require an aggregate monetary cap. The connector reserves an
   estimated maximum before each request and reconciles it with returned usage cost.
+- Remote-cost evidence distinguishes active reservations, reconciled charges, and
+  released reservations. The goal cost report exposes the cap, reserved exposure, actual
+  spend, remaining budget, and any overage, with provider, model, operation, and
+  request attribution. Remote calls fail closed when pricing or authorization is
+  unavailable; live provider checks must use the smallest practical bounded request.
 
 ## Approval and trust policy
 

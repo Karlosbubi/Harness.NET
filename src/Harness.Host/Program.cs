@@ -1,5 +1,6 @@
 using Harness.BusinessLogic.Approvals;
 using Harness.BusinessLogic.Agents;
+using Harness.BusinessLogic.Costs;
 using Harness.BusinessLogic.Dashboard;
 using Harness.BusinessLogic.Evidence;
 using Harness.BusinessLogic.Framework;
@@ -18,6 +19,7 @@ using Harness.DataAccess.Goals;
 using Harness.DataAccess.Inspection;
 using Harness.DataAccess.Models;
 using Harness.DataAccess.Models.Ollama;
+using Harness.DataAccess.Models.OpenRouter;
 using Harness.DataAccess.Mutations;
 using Harness.DataAccess.Observability;
 using Harness.DataAccess.Persistence;
@@ -53,6 +55,8 @@ builder.Services.AddSingleton<IWorkspaceInspector, GitWorkspaceInspector>();
 builder.Services.AddSingleton<IWorkspaceStore, SqliteWorkspaceStore>();
 builder.Services.AddSingleton<IWorkspaceService, WorkspaceService>();
 builder.Services.AddSingleton<IGoalStore, SqliteGoalStore>();
+builder.Services.AddSingleton<IRemoteCostStore, SqliteRemoteCostStore>();
+builder.Services.AddSingleton<IRemoteCostService, RemoteCostService>();
 builder.Services.AddSingleton<ICapabilityApprovalStore, SqliteCapabilityApprovalStore>();
 builder.Services.AddSingleton<ICapabilityApprovalService, CapabilityApprovalService>();
 builder.Services.AddSingleton<IToolEvidenceStore, SqliteToolEvidenceStore>();
@@ -85,7 +89,7 @@ foreach (ModelProviderConfiguration provider in configuration.Providers.Values)
 {
     builder.Services.AddKeyedSingleton<IModelProvider>(
         provider.Name,
-        (_, _) => CreateModelProvider(provider));
+        (services, _) => CreateModelProvider(provider, services));
 }
 
 string mainProviderName = configuration.Providers[configuration.Routing.MainLlm].Name;
@@ -173,15 +177,28 @@ finally
     Console.CancelKeyPress -= cancelHandler;
 }
 
-static IModelProvider CreateModelProvider(ModelProviderConfiguration provider) =>
-    provider.Kind.Equals("Ollama", StringComparison.OrdinalIgnoreCase)
-        ? new OllamaModelProvider(new HttpClient(new SocketsHttpHandler
-        {
-            ConnectTimeout = provider.ConnectTimeout,
-        })
-        {
-            BaseAddress = provider.Endpoint,
-            Timeout = provider.RequestTimeout,
-        })
-        : throw new InvalidOperationException(
-            $"Provider '{provider.Name}' has unsupported kind '{provider.Kind}'.");
+static IModelProvider CreateModelProvider(
+    ModelProviderConfiguration provider,
+    IServiceProvider services)
+{
+    HttpClient httpClient = new(new SocketsHttpHandler
+    {
+        ConnectTimeout = provider.ConnectTimeout,
+    })
+    {
+        BaseAddress = provider.Endpoint,
+        Timeout = provider.RequestTimeout,
+    };
+    return provider.Kind switch
+    {
+        ModelProviderKind.Ollama => new OllamaModelProvider(httpClient),
+        ModelProviderKind.OpenRouter => new OpenRouterModelProvider(
+            httpClient,
+            services.GetRequiredService<ISecretStore>(),
+            provider.ApiKeyReference ?? throw new InvalidOperationException(
+                $"Provider '{provider.Name}' has no API-key reference."),
+            services.GetRequiredService<IRemoteCostStore>()),
+        _ => throw new InvalidOperationException(
+            $"Provider '{provider.Name}' has unsupported kind '{provider.Kind}'."),
+    };
+}

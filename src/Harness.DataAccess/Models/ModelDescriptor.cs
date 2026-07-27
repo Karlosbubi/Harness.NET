@@ -6,4 +6,6 @@ public sealed record ModelDescriptor(
     string? Family,
     string? ParameterSize,
     string? Quantization,
-    IReadOnlyList<string> Capabilities);
+    IReadOnlyList<string> Capabilities,
+    int? ContextLength = null,
+    ModelPricing? Pricing = null);

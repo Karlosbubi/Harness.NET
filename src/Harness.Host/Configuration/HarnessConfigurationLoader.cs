@@ -1,4 +1,5 @@
 using Harness.DataAccess.Configuration;
+using Harness.DataAccess.Secrets;
 using Microsoft.Extensions.Configuration;
 
 namespace Harness.Host.Configuration;
@@ -65,12 +66,18 @@ internal static class HarnessConfigurationLoader
 
     private static ModelProviderConfiguration ParseProvider(IConfigurationSection section)
     {
-        string kind = Required(section, "Kind");
-        if (!kind.Equals("Ollama", StringComparison.OrdinalIgnoreCase))
+        string kindValue = Required(section, "Kind");
+        if (!Enum.TryParse(kindValue, ignoreCase: true, out ModelProviderKind kind))
         {
             throw new InvalidOperationException(
-                $"Provider '{section.Key}' has unsupported kind '{kind}'.");
+                $"Provider '{section.Key}' has unsupported kind '{kindValue}'.");
         }
+
+        SecretReference? apiKeyReference = kind is ModelProviderKind.OpenRouter
+            ? new(
+                Required(section, "ApiKeySecret"),
+                Optional(section, "ApiKeyEnvironmentVariable"))
+            : null;
 
         return new(
             section.Key,
@@ -79,13 +86,17 @@ internal static class HarnessConfigurationLoader
             Required(section, "ChatModel"),
             Required(section, "EmbeddingModel"),
             TimeSpan.FromSeconds(RequiredPositiveInt(section, "ConnectTimeoutSeconds")),
-            TimeSpan.FromSeconds(RequiredPositiveInt(section, "RequestTimeoutSeconds")));
+            TimeSpan.FromSeconds(RequiredPositiveInt(section, "RequestTimeoutSeconds")),
+            apiKeyReference);
     }
 
     private static string Required(IConfiguration configuration, string key) =>
         string.IsNullOrWhiteSpace(configuration[key])
             ? throw new InvalidOperationException($"Configuration value '{key}' is required.")
             : configuration[key]!;
+
+    private static string? Optional(IConfiguration configuration, string key) =>
+        string.IsNullOrWhiteSpace(configuration[key]) ? null : configuration[key];
 
     private static Uri RequiredUri(IConfiguration configuration, string key)
     {
