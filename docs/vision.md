@@ -55,5 +55,6 @@ calls, resumes completed safe boundaries, reconciles an already-durable plan, an
 never automatically replays an uncertain call. Lead plans persist ordered bounded
 tasks with file areas and acceptance criteria; Implementer calls execute those tasks
 one at a time before bounded review/revision cycles and exact commit approval.
-Remaining v1 work centers on production context assembly and operational hardening
-before an Avalonia adapter begins.
+All roles can retrieve bounded, goal-attributed semantic context, while the TUI
+provides explicit cost-transparent status, rebuild, and preview controls. Remaining
+v1 work centers on operational hardening before an Avalonia adapter begins.

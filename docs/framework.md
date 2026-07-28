@@ -153,6 +153,12 @@ overlay, `AGENTS.md`, or a suitable existing documentation file.
   Changing any of them creates or rebuilds a compatible partition.
 - Embedding generation is configurable between Ollama and OpenRouter.
 - The SQLite vector connector remains isolated inside Data Access.
+- Compatible-index status inspection performs no inference. Explicit TUI rebuild and
+  preview actions show embedding access, route, partition state, and goal cost state;
+  remote rebuild requires confirmation and remains fail-closed at the goal cap.
+- Lead, Implementer, and Reviewer may retrieve 1-8 bounded semantic matches through a
+  typed goal-context tool. Queries are mapped to the active trusted goal workspace,
+  strict remote privacy, and separately attributed embedding usage.
 
 ## Repository and tool policy
 

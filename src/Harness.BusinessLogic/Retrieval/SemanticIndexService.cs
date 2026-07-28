@@ -14,10 +14,37 @@ internal sealed class SemanticIndexService(
 {
     private const int MaximumQueryCharacters = 2_000;
 
+    public async ValueTask<SemanticIndexStatusResult> GetStatusAsync(
+        SemanticIndexRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        SemanticIndexProfile profile = Profile();
+        RegisteredWorkspace? workspace = await GetTrustedWorkspaceAsync(
+            request.WorkspaceId, cancellationToken);
+        if (workspace is null)
+        {
+            return new(profile, CurrentPartition: null,
+                "workspace_not_active_or_trusted",
+                "The workspace must be active and trusted before semantic indexing.");
+        }
+
+        SemanticIndexPartition? partition = await indexStore.GetCurrentAsync(
+            PartitionKey(workspace.Id), cancellationToken);
+        return new(profile, partition is null ? null : Map(partition),
+            ErrorCode: null, Error: null);
+    }
+
     public async ValueTask<SemanticIndexResult> RebuildAsync(
         SemanticIndexRequest request,
         CancellationToken cancellationToken = default)
     {
+        if (!ValidRemoteScope(request.RemoteGoalId))
+        {
+            return IndexFailure(
+                "remote_goal_required",
+                "Remote semantic indexing requires a valid goal identifier and cost cap.");
+        }
+
         RegisteredWorkspace? workspace = await GetTrustedWorkspaceAsync(
             request.WorkspaceId,
             cancellationToken);
@@ -149,6 +176,13 @@ internal sealed class SemanticIndexService(
             return SearchFailure("invalid_limit", "The semantic result limit must be between 1 and 20.");
         }
 
+        if (!ValidRemoteScope(request.RemoteGoalId))
+        {
+            return SearchFailure(
+                "remote_goal_required",
+                "Remote semantic retrieval requires a valid goal identifier and cost cap.");
+        }
+
         RegisteredWorkspace? workspace = await GetTrustedWorkspaceAsync(
             request.WorkspaceId,
             cancellationToken);
@@ -237,16 +271,27 @@ internal sealed class SemanticIndexService(
         new(options.Dimensions.Value),
         new(options.ChunkingVersion.Value));
 
-    private static RemoteModelScope? Scope(
+    private SemanticIndexProfile Profile() => new(
+        options.Provider,
+        options.Model,
+        options.Dimensions,
+        options.ChunkingVersion,
+        options.Access);
+
+    private RemoteModelScope? Scope(
         string? remoteGoalId,
         SemanticPrivacyPolicy privacyPolicy) =>
-        string.IsNullOrWhiteSpace(remoteGoalId)
+        options.Access is EmbeddingAccess.Local
             ? null
             : new(
-                remoteGoalId,
+                remoteGoalId!,
                 privacyPolicy is SemanticPrivacyPolicy.NoCollectionAndZeroDataRetention
                     ? ProviderPrivacyPolicy.NoCollectionAndZeroDataRetention
                     : ProviderPrivacyPolicy.Normal);
+
+    private bool ValidRemoteScope(string? remoteGoalId) =>
+        options.Access is EmbeddingAccess.Local ||
+        Guid.TryParseExact(remoteGoalId, "N", out _);
 
     private static SemanticIndexPartitionView Map(SemanticIndexPartition partition) => new(
         partition.Id,

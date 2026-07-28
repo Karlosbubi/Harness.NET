@@ -53,7 +53,7 @@ but the end-user workflow is not complete.
 | 021 | Done | Coordinate lead, implementer, and reviewer agents | - | Role prompts and tool scopes are wrapped behind Business Logic interfaces and a lead can delegate bounded tasks. |
 | 022 | Done | Resume interrupted work safely | - | Runs checkpoint at safe boundaries, resume completed steps, and mark uncertain calls without automatic replay. |
 | 023 | Done | Review evidence and accept results | - | Diff, tests, tool evidence, review findings, cycle caps, and explicit commit approval work end to end. |
-| 024 | Partial | Retrieve relevant repository context | A presentation-neutral service now filters and chunks tracked text, atomically rebuilds compatible SQLite vector partitions, and retrieves matches; production context assembly and workflow/TUI controls remain. | Eligible Git-tracked text is chunked, partitioned by embedding configuration, rebuilt, searched, and filtered by policy. |
+| 024 | Done | Retrieve relevant repository context | - | Eligible Git-tracked text is chunked, partitioned by embedding configuration, rebuilt, searched, and filtered by policy. |
 | 025 | Done | Use remote models under a cost cap | - | Remote use requires approval, streams through the provider boundary, and enforces estimated plus reconciled per-goal caps. |
 | 026 | Partial | Operate and distribute v1.0 reliably | A verified self-contained walking-skeleton package exists, but upgrades, backup/export, hardening, and production recovery acceptance remain. | A self-contained Linux x64 release passes clean-install, migration, outage, cancellation, recovery, and representative-repository acceptance tests. |
 
@@ -107,6 +107,15 @@ Harness.NET state auditable.
   ready generation when a rebuild is aborted. Business Logic enforces active trust,
   batches provider-neutral embeddings, validates vector shapes, accounts for remote
   usage, and exposes rebuild/search records without connector types.
+- Task 024 exposes a no-inference compatible-index status operation and a goal-bound
+  context service that maps every query to the goal workspace, 1-8 matches, and strict
+  remote privacy. Lead, Implementer, and Reviewer tool scopes include a bounded
+  `search_semantic_context` function; remote query embeddings are separately reserved,
+  reconciled, and attributed to the goal. The Goals TUI shows embedding access,
+  provider/model/dimensions, current partition, and goal cost state before explicit
+  rebuild or search actions. Rebuild requires a separate confirmation, and result
+  views expose tracked/skipped files, truncation, chunks, input tokens, cost, source
+  path, line range, distance, and full bounded context.
 - On 2026-07-28, the OpenRouter embedding path returned a 1,536-dimensional vector
   from `openai/text-embedding-3-small` for one short input. The opt-in live test
   enforced a five-microdollar reservation ceiling before sending the request.

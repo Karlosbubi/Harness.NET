@@ -10,6 +10,7 @@ internal static class AgentToolPolicy
             AgentToolKind.SearchText,
             AgentToolKind.InspectGit,
             AgentToolKind.InspectDotNet,
+            AgentToolKind.SemanticContext,
         ],
         AgentRole.Implementer =>
         [
@@ -17,6 +18,7 @@ internal static class AgentToolPolicy
             AgentToolKind.SearchText,
             AgentToolKind.InspectGit,
             AgentToolKind.InspectDotNet,
+            AgentToolKind.SemanticContext,
             AgentToolKind.ApplyFileEdit,
             AgentToolKind.Build,
             AgentToolKind.Test,
@@ -27,6 +29,7 @@ internal static class AgentToolPolicy
             AgentToolKind.SearchText,
             AgentToolKind.InspectGit,
             AgentToolKind.InspectDotNet,
+            AgentToolKind.SemanticContext,
             AgentToolKind.ListEvidence,
         ],
         _ => throw new ArgumentOutOfRangeException(nameof(role)),

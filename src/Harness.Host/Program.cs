@@ -144,7 +144,8 @@ builder.Services.AddSingleton<IAgentRoleRunner>(services => new AgentRoleRunner(
     new AgentToolFactory(
         services.GetRequiredService<IGoalWorkspaceInspectionService>(),
         services.GetRequiredService<IWorkspaceMutationService>(),
-        services.GetRequiredService<IToolEvidenceService>()),
+        services.GetRequiredService<IToolEvidenceService>(),
+        services.GetRequiredService<IGoalContextService>()),
     services.GetRequiredService<ILoggerFactory>()));
 builder.Services.AddSingleton<IGoalWorkflowService>(services => new GoalWorkflowService(
     services.GetRequiredService<IGoalWorkflowStore>(),
@@ -159,6 +160,9 @@ builder.Services.AddSingleton(new SemanticIndexOptions(
     new(embeddingProvider.EmbeddingModel),
     new(embeddingProvider.EmbeddingDimensions),
     new("line-window-v1"),
+    embeddingProvider.Kind is ModelProviderKind.OpenRouter
+        ? EmbeddingAccess.Remote
+        : EmbeddingAccess.Local,
     EmbeddingBatchSize: 16));
 builder.Services.AddSingleton<ISemanticIndexService>(services => new SemanticIndexService(
     services.GetRequiredService<IWorkspaceStore>(),
@@ -166,6 +170,7 @@ builder.Services.AddSingleton<ISemanticIndexService>(services => new SemanticInd
     services.GetRequiredService<ISemanticIndexStore>(),
     services.GetRequiredKeyedService<IModelProvider>(embeddingProvider.Name),
     services.GetRequiredService<SemanticIndexOptions>()));
+builder.Services.AddSingleton<IGoalContextService, GoalContextService>();
 builder.Services.AddSingleton(new ConversationOptions(
     configuration.Conversation.Id,
     configuration.Conversation.Title,

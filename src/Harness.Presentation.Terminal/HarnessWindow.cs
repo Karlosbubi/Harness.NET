@@ -5,6 +5,7 @@ using Harness.BusinessLogic.Costs;
 using Harness.BusinessLogic.Dashboard;
 using Harness.BusinessLogic.Framework;
 using Harness.BusinessLogic.Goals;
+using Harness.BusinessLogic.Retrieval;
 using Harness.BusinessLogic.Workflows;
 using Harness.BusinessLogic.Workspaces;
 using Terminal.Gui.App;
@@ -30,6 +31,7 @@ internal sealed class HarnessWindow : Window
     private readonly IGoalModelService goalModelService;
     private readonly IGoalWorkflowService goalWorkflowService;
     private readonly IGoalAcceptanceService goalAcceptanceService;
+    private readonly ISemanticIndexService semanticIndexService;
     private readonly IWalkingSkeletonWorkflowService workflowService;
     private readonly CancellationToken cancellationToken;
     private readonly FrameView workspaceFrame;
@@ -67,6 +69,7 @@ internal sealed class HarnessWindow : Window
         IGoalModelService goalModelService,
         IGoalWorkflowService goalWorkflowService,
         IGoalAcceptanceService goalAcceptanceService,
+        ISemanticIndexService semanticIndexService,
         IWalkingSkeletonWorkflowService workflowService,
         DashboardSnapshot initialSnapshot,
         WorkspaceView? activeWorkspace,
@@ -83,6 +86,7 @@ internal sealed class HarnessWindow : Window
         this.goalModelService = goalModelService;
         this.goalWorkflowService = goalWorkflowService;
         this.goalAcceptanceService = goalAcceptanceService;
+        this.semanticIndexService = semanticIndexService;
         this.workflowService = workflowService;
         this.activeWorkspace = activeWorkspace;
         this.goals = goals;
@@ -510,6 +514,7 @@ internal sealed class HarnessWindow : Window
                 goalModelService,
                 goalWorkflowService,
                 goalAcceptanceService,
+                semanticIndexService,
                 activeWorkspace.Id,
                 goals,
                 cancellationToken);

@@ -3,6 +3,7 @@ using Harness.BusinessLogic.Agents;
 using Harness.BusinessLogic.Acceptance;
 using Harness.BusinessLogic.Costs;
 using Harness.BusinessLogic.Goals;
+using Harness.BusinessLogic.Retrieval;
 using Harness.BusinessLogic.Workflows;
 using Terminal.Gui.App;
 using Terminal.Gui.Editor;
@@ -19,12 +20,14 @@ internal sealed class GoalDialog : Dialog
     private readonly IGoalModelService modelService;
     private readonly IGoalWorkflowService workflowService;
     private readonly IGoalAcceptanceService acceptanceService;
+    private readonly ISemanticIndexService semanticIndexService;
     private readonly string workspaceId;
     private readonly CancellationToken cancellationToken;
     private readonly ListView goalList;
     private readonly Button createGoal;
     private readonly Button inspectGoal;
     private readonly Button manageModels;
+    private readonly Button manageContext;
     private readonly Button proposePlan;
     private readonly Button approvePlan;
     private readonly Button denyPlan;
@@ -42,6 +45,7 @@ internal sealed class GoalDialog : Dialog
         IGoalModelService modelService,
         IGoalWorkflowService workflowService,
         IGoalAcceptanceService acceptanceService,
+        ISemanticIndexService semanticIndexService,
         string workspaceId,
         IReadOnlyList<GoalView> goals,
         CancellationToken cancellationToken)
@@ -52,6 +56,7 @@ internal sealed class GoalDialog : Dialog
         this.modelService = modelService;
         this.workflowService = workflowService;
         this.acceptanceService = acceptanceService;
+        this.semanticIndexService = semanticIndexService;
         this.workspaceId = workspaceId;
         this.goals = goals;
         this.cancellationToken = cancellationToken;
@@ -84,6 +89,11 @@ internal sealed class GoalDialog : Dialog
             Pos.Right(inspectGoal) + 1,
             Pos.AnchorEnd(8),
             () => ManageModelsAsync());
+        manageContext = CommandButton(
+            "_Context",
+            Pos.Right(manageModels) + 1,
+            Pos.AnchorEnd(8),
+            () => ManageContextAsync());
         proposePlan = CommandButton("_Propose plan", 0, Pos.AnchorEnd(6), () => ProposeAsync());
         approvePlan = CommandButton(
             "_Approve",
@@ -126,6 +136,7 @@ internal sealed class GoalDialog : Dialog
             createGoal,
             inspectGoal,
             manageModels,
+            manageContext,
             proposePlan,
             approvePlan,
             denyPlan,
@@ -209,6 +220,88 @@ internal sealed class GoalDialog : Dialog
             cancellationToken);
         await application.RunAsync(dialog, cancellationToken);
         status.Text = "Role model selection updated.";
+    }
+
+    private async Task ManageContextAsync()
+    {
+        GoalView? goal = SelectedGoal();
+        if (goal is null)
+        {
+            status.Text = "Select a goal.";
+            return;
+        }
+
+        SemanticIndexRequest scopedRequest = new(
+            workspaceId,
+            goal.Id.Value,
+            SemanticPrivacyPolicy.NoCollectionAndZeroDataRetention);
+        SemanticIndexStatusResult index = await semanticIndexService.GetStatusAsync(
+            scopedRequest, cancellationToken);
+        RemoteCostReport? cost = await remoteCostService.GetAsync(goal.Id, cancellationToken);
+        string current = index.CurrentPartition is null
+            ? "No compatible index is ready."
+            : $"Ready: {index.CurrentPartition.FileCount} files / " +
+              $"{index.CurrentPartition.ChunkCount} chunks / " +
+              $"{index.CurrentPartition.CompletedAt:O}";
+        int? choice = MessageBox.Query(
+            application,
+            "Semantic context",
+            $"Embedding: {index.Profile.Access} {index.Profile.Provider.Value}/" +
+            $"{index.Profile.Model.Value} ({index.Profile.Dimensions.Value} dimensions)\n" +
+            current + "\n" + GoalTextFormatter.FormatCostStatus(goal, cost) + "\n" +
+            "Rebuild embeds eligible tracked text; Search embeds one bounded query. " +
+            "Remote usage is goal-attributed and fails closed at the cap.",
+            "_Rebuild",
+            "_Search",
+            "_Close");
+        if (choice == 0)
+        {
+            int? confirmation = MessageBox.Query(
+                application,
+                "Confirm semantic rebuild",
+                $"Rebuild with {index.Profile.Access} {index.Profile.Provider.Value}/" +
+                $"{index.Profile.Model.Value}? The final input size is repository-dependent.\n" +
+                GoalTextFormatter.FormatCostStatus(goal, cost),
+                "_Rebuild",
+                "_Cancel");
+            if (confirmation != 0)
+            {
+                return;
+            }
+
+            status.Text = "Rebuilding semantic context; remote batches remain cap-enforced.";
+            SemanticIndexResult rebuilt = await semanticIndexService.RebuildAsync(
+                scopedRequest, cancellationToken);
+            using Dialog result = ReadOnlyDialog(
+                "Semantic rebuild result",
+                SemanticContextTextFormatter.Format(rebuilt));
+            await application.RunAsync(result, cancellationToken);
+            status.Text = rebuilt.Error ??
+                $"Semantic index ready | {rebuilt.Partition?.ChunkCount} chunks.";
+        }
+        else if (choice == 1)
+        {
+            string? query = await CollectMultilineAsync(
+                "Preview semantic context", "Query (one attributed embedding call)",
+                requireValue: true);
+            if (query is null)
+            {
+                return;
+            }
+
+            SemanticSearchResult search = await semanticIndexService.SearchAsync(new(
+                workspaceId,
+                query,
+                MaximumResults: 8,
+                goal.Id.Value,
+                SemanticPrivacyPolicy.NoCollectionAndZeroDataRetention), cancellationToken);
+            using Dialog result = ReadOnlyDialog(
+                "Semantic context preview",
+                SemanticContextTextFormatter.Format(search));
+            await application.RunAsync(result, cancellationToken);
+            status.Text = search.Error ??
+                $"Semantic preview | {search.Matches.Count} match(es).";
+        }
     }
 
     private async Task ProposeAsync()
@@ -337,7 +430,8 @@ internal sealed class GoalDialog : Dialog
         string workload =
             $"Maximum remaining role calls: {pendingTasks} delegated Implementer + " +
             $"{remainingReviews} Reviewer + {maximumCorrections} correction Implementer. " +
-            "Acceptance may stop earlier; the aggregate goal cap always applies.";
+            "Acceptance may stop earlier. Model-directed semantic searches may add " +
+            "separately attributed embedding calls; the aggregate goal cap always applies.";
         MaximumAgentOutputTokens[]? maxima = await CollectOutputMaximaAsync(
             "Continue production run",
             goal,
@@ -806,6 +900,7 @@ internal sealed class GoalDialog : Dialog
         createGoal.Enabled = enabled;
         inspectGoal.Enabled = enabled && state is not null;
         manageModels.Enabled = enabled && state is not null;
+        manageContext.Enabled = enabled && state is not null;
         proposePlan.Enabled = enabled && state is GoalState.Draft or GoalState.NeedsPlanRevision;
         approvePlan.Enabled = enabled && state is GoalState.AwaitingPlanApproval;
         denyPlan.Enabled = enabled && state is GoalState.AwaitingPlanApproval;

@@ -3,6 +3,7 @@ using Harness.BusinessLogic.Evidence;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Mutations;
+using Harness.BusinessLogic.Retrieval;
 using Microsoft.Extensions.AI;
 
 namespace Harness.BusinessLogic.Tests.Agents;
@@ -16,6 +17,7 @@ public sealed class AgentToolPolicyTests
 
         Assert.Contains(AgentToolKind.ReadFile, tools);
         Assert.Contains(AgentToolKind.InspectGit, tools);
+        Assert.Contains(AgentToolKind.SemanticContext, tools);
         Assert.DoesNotContain(AgentToolKind.ApplyFileEdit, tools);
         Assert.DoesNotContain(AgentToolKind.Build, tools);
         Assert.DoesNotContain(AgentToolKind.ListEvidence, tools);
@@ -29,6 +31,7 @@ public sealed class AgentToolPolicyTests
         Assert.Contains(AgentToolKind.ApplyFileEdit, tools);
         Assert.Contains(AgentToolKind.Build, tools);
         Assert.Contains(AgentToolKind.Test, tools);
+        Assert.Contains(AgentToolKind.SemanticContext, tools);
         Assert.DoesNotContain(AgentToolKind.ListEvidence, tools);
     }
 
@@ -39,17 +42,19 @@ public sealed class AgentToolPolicyTests
 
         Assert.Contains(AgentToolKind.InspectGit, tools);
         Assert.Contains(AgentToolKind.ListEvidence, tools);
+        Assert.Contains(AgentToolKind.SemanticContext, tools);
         Assert.DoesNotContain(AgentToolKind.ApplyFileEdit, tools);
         Assert.DoesNotContain(AgentToolKind.Build, tools);
         Assert.DoesNotContain(AgentToolKind.Test, tools);
     }
 
     [Theory]
-    [InlineData(AgentRole.Lead, "read_file,search_text,inspect_git,inspect_dotnet")]
+    [InlineData(AgentRole.Lead,
+        "read_file,search_text,inspect_git,inspect_dotnet,search_semantic_context")]
     [InlineData(AgentRole.Implementer,
-        "read_file,search_text,inspect_git,inspect_dotnet,apply_file_edit,dotnet_build,dotnet_test")]
+        "read_file,search_text,inspect_git,inspect_dotnet,search_semantic_context,apply_file_edit,dotnet_build,dotnet_test")]
     [InlineData(AgentRole.Reviewer,
-        "read_file,search_text,inspect_git,inspect_dotnet,list_tool_evidence")]
+        "read_file,search_text,inspect_git,inspect_dotnet,search_semantic_context,list_tool_evidence")]
     public void Factory_exposes_only_the_closed_role_scope(
         AgentRole role,
         string expectedNames)
@@ -57,7 +62,8 @@ public sealed class AgentToolPolicyTests
         AgentToolFactory factory = new(
             new UnsupportedInspectionService(),
             new UnsupportedMutationService(),
-            new UnsupportedEvidenceService());
+            new UnsupportedEvidenceService(),
+            new UnsupportedContextService());
 
         IList<AITool> tools = factory.Create(
             role,
@@ -123,6 +129,13 @@ public sealed class AgentToolPolicyTests
     {
         public ValueTask<ToolEvidenceSnapshot> ListAsync(
             string goalId,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private sealed class UnsupportedContextService : IGoalContextService
+    {
+        public ValueTask<SemanticSearchResult> SearchAsync(
+            GoalContextRequest request,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 }

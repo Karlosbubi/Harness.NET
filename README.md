@@ -49,6 +49,11 @@ replay. Reviewer findings drive bounded correction passes until acceptance or th
 configured cycle limit. The TUI shows pending and maximum remaining calls, role routes,
 output ceilings, aggregate cap, active reservations, reconciled spend, and remaining
 budget before model calls.
+All production roles can request 1-8 relevant chunks through a typed semantic-context
+tool tied to the active goal workspace and strict remote privacy. The Goals menu can
+inspect compatible index status without inference, explicitly rebuild after showing
+the embedding route and cost state, and preview attributed matches with source lines,
+distance, usage, and cost.
 Restore is available only after a durable, correlation- and target-bound user
 approval. Approved edit/build/test/restore calls retain durable request/result
 evidence for later workflow and GUI presentation. A deterministic walking-skeleton

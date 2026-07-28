@@ -96,6 +96,10 @@ Exit evidence: accepted framework and architecture decision records.
   and oversized content; deterministic overlapping chunks are embedded through the
   configured provider. SQLite vector generations are partitioned by provider, model,
   dimensions, and chunking version and switch atomically after successful rebuilds.
+- Completed: presentation-neutral status and goal-context services expose compatible
+  semantic partitions to every production role through a bounded typed tool. TUI
+  controls inspect status without inference and explicitly rebuild or preview context
+  with route, privacy, source provenance, usage, and goal-cost transparency.
 
 Exit evidence: clean build, architecture diagnostics, deterministic tests, and a
 usable TUI shell that exercises a persisted fake run.

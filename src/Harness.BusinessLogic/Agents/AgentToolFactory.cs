@@ -2,6 +2,7 @@ using Harness.BusinessLogic.Evidence;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Mutations;
+using Harness.BusinessLogic.Retrieval;
 using Harness.BusinessLogic.Tools;
 using Microsoft.Extensions.AI;
 
@@ -10,7 +11,8 @@ namespace Harness.BusinessLogic.Agents;
 internal sealed class AgentToolFactory(
     IGoalWorkspaceInspectionService inspectionService,
     IWorkspaceMutationService mutationService,
-    IToolEvidenceService evidenceService) : IAgentToolFactory
+    IToolEvidenceService evidenceService,
+    IGoalContextService contextService) : IAgentToolFactory
 {
     public IList<AITool> Create(
         AgentRole role,
@@ -44,6 +46,13 @@ internal sealed class AgentToolFactory(
             (CancellationToken cancellationToken) =>
                 inspectionService.InspectDotNetAsync(goalId, Scope(role), cancellationToken),
             Options("inspect_dotnet", "Inspect solution, project, SDK, and reference metadata.")),
+        AgentToolKind.SemanticContext => AIFunctionFactory.Create(
+            (string query, int maximumResults, CancellationToken cancellationToken) =>
+                contextService.SearchAsync(
+                    new(goalId, new(query), new(maximumResults)), cancellationToken),
+            Options("search_semantic_context",
+                "Retrieve 1-8 relevant bounded chunks from the compatible semantic index. " +
+                "Remote embeddings are separately cost-attributed to this goal.")),
         AgentToolKind.ApplyFileEdit => AIFunctionFactory.Create(
             (string correlationId, string relativePath, string? expectedSha256, string content,
                     CancellationToken cancellationToken) =>

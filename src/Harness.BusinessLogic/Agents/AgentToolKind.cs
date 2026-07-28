@@ -6,6 +6,7 @@ internal enum AgentToolKind
     SearchText,
     InspectGit,
     InspectDotNet,
+    SemanticContext,
     ApplyFileEdit,
     Build,
     Test,

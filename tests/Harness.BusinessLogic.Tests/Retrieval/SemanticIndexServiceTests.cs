@@ -8,6 +8,24 @@ namespace Harness.BusinessLogic.Tests.Retrieval;
 public sealed class SemanticIndexServiceTests
 {
     [Fact]
+    public async Task Status_reports_compatible_route_without_embedding()
+    {
+        StubModelProvider provider = new();
+        SemanticIndexService service = Service(
+            Workspace(isTrusted: true), provider, new StubIndexStore());
+
+        SemanticIndexStatusResult status = await service.GetStatusAsync(
+            new("workspace-1"));
+
+        Assert.Null(status.Error);
+        Assert.Equal(EmbeddingAccess.Local, status.Profile.Access);
+        Assert.Equal("Fake", status.Profile.Provider.Value);
+        Assert.Equal("embedding-test", status.Profile.Model.Value);
+        Assert.Null(status.CurrentPartition);
+        Assert.Empty(provider.Requests);
+    }
+
+    [Fact]
     public async Task Rebuilds_and_retrieves_with_compatible_semantic_partition()
     {
         RegisteredWorkspace workspace = Workspace(isTrusted: true);
@@ -38,16 +56,18 @@ public sealed class SemanticIndexServiceTests
         SemanticIndexService service = Service(
             Workspace(isTrusted: true),
             provider,
-            new StubIndexStore());
+            new StubIndexStore(),
+            EmbeddingAccess.Remote);
+        string goalId = Guid.NewGuid().ToString("N");
 
         SemanticIndexResult result = await service.RebuildAsync(new(
             "workspace-1",
-            "goal-1",
+            goalId,
             SemanticPrivacyPolicy.NoCollectionAndZeroDataRetention));
 
         Assert.Null(result.Error);
         EmbeddingRequest request = Assert.Single(provider.Requests);
-        Assert.Equal("goal-1", request.RemoteScope?.GoalId);
+        Assert.Equal(goalId, request.RemoteScope?.GoalId);
         Assert.Equal(
             ProviderPrivacyPolicy.NoCollectionAndZeroDataRetention,
             request.RemoteScope?.PrivacyPolicy);
@@ -69,6 +89,20 @@ public sealed class SemanticIndexServiceTests
 
         Assert.Equal("workspace_not_active_or_trusted", result.ErrorCode);
         Assert.Equal(0, catalog.ReadCount);
+        Assert.Empty(provider.Requests);
+    }
+
+    [Fact]
+    public async Task Remote_embedding_fails_before_provider_without_goal_scope()
+    {
+        StubModelProvider provider = new();
+        SemanticIndexService service = Service(
+            Workspace(isTrusted: true), provider, new StubIndexStore(),
+            EmbeddingAccess.Remote);
+
+        SemanticIndexResult result = await service.RebuildAsync(new("workspace-1"));
+
+        Assert.Equal("remote_goal_required", result.ErrorCode);
         Assert.Empty(provider.Requests);
     }
 
@@ -106,18 +140,21 @@ public sealed class SemanticIndexServiceTests
     private static SemanticIndexService Service(
         RegisteredWorkspace workspace,
         StubModelProvider provider,
-        StubIndexStore store) => new(
+        StubIndexStore store,
+        EmbeddingAccess access = EmbeddingAccess.Local) => new(
         new StubWorkspaceStore(workspace),
         new StubCatalogReader(),
         store,
         provider,
-        Options());
+        Options(access));
 
-    private static SemanticIndexOptions Options() => new(
+    private static SemanticIndexOptions Options(
+        EmbeddingAccess access = EmbeddingAccess.Local) => new(
         new("Fake"),
         new("embedding-test"),
         new(2),
         new("line-window-v1"),
+        access,
         EmbeddingBatchSize: 16);
 
     private static RegisteredWorkspace Workspace(bool isTrusted) => new(
