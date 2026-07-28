@@ -50,9 +50,9 @@ but the end-user workflow is not complete.
 | 018 | Done | Let agents implement and verify | - | Approved runs can use typed edit/build/test tools with cancellation, output limits, correlation, and separate restore/network approval. |
 | 019 | Done | Isolate work with Git | - | Each approved goal uses a validated branch/worktree, preserves dirty user state, and never merges/rebases automatically. |
 | 020 | Done | Create goals and approve plans | - | Goals, caps, plans, revisions, approvals, and denials persist and every consequential transition is validated. |
-| 021 | Partial | Coordinate lead, implementer, and reviewer agents | Role-specific typed tools and provider function-call loops are enforced, but durable bounded delegation and production orchestration are not coordinated. | Role prompts and tool scopes are wrapped behind Business Logic interfaces and a lead can delegate bounded tasks. |
-| 022 | Partial | Resume interrupted work safely | The deterministic walking skeleton resumes from persisted safe boundaries and incomplete tool calls remain identifiable, but production-run reconciliation is absent. | Runs checkpoint at safe boundaries, resume completed steps, and mark uncertain calls without automatic replay. |
-| 023 | Partial | Review evidence and accept results | Tool requests/results are durable and queryable, but there is no independent review loop or commit approval. | Diff, tests, tool evidence, review findings, cycle caps, and explicit commit approval work end to end. |
+| 021 | Partial | Coordinate lead, implementer, and reviewer agents | The production role sequence and scoped tools run end to end, but durable bounded subtask delegation and revision-cycle iteration remain. | Role prompts and tool scopes are wrapped behind Business Logic interfaces and a lead can delegate bounded tasks. |
+| 022 | Done | Resume interrupted work safely | - | Runs checkpoint at safe boundaries, resume completed steps, and mark uncertain calls without automatic replay. |
+| 023 | Partial | Review evidence and accept results | The independent Reviewer inspects diff/evidence and returns a validated closed decision, but automated revision cycles and explicit commit approval remain. | Diff, tests, tool evidence, review findings, cycle caps, and explicit commit approval work end to end. |
 | 024 | Partial | Retrieve relevant repository context | A presentation-neutral service now filters and chunks tracked text, atomically rebuilds compatible SQLite vector partitions, and retrieves matches; production context assembly and workflow/TUI controls remain. | Eligible Git-tracked text is chunked, partitioned by embedding configuration, rebuilt, searched, and filtered by policy. |
 | 025 | Done | Use remote models under a cost cap | - | Remote use requires approval, streams through the provider boundary, and enforces estimated plus reconciled per-goal caps. |
 | 026 | Partial | Operate and distribute v1.0 reliably | A verified self-contained walking-skeleton package exists, but upgrades, backup/export, hardening, and production recovery acceptance remain. | A self-contained Linux x64 release passes clean-install, migration, outage, cancellation, recovery, and representative-repository acceptance tests. |
@@ -128,6 +128,15 @@ Harness.NET state auditable.
   worktree edit/build/test capabilities, and Reviewer is read-only with durable
   evidence access. Restore, commit, package, and shell capabilities remain absent.
   OpenRouter reservations conservatively include tool schemas and tool traffic.
+- Schema 15 adds one active production run per goal with semantic states and ordered
+  checkpoints. The TUI starts Lead planning with an explicit output ceiling, pauses
+  at the durable plan, and continues approved work through Implementer and independent
+  Reviewer ceilings while displaying the current cap, reservation, spend, and
+  remaining budget. Deterministic recovery tests prove that an already-persisted plan
+  is reconciled without another Lead call, a completed implementation resumes at the
+  Reviewer boundary, and uncertain role calls become user-direction checkpoints
+  without replay. Reviewer output is strict JSON with a closed accept/revise decision;
+  malformed or revise results cannot enter acceptance.
 - Task 011 persists semantic workflow runs and ordered checkpoints in schema 11.
   Deterministic store and orchestration tests prove plan-time pause, process-restart
   resume, recovery after interruption at an already persisted implementation

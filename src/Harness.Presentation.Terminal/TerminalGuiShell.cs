@@ -16,6 +16,7 @@ internal sealed class TerminalGuiShell(
     IGoalService goalService,
     IRemoteCostService remoteCostService,
     IGoalModelService goalModelService,
+    IGoalWorkflowService goalWorkflowService,
     IWalkingSkeletonWorkflowService workflowService) : ITerminalShell
 {
     public async ValueTask RunAsync(CancellationToken cancellationToken = default)
@@ -37,6 +38,7 @@ internal sealed class TerminalGuiShell(
             goalService,
             remoteCostService,
             goalModelService,
+            goalWorkflowService,
             workflowService,
             snapshot,
             activeWorkspace,

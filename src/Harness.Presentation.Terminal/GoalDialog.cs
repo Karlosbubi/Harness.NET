@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using Harness.BusinessLogic.Agents;
 using Harness.BusinessLogic.Costs;
 using Harness.BusinessLogic.Goals;
+using Harness.BusinessLogic.Workflows;
 using Terminal.Gui.App;
 using Terminal.Gui.Editor;
 using Terminal.Gui.ViewBase;
@@ -15,6 +16,7 @@ internal sealed class GoalDialog : Dialog
     private readonly IGoalService goalService;
     private readonly IRemoteCostService remoteCostService;
     private readonly IGoalModelService modelService;
+    private readonly IGoalWorkflowService workflowService;
     private readonly string workspaceId;
     private readonly CancellationToken cancellationToken;
     private readonly ListView goalList;
@@ -24,6 +26,9 @@ internal sealed class GoalDialog : Dialog
     private readonly Button proposePlan;
     private readonly Button approvePlan;
     private readonly Button denyPlan;
+    private readonly Button startRun;
+    private readonly Button resumeRun;
+    private readonly Button inspectRun;
     private readonly Label status;
     private IReadOnlyList<GoalView> goals;
 
@@ -32,6 +37,7 @@ internal sealed class GoalDialog : Dialog
         IGoalService goalService,
         IRemoteCostService remoteCostService,
         IGoalModelService modelService,
+        IGoalWorkflowService workflowService,
         string workspaceId,
         IReadOnlyList<GoalView> goals,
         CancellationToken cancellationToken)
@@ -40,6 +46,7 @@ internal sealed class GoalDialog : Dialog
         this.goalService = goalService;
         this.remoteCostService = remoteCostService;
         this.modelService = modelService;
+        this.workflowService = workflowService;
         this.workspaceId = workspaceId;
         this.goals = goals;
         this.cancellationToken = cancellationToken;
@@ -53,7 +60,7 @@ internal sealed class GoalDialog : Dialog
             X = 0,
             Y = 0,
             Width = Dim.Fill(),
-            Height = Dim.Fill(9),
+            Height = Dim.Fill(11),
         };
         goalList.Accepting += async (_, args) =>
         {
@@ -83,6 +90,17 @@ internal sealed class GoalDialog : Dialog
             Pos.Right(approvePlan) + 1,
             Pos.AnchorEnd(6),
             () => DecideAsync(approve: false));
+        startRun = CommandButton("Start _run", 0, Pos.AnchorEnd(4), () => StartRunAsync());
+        resumeRun = CommandButton(
+            "_Continue run",
+            Pos.Right(startRun) + 1,
+            Pos.AnchorEnd(4),
+            () => ResumeRunAsync());
+        inspectRun = CommandButton(
+            "Run _evidence",
+            Pos.Right(resumeRun) + 1,
+            Pos.AnchorEnd(4),
+            () => InspectRunAsync());
         goalList.ValueChanged += (_, _) => SetCommandsEnabled(enabled: true);
         SetGoalSource();
         status = new()
@@ -101,6 +119,9 @@ internal sealed class GoalDialog : Dialog
             proposePlan,
             approvePlan,
             denyPlan,
+            startRun,
+            resumeRun,
+            inspectRun,
             status);
         AddButton(new Button { Title = "_Close" });
     }
@@ -249,6 +270,165 @@ internal sealed class GoalDialog : Dialog
         status.Text = result.Error ?? (approve
             ? $"Approved | {result.Worktree?.Branch}"
             : "Denied | plan revision required");
+    }
+
+    private async Task StartRunAsync()
+    {
+        GoalView? goal = SelectedGoal();
+        if (goal is null)
+        {
+            status.Text = "Select a goal.";
+            return;
+        }
+
+        MaximumAgentOutputTokens[]? maxima = await CollectOutputMaximaAsync(
+            "Start lead planning",
+            goal,
+            [AgentRole.Lead],
+            ["Lead maximum output tokens"]);
+        if (maxima is null)
+        {
+            return;
+        }
+
+        GoalWorkflowSnapshot? latest = null;
+        await foreach (GoalWorkflowSnapshot snapshot in workflowService.StartPlanningAsync(
+                           new(goal.Id, maxima[0]), cancellationToken))
+        {
+            latest = snapshot;
+            status.Text = $"Run {snapshot.State} | {snapshot.Activities[^1].Kind}";
+        }
+
+        await ReloadAsync();
+        if (latest is not null)
+        {
+            await ShowRunAsync(latest);
+        }
+    }
+
+    private async Task ResumeRunAsync()
+    {
+        GoalView? goal = SelectedGoal();
+        if (goal is null)
+        {
+            status.Text = "Select a goal.";
+            return;
+        }
+
+        MaximumAgentOutputTokens[]? maxima = await CollectOutputMaximaAsync(
+            "Continue production run",
+            goal,
+            [AgentRole.Implementer, AgentRole.Reviewer],
+            ["Implementer maximum output tokens", "Reviewer maximum output tokens"]);
+        if (maxima is null)
+        {
+            return;
+        }
+
+        GoalWorkflowSnapshot? latest = null;
+        await foreach (GoalWorkflowSnapshot snapshot in workflowService.ResumeAsync(
+                           new(goal.Id, maxima[0], maxima[1]), cancellationToken))
+        {
+            latest = snapshot;
+            status.Text = $"Run {snapshot.State} | {snapshot.Activities[^1].Kind}";
+        }
+
+        if (latest is not null)
+        {
+            await ShowRunAsync(latest);
+        }
+    }
+
+    private async Task InspectRunAsync()
+    {
+        GoalView? goal = SelectedGoal();
+        if (goal is null)
+        {
+            status.Text = "Select a goal.";
+            return;
+        }
+
+        GoalWorkflowSnapshot? snapshot = await workflowService.GetLatestAsync(
+            goal.Id, cancellationToken);
+        if (snapshot is null)
+        {
+            status.Text = "The selected goal has no production run.";
+            return;
+        }
+
+        await ShowRunAsync(snapshot);
+    }
+
+    private async Task ShowRunAsync(GoalWorkflowSnapshot snapshot)
+    {
+        using Dialog dialog = ReadOnlyDialog(
+            $"Goal run | {snapshot.State}",
+            GoalWorkflowTextFormatter.Format(snapshot));
+        await application.RunAsync(dialog, cancellationToken);
+    }
+
+    private async Task<MaximumAgentOutputTokens[]?> CollectOutputMaximaAsync(
+        string title,
+        GoalView goal,
+        IReadOnlyList<AgentRole> roles,
+        IReadOnlyList<string> labels)
+    {
+        RemoteCostReport? cost = await remoteCostService.GetAsync(goal.Id, cancellationToken);
+        IReadOnlyList<GoalModelSelectionView> selections =
+            await modelService.GetSelectionsAsync(goal.Id, cancellationToken);
+        string routes = string.Join(" | ", roles.Select(role =>
+        {
+            GoalModelSelectionView? selection = selections.FirstOrDefault(item => item.Role == role);
+            return selection is null
+                ? $"{role}: unavailable"
+                : $"{role}: {selection.Access} {selection.Provider.Value}/{selection.Model.Value}";
+        }));
+        using Dialog dialog = new()
+        {
+            Title = title,
+            Width = Dim.Percent(70),
+            Height = 11 + (labels.Count * 2),
+        };
+        TextField[] fields = labels.Select((label, index) =>
+            Field(dialog, label, index * 2, "2048")).ToArray();
+        Label note = new()
+        {
+            X = 0,
+            Y = labels.Count * 2,
+            Width = Dim.Fill(),
+            Height = 5,
+            Text = "Each role call is capped; the aggregate goal budget is enforced.\n" +
+                   routes + "\n" +
+                   GoalTextFormatter.FormatCostStatus(goal, cost),
+        };
+        Label validation = new()
+        {
+            X = 0,
+            Y = (labels.Count * 2) + 5,
+            Width = Dim.Fill(),
+        };
+        MaximumAgentOutputTokens[]? result = null;
+        Button run = new() { Title = "_Run" };
+        run.Accepting += (_, args) =>
+        {
+            args.Handled = true;
+            int[] values = fields.Select(field =>
+                    int.TryParse(field.Text?.ToString(), out int value) ? value : 0)
+                .ToArray();
+            if (values.Any(value => value is < 1 or > 8192))
+            {
+                validation.Text = "Every output maximum must be between 1 and 8192 tokens.";
+                return;
+            }
+
+            result = values.Select(value => new MaximumAgentOutputTokens(value)).ToArray();
+            dialog.RequestStop();
+        };
+        dialog.Add(note, validation);
+        dialog.AddButton(run);
+        dialog.AddButton(new Button { Title = "_Cancel" });
+        await application.RunAsync(dialog, cancellationToken);
+        return result;
     }
 
     private async Task<GoalCreateRequest?> CollectGoalAsync()
@@ -411,6 +591,9 @@ internal sealed class GoalDialog : Dialog
         proposePlan.Enabled = enabled && state is GoalState.Draft or GoalState.NeedsPlanRevision;
         approvePlan.Enabled = enabled && state is GoalState.AwaitingPlanApproval;
         denyPlan.Enabled = enabled && state is GoalState.AwaitingPlanApproval;
+        startRun.Enabled = enabled && state is GoalState.Draft or GoalState.NeedsPlanRevision;
+        resumeRun.Enabled = enabled && state is not null;
+        inspectRun.Enabled = enabled && state is not null;
     }
 
     private static TextField Field(Dialog dialog, string label, int y, string value)

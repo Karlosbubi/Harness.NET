@@ -89,6 +89,7 @@ builder.Services.AddSingleton(new FrameworkOptions(configuration.Framework.Rules
     .ToArray()));
 builder.Services.AddSingleton<IFrameworkService, FrameworkService>();
 builder.Services.AddSingleton<IWorkflowCheckpointStore, SqliteWorkflowCheckpointStore>();
+builder.Services.AddSingleton<IGoalWorkflowStore, SqliteGoalWorkflowStore>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IWalkingSkeletonWorkflowService, WalkingSkeletonWorkflowService>();
 foreach (ModelProviderConfiguration provider in configuration.Providers.Values)
@@ -139,6 +140,11 @@ builder.Services.AddSingleton<IAgentRoleRunner>(services => new AgentRoleRunner(
         services.GetRequiredService<IWorkspaceMutationService>(),
         services.GetRequiredService<IToolEvidenceService>()),
     services.GetRequiredService<ILoggerFactory>()));
+builder.Services.AddSingleton<IGoalWorkflowService>(services => new GoalWorkflowService(
+    services.GetRequiredService<IGoalWorkflowStore>(),
+    services.GetRequiredService<IGoalService>(),
+    services.GetRequiredService<IAgentRoleRunner>(),
+    services.GetRequiredService<TimeProvider>()));
 ModelProviderConfiguration embeddingProvider =
     configuration.Providers[configuration.Routing.Embedding];
 builder.Services.AddSingleton(new SemanticIndexOptions(

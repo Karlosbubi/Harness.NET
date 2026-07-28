@@ -45,11 +45,13 @@ optimizes for useful, inspectable outcomes rather than maximum autonomy.
 
 ## Current implementation boundary
 
-Framework discovery and documentation are complete. The walking skeleton now includes
-enforced layer boundaries, XDG storage, SQLite migrations, local observability, an
-adaptive Terminal.Gui shell, an Ollama provider adapter, and durable local-model
-conversations with SQLite history. Typed repository tools and Microsoft Agent
-Framework roles are available below Presentation. A deterministic checkpointed
-workflow now proves TUI start, pause, restart-safe resume, and expandable evidence;
-the production goal workflow, retrieval, and OpenRouter remain staged as bite-sized
-tasks.
+Harness.NET now includes enforced layer boundaries, XDG storage, additive SQLite
+migrations, local observability, an adaptive Terminal.Gui shell, Ollama and
+cost-controlled OpenRouter providers, semantic retrieval, durable goals and plans,
+isolated worktrees, and role-scoped typed tools. A goal-bound production coordinator
+runs Lead planning, pauses for plan approval, resumes Implementer work, and invokes an
+independent Reviewer with durable expandable evidence. It checkpoints before model
+calls, resumes completed safe boundaries, reconciles an already-durable plan, and
+never automatically replays an uncertain call. Remaining v1 work centers on bounded
+delegation/revision cycles, explicit accepted-result commit approval, production
+context assembly, and operational hardening before an Avalonia adapter begins.

@@ -89,6 +89,16 @@ internal static class GoalTextFormatter
                 : $"actual ${ToUsd(item.ActualCost.Value)}")));
     }
 
+    internal static string FormatCostStatus(GoalView goal, RemoteCostReport? report) =>
+        goal.RemoteBudget is null
+            ? "Remote spend: not authorized (local-only goal)."
+            : report is null
+                ? $"Remote cap ${ToUsd(goal.RemoteBudget.Value)} | no spend recorded"
+                : $"Remote cap ${ToUsd(report.CostCap.Value)} | " +
+                  $"reserved ${ToUsd(report.ReservedCost.Value)} | " +
+                  $"spent ${ToUsd(report.ReconciledCost.Value)} | " +
+                  $"remaining ${ToUsd(report.RemainingCost.Value)}";
+
     internal static string FormatCompact(IReadOnlyList<GoalView> goals) => goals.Count == 0
         ? "GOALS\nNone"
         : "GOALS\n" + string.Join('\n', goals.Take(4).Select(goal =>

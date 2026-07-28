@@ -27,6 +27,7 @@ internal sealed class HarnessWindow : Window
     private readonly IGoalService goalService;
     private readonly IRemoteCostService remoteCostService;
     private readonly IGoalModelService goalModelService;
+    private readonly IGoalWorkflowService goalWorkflowService;
     private readonly IWalkingSkeletonWorkflowService workflowService;
     private readonly CancellationToken cancellationToken;
     private readonly FrameView workspaceFrame;
@@ -62,6 +63,7 @@ internal sealed class HarnessWindow : Window
         IGoalService goalService,
         IRemoteCostService remoteCostService,
         IGoalModelService goalModelService,
+        IGoalWorkflowService goalWorkflowService,
         IWalkingSkeletonWorkflowService workflowService,
         DashboardSnapshot initialSnapshot,
         WorkspaceView? activeWorkspace,
@@ -76,6 +78,7 @@ internal sealed class HarnessWindow : Window
         this.goalService = goalService;
         this.remoteCostService = remoteCostService;
         this.goalModelService = goalModelService;
+        this.goalWorkflowService = goalWorkflowService;
         this.workflowService = workflowService;
         this.activeWorkspace = activeWorkspace;
         this.goals = goals;
@@ -501,6 +504,7 @@ internal sealed class HarnessWindow : Window
                 goalService,
                 remoteCostService,
                 goalModelService,
+                goalWorkflowService,
                 activeWorkspace.Id,
                 goals,
                 cancellationToken);
