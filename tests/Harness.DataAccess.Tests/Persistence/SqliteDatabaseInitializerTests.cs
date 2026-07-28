@@ -28,9 +28,9 @@ public sealed class SqliteDatabaseInitializerTests : IDisposable
         DatabaseInitializationResult first = await initializer.InitializeAsync();
         DatabaseInitializationResult second = await initializer.InitializeAsync();
 
-        Assert.True(first.DatabaseCreated);
-        Assert.False(second.DatabaseCreated);
-        Assert.Equal(17, first.SchemaVersion);
+        Assert.Equal(DatabaseInitializationKind.Created, first.Kind);
+        Assert.Equal(DatabaseInitializationKind.Existing, second.Kind);
+        Assert.Equal(17, first.SchemaVersion.Value);
         Assert.Equal(first.SchemaVersion, second.SchemaVersion);
         Assert.True(File.Exists(databasePath));
 

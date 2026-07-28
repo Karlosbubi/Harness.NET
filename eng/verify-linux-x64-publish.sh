@@ -4,6 +4,7 @@ set -euo pipefail
 repository_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 publish_root=$(mktemp -d "${TMPDIR:-/tmp}/harness-linux-x64-publish.XXXXXX")
 smoke_root=$(mktemp -d "${TMPDIR:-/tmp}/harness-linux-x64-smoke.XXXXXX")
+recovery_root=$(mktemp -d "${TMPDIR:-/tmp}/harness-linux-x64-recovery.XXXXXX")
 process_id=""
 
 cleanup() {
@@ -12,7 +13,7 @@ cleanup() {
     wait "$process_id" 2>/dev/null || true
   fi
 
-  rm -rf "$publish_root" "$smoke_root"
+  rm -rf "$publish_root" "$smoke_root" "$recovery_root"
 }
 trap cleanup EXIT
 
@@ -37,7 +38,7 @@ process_id=$!
 
 ready=0
 for _ in $(seq 1 100); do
-  if grep -q "Harness.NET ready (schema 14)" "$output_file"; then
+  if grep -q "Harness.NET ready (schema 17)" "$output_file"; then
     ready=1
     break
   fi
@@ -62,5 +63,56 @@ test -f "$smoke_root/data/harness.net/harness.db"
 test -n "$(find "$smoke_root/state/harness.net/logs" -type f -name 'harness-*.jsonl' -print -quit)"
 test ! -e "$smoke_root/config/harness.net/harness.xml"
 test ! -e "$smoke_root/cache/harness.net"
+
+database_path="$smoke_root/data/harness.net/harness.db"
+sqlite3 "$database_path" \
+  "INSERT INTO conversations (id, title, model, created_at, updated_at) VALUES ('release-proof', 'Release proof', 'none', '2026-07-28T00:00:00Z', '2026-07-28T00:00:00Z');"
+backup_path="$smoke_root/harness-state.zip"
+env -i \
+  PATH="$smoke_root/no-installed-tools" \
+  DOTNET_ROOT="$smoke_root/no-installed-dotnet" \
+  XDG_CONFIG_HOME="$smoke_root/config" \
+  XDG_DATA_HOME="$smoke_root/data" \
+  XDG_STATE_HOME="$smoke_root/state" \
+  XDG_CACHE_HOME="$smoke_root/cache" \
+  "$publish_root/Harness.Host" --backup-path="$backup_path" \
+  >"$smoke_root/backup.log" 2>&1
+grep -q "Harness.NET backup created (schema 17" "$smoke_root/backup.log"
+test -f "$backup_path"
+test "$(unzip -Z1 "$backup_path" | sort | tr '\n' ' ')" = "harness.db manifest.json "
+manifest=$(unzip -p "$backup_path" manifest.json)
+expected_database_sha=$(sed -n \
+  's/.*"DatabaseSha256":"\([0-9a-f]\{64\}\)".*/\1/p' <<<"$manifest")
+actual_database_sha=$(unzip -p "$backup_path" harness.db | sha256sum | cut -d ' ' -f 1)
+test -n "$expected_database_sha"
+test "$actual_database_sha" = "$expected_database_sha"
+grep -q '"Format":"harness-backup-v1"' <<<"$manifest"
+grep -q '"SchemaVersion":17' <<<"$manifest"
+
+mkdir -p "$recovery_root/config" "$recovery_root/data/harness.net" \
+  "$recovery_root/state" "$recovery_root/cache"
+unzip -p "$backup_path" harness.db >"$recovery_root/data/harness.net/harness.db"
+recovered_database="$recovery_root/data/harness.net/harness.db"
+test "$(sqlite3 "$recovered_database" "PRAGMA integrity_check;")" = "ok"
+test "$(sqlite3 "$recovered_database" \
+  "SELECT COUNT(*) FROM conversations WHERE id='release-proof';")" = "1"
+
+sqlite3 "$recovered_database" \
+  "DROP TABLE goal_workflow_tasks; DELETE FROM SchemaVersions WHERE ScriptName LIKE '%017_GoalWorkflowTasks.sql'; UPDATE application_metadata SET value='16' WHERE key='schema_version';"
+env -i \
+  PATH="$recovery_root/no-installed-tools" \
+  DOTNET_ROOT="$recovery_root/no-installed-dotnet" \
+  XDG_CONFIG_HOME="$recovery_root/config" \
+  XDG_DATA_HOME="$recovery_root/data" \
+  XDG_STATE_HOME="$recovery_root/state" \
+  XDG_CACHE_HOME="$recovery_root/cache" \
+  "$publish_root/Harness.Host" --no-ui >"$recovery_root/upgrade.log" 2>&1
+grep -q "Harness.NET ready (schema 17)" "$recovery_root/upgrade.log"
+test -n "$(find "$recovery_root/data/harness.net/backups" \
+  -type f -name 'pre-upgrade-*.zip' -print -quit)"
+test "$(sqlite3 "$recovered_database" \
+  "SELECT COUNT(*) FROM conversations WHERE id='release-proof';")" = "1"
+test "$(sqlite3 "$recovered_database" \
+  "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='goal_workflow_tasks';")" = "1"
 
 echo "linux-x64 publish verification passed"

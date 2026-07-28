@@ -24,3 +24,4 @@ link superseding records in both directions.
 | [005](005-isolated-goal-execution.md) | Accepted | Isolated and approved goal execution |
 | [006](006-memory-observability-and-recovery.md) | Accepted | Memory, observability, and recovery |
 | [007](007-semantic-contract-types.md) | Accepted | Semantic contract types |
+| [008](008-application-state-backup.md) | Accepted | Application-state backup and upgrade recovery |

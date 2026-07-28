@@ -5,6 +5,7 @@ using Harness.BusinessLogic.Costs;
 using Harness.BusinessLogic.Dashboard;
 using Harness.BusinessLogic.Framework;
 using Harness.BusinessLogic.Goals;
+using Harness.BusinessLogic.Operations;
 using Harness.BusinessLogic.Retrieval;
 using Harness.BusinessLogic.Workflows;
 using Harness.BusinessLogic.Workspaces;
@@ -32,6 +33,7 @@ internal sealed class HarnessWindow : Window
     private readonly IGoalWorkflowService goalWorkflowService;
     private readonly IGoalAcceptanceService goalAcceptanceService;
     private readonly ISemanticIndexService semanticIndexService;
+    private readonly IApplicationOperationsService operationsService;
     private readonly IWalkingSkeletonWorkflowService workflowService;
     private readonly CancellationToken cancellationToken;
     private readonly FrameView workspaceFrame;
@@ -70,6 +72,7 @@ internal sealed class HarnessWindow : Window
         IGoalWorkflowService goalWorkflowService,
         IGoalAcceptanceService goalAcceptanceService,
         ISemanticIndexService semanticIndexService,
+        IApplicationOperationsService operationsService,
         IWalkingSkeletonWorkflowService workflowService,
         DashboardSnapshot initialSnapshot,
         WorkspaceView? activeWorkspace,
@@ -87,6 +90,7 @@ internal sealed class HarnessWindow : Window
         this.goalWorkflowService = goalWorkflowService;
         this.goalAcceptanceService = goalAcceptanceService;
         this.semanticIndexService = semanticIndexService;
+        this.operationsService = operationsService;
         this.workflowService = workflowService;
         this.activeWorkspace = activeWorkspace;
         this.goals = goals;
@@ -160,6 +164,10 @@ internal sealed class HarnessWindow : Window
                 startWorkflowMenuItem,
                 resumeWorkflowMenuItem,
                 inspectWorkflowEvidenceMenuItem,
+            ]),
+            new MenuBarItem("_Operations",
+            [
+                new MenuItem("Create _backup", Key.Empty, () => _ = CreateBackupAsync()),
             ]),
         ]);
         activityFrame = CreateFrame("Activity", activityText);
@@ -528,6 +536,112 @@ internal sealed class HarnessWindow : Window
         catch (Exception exception)
         {
             application.Invoke(() => status.Text = $"Goal command failed | {exception.Message}");
+        }
+    }
+
+    private async Task CreateBackupAsync()
+    {
+        try
+        {
+            using Dialog destinationDialog = new()
+            {
+                Title = "Export Harness.NET application state",
+                Width = Dim.Percent(80),
+                Height = 11,
+            };
+            destinationDialog.Add(new Label
+            {
+                X = 0,
+                Y = 0,
+                Width = Dim.Fill(),
+                Text = "New absolute .zip destination (existing files are never overwritten)",
+            });
+            TextField destination = new()
+            {
+                X = 0,
+                Y = 1,
+                Width = Dim.Fill(),
+            };
+            destinationDialog.Add(destination, new Label
+            {
+                X = 0,
+                Y = 3,
+                Width = Dim.Fill(),
+                Height = 4,
+                Text = "The archive contains private prompts, workflow evidence, approvals, " +
+                       "costs, and semantic state. It excludes credentials, logs, caches, " +
+                       "worktrees, and user repositories.",
+            });
+            BackupDestinationPath? selected = null;
+            Button continueButton = new() { Title = "_Continue" };
+            continueButton.Accepting += (_, args) =>
+            {
+                args.Handled = true;
+                string value = destination.Text?.ToString()?.Trim() ?? string.Empty;
+                if (value.Length == 0)
+                {
+                    return;
+                }
+
+                selected = new(value);
+                destinationDialog.RequestStop();
+            };
+            destinationDialog.AddButton(continueButton);
+            destinationDialog.AddButton(new Button { Title = "_Cancel" });
+            await application.RunAsync(destinationDialog, cancellationToken);
+            if (selected is null)
+            {
+                return;
+            }
+
+            int? confirmation = MessageBox.Query(
+                application,
+                "Confirm private-state export",
+                $"Create a sensitive application-state backup at:\n{selected.Value}\n\n" +
+                "Protect this archive like the original Harness.NET data directory.",
+                "_Create",
+                "_Cancel");
+            if (confirmation != 0)
+            {
+                return;
+            }
+
+            status.Text = "Creating and integrity-checking application-state backup...";
+            ApplicationBackupResult result = await operationsService.CreateBackupAsync(
+                selected, cancellationToken);
+            if (result.Backup is null)
+            {
+                status.Text = result.Error ?? "Backup failed.";
+                return;
+            }
+
+            using Dialog completed = new()
+            {
+                Title = "Verified backup created",
+                Width = Dim.Percent(85),
+                Height = Dim.Percent(70),
+            };
+            completed.Add(new Editor
+            {
+                Text = ApplicationBackupTextFormatter.Format(result.Backup),
+                ReadOnly = true,
+                X = 0,
+                Y = 0,
+                Width = Dim.Fill(),
+                Height = Dim.Fill(),
+                ViewportSettings = ViewportSettingsFlags.HasVerticalScrollBar |
+                                   ViewportSettingsFlags.HasHorizontalScrollBar,
+            });
+            completed.AddButton(new Button { Title = "_Close" });
+            await application.RunAsync(completed, cancellationToken);
+            status.Text = $"Verified backup created | schema {result.Backup.SchemaVersion.Value}";
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception)
+        {
+            application.Invoke(() => status.Text = $"Backup failed | {exception.Message}");
         }
     }
 

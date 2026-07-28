@@ -56,5 +56,7 @@ never automatically replays an uncertain call. Lead plans persist ordered bounde
 tasks with file areas and acceptance criteria; Implementer calls execute those tasks
 one at a time before bounded review/revision cycles and exact commit approval.
 All roles can retrieve bounded, goal-attributed semantic context, while the TUI
-provides explicit cost-transparent status, rebuild, and preview controls. Remaining
-v1 work centers on operational hardening before an Avalonia adapter begins.
+provides explicit cost-transparent status, rebuild, and preview controls. The
+self-contained release now has deterministic clean-install, migration, outage,
+cancellation, backup, recovery, and representative-repository acceptance evidence.
+The presentation-neutral Business Logic boundary is ready for an Avalonia adapter.

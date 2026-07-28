@@ -8,6 +8,7 @@ using Harness.BusinessLogic.Framework;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Mutations;
+using Harness.BusinessLogic.Operations;
 using Harness.BusinessLogic.Retrieval;
 using Harness.BusinessLogic.Workspaces;
 using Harness.BusinessLogic.Workflows;
@@ -37,6 +38,7 @@ using Harness.Presentation.Terminal;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using OperationsBackupResult = Harness.BusinessLogic.Operations.ApplicationBackupResult;
 
 HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
 XdgApplicationPaths applicationPaths = new();
@@ -51,6 +53,8 @@ ObservabilityOptions observabilityOptions = new(
 ObservabilityBootstrap.Configure(builder.Services, observabilityOptions);
 builder.Services.AddSingleton<IApplicationPaths>(applicationPaths);
 builder.Services.AddSingleton<IDatabaseInitializer, SqliteDatabaseInitializer>();
+builder.Services.AddSingleton<IApplicationBackup, SqliteApplicationBackup>();
+builder.Services.AddSingleton<IApplicationOperationsService, ApplicationOperationsService>();
 builder.Services.AddSingleton<ISecretStore, SecretServiceSecretStore>();
 builder.Services.AddSingleton<IConversationStore, SqliteConversationStore>();
 builder.Services.AddSingleton<IFrameworkSourceReader, FileFrameworkSourceReader>();
@@ -201,20 +205,39 @@ try
     ILogger logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
     logger.LogInformation(
         "Harness.NET initialized schema {SchemaVersion} at {DatabasePath}",
-        database.SchemaVersion,
-        database.DatabasePath);
+        database.SchemaVersion.Value,
+        database.DatabasePath.Value);
+    if (database.PreUpgradeBackup is not null)
+    {
+        logger.LogInformation(
+            "Created verified pre-upgrade backup at {BackupPath}",
+            database.PreUpgradeBackup.Value);
+    }
 
+    string? backupPath = HostRunModeResolver.BackupPath(args);
     HostRunMode runMode = HostRunModeResolver.Resolve(
-        args,
-        Console.IsInputRedirected,
-        Console.IsOutputRedirected);
-    if (runMode is HostRunMode.Interactive)
+        args, Console.IsInputRedirected, Console.IsOutputRedirected);
+    if (backupPath is not null)
+    {
+        OperationsBackupResult backup = await host.Services
+            .GetRequiredService<IApplicationOperationsService>()
+            .CreateBackupAsync(new(backupPath), shutdown.Token);
+        if (backup.Backup is null)
+        {
+            throw new InvalidOperationException($"Backup failed: {backup.Error}");
+        }
+
+        Console.WriteLine(
+            $"Harness.NET backup created (schema {backup.Backup.SchemaVersion.Value}, " +
+            $"sha256 {backup.Backup.ArchiveSha256.Value})");
+    }
+    else if (runMode is HostRunMode.Interactive)
     {
         await host.Services.GetRequiredService<ITerminalShell>().RunAsync(shutdown.Token);
     }
     else
     {
-        Console.WriteLine($"Harness.NET ready (schema {database.SchemaVersion})");
+        Console.WriteLine($"Harness.NET ready (schema {database.SchemaVersion.Value})");
         if (runMode is HostRunMode.WaitForShutdown)
         {
             await Task.Delay(Timeout.InfiniteTimeSpan, shutdown.Token);

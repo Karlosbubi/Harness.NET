@@ -42,8 +42,18 @@ public sealed class HostRunModeResolverTests
     [Theory]
     [InlineData("--no-ui")]
     [InlineData("--wait-for-shutdown")]
+    [InlineData("--backup-path=/tmp/harness.zip")]
     public void Recognizes_operational_arguments(string argument)
     {
         Assert.True(HostRunModeResolver.IsOperationalArgument(argument));
+    }
+
+    [Fact]
+    public void Extracts_noninteractive_backup_destination()
+    {
+        string? path = HostRunModeResolver.BackupPath(
+            ["--backup-path=/tmp/harness.zip"]);
+
+        Assert.Equal("/tmp/harness.zip", path);
     }
 }

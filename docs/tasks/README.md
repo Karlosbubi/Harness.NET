@@ -55,7 +55,7 @@ but the end-user workflow is not complete.
 | 023 | Done | Review evidence and accept results | - | Diff, tests, tool evidence, review findings, cycle caps, and explicit commit approval work end to end. |
 | 024 | Done | Retrieve relevant repository context | - | Eligible Git-tracked text is chunked, partitioned by embedding configuration, rebuilt, searched, and filtered by policy. |
 | 025 | Done | Use remote models under a cost cap | - | Remote use requires approval, streams through the provider boundary, and enforces estimated plus reconciled per-goal caps. |
-| 026 | Partial | Operate and distribute v1.0 reliably | A verified self-contained walking-skeleton package exists, but upgrades, backup/export, hardening, and production recovery acceptance remain. | A self-contained Linux x64 release passes clean-install, migration, outage, cancellation, recovery, and representative-repository acceptance tests. |
+| 026 | Done | Operate and distribute v1.0 reliably | - | A self-contained Linux x64 release passes clean-install, migration, outage, cancellation, recovery, and representative-repository acceptance tests. |
 
 ### v1.0 release gate
 
@@ -63,6 +63,14 @@ All tasks 013-026 must be **Done**. A release candidate must complete a represen
 .NET repository change from workspace registration through explicit commit approval,
 survive an injected interruption, and leave both the user repository and private
 Harness.NET state auditable.
+
+`eng/verify-v1-release.sh` is the executable gate. Its deterministic suite covers
+provider outages, budget failures, cancellation, interruption reconciliation, and
+the representative trusted-repository workflow. Its package phase verifies clean
+startup without an installed runtime, SIGTERM, portable backup, recovery into a
+fresh XDG root, automatic pre-migration backup, schema 16-to-17 upgrade, and retained
+audit content. The verifier never loads repository `.env` credentials or calls a
+model provider.
 
 ## Task 001 acceptance
 
@@ -240,3 +248,12 @@ Harness.NET state auditable.
   correlation, capability, and registered entry point; denied, missing, mismatched,
   or replayed requests cannot start the process. Build and Test continue to force
   `--no-restore`, while only an explicitly approved Restore may resolve dependencies.
+- Task 026 adds a typed Operations boundary and TUI/CLI application-state export.
+  Backups use a consistent SQLite snapshot, verify integrity, publish atomically
+  without overwrite, restrict Linux permissions, and report semantic path, hash,
+  byte-count, schema-version, and failure values. Schema upgrades create and verify
+  the same recovery point before mutation. The release verifier proves a clean
+  self-contained install, SIGTERM cancellation, schema migration, portable recovery,
+  retained audit data, and a real isolated repository workflow through exact commit
+  approval, while deterministic provider/cost tests exercise outages and fail-closed
+  spending without using configured credentials.

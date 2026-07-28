@@ -18,7 +18,7 @@ separate commits.
 
 Exit evidence: accepted framework and architecture decision records.
 
-## Stage 1: Walking skeleton (current)
+## Stage 1: Walking skeleton (complete)
 
 - Completed: scaffolded the runtime layers, composition root, central dependency
   management, architecture tests, and compile-time boundary analyzer.
@@ -104,7 +104,7 @@ Exit evidence: accepted framework and architecture decision records.
 Exit evidence: clean build, architecture diagnostics, deterministic tests, and a
 usable TUI shell that exercises a persisted fake run.
 
-## Stage 2: First complete repository workflow
+## Stage 2: First complete repository workflow (complete)
 
 - Register and trust Git-backed .NET workspaces and select their entry points.
 - Load global, repository, and private workspace framework layers with locks.
@@ -118,9 +118,11 @@ usable TUI shell that exercises a persisted fake run.
 - Persist step checkpoints, expandable exchanges, artifacts, evidence, and cost.
 - Commit accepted work to the goal branch after explicit approval.
 
-Exit evidence: an end-to-end feature or fix completed in a representative .NET
-repository, independently reviewed, recovered from an injected interruption, and
-committed only after approval.
+Exit evidence: the deterministic release gate completes an end-to-end change in a
+representative .NET repository through trusted registration, isolation, typed edit,
+approved restore, build/test evidence, independent review state, exact-diff approval,
+and branch commit. Restart/reconciliation tests inject interruption at durable
+workflow boundaries without replaying uncertain calls.
 
 ## Stage 3: Hardening and expansion
 
@@ -131,6 +133,9 @@ committed only after approval.
   backup/export, and recovery acceptance coverage.
 - Add other platforms, Avalonia, or gRPC only through existing Business Logic
   contracts and only when a concrete workflow justifies them.
+
+The Linux x64 hardening item is complete for v1.0. The remaining Stage 3 items are
+post-v1 expansion and regression work, not prerequisites for the Avalonia adapter.
 
 ## Deferred until justified
 

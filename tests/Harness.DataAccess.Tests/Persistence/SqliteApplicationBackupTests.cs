@@ -1,0 +1,131 @@
+using System.IO.Compression;
+using System.Security.Cryptography;
+using System.Text.Json;
+using Dapper;
+using Harness.DataAccess.Configuration;
+using Harness.DataAccess.Persistence;
+using Microsoft.Data.Sqlite;
+
+namespace Harness.DataAccess.Tests.Persistence;
+
+public sealed class SqliteApplicationBackupTests : IDisposable
+{
+    private readonly string root = Path.Combine(
+        Path.GetTempPath(), "harness-backup-tests", Guid.NewGuid().ToString("N"));
+
+    [Fact]
+    public async Task Creates_nonoverwriting_integrity_checked_portable_archive()
+    {
+        (ApplicationPaths paths, StubApplicationPaths applicationPaths) = Paths();
+        await new SqliteDatabaseInitializer(applicationPaths).InitializeAsync();
+        await using (SqliteConnection connection = new($"Data Source={paths.DatabasePath}"))
+        {
+            await connection.OpenAsync();
+            await connection.ExecuteAsync("""
+                INSERT INTO conversations (id, title, model, created_at, updated_at)
+                VALUES ('backup-proof', 'Private state', 'model', @now, @now);
+                """, new { now = DateTimeOffset.UtcNow.ToString("O") });
+        }
+
+        string destination = Path.Combine(root, "export.zip");
+        SqliteApplicationBackup backup = new(applicationPaths, new FixedTimeProvider());
+
+        ApplicationBackupResult result = await backup.CreateAsync(new(new(destination)));
+
+        Assert.Null(result.Error);
+        Assert.Equal(17, result.SchemaVersion?.Value);
+        Assert.True(File.Exists(destination));
+        Assert.Equal(await HashAsync(destination), result.ArchiveSha256?.Value);
+        using ZipArchive archive = ZipFile.OpenRead(destination);
+        Assert.Equal(["harness.db", "manifest.json"],
+            archive.Entries.Select(entry => entry.FullName).Order().ToArray());
+        ZipArchiveEntry manifestEntry = Assert.Single(
+            archive.Entries, entry => entry.FullName == "manifest.json");
+        using JsonDocument manifest = await JsonDocument.ParseAsync(manifestEntry.Open());
+        Assert.Equal("harness-backup-v1",
+            manifest.RootElement.GetProperty("Format").GetString());
+        Assert.Equal(17, manifest.RootElement.GetProperty("SchemaVersion").GetInt32());
+        Assert.Equal(result.DatabaseSha256?.Value,
+            manifest.RootElement.GetProperty("DatabaseSha256").GetString());
+
+        string restored = Path.Combine(root, "restored.db");
+        archive.GetEntry("harness.db")!.ExtractToFile(restored);
+        Assert.Equal(result.DatabaseSha256?.Value, await HashAsync(restored));
+        await using SqliteConnection restoredConnection = new($"Data Source={restored};Mode=ReadOnly");
+        await restoredConnection.OpenAsync();
+        Assert.Equal("ok", await restoredConnection.ExecuteScalarAsync<string>(
+            "PRAGMA integrity_check;"));
+        Assert.Equal(1, await restoredConnection.ExecuteScalarAsync<int>(
+            "SELECT COUNT(*) FROM conversations WHERE id = 'backup-proof';"));
+
+        ApplicationBackupResult duplicate = await backup.CreateAsync(new(new(destination)));
+        Assert.Equal(ApplicationBackupFailure.InvalidDestination, duplicate.Failure);
+    }
+
+    [Fact]
+    public async Task Upgrade_creates_verified_pre_migration_recovery_archive()
+    {
+        (ApplicationPaths paths, StubApplicationPaths applicationPaths) = Paths();
+        await new SqliteDatabaseInitializer(applicationPaths).InitializeAsync();
+        await using (SqliteConnection connection = new($"Data Source={paths.DatabasePath}"))
+        {
+            await connection.OpenAsync();
+            await connection.ExecuteAsync("""
+                DROP TABLE goal_workflow_tasks;
+                DELETE FROM SchemaVersions WHERE ScriptName LIKE '%017_GoalWorkflowTasks.sql';
+                UPDATE application_metadata SET value = '16' WHERE key = 'schema_version';
+                """);
+        }
+
+        DatabaseInitializationResult upgraded = await new SqliteDatabaseInitializer(
+            applicationPaths, new FixedTimeProvider()).InitializeAsync();
+
+        Assert.Equal(17, upgraded.SchemaVersion.Value);
+        Assert.NotNull(upgraded.PreUpgradeBackup);
+        Assert.True(File.Exists(upgraded.PreUpgradeBackup.Value));
+        using ZipArchive archive = ZipFile.OpenRead(upgraded.PreUpgradeBackup.Value);
+        using JsonDocument manifest = await JsonDocument.ParseAsync(
+            archive.GetEntry("manifest.json")!.Open());
+        Assert.Equal(16, manifest.RootElement.GetProperty("SchemaVersion").GetInt32());
+        await using SqliteConnection current = new($"Data Source={paths.DatabasePath}");
+        await current.OpenAsync();
+        Assert.Equal(1, await current.ExecuteScalarAsync<int>(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' " +
+            "AND name='goal_workflow_tasks';"));
+    }
+
+    private (ApplicationPaths Paths, StubApplicationPaths ApplicationPaths) Paths()
+    {
+        ApplicationPaths paths = new(
+            Path.Combine(root, "config"), Path.Combine(root, "data"),
+            Path.Combine(root, "state"), Path.Combine(root, "cache"),
+            Path.Combine(root, "data", "harness.db"), Path.Combine(root, "state", "logs"),
+            Path.Combine(root, "state", "worktrees"));
+        return (paths, new(paths));
+    }
+
+    private static async ValueTask<string> HashAsync(string path)
+    {
+        await using FileStream stream = File.OpenRead(path);
+        return Convert.ToHexStringLower(await SHA256.HashDataAsync(stream));
+    }
+
+    public void Dispose()
+    {
+        if (Directory.Exists(root))
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    private sealed class StubApplicationPaths(ApplicationPaths current) : IApplicationPaths
+    {
+        public ApplicationPaths Current { get; } = current;
+    }
+
+    private sealed class FixedTimeProvider : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() =>
+            DateTimeOffset.Parse("2026-07-29T12:00:00Z");
+    }
+}

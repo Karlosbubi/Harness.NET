@@ -4,6 +4,7 @@ using Harness.BusinessLogic.Agents;
 using Harness.BusinessLogic.Acceptance;
 using Harness.BusinessLogic.Framework;
 using Harness.BusinessLogic.Goals;
+using Harness.BusinessLogic.Operations;
 using Harness.BusinessLogic.Retrieval;
 using Harness.BusinessLogic.Workflows;
 using Harness.BusinessLogic.Workspaces;
@@ -21,6 +22,7 @@ internal sealed class TerminalGuiShell(
     IGoalWorkflowService goalWorkflowService,
     IGoalAcceptanceService goalAcceptanceService,
     ISemanticIndexService semanticIndexService,
+    IApplicationOperationsService operationsService,
     IWalkingSkeletonWorkflowService workflowService) : ITerminalShell
 {
     public async ValueTask RunAsync(CancellationToken cancellationToken = default)
@@ -45,6 +47,7 @@ internal sealed class TerminalGuiShell(
             goalWorkflowService,
             goalAcceptanceService,
             semanticIndexService,
+            operationsService,
             workflowService,
             snapshot,
             activeWorkspace,

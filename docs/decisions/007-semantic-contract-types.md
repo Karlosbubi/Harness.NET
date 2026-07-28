@@ -17,11 +17,12 @@ restriction needs a narrow amendment.
 
 ## Decision
 
-Prefer semantic types throughout new and changed code:
+Use semantic types as the default throughout new and changed code:
 
 - Use enums for closed, stable sets of named states, kinds, roles, and operations.
-- Use immutable single-value records for identifiers, validated values, units, and
-  other primitives whose domain meaning should prevent accidental interchange.
+- Use immutable single-value records for identifiers, paths, hashes, validated
+  values, monetary amounts, units, limits, and other primitives whose domain meaning
+  should prevent accidental interchange.
 - Use records to compose domain contracts from those semantic values.
 - Permit interfaces, records, and enums as public layer-boundary types. Concrete
   service implementations and ordinary classes remain internal.
@@ -30,8 +31,10 @@ Prefer semantic types throughout new and changed code:
   boundary that accepts them.
 
 Apply the rule incrementally to touched feature slices; a flag-day rewrite of stable
-contracts is not required. Do not add a wrapper when it provides no domain distinction
-or safety benefit.
+contracts is not required. A primitive remains appropriate only when it has no
+distinct domain meaning or accidental-interchange risk. Treat that as a deliberate
+boundary decision rather than the default. Do not add a wrapper that provides no
+domain distinction or safety benefit.
 
 ## Consequences
 

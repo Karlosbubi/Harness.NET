@@ -12,7 +12,7 @@ behavior Harness.NET will provide.
 | Correctness | Enable nullable analysis and treat compiler warnings as errors. |
 | Architecture | Prefer Data Access, Business Logic, and Presentation layers where sensible. |
 | Boundaries | Only interfaces, records, and enums cross layer boundaries, moving upward except for DI composition. |
-| Domain types | Prefer semantic enums and immutable single-value records over ambiguous primitives. |
+| Domain types | Default to semantic enums and immutable single-value records; retain primitives only where they carry no distinct domain meaning. |
 | Delivery | Implement new behavior as end-to-end feature slices. |
 | Style | Prefer functional composition, immutable data, and LINQ where idiomatic. |
 | Reactivity | Use Rx.NET for event streams and state management where it fits. |
@@ -187,6 +187,12 @@ overlay, `AGENTS.md`, or a suitable existing documentation file.
   rolling JSON logs. OTLP export is optional and model content is disabled by default.
 - Normal tests use deterministic fake model and agent clients. Opt-in Ollama
   evaluations cover planning, tool selection, and review behavior.
+- Configured credentials never authorize test spending. Paid-provider checks require
+  explicit user authorization and use the smallest practical bounded request.
+- Deliberate application-state backup creates a non-overwriting, integrity-checked
+  SQLite archive with schema, size, and hash evidence while excluding credentials,
+  logs, caches, worktrees, and repositories. Pending migrations create the same
+  recovery point automatically and abort if it cannot be verified.
 
 ## Environment observation
 

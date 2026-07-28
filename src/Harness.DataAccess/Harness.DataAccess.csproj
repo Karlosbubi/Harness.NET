@@ -18,6 +18,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Harness.BusinessLogic.Tests" />
     <InternalsVisibleTo Include="Harness.DataAccess.Tests" />
     <InternalsVisibleTo Include="Harness.Host" />
   </ItemGroup>

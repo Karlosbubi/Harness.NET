@@ -10,8 +10,11 @@
 
 - Keep changes narrowly scoped and keep documentation synchronized with behavior.
 - Prefer idiomatic .NET, immutable data, explicit boundaries, and structured APIs.
-- Prefer semantic types: enums for closed sets and immutable single-value records
-  for identifiers, units, validated values, and otherwise ambiguous primitives.
+- Default to semantic types in new and changed code: enums for closed sets and
+  immutable single-value records for identifiers, paths, hashes, units, limits,
+  validated values, and otherwise ambiguous primitives. Compose those values into
+  immutable record contracts. Keep a primitive only when it has no distinct domain
+  meaning, and make that exception evident at the boundary.
 - Prefer `DataAccess -> BusinessLogic -> Presentation` layering where sensible.
   Only interfaces, records, and enums may cross those boundaries, and data/contracts
   flow upward except where dependency injection requires reverse-boundary composition.
@@ -20,6 +23,9 @@
   supported future surfaces are Avalonia applications and APIs such as gRPC, not web UI.
 - Enable nullable analysis and keep compiler warnings at zero.
 - Verify every code change with the narrowest relevant test and at least a build.
+- Keep tests fiscally conservative: use deterministic fakes by default, never treat
+  a configured provider key as authorization to spend, and require explicit user
+  approval for the smallest practical bounded live or paid-provider check.
 - Use typed workspace tools. Do not introduce an unrestricted agent shell.
 - Keep provider SDK types inside Data Access and Microsoft Agent Framework types
   behind Business Logic interfaces, records, and enums.

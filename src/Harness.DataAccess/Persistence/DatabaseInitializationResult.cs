@@ -1,6 +1,7 @@
 namespace Harness.DataAccess.Persistence;
 
 public sealed record DatabaseInitializationResult(
-    string DatabasePath,
-    int SchemaVersion,
-    bool DatabaseCreated);
+    ApplicationDatabasePath DatabasePath,
+    ApplicationSchemaVersion SchemaVersion,
+    DatabaseInitializationKind Kind,
+    BackupArchivePath? PreUpgradeBackup);

@@ -64,6 +64,11 @@ Accepted production work has a separate two-step commit flow: Harness.NET record
 pending request containing the exact branch, HEAD, complete diff hash, message, and
 author, then requires an explicit approve/deny action before a local commit. It never
 integrates the isolated branch automatically.
+The Operations menu creates a non-overwriting, integrity-checked application-state
+archive with explicit schema, byte-count, and SHA-256 evidence. Archives include the
+SQLite state needed for audit and recovery, but exclude credentials, logs, caches,
+worktrees, and repositories. Every pending schema upgrade first creates the same
+verified recovery point under XDG data storage.
 
 Start with:
 
@@ -107,8 +112,17 @@ dotnet publish src/Harness.Host/Harness.Host.csproj \
 
 The output contains a compressed executable, the native libraries that remain
 external to avoid runtime extraction outside XDG storage, and the shipped
-`harness.xml`. It does not require an installed .NET runtime. Run the repeatable
-isolated-XDG startup and SIGTERM shutdown check with:
+`harness.xml`. It does not require an installed .NET runtime. Run the complete
+deterministic v1 release gate with:
+
+```bash
+./eng/verify-v1-release.sh
+```
+
+It runs the full test suite and representative-repository acceptance, then verifies
+isolated-XDG clean install, SIGTERM cancellation, backup/export, offline recovery,
+and migration of the self-contained artifact. It does not load `.env` or invoke a
+model provider. Run only the package portion with:
 
 ```bash
 ./eng/verify-linux-x64-publish.sh
@@ -117,6 +131,18 @@ isolated-XDG startup and SIGTERM shutdown check with:
 `--wait-for-shutdown` is a non-interactive operational mode used by lifecycle
 checks and service supervisors. It initializes storage, reports readiness, waits,
 and exits cleanly when the host receives SIGINT or SIGTERM.
+
+Create a deliberate application-state backup without starting the TUI with an
+absolute, new `.zip` destination:
+
+```bash
+./artifacts/linux-x64/Harness.Host --backup-path=/absolute/path/harness-state.zip
+```
+
+Treat the archive as sensitive: it contains persisted prompts, approvals, evidence,
+costs, and semantic state. For recovery, stop Harness.NET, verify `manifest.json`,
+extract `harness.db` into a fresh XDG data root, and start the current binary so its
+additive migrations can run. See [ADR 008](docs/decisions/008-application-state-backup.md).
 
 The wide TUI model panel can refresh the Ollama catalog, display capabilities, and
 persist the selected conversation model. Live provider verification can be repeated
