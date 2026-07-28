@@ -6,35 +6,17 @@ namespace Harness.BusinessLogic.Agents;
 internal sealed class AgentRoleRunner : IAgentRoleRunner
 {
     private const int MaximumTaskCharacters = 64 * 1024;
-    private readonly IReadOnlyDictionary<AgentRole, AIAgent> agents;
+    private readonly IGoalModelRouteResolver routeResolver;
+    private readonly ILoggerFactory loggerFactory;
 
     public AgentRoleRunner(
-        IReadOnlyList<AgentRoleRegistration> registrations,
+        IGoalModelRouteResolver routeResolver,
         ILoggerFactory loggerFactory)
     {
-        ArgumentNullException.ThrowIfNull(registrations);
+        ArgumentNullException.ThrowIfNull(routeResolver);
         ArgumentNullException.ThrowIfNull(loggerFactory);
-
-        agents = registrations.ToDictionary(
-            registration => registration.Role,
-            registration => (AIAgent)new ChatClientAgent(
-                new ModelProviderChatClient(registration.Provider, registration.Model),
-                Instructions(registration.Role),
-                Name(registration.Role),
-                Description(registration.Role),
-                tools: [],
-                loggerFactory,
-                services: null));
-
-        AgentRole[] missingRoles = Enum.GetValues<AgentRole>()
-            .Where(role => !agents.ContainsKey(role))
-            .ToArray();
-        if (missingRoles.Length > 0)
-        {
-            throw new ArgumentException(
-                $"Missing agent role registrations: {string.Join(", ", missingRoles)}.",
-                nameof(registrations));
-        }
+        this.routeResolver = routeResolver;
+        this.loggerFactory = loggerFactory;
     }
 
     public async ValueTask<AgentRunResult> RunAsync(
@@ -42,10 +24,13 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
         CancellationToken cancellationToken = default)
     {
         if (request is null ||
+            request.GoalId is null ||
+            string.IsNullOrWhiteSpace(request.GoalId.Value) ||
             request.Task is null ||
             string.IsNullOrWhiteSpace(request.Task.Value) ||
             request.Task.Value.Length > MaximumTaskCharacters ||
-            !Enum.IsDefined(request.Role))
+            !Enum.IsDefined(request.Role) ||
+            request.MaximumOutputTokens?.Value is <= 0)
         {
             return new(
                 request?.Role ?? AgentRole.Lead,
@@ -56,7 +41,38 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
 
         try
         {
-            AIAgent agent = agents[request.Role];
+            GoalModelRouteResult resolved = await routeResolver.ResolveAsync(
+                request.GoalId,
+                request.Role,
+                cancellationToken);
+            if (resolved.Route is null)
+            {
+                return new(request.Role, Output: null, resolved.ErrorCode, resolved.Error);
+            }
+
+            GoalModelRoute route = resolved.Route;
+            if (route.Access is ModelAccess.Remote && request.MaximumOutputTokens is null)
+            {
+                return new(
+                    request.Role,
+                    Output: null,
+                    new("maximum_output_tokens_required"),
+                    new("Remote agent execution requires a positive output-token maximum."));
+            }
+
+            AIAgent agent = new ChatClientAgent(
+                new ModelProviderChatClient(
+                    route.Provider,
+                    route.Model,
+                    route.Access is ModelAccess.Remote ? route.GoalId : null,
+                    route.Role,
+                    request.MaximumOutputTokens),
+                Instructions(request.Role),
+                Name(request.Role),
+                Description(request.Role),
+                tools: [],
+                loggerFactory,
+                services: null);
             AgentSession session = await agent.CreateSessionAsync(cancellationToken);
             AgentResponse response = await agent.RunAsync(
                 request.Task.Value.Trim(),

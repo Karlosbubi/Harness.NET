@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using Harness.BusinessLogic.Agents;
 using Harness.BusinessLogic.Costs;
 using Harness.BusinessLogic.Goals;
 using Terminal.Gui.App;
@@ -13,11 +14,13 @@ internal sealed class GoalDialog : Dialog
     private readonly IApplication application;
     private readonly IGoalService goalService;
     private readonly IRemoteCostService remoteCostService;
+    private readonly IGoalModelService modelService;
     private readonly string workspaceId;
     private readonly CancellationToken cancellationToken;
     private readonly ListView goalList;
     private readonly Button createGoal;
     private readonly Button inspectGoal;
+    private readonly Button manageModels;
     private readonly Button proposePlan;
     private readonly Button approvePlan;
     private readonly Button denyPlan;
@@ -28,6 +31,7 @@ internal sealed class GoalDialog : Dialog
         IApplication application,
         IGoalService goalService,
         IRemoteCostService remoteCostService,
+        IGoalModelService modelService,
         string workspaceId,
         IReadOnlyList<GoalView> goals,
         CancellationToken cancellationToken)
@@ -35,6 +39,7 @@ internal sealed class GoalDialog : Dialog
         this.application = application;
         this.goalService = goalService;
         this.remoteCostService = remoteCostService;
+        this.modelService = modelService;
         this.workspaceId = workspaceId;
         this.goals = goals;
         this.cancellationToken = cancellationToken;
@@ -48,7 +53,7 @@ internal sealed class GoalDialog : Dialog
             X = 0,
             Y = 0,
             Width = Dim.Fill(),
-            Height = Dim.Fill(7),
+            Height = Dim.Fill(9),
         };
         goalList.Accepting += async (_, args) =>
         {
@@ -56,11 +61,28 @@ internal sealed class GoalDialog : Dialog
             await InspectAsync();
         };
 
-        createGoal = CommandButton("_New goal", 0, () => CreateAsync());
-        inspectGoal = CommandButton("_Inspect", Pos.Right(createGoal) + 1, () => InspectAsync());
-        proposePlan = CommandButton("_Propose plan", Pos.Right(inspectGoal) + 1, () => ProposeAsync());
-        approvePlan = CommandButton("_Approve", Pos.Right(proposePlan) + 1, () => DecideAsync(approve: true));
-        denyPlan = CommandButton("_Deny", Pos.Right(approvePlan) + 1, () => DecideAsync(approve: false));
+        createGoal = CommandButton("_New goal", 0, Pos.AnchorEnd(8), () => CreateAsync());
+        inspectGoal = CommandButton(
+            "_Inspect",
+            Pos.Right(createGoal) + 1,
+            Pos.AnchorEnd(8),
+            () => InspectAsync());
+        manageModels = CommandButton(
+            "_Models",
+            Pos.Right(inspectGoal) + 1,
+            Pos.AnchorEnd(8),
+            () => ManageModelsAsync());
+        proposePlan = CommandButton("_Propose plan", 0, Pos.AnchorEnd(6), () => ProposeAsync());
+        approvePlan = CommandButton(
+            "_Approve",
+            Pos.Right(proposePlan) + 1,
+            Pos.AnchorEnd(6),
+            () => DecideAsync(approve: true));
+        denyPlan = CommandButton(
+            "_Deny",
+            Pos.Right(approvePlan) + 1,
+            Pos.AnchorEnd(6),
+            () => DecideAsync(approve: false));
         goalList.ValueChanged += (_, _) => SetCommandsEnabled(enabled: true);
         SetGoalSource();
         status = new()
@@ -71,19 +93,27 @@ internal sealed class GoalDialog : Dialog
             Height = 2,
             Text = goals.Count == 0 ? "Create the first goal." : $"{goals.Count} goal(s)",
         };
-        Add(goalList, createGoal, inspectGoal, proposePlan, approvePlan, denyPlan, status);
+        Add(
+            goalList,
+            createGoal,
+            inspectGoal,
+            manageModels,
+            proposePlan,
+            approvePlan,
+            denyPlan,
+            status);
         AddButton(new Button { Title = "_Close" });
     }
 
     internal IReadOnlyList<GoalView> Goals => goals;
 
-    private Button CommandButton(string title, Pos x, Func<Task> command)
+    private Button CommandButton(string title, Pos x, Pos y, Func<Task> command)
     {
         Button button = new()
         {
             Title = title,
             X = x,
-            Y = Pos.AnchorEnd(6),
+            Y = y,
         };
         button.Accepting += async (_, args) =>
         {
@@ -117,10 +147,36 @@ internal sealed class GoalDialog : Dialog
 
         PlanView? plan = await goalService.GetCurrentPlanAsync(goal.Id, cancellationToken);
         RemoteCostReport? cost = await remoteCostService.GetAsync(goal.Id, cancellationToken);
+        IReadOnlyList<GoalModelSelectionView> selections =
+            await modelService.GetSelectionsAsync(goal.Id, cancellationToken);
         using Dialog dialog = ReadOnlyDialog(
             $"Goal | {goal.State}",
-            GoalTextFormatter.FormatDetails(goal, plan, cost));
+            GoalTextFormatter.FormatDetails(goal, plan, cost, selections));
         await application.RunAsync(dialog, cancellationToken);
+    }
+
+    private async Task ManageModelsAsync()
+    {
+        GoalView? goal = SelectedGoal();
+        if (goal is null)
+        {
+            status.Text = "Select a goal.";
+            return;
+        }
+
+        status.Text = "Discovering provider catalogs; no inference is performed.";
+        GoalModelCatalog catalog = await modelService.DiscoverAsync(goal.Id, cancellationToken);
+        IReadOnlyList<GoalModelSelectionView> selections =
+            await modelService.GetSelectionsAsync(goal.Id, cancellationToken);
+        using GoalModelDialog dialog = new(
+            application,
+            modelService,
+            goal,
+            catalog,
+            selections,
+            cancellationToken);
+        await application.RunAsync(dialog, cancellationToken);
+        status.Text = "Role model selection updated.";
     }
 
     private async Task ProposeAsync()
@@ -351,6 +407,7 @@ internal sealed class GoalDialog : Dialog
         GoalState? state = SelectedGoal()?.State;
         createGoal.Enabled = enabled;
         inspectGoal.Enabled = enabled && state is not null;
+        manageModels.Enabled = enabled && state is not null;
         proposePlan.Enabled = enabled && state is GoalState.Draft or GoalState.NeedsPlanRevision;
         approvePlan.Enabled = enabled && state is GoalState.AwaitingPlanApproval;
         denyPlan.Enabled = enabled && state is GoalState.AwaitingPlanApproval;

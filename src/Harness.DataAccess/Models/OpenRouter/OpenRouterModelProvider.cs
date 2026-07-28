@@ -11,11 +11,11 @@ namespace Harness.DataAccess.Models.OpenRouter;
 
 internal sealed class OpenRouterModelProvider(
     HttpClient httpClient,
+    string providerName,
     ISecretStore secretStore,
     SecretReference apiKeyReference,
     IRemoteCostStore remoteCostStore) : IModelProvider
 {
-    private const string ProviderName = "OpenRouter";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly Dictionary<string, ModelPricing> pricingByModel =
         new(StringComparer.Ordinal);
@@ -31,14 +31,22 @@ internal sealed class OpenRouterModelProvider(
         }
 
         (IReadOnlyList<ModelDescriptor> chatModels, ProviderError? chatError) =
-            await GetCatalogAsync("api/v1/models?output_modalities=text", apiKey, cancellationToken);
+            await GetCatalogAsync(
+                "api/v1/models?output_modalities=text",
+                ModelPurpose.Chat,
+                apiKey,
+                cancellationToken);
         if (chatError is not null)
         {
             return new([], chatError);
         }
 
         (IReadOnlyList<ModelDescriptor> embeddingModels, ProviderError? embeddingError) =
-            await GetCatalogAsync("api/v1/embeddings/models", apiKey, cancellationToken);
+            await GetCatalogAsync(
+                "api/v1/embeddings/models",
+                ModelPurpose.Embedding,
+                apiKey,
+                cancellationToken);
         if (embeddingError is not null)
         {
             return new([], embeddingError);
@@ -94,10 +102,11 @@ internal sealed class OpenRouterModelProvider(
         MicroUsd estimate = EstimateChatCost(request, pricing.Pricing!);
         RemoteCostReservationResult reservationResult = await remoteCostStore.ReserveAsync(new(
             request.RemoteScope!.GoalId,
-            ProviderName,
+            providerName,
             request.Model,
             RemoteCostOperation.Chat,
-            estimate), cancellationToken);
+            estimate,
+            request.RemoteScope.Role), cancellationToken);
         if (reservationResult.Reservation is null)
         {
             yield return ErrorEvent(ReservationError(reservationResult.Failure));
@@ -287,10 +296,11 @@ internal sealed class OpenRouterModelProvider(
         MicroUsd estimate = EstimateEmbeddingCost(request, pricing.Pricing!);
         RemoteCostReservationResult reservationResult = await remoteCostStore.ReserveAsync(new(
             request.RemoteScope!.GoalId,
-            ProviderName,
+            providerName,
             request.Model,
             RemoteCostOperation.Embedding,
-            estimate), cancellationToken);
+            estimate,
+            request.RemoteScope.Role), cancellationToken);
         if (reservationResult.Reservation is null)
         {
             return EmbeddingFailure(ReservationError(reservationResult.Failure));
@@ -403,7 +413,11 @@ internal sealed class OpenRouterModelProvider(
         }
 
         (IReadOnlyList<ModelDescriptor> models, ProviderError? error) =
-            await GetCatalogAsync("api/v1/models?output_modalities=all", apiKey, cancellationToken);
+            await GetCatalogAsync(
+                "api/v1/models?output_modalities=all",
+                ModelPurpose.Chat,
+                apiKey,
+                cancellationToken);
         if (error is not null)
         {
             return new(null, error);
@@ -430,6 +444,7 @@ internal sealed class OpenRouterModelProvider(
 
     private async ValueTask<(IReadOnlyList<ModelDescriptor>, ProviderError?)> GetCatalogAsync(
         string path,
+        ModelPurpose purpose,
         string apiKey,
         CancellationToken cancellationToken)
     {
@@ -468,7 +483,7 @@ internal sealed class OpenRouterModelProvider(
                     .ReadFromJsonAsync<OpenRouterModelsResponse>(JsonOptions, cancellationToken);
                 ModelDescriptor[] models = payload?.Data
                     .Where(model => !string.IsNullOrWhiteSpace(model.Id))
-                    .Select(MapModel)
+                    .Select(model => MapModel(model, purpose))
                     .ToArray() ?? [];
                 return (models, null);
             }
@@ -479,7 +494,7 @@ internal sealed class OpenRouterModelProvider(
         }
     }
 
-    private static ModelDescriptor MapModel(OpenRouterModel model)
+    private ModelDescriptor MapModel(OpenRouterModel model, ModelPurpose purpose)
     {
         string[] capabilities = model.SupportedParameters
             .Concat(model.Architecture?.OutputModalities ?? [])
@@ -487,13 +502,14 @@ internal sealed class OpenRouterModelProvider(
             .ToArray();
         return new(
             model.Id!,
-            ProviderName,
+            providerName,
             model.Architecture?.Tokenizer,
             ParameterSize: null,
             Quantization: null,
             capabilities,
             model.ContextLength,
-            ParsePricing(model.Pricing));
+            ParsePricing(model.Pricing),
+            [purpose]);
     }
 
     private static ModelDescriptor Merge(ModelDescriptor first, ModelDescriptor second) =>
@@ -505,6 +521,10 @@ internal sealed class OpenRouterModelProvider(
                 .ToArray(),
             ContextLength = first.ContextLength ?? second.ContextLength,
             Pricing = first.Pricing ?? second.Pricing,
+            Purposes = (first.Purposes ?? [])
+                .Concat(second.Purposes ?? [])
+                .Distinct()
+                .ToArray(),
         };
 
     private static ModelPricing? ParsePricing(OpenRouterPricing? pricing) =>

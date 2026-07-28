@@ -5,4 +5,5 @@ public sealed record RemoteCostReservationRequest(
     string Provider,
     string Model,
     RemoteCostOperation Operation,
-    MicroUsd EstimatedCost);
+    MicroUsd EstimatedCost,
+    RemoteModelRole? Role = null);

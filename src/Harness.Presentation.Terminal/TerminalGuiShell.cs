@@ -1,5 +1,6 @@
 using Harness.BusinessLogic.Dashboard;
 using Harness.BusinessLogic.Costs;
+using Harness.BusinessLogic.Agents;
 using Harness.BusinessLogic.Framework;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Workflows;
@@ -14,6 +15,7 @@ internal sealed class TerminalGuiShell(
     IFrameworkService frameworkService,
     IGoalService goalService,
     IRemoteCostService remoteCostService,
+    IGoalModelService goalModelService,
     IWalkingSkeletonWorkflowService workflowService) : ITerminalShell
 {
     public async ValueTask RunAsync(CancellationToken cancellationToken = default)
@@ -34,6 +36,7 @@ internal sealed class TerminalGuiShell(
             frameworkService,
             goalService,
             remoteCostService,
+            goalModelService,
             workflowService,
             snapshot,
             activeWorkspace,

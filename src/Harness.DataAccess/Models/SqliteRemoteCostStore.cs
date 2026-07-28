@@ -63,8 +63,17 @@ internal sealed class SqliteRemoteCostStore(IApplicationPaths applicationPaths) 
                    @estimatedCost, NULL, 'Reserved', @createdAt, NULL
             FROM goals
             WHERE goals.id = @goalId
-              AND goals.state = 'Approved'
               AND goals.remote_budget_microusd IS NOT NULL
+              AND (
+                  goals.state = 'Approved'
+                  OR EXISTS (
+                      SELECT 1 FROM goal_model_selections
+                      WHERE goal_id = goals.id
+                        AND role = @role
+                        AND provider = @provider
+                        AND model = @model
+                  )
+              )
               AND (
                   SELECT COALESCE(SUM(
                       CASE state
@@ -81,6 +90,7 @@ internal sealed class SqliteRemoteCostStore(IApplicationPaths applicationPaths) 
             goalId = request.GoalId,
             provider = request.Provider,
             model = request.Model,
+            role = request.Role?.ToString(),
             operation = request.Operation.ToString(),
             estimatedCost = request.EstimatedCost.Value,
             createdAt = Format(DateTimeOffset.UtcNow),
@@ -94,9 +104,24 @@ internal sealed class SqliteRemoteCostStore(IApplicationPaths applicationPaths) 
         bool authorized = await connection.ExecuteScalarAsync<long>(new CommandDefinition("""
             SELECT COUNT(*) FROM goals
             WHERE id = @goalId
-              AND state = 'Approved'
-              AND remote_budget_microusd IS NOT NULL;
-            """, new { goalId = request.GoalId }, cancellationToken: cancellationToken)) == 1;
+              AND remote_budget_microusd IS NOT NULL
+              AND (
+                  state = 'Approved'
+                  OR EXISTS (
+                      SELECT 1 FROM goal_model_selections
+                      WHERE goal_id = goals.id
+                        AND role = @role
+                        AND provider = @provider
+                        AND model = @model
+                  )
+              );
+            """, new
+        {
+            goalId = request.GoalId,
+            provider = request.Provider,
+            model = request.Model,
+            role = request.Role?.ToString(),
+        }, cancellationToken: cancellationToken)) == 1;
         return authorized
             ? new(null, RemoteCostReservationFailure.CostCapExceeded)
             : new(null, RemoteCostReservationFailure.GoalNotApprovedOrAuthorized);

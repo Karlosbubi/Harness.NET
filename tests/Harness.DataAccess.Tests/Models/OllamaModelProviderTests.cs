@@ -38,6 +38,7 @@ public sealed class OllamaModelProviderTests
         Assert.Equal("Ollama", model.Provider);
         Assert.Equal("8B", model.ParameterSize);
         Assert.Equal(["completion", "tools", "thinking"], model.Capabilities);
+        Assert.Equal([ModelPurpose.Chat], model.Purposes);
     }
 
     [Fact]

@@ -52,7 +52,8 @@ internal sealed class OllamaModelProvider(HttpClient httpClient) : IModelProvide
                         model.Details?.Family,
                         model.Details?.ParameterSize,
                         model.Details?.QuantizationLevel,
-                        model.Capabilities))
+                        model.Capabilities,
+                        Purposes: Purposes(model.Capabilities)))
                     .Where(model => !string.IsNullOrWhiteSpace(model.Id))
                     .ToArray() ?? [];
                 return new(models, Error: null);
@@ -63,6 +64,16 @@ internal sealed class OllamaModelProvider(HttpClient httpClient) : IModelProvide
             }
         }
     }
+
+    private static IReadOnlyList<ModelPurpose> Purposes(IReadOnlyList<string> capabilities) =>
+        capabilities.SelectMany(capability => capability switch
+            {
+                "completion" => [ModelPurpose.Chat],
+                "embedding" => [ModelPurpose.Embedding],
+                _ => Array.Empty<ModelPurpose>(),
+            })
+            .Distinct()
+            .ToArray();
 
     public async IAsyncEnumerable<ChatStreamEvent> StreamChatAsync(
         ChatRequest request,

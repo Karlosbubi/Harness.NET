@@ -21,7 +21,10 @@ public sealed class OpenRouterModelProviderTests
                 ? JsonResponse(ModelsJson("openai/text-embedding-3-small", "embeddings"))
                 : JsonResponse(ModelsJson("openai/gpt-5-mini", "text"));
         });
-        OpenRouterModelProvider provider = CreateProvider(httpClient, new StubRemoteCostStore());
+        OpenRouterModelProvider provider = CreateProvider(
+            httpClient,
+            new StubRemoteCostStore(),
+            providerName: "Cloud");
 
         ModelCatalog catalog = await provider.GetModelsAsync();
 
@@ -30,9 +33,15 @@ public sealed class OpenRouterModelProviderTests
         Assert.Contains("/api/v1/models?output_modalities=text", paths);
         Assert.Contains("/api/v1/embeddings/models", paths);
         ModelDescriptor chat = Assert.Single(catalog.Models, model => model.Id == "openai/gpt-5-mini");
+        ModelDescriptor embedding = Assert.Single(
+            catalog.Models,
+            model => model.Id == "openai/text-embedding-3-small");
+        Assert.Equal("Cloud", chat.Provider);
         Assert.Equal(128_000, chat.ContextLength);
         Assert.Equal(0.000001m, chat.Pricing?.InputUsdPerToken);
         Assert.Contains("tools", chat.Capabilities);
+        Assert.Equal([ModelPurpose.Chat], chat.Purposes);
+        Assert.Equal([ModelPurpose.Embedding], embedding.Purposes);
     }
 
     [Fact]
@@ -63,7 +72,10 @@ public sealed class OpenRouterModelProviderTests
         await foreach (ChatStreamEvent item in provider.StreamChatAsync(new(
                            "openai/gpt-5-mini",
                            [new("user", "hi")],
-                           new("goal-1", ProviderPrivacyPolicy.NoCollectionAndZeroDataRetention),
+                           new(
+                               "goal-1",
+                               ProviderPrivacyPolicy.NoCollectionAndZeroDataRetention,
+                               RemoteModelRole.Lead),
                            new(2))))
         {
             events.Add(item);
@@ -74,6 +86,7 @@ public sealed class OpenRouterModelProviderTests
         Assert.True(events[2].Done);
         Assert.Equal(new MicroUsd(7), events[2].Usage.Cost);
         Assert.Equal(new MicroUsd(11), costs.Request?.EstimatedCost);
+        Assert.Equal(RemoteModelRole.Lead, costs.Request?.Role);
         Assert.Equal(new MicroUsd(7), costs.ReconciledCost);
         using JsonDocument body = JsonDocument.Parse(requestJson!);
         Assert.Equal(2, body.RootElement.GetProperty("max_tokens").GetInt32());
@@ -138,9 +151,11 @@ public sealed class OpenRouterModelProviderTests
 
     private static OpenRouterModelProvider CreateProvider(
         HttpClient httpClient,
-        IRemoteCostStore costStore) =>
+        IRemoteCostStore costStore,
+        string providerName = "OpenRouter") =>
         new(
             httpClient,
+            providerName,
             new StubSecretStore(),
             new("openrouter-api-key", "OPENROUTER_API_KEY"),
             costStore);

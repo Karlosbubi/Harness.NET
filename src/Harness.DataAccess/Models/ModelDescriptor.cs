@@ -8,4 +8,5 @@ public sealed record ModelDescriptor(
     string? Quantization,
     IReadOnlyList<string> Capabilities,
     int? ContextLength = null,
-    ModelPricing? Pricing = null);
+    ModelPricing? Pricing = null,
+    IReadOnlyList<ModelPurpose>? Purposes = null);

@@ -59,6 +59,39 @@ public sealed class SqliteRemoteCostStoreTests : IDisposable
         Assert.Equal(RemoteCostReservationFailure.GoalNotApprovedOrAuthorized, result.Failure);
     }
 
+    [Fact]
+    public async Task Explicit_role_selection_authorizes_only_its_remote_model_before_plan_approval()
+    {
+        (SqliteRemoteCostStore store, string databasePath) = await CreateStoreAsync(
+            goalState: "Draft",
+            budgetMicrousd: 100);
+        using (SqliteConnection connection = new($"Data Source={databasePath}"))
+        {
+            connection.Open();
+            using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = """
+                INSERT INTO goal_model_selections (goal_id, role, provider, model, selected_at)
+                VALUES ('goal-1', 'Lead', 'OpenRouter', 'model', $now);
+                """;
+            command.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
+            command.ExecuteNonQuery();
+        }
+
+        RemoteCostReservationResult authorized = await store.ReserveAsync(Request(1));
+        RemoteCostReservationResult wrongModel = await store.ReserveAsync(
+            Request(1) with { Model = "another-model" });
+        RemoteCostReservationResult wrongRole = await store.ReserveAsync(
+            Request(1) with { Role = RemoteModelRole.Reviewer });
+
+        Assert.NotNull(authorized.Reservation);
+        Assert.Equal(
+            RemoteCostReservationFailure.GoalNotApprovedOrAuthorized,
+            wrongModel.Failure);
+        Assert.Equal(
+            RemoteCostReservationFailure.GoalNotApprovedOrAuthorized,
+            wrongRole.Failure);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(root))
@@ -107,7 +140,13 @@ public sealed class SqliteRemoteCostStoreTests : IDisposable
     }
 
     private static RemoteCostReservationRequest Request(long estimatedMicrousd) =>
-        new("goal-1", "OpenRouter", "model", RemoteCostOperation.Chat, new(estimatedMicrousd));
+        new(
+            "goal-1",
+            "OpenRouter",
+            "model",
+            RemoteCostOperation.Chat,
+            new(estimatedMicrousd),
+            RemoteModelRole.Lead);
 
     private sealed class StubApplicationPaths(ApplicationPaths current) : IApplicationPaths
     {

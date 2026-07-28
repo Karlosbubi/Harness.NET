@@ -26,6 +26,7 @@ public sealed class OpenRouterLiveIntegrationTests
         };
         OpenRouterModelProvider provider = new(
             httpClient,
+            "OpenRouter",
             new EnvironmentSecretStore(apiKey),
             new("openrouter-api-key"),
             new RejectingCostStore());
@@ -61,6 +62,7 @@ public sealed class OpenRouterLiveIntegrationTests
         BoundedCostStore costs = new(new(5));
         OpenRouterModelProvider provider = new(
             httpClient,
+            "OpenRouter",
             new EnvironmentSecretStore(apiKey),
             new("openrouter-api-key"),
             costs);

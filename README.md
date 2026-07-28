@@ -15,7 +15,8 @@ streaming, strict privacy routing, and fail-closed goal budgets with attributed
 reservation and reconciled-spend reports. The Goals menu creates local-only or
 explicitly capped goals, manages versioned plan approval/denial, and shows reserved
 exposure, reconciled spend, remaining budget, overage, and per-request attribution;
-goal-specific remote model selection is not yet complete.
+it also discovers configured chat catalogs and persists an explicit provider/model
+choice independently for the lead, implementer, and reviewer.
 
 Semantic indexing now reads bounded eligible text directly from the Git index,
 filters generated, binary, sensitive, and oversized content, and creates deterministic
@@ -38,7 +39,10 @@ bounded Git status/diff evidence, non-evaluating .NET metadata, approved atomic 
 edits, and cancellable .NET execution in isolated goal worktrees. Agent role
 execution now runs lead, implementer, and reviewer prompts through Microsoft Agent
 Framework behind semantic Business Logic contracts, with each role using its
-configured model route. Role delegation and tool scopes are not coordinated yet.
+configured local default or goal-specific selection. Remote role execution carries
+the goal identity, strict privacy policy, and a required output-token ceiling into
+the cost-controlled provider boundary. Role delegation and tool scopes are not
+coordinated yet.
 Restore is available only after a durable, correlation- and target-bound user
 approval. Approved edit/build/test/restore calls retain durable request/result
 evidence for later workflow and GUI presentation. A deterministic walking-skeleton

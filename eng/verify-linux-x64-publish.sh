@@ -37,7 +37,7 @@ process_id=$!
 
 ready=0
 for _ in $(seq 1 100); do
-  if grep -q "Harness.NET ready (schema 13)" "$output_file"; then
+  if grep -q "Harness.NET ready (schema 14)" "$output_file"; then
     ready=1
     break
   fi

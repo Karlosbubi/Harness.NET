@@ -1,4 +1,5 @@
 using System.Globalization;
+using Harness.BusinessLogic.Agents;
 using Harness.BusinessLogic.Costs;
 using Harness.BusinessLogic.Goals;
 
@@ -15,7 +16,8 @@ internal static class GoalTextFormatter
     internal static string FormatDetails(
         GoalView goal,
         PlanView? plan,
-        RemoteCostReport? cost) => string.Join(
+        RemoteCostReport? cost,
+        IReadOnlyList<GoalModelSelectionView> selections) => string.Join(
         '\n',
         $"GOAL {goal.State}",
         goal.Title,
@@ -32,7 +34,26 @@ internal static class GoalTextFormatter
             ? "PLAN\nNo plan proposed."
             : $"PLAN revision {plan.Revision.Value} | {plan.State}\n{plan.Content}",
         string.Empty,
+        FormatSelections(selections),
+        string.Empty,
         FormatCostReport(goal, cost));
+
+    internal static string FormatSelections(IReadOnlyList<GoalModelSelectionView> selections) =>
+        selections.Count == 0
+            ? "ROLE MODELS\nUnavailable"
+            : "ROLE MODELS\n" + string.Join('\n', selections.Select(selection =>
+                $"{selection.Role,-11} {selection.Provider.Value}/{selection.Model.Value} | " +
+                $"{selection.Access} | {(selection.IsExplicit ? "goal-selected" : "configured default")}"));
+
+    internal static string FormatModelCandidate(GoalModelCandidate candidate) =>
+        $"{candidate.Access,-6} | {candidate.Provider.Value}/{candidate.Model.Value}" +
+        (candidate.InputPrice is null || candidate.OutputPrice is null
+            ? " | pricing unavailable"
+            : $" | in ${candidate.InputPrice.Value:0.######}/M" +
+              $" out ${candidate.OutputPrice.Value:0.######}/M" +
+              (candidate.RequestPrice?.Value > 0
+                  ? $" req ${candidate.RequestPrice.Value:0.######}"
+                  : string.Empty));
 
     internal static string FormatCostReport(GoalView goal, RemoteCostReport? report)
     {

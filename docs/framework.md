@@ -71,6 +71,10 @@ Data Access -> Business Logic -> Presentation
 - Network access, package changes/restores, destructive actions, budget extensions,
   and Git commits require explicit approval.
 - Selecting OpenRouter models for a goal authorizes model calls for that goal only.
+- Provider/model authorization is recorded independently for lead, implementer, and
+  reviewer. A remote configured default never grants implicit spending authority.
+  Remote planning authorization is separate from plan approval and grants no
+  repository mutation capability.
 - Accepted work is committed to the isolated goal branch after approval. Harness.NET
   does not merge, rebase, or cherry-pick it automatically.
 

@@ -30,9 +30,11 @@ Exit evidence: accepted framework and architecture decision records.
 - Completed: durable local conversation path from the TUI through Business Logic to
   Ollama, including schema-versioned history, incremental snapshots, token usage,
   reload, scrollable transcript, and persisted provider failures.
-- In progress: provider health, capability discovery, and persisted model selection
-  are available in the wide TUI. Typed XML supplies named provider modules and all
-  main/reviewer/tool routes are consumed by their corresponding agent roles.
+- Completed: provider health, typed chat/embedding capability discovery, and
+  persisted model selection are available in the TUI. Typed XML supplies named
+  provider modules and all main/reviewer/tool routes provide local defaults. Each
+  goal can override lead, implementer, and reviewer independently; remote execution
+  is goal-bound, strictly private, output-capped, and cost-accounted.
 - Completed: Git-backed workspace inspection, durable registration, active
   selection, entry-point validation, and explicit trust exist behind Business Logic
   contracts. A compact/wide TUI modal exposes registration and selection with a
@@ -80,8 +82,10 @@ Exit evidence: accepted framework and architecture decision records.
   compressed executable with external native libraries and shipped XML defaults.
   The artifact starts without an installed .NET runtime, uses isolated XDG storage,
   and shuts down cleanly on SIGTERM.
-- OpenRouter discovery, streaming, embeddings, strict privacy routing, goal-scoped
+- Completed: OpenRouter discovery, streaming, embeddings, strict privacy routing, goal-scoped
   cost reservation/reconciliation, and structured cost reports are implemented.
+  Explicit per-role goal selections authorize pre-approval planning without
+  authorizing repository mutation; approved goals retain remote embedding support.
   Typed tool-call mapping remains behind the same boundary.
 - Completed: bounded Git-tracked UTF-8 ingestion filters generated, binary, secret,
   and oversized content; deterministic overlapping chunks are embedded through the

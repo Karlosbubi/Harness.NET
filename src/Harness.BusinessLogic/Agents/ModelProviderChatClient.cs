@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using Harness.BusinessLogic.Goals;
 using Harness.DataAccess.Models;
 using Microsoft.Extensions.AI;
 using ProviderChatMessage = Harness.DataAccess.Models.ChatMessage;
@@ -7,7 +8,10 @@ namespace Harness.BusinessLogic.Agents;
 
 internal sealed class ModelProviderChatClient(
     IModelProvider provider,
-    AgentModel model) : IChatClient
+    AgentModel model,
+    GoalId? remoteGoalId,
+    AgentRole role,
+    MaximumAgentOutputTokens? maximumOutputTokens) : IChatClient
 {
     public async Task<ChatResponse> GetResponseAsync(
         IEnumerable<Microsoft.Extensions.AI.ChatMessage> messages,
@@ -45,7 +49,22 @@ internal sealed class ModelProviderChatClient(
             message.Text)));
 
         await foreach (ChatStreamEvent item in provider.StreamChatAsync(
-            new ChatRequest(model.Value, providerMessages),
+            new ChatRequest(
+                model.Value,
+                providerMessages,
+                remoteGoalId is null
+                    ? null
+                    : new(
+                        remoteGoalId.Value,
+                        ProviderPrivacyPolicy.NoCollectionAndZeroDataRetention,
+                        role switch
+                        {
+                            AgentRole.Lead => RemoteModelRole.Lead,
+                            AgentRole.Implementer => RemoteModelRole.Implementer,
+                            AgentRole.Reviewer => RemoteModelRole.Reviewer,
+                            _ => throw new ArgumentOutOfRangeException(nameof(role)),
+                        }),
+                maximumOutputTokens is null ? null : new(maximumOutputTokens.Value)),
             cancellationToken))
         {
             if (item.Error is not null)

@@ -1,5 +1,6 @@
 using Harness.BusinessLogic.Costs;
 using Harness.BusinessLogic.Goals;
+using Harness.BusinessLogic.Agents;
 
 namespace Harness.Presentation.Terminal.Tests;
 
@@ -36,7 +37,18 @@ public sealed class GoalTextFormatterTests
                 createdAt,
                 createdAt)]);
 
-        string text = GoalTextFormatter.FormatDetails(goal, plan, report);
+        string text = GoalTextFormatter.FormatDetails(
+            goal,
+            plan,
+            report,
+            [new(
+                goal.Id,
+                AgentRole.Lead,
+                new("OpenRouter"),
+                new("provider/model"),
+                ModelAccess.Remote,
+                IsExplicit: true,
+                createdAt)]);
 
         Assert.Contains("Review-cycle limit: 3", text, StringComparison.Ordinal);
         Assert.Contains("PLAN revision 2 | Pending", text, StringComparison.Ordinal);
@@ -46,12 +58,18 @@ public sealed class GoalTextFormatterTests
         Assert.Contains("Remaining:  $1.25", text, StringComparison.Ordinal);
         Assert.Contains("OpenRouter/provider/model", text, StringComparison.Ordinal);
         Assert.Contains("actual $0.5", text, StringComparison.Ordinal);
+        Assert.Contains("Lead", text, StringComparison.Ordinal);
+        Assert.Contains("goal-selected", text, StringComparison.Ordinal);
     }
 
     [Fact]
     public void Makes_local_only_authorization_explicit()
     {
-        string text = GoalTextFormatter.FormatDetails(Goal(remoteBudget: null), plan: null, cost: null);
+        string text = GoalTextFormatter.FormatDetails(
+            Goal(remoteBudget: null),
+            plan: null,
+            cost: null,
+            selections: []);
 
         Assert.Contains("Remote models: not authorized", text, StringComparison.Ordinal);
         Assert.Contains("no remote-model spend is permitted", text, StringComparison.Ordinal);
@@ -76,6 +94,30 @@ public sealed class GoalTextFormatterTests
     [InlineData("not money")]
     public void Rejects_invalid_usd_caps(string value) =>
         Assert.False(GoalTextFormatter.TryParseUsd(value, out _));
+
+    [Fact]
+    public void Formats_remote_model_rates_without_hiding_missing_pricing()
+    {
+        GoalModelCandidate priced = new(
+            new("OpenRouter"),
+            new("provider/model"),
+            ModelAccess.Remote,
+            [new("tools")],
+            new(128_000),
+            new(1.25m),
+            new(2.5m),
+            new(0.01m));
+        GoalModelCandidate unknown = priced with
+        {
+            Model = new("unknown-price"),
+            InputPrice = null,
+            OutputPrice = null,
+            RequestPrice = null,
+        };
+
+        Assert.Contains("in $1.25/M out $2.5/M req $0.01", GoalTextFormatter.FormatModelCandidate(priced), StringComparison.Ordinal);
+        Assert.Contains("pricing unavailable", GoalTextFormatter.FormatModelCandidate(unknown), StringComparison.Ordinal);
+    }
 
     private static GoalView Goal(MicroUsdAmount? remoteBudget) => new(
         new("goal-1"),

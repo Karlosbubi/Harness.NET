@@ -57,6 +57,7 @@ builder.Services.AddSingleton<IWorkspaceInspector, GitWorkspaceInspector>();
 builder.Services.AddSingleton<IWorkspaceStore, SqliteWorkspaceStore>();
 builder.Services.AddSingleton<IWorkspaceService, WorkspaceService>();
 builder.Services.AddSingleton<IGoalStore, SqliteGoalStore>();
+builder.Services.AddSingleton<IGoalModelSelectionStore, SqliteGoalModelSelectionStore>();
 builder.Services.AddSingleton<IRemoteCostStore, SqliteRemoteCostStore>();
 builder.Services.AddSingleton<IRemoteCostService, RemoteCostService>();
 builder.Services.AddSingleton<ICapabilityApprovalStore, SqliteCapabilityApprovalStore>();
@@ -101,25 +102,38 @@ builder.Services.AddSingleton<IModelProvider>(services =>
     services.GetRequiredKeyedService<IModelProvider>(mainProviderName));
 
 ModelProviderConfiguration mainProvider = configuration.Providers[mainProviderName];
-builder.Services.AddSingleton<IAgentRoleRunner>(services =>
+builder.Services.AddSingleton<GoalModelService>(services =>
 {
-    AgentRoleRegistration Registration(AgentRole role, string providerRoute)
-    {
-        ModelProviderConfiguration provider = configuration.Providers[providerRoute];
-        return new(
-            role,
+    GoalModelProviderRegistration[] providers = configuration.Providers.Values
+        .Select(provider => new GoalModelProviderRegistration(
+            new(provider.Name),
+            provider.Kind is ModelProviderKind.OpenRouter
+                ? ModelAccess.Remote
+                : ModelAccess.Local,
             new(provider.ChatModel),
-            services.GetRequiredKeyedService<IModelProvider>(provider.Name));
-    }
-
-    return new AgentRoleRunner(
-        [
-            Registration(AgentRole.Lead, configuration.Routing.MainLlm),
-            Registration(AgentRole.Implementer, configuration.Routing.ToolLlm),
-            Registration(AgentRole.Reviewer, configuration.Routing.Reviewer),
-        ],
-        services.GetRequiredService<ILoggerFactory>());
+            services.GetRequiredKeyedService<IModelProvider>(provider.Name)))
+        .ToArray();
+    Dictionary<AgentRole, ModelProviderName> routes = new()
+    {
+        [AgentRole.Lead] = new(configuration.Routing.MainLlm),
+        [AgentRole.Implementer] = new(configuration.Routing.ToolLlm),
+        [AgentRole.Reviewer] = new(configuration.Routing.Reviewer),
+    };
+    return new(
+        services.GetRequiredService<IGoalStore>(),
+        services.GetRequiredService<IWorkspaceStore>(),
+        services.GetRequiredService<IGoalModelSelectionStore>(),
+        providers,
+        routes,
+        services.GetRequiredService<TimeProvider>());
 });
+builder.Services.AddSingleton<IGoalModelService>(services =>
+    services.GetRequiredService<GoalModelService>());
+builder.Services.AddSingleton<IGoalModelRouteResolver>(services =>
+    services.GetRequiredService<GoalModelService>());
+builder.Services.AddSingleton<IAgentRoleRunner>(services => new AgentRoleRunner(
+    services.GetRequiredService<IGoalModelRouteResolver>(),
+    services.GetRequiredService<ILoggerFactory>()));
 ModelProviderConfiguration embeddingProvider =
     configuration.Providers[configuration.Routing.Embedding];
 builder.Services.AddSingleton(new SemanticIndexOptions(
@@ -212,6 +226,7 @@ static IModelProvider CreateModelProvider(
         ModelProviderKind.Ollama => new OllamaModelProvider(httpClient),
         ModelProviderKind.OpenRouter => new OpenRouterModelProvider(
             httpClient,
+            provider.Name,
             services.GetRequiredService<ISecretStore>(),
             provider.ApiKeyReference ?? throw new InvalidOperationException(
                 $"Provider '{provider.Name}' has no API-key reference."),

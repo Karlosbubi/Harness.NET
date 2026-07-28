@@ -43,7 +43,7 @@ but the end-user workflow is not complete.
 | ID | Status | User capability | Current gap | Done when |
 |---|---|---|---|---|
 | 013 | Done | Hold a durable local-model conversation | Successful live inference still depends on the configured server being reachable. | TUI instructions stream through Business Logic to Ollama, persist, reload after restart, and show actionable provider failures. |
-| 014 | Partial | Configure and verify model providers | Typed Ollama and OpenRouter modules and all per-role routes are consumed, but TUI model selection remains conversation-wide and remote roles still need production goal-scope binding. | Configuration validates endpoints, discovers capabilities, selects models per role, and reports health without exposing secrets. |
+| 014 | Done | Configure and verify model providers | - | Configuration validates endpoints, discovers capabilities, selects models per role, and reports health without exposing secrets. |
 | 015 | Done | Register and trust a .NET workspace | - | A user can add a Git repository, select a solution/project, explicitly trust it, reopen it, and see dirty/base state. |
 | 016 | Done | Load the user's engineering framework | - | Global, repository, and private framework layers load with precedence, locks, validation, and an inspectable effective view. |
 | 017 | Done | Let agents inspect safely | - | Typed, path-confined read/search/status/diff/project/build-information tools run only in a trusted workspace and return bounded records. |
@@ -54,7 +54,7 @@ but the end-user workflow is not complete.
 | 022 | Partial | Resume interrupted work safely | The deterministic walking skeleton resumes from persisted safe boundaries and incomplete tool calls remain identifiable, but production-run reconciliation is absent. | Runs checkpoint at safe boundaries, resume completed steps, and mark uncertain calls without automatic replay. |
 | 023 | Partial | Review evidence and accept results | Tool requests/results are durable and queryable, but there is no independent review loop or commit approval. | Diff, tests, tool evidence, review findings, cycle caps, and explicit commit approval work end to end. |
 | 024 | Partial | Retrieve relevant repository context | A presentation-neutral service now filters and chunks tracked text, atomically rebuilds compatible SQLite vector partitions, and retrieves matches; production context assembly and workflow/TUI controls remain. | Eligible Git-tracked text is chunked, partitioned by embedding configuration, rebuilt, searched, and filtered by policy. |
-| 025 | Partial | Use remote models under a cost cap | OpenRouter fails closed without an approved budget, reserves discovered worst-case estimates, reconciles returned charges, and exposes its attributed report in the goal TUI; goal-specific model selection remains. | Remote use requires approval, streams through the provider boundary, and enforces estimated plus reconciled per-goal caps. |
+| 025 | Done | Use remote models under a cost cap | - | Remote use requires approval, streams through the provider boundary, and enforces estimated plus reconciled per-goal caps. |
 | 026 | Partial | Operate and distribute v1.0 reliably | A verified self-contained walking-skeleton package exists, but upgrades, backup/export, hardening, and production recovery acceptance remain. | A self-contained Linux x64 release passes clean-install, migration, outage, cancellation, recovery, and representative-repository acceptance tests. |
 
 ### v1.0 release gate
@@ -91,9 +91,15 @@ Harness.NET state auditable.
   failure was persisted, and the history reloaded through the same Business Logic
   service. Successful token streaming is now also covered by the opt-in live test.
 - Task 014 now exposes provider health, discovered capabilities, refresh, and durable
-  model selection in the wide TUI. Typed XML defines named provider modules and
-  validates main/reviewer/tool/embedding routing; all chat routes are consumed by
-  agent roles and the embedding route is consumed by semantic indexing.
+  conversation model selection in the wide TUI. Typed XML defines named provider
+  modules and validates main/reviewer/tool/embedding routing; all chat routes provide
+  local role defaults and the embedding route is consumed by semantic indexing.
+  Schema 14 persists explicit goal-specific lead, implementer, and reviewer choices.
+  Goal catalog discovery distinguishes chat from embedding models, preserves named
+  module attribution, reports per-provider failures without exposing secrets, and
+  shows published remote input/output/request pricing. Agent execution resolves the
+  selected goal/role route and carries strict privacy plus a required output-token
+  ceiling into remote requests.
 - Task 010 uses the pinned Microsoft SQLite vector connector solely inside Data
   Access. Deterministic tests prove Git-index eligibility and secret/generated/binary
   filtering, stable bounded chunks, provider/model/dimension/version partitioning,
@@ -104,6 +110,12 @@ Harness.NET state auditable.
 - On 2026-07-28, the OpenRouter embedding path returned a 1,536-dimensional vector
   from `openai/text-embedding-3-small` for one short input. The opt-in live test
   enforced a five-microdollar reservation ceiling before sending the request.
+- Task 025 now requires an explicit remote provider/model choice for each goal role
+  and a positive goal cap. The durable selection authorizes only that provider/model
+  for the goal before plan approval, allowing a remote lead to propose a plan without
+  granting mutation rights. Every role call is goal-scoped and output-capped;
+  reservations and reconciled charges remain enforced atomically and visible in the
+  goal cost report. Approved goals retain goal-scoped remote embedding support.
 - Task 009 wraps Microsoft Agent Framework's `ChatClientAgent` behind semantic
   Business Logic contracts. Deterministic tests run lead, implementer, and reviewer
   prompts through separate configured provider/model routes and verify invalid
