@@ -4,7 +4,9 @@
     <Project Path="src/Harness.BusinessLogic/Harness.BusinessLogic.csproj" />
     <Project Path="src/Harness.DataAccess/Harness.DataAccess.csproj" />
     <Project Path="src/Harness.Host/Harness.Host.csproj" />
+    <Project Path="src/Harness.Presentation.Avalonia/Harness.Presentation.Avalonia.csproj" />
     <Project Path="src/Harness.Presentation.Terminal/Harness.Presentation.Terminal.csproj" />
+    <Project Path="src/Harness.UI.Avalonia/Harness.UI.Avalonia.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Harness.Analyzers.Tests/Harness.Analyzers.Tests.csproj" />
@@ -12,6 +14,8 @@
     <Project Path="tests/Harness.BusinessLogic.Tests/Harness.BusinessLogic.Tests.csproj" />
     <Project Path="tests/Harness.DataAccess.Tests/Harness.DataAccess.Tests.csproj" />
     <Project Path="tests/Harness.Host.Tests/Harness.Host.Tests.csproj" />
+    <Project Path="tests/Harness.Presentation.Avalonia.Tests/Harness.Presentation.Avalonia.Tests.csproj" />
     <Project Path="tests/Harness.Presentation.Terminal.Tests/Harness.Presentation.Terminal.Tests.csproj" />
+    <Project Path="tests/Harness.UI.Avalonia.Tests/Harness.UI.Avalonia.Tests.csproj" />
   </Folder>
 </Solution>

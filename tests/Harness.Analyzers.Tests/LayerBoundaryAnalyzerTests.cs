@@ -80,6 +80,38 @@ public sealed class LayerBoundaryAnalyzerTests
             diagnostic.Id == LayerBoundaryAnalyzer.InvalidBoundaryTypeId);
     }
 
+    [Fact]
+    public async Task Ui_toolkit_cannot_use_business_logic_symbols()
+    {
+        MetadataReference businessLogic = CreateReference(
+            "Harness.BusinessLogic",
+            "namespace Harness.BusinessLogic; public interface IGoalService { }");
+        const string source = """
+            using Harness.BusinessLogic;
+            namespace Harness.UI.Avalonia;
+            public sealed class GoalControl { private IGoalService? service; }
+            """;
+
+        ImmutableArray<Diagnostic> diagnostics = await AnalyzeAsync(
+            "Harness.UI.Avalonia",
+            source,
+            businessLogic);
+
+        Assert.Contains(diagnostics, diagnostic =>
+            diagnostic.Id == LayerBoundaryAnalyzer.InvalidLayerUsageId);
+    }
+
+    [Fact]
+    public async Task Ui_toolkit_may_expose_public_framework_classes()
+    {
+        ImmutableArray<Diagnostic> diagnostics = await AnalyzeAsync(
+            "Harness.UI.Avalonia",
+            "namespace Harness.UI.Avalonia; public sealed class ThemeController { }");
+
+        Assert.DoesNotContain(diagnostics, diagnostic =>
+            diagnostic.Id == LayerBoundaryAnalyzer.InvalidBoundaryTypeId);
+    }
+
     private static async Task<ImmutableArray<Diagnostic>> AnalyzeAsync(
         string assemblyName,
         string source,

@@ -38,7 +38,7 @@ process_id=$!
 
 ready=0
 for _ in $(seq 1 100); do
-  if grep -q "Harness.NET ready (schema 17)" "$output_file"; then
+  if grep -q "Harness.NET ready (schema 18)" "$output_file"; then
     ready=1
     break
   fi
@@ -77,7 +77,7 @@ env -i \
   XDG_CACHE_HOME="$smoke_root/cache" \
   "$publish_root/Harness.Host" --backup-path="$backup_path" \
   >"$smoke_root/backup.log" 2>&1
-grep -q "Harness.NET backup created (schema 17" "$smoke_root/backup.log"
+grep -q "Harness.NET backup created (schema 18" "$smoke_root/backup.log"
 test -f "$backup_path"
 test "$(unzip -Z1 "$backup_path" | sort | tr '\n' ' ')" = "harness.db manifest.json "
 manifest=$(unzip -p "$backup_path" manifest.json)
@@ -87,7 +87,7 @@ actual_database_sha=$(unzip -p "$backup_path" harness.db | sha256sum | cut -d ' 
 test -n "$expected_database_sha"
 test "$actual_database_sha" = "$expected_database_sha"
 grep -q '"Format":"harness-backup-v1"' <<<"$manifest"
-grep -q '"SchemaVersion":17' <<<"$manifest"
+grep -q '"SchemaVersion":18' <<<"$manifest"
 
 mkdir -p "$recovery_root/config" "$recovery_root/data/harness.net" \
   "$recovery_root/state" "$recovery_root/cache"
@@ -98,7 +98,7 @@ test "$(sqlite3 "$recovered_database" \
   "SELECT COUNT(*) FROM conversations WHERE id='release-proof';")" = "1"
 
 sqlite3 "$recovered_database" \
-  "DROP TABLE goal_workflow_tasks; DELETE FROM SchemaVersions WHERE ScriptName LIKE '%017_GoalWorkflowTasks.sql'; UPDATE application_metadata SET value='16' WHERE key='schema_version';"
+  "DROP TABLE appearance_preferences; DELETE FROM SchemaVersions WHERE ScriptName LIKE '%018_AppearancePreferences.sql'; UPDATE application_metadata SET value='17' WHERE key='schema_version';"
 env -i \
   PATH="$recovery_root/no-installed-tools" \
   DOTNET_ROOT="$recovery_root/no-installed-dotnet" \
@@ -107,12 +107,12 @@ env -i \
   XDG_STATE_HOME="$recovery_root/state" \
   XDG_CACHE_HOME="$recovery_root/cache" \
   "$publish_root/Harness.Host" --no-ui >"$recovery_root/upgrade.log" 2>&1
-grep -q "Harness.NET ready (schema 17)" "$recovery_root/upgrade.log"
+grep -q "Harness.NET ready (schema 18)" "$recovery_root/upgrade.log"
 test -n "$(find "$recovery_root/data/harness.net/backups" \
   -type f -name 'pre-upgrade-*.zip' -print -quit)"
 test "$(sqlite3 "$recovered_database" \
   "SELECT COUNT(*) FROM conversations WHERE id='release-proof';")" = "1"
 test "$(sqlite3 "$recovered_database" \
-  "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='goal_workflow_tasks';")" = "1"
+  "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='appearance_preferences';")" = "1"
 
 echo "linux-x64 publish verification passed"

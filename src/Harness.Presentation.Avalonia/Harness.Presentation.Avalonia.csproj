@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="Avalonia.AvaloniaEdit" />
+    <PackageReference Include="Avalonia.Desktop" />
+    <PackageReference Include="Markdig" />
+    <PackageReference Include="Microsoft.Extensions.Logging" />
+    <PackageReference Include="System.Reactive" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Harness.Host" />
+    <InternalsVisibleTo Include="Harness.Presentation.Avalonia.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Harness.BusinessLogic/Harness.BusinessLogic.csproj" />
+    <ProjectReference Include="../Harness.UI.Avalonia/Harness.UI.Avalonia.csproj" />
+  </ItemGroup>
+</Project>

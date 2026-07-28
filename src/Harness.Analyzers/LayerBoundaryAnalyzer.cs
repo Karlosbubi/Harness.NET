@@ -49,7 +49,7 @@ public sealed class LayerBoundaryAnalyzer : DiagnosticAnalyzer
                 SyntaxKind.IdentifierName,
                 SyntaxKind.GenericName);
 
-            if (currentLayer is not Layer.Host)
+            if (currentLayer is not (Layer.Host or Layer.UiToolkit))
             {
                 startContext.RegisterSymbolAction(AnalyzePublicType, SymbolKind.NamedType);
             }
@@ -109,7 +109,8 @@ public sealed class LayerBoundaryAnalyzer : DiagnosticAnalyzer
     {
         Layer.DataAccess => referenced is Layer.DataAccess,
         Layer.BusinessLogic => referenced is Layer.DataAccess or Layer.BusinessLogic,
-        Layer.Presentation => referenced is Layer.BusinessLogic or Layer.Presentation,
+        Layer.UiToolkit => referenced is Layer.UiToolkit,
+        Layer.Presentation => referenced is Layer.BusinessLogic or Layer.UiToolkit or Layer.Presentation,
         Layer.Host => true,
         _ => true,
     };
@@ -118,6 +119,7 @@ public sealed class LayerBoundaryAnalyzer : DiagnosticAnalyzer
     {
         "Harness.DataAccess" => Layer.DataAccess,
         "Harness.BusinessLogic" => Layer.BusinessLogic,
+        "Harness.UI.Avalonia" => Layer.UiToolkit,
         string name when name.StartsWith("Harness.Presentation.", StringComparison.Ordinal) => Layer.Presentation,
         "Harness.Host" => Layer.Host,
         _ => Layer.Other,
@@ -128,6 +130,7 @@ public sealed class LayerBoundaryAnalyzer : DiagnosticAnalyzer
         Other,
         DataAccess,
         BusinessLogic,
+        UiToolkit,
         Presentation,
         Host,
     }

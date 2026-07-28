@@ -33,7 +33,7 @@ public sealed class SqliteApplicationBackupTests : IDisposable
         ApplicationBackupResult result = await backup.CreateAsync(new(new(destination)));
 
         Assert.Null(result.Error);
-        Assert.Equal(17, result.SchemaVersion?.Value);
+        Assert.Equal(18, result.SchemaVersion?.Value);
         Assert.True(File.Exists(destination));
         Assert.Equal(await HashAsync(destination), result.ArchiveSha256?.Value);
         using ZipArchive archive = ZipFile.OpenRead(destination);
@@ -44,7 +44,7 @@ public sealed class SqliteApplicationBackupTests : IDisposable
         using JsonDocument manifest = await JsonDocument.ParseAsync(manifestEntry.Open());
         Assert.Equal("harness-backup-v1",
             manifest.RootElement.GetProperty("Format").GetString());
-        Assert.Equal(17, manifest.RootElement.GetProperty("SchemaVersion").GetInt32());
+        Assert.Equal(18, manifest.RootElement.GetProperty("SchemaVersion").GetInt32());
         Assert.Equal(result.DatabaseSha256?.Value,
             manifest.RootElement.GetProperty("DatabaseSha256").GetString());
 
@@ -71,27 +71,27 @@ public sealed class SqliteApplicationBackupTests : IDisposable
         {
             await connection.OpenAsync();
             await connection.ExecuteAsync("""
-                DROP TABLE goal_workflow_tasks;
-                DELETE FROM SchemaVersions WHERE ScriptName LIKE '%017_GoalWorkflowTasks.sql';
-                UPDATE application_metadata SET value = '16' WHERE key = 'schema_version';
+                DROP TABLE appearance_preferences;
+                DELETE FROM SchemaVersions WHERE ScriptName LIKE '%018_AppearancePreferences.sql';
+                UPDATE application_metadata SET value = '17' WHERE key = 'schema_version';
                 """);
         }
 
         DatabaseInitializationResult upgraded = await new SqliteDatabaseInitializer(
             applicationPaths, new FixedTimeProvider()).InitializeAsync();
 
-        Assert.Equal(17, upgraded.SchemaVersion.Value);
+        Assert.Equal(18, upgraded.SchemaVersion.Value);
         Assert.NotNull(upgraded.PreUpgradeBackup);
         Assert.True(File.Exists(upgraded.PreUpgradeBackup.Value));
         using ZipArchive archive = ZipFile.OpenRead(upgraded.PreUpgradeBackup.Value);
         using JsonDocument manifest = await JsonDocument.ParseAsync(
             archive.GetEntry("manifest.json")!.Open());
-        Assert.Equal(16, manifest.RootElement.GetProperty("SchemaVersion").GetInt32());
+        Assert.Equal(17, manifest.RootElement.GetProperty("SchemaVersion").GetInt32());
         await using SqliteConnection current = new($"Data Source={paths.DatabasePath}");
         await current.OpenAsync();
         Assert.Equal(1, await current.ExecuteScalarAsync<int>(
             "SELECT COUNT(*) FROM sqlite_master WHERE type='table' " +
-            "AND name='goal_workflow_tasks';"));
+            "AND name='appearance_preferences';"));
     }
 
     private (ApplicationPaths Paths, StubApplicationPaths ApplicationPaths) Paths()

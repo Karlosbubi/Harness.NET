@@ -115,3 +115,30 @@ the same precedence make the effective framework invalid until resolved.
 exits. `--wait-for-shutdown` performs the same non-interactive initialization and
 then waits for SIGINT or SIGTERM. These flags are host operations rather than
 configuration keys and are removed before command-line configuration binding.
+
+Avalonia is the default interactive frontend, including when no console streams are
+attached. Use `--ui=terminal` to run the Terminal.Gui adapter or `--ui=avalonia` to
+select the default explicitly. Terminal mode requires attached input and output.
+`--ui` cannot be combined with backup, wait, or non-UI modes.
+
+## User themes
+
+The selected semantic theme ID is stored in application state. User palettes are
+loaded from `$XDG_CONFIG_HOME/harness.net/themes/*.xml` (or the platform fallback for
+`XDG_CONFIG_HOME`). A palette inherits a built-in Light or Dark base and overrides
+only named color tokens:
+
+```xml
+<harnessTheme version="1" id="nord" name="Nord" base="dark">
+  <color token="Window" value="#2E3440" />
+  <color token="TextPrimary" value="#ECEFF4" />
+  <color token="Accent" value="#88C0D0" />
+</harnessTheme>
+```
+
+IDs use lowercase letters, digits, dots, underscores, and hyphens. Supported tokens
+are the semantic names defined by `ThemeColorToken`; colors are opaque `#RRGGBB`.
+Harness.NET reads at most 64 files of 64 KiB each, prohibits DTDs and external
+resources, and excludes palettes that are malformed or fail required contrast.
+Executable AXAML, fonts, includes, and external assets are never loaded from a theme.
+Use Reload in the desktop theme selector after editing a file.

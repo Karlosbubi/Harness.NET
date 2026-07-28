@@ -19,7 +19,7 @@ behavior Harness.NET will provide.
 | Observability | Use structured logging and OpenTelemetry. |
 | Persistence | Use Dapper, explicit SQL, SQLite, and DbUp embedded migrations. |
 | Testing | Use xUnit, architecture enforcement, integration tests, and opt-in model evaluations. |
-| Presentation | Start with Terminal.Gui v2; allow future Avalonia and gRPC adapters; avoid web frontends. |
+| Presentation | Use Avalonia by default, retain Terminal.Gui v2, allow future gRPC adapters, and avoid web frontends. |
 | Process | Remain in one application process as long as practical. |
 
 ## Layer and dependency rules
@@ -35,6 +35,8 @@ Data Access -> Business Logic -> Presentation
 - Business Logic references Data Access contracts and exposes its own interfaces,
   records, and enums to Presentation.
 - Presentation references Business Logic contracts and contains no business rules.
+- The app-neutral Avalonia UI toolkit references no Harness runtime layer; Presentation
+  may consume its public controls, semantic themes, and accessibility infrastructure.
 - A composition root may reference all implementations only to configure DI.
 - A custom Roslyn analyzer enforces reference direction and boundary type rules.
 - The reviewer role also treats violations as explicit findings.
@@ -153,9 +155,10 @@ overlay, `AGENTS.md`, or a suitable existing documentation file.
   Changing any of them creates or rebuilds a compatible partition.
 - Embedding generation is configurable between Ollama and OpenRouter.
 - The SQLite vector connector remains isolated inside Data Access.
-- Compatible-index status inspection performs no inference. Explicit TUI rebuild and
-  preview actions show embedding access, route, partition state, and goal cost state;
-  remote rebuild requires confirmation and remains fail-closed at the goal cap.
+- Compatible-index status inspection performs no inference. Explicit Avalonia and TUI
+  rebuild and preview actions show embedding access, route, partition state, and goal
+  cost state; remote rebuild requires confirmation and remains fail-closed at the goal
+  cap. Both adapters expose bounded source matches, usage, cancellation, and cost.
 - Lead, Implementer, and Reviewer may retrieve 1-8 bounded semantic matches through a
   typed goal-context tool. Queries are mapped to the active trusted goal workspace,
   strict remote privacy, and separately attributed embedding usage.
@@ -174,10 +177,31 @@ overlay, `AGENTS.md`, or a suitable existing documentation file.
 
 ## Presentation and operations
 
+- Avalonia is the default interactive adapter. It currently provides the durable
+  conversation stream, provider/model selection, persisted semantic themes, safe
+  XDG user palettes, workspace inspection/registration/selection, explicit trust,
+  durable goal creation, optional remote caps, versioned plan proposal/denial,
+  trust-gated plan approval with isolated worktree provisioning, and an adaptive
+  accessible desktop shell. It also discovers and selects goal-bound role models,
+  renders attributed remote-cost state, starts and cancels bounded Lead planning,
+  continues approved Implementer/Reviewer work, and exposes durable task, activity,
+  and evidence snapshots. Goal-scoped semantic status, confirmed rebuild, cancellable
+  search, source matches, embedding usage, and attributed cost are available without
+  leaking vector-provider types into Presentation. Avalonia also exposes the complete
+  exact-diff fingerprint, durable pending request, separate approve/deny decision, and
+  interrupted approved-commit resumption without merge or network behavior. Its
+  application-operations dialog creates deliberately confirmed, non-overwriting
+  backups and reports integrity evidence. Goal management also creates, inspects,
+  approves, and denies Restore capability requests bound to one exact goal,
+  correlation, and registered entry point; it does not execute Restore directly or
+  grant general network access. Its framework dialog resolves effective rules and
+  guidance with locks, provenance, privacy, and validation issues, and edits only the
+  private workspace overlay in Harness.NET storage.
 - Terminal.Gui v2 provides an adaptive full-screen layout: workspace/goals on the
   left, transcript/activity in the center, plan/diff/evidence tabs on the right,
   and a composer plus status/budget footer.
 - Side regions collapse on narrow terminals while the active workflow remains usable.
+- The Terminal.Gui adapter remains available through `--ui=terminal`.
 - The initial release is a self-contained Linux x64 binary and keeps process, path,
   and presentation contracts portable for later platforms.
 - Harness.NET uses XDG-managed config, data, state, and cache locations.

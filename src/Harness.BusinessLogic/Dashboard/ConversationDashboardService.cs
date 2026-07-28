@@ -223,11 +223,7 @@ internal sealed class ConversationDashboardService(
 
         return new(
             workspace,
-            conversation.Title,
             activities,
-            [$"Model: {conversation.Model}", $"Messages: {messages.Count}"],
-            "No repository changes",
-            [new("Conversation", $"Persisted as {conversation.Id}")],
             providerSnapshot with { SelectedModel = conversation.Model },
             status,
             $"Local model | {inputTokens} input | {outputTokens} output tokens");
@@ -239,10 +235,10 @@ internal sealed class ConversationDashboardService(
         WorkspaceView? active = await workspaceService.GetActiveAsync(cancellationToken);
         return active is null
             ? new(
-                Path.GetFileName(options.WorkspacePath.TrimEnd(Path.DirectorySeparatorChar)),
+                "No workspace selected",
                 options.WorkspacePath,
-                "unregistered",
-                "Not trusted")
+                "Register a Git-backed .NET repository",
+                "Workspace tools unavailable")
             : new(
                 active.Name,
                 active.RootPath,

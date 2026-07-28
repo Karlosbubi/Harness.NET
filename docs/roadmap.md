@@ -45,7 +45,8 @@ Exit evidence: accepted framework and architecture decision records.
   repository `AGENTS.md` loading preserve provenance and privacy, while private
   overlays persist in SQLite. Business Logic composes these with resolved rules and
   source failures, and named XML rules supply typed precedence and locks. A
-  top-level TUI menu exposes the effective view and private-overlay editor.
+  Avalonia and TUI framework surfaces expose the effective view and private-overlay
+  editor.
 - Completed: typed repository inspection includes trusted-workspace identity
   checks, path-confined bounded UTF-8 file reads, and bounded search over Git-indexed
   text. Git inspection supplies bounded status and diff evidence with branch and
@@ -53,7 +54,8 @@ Exit evidence: accepted framework and architecture decision records.
   target-framework, language, and SDK-policy metadata into bounded records.
 - Completed: schema-versioned draft goals persist against the active workspace
   with validated review-cycle and optional remote-cost caps. Versioned plan
-  proposals and atomic approval/denial transitions are exposed through the TUI;
+  proposals and atomic approval/denial transitions are exposed through Avalonia and
+  the TUI;
   approval also persists a worktree-bound capability grant. Goal inspection shows
   local-only authorization or the cap, reservations, reconciled spend, remainder,
   overage, and per-provider/model request attribution.
@@ -101,8 +103,10 @@ Exit evidence: accepted framework and architecture decision records.
   controls inspect status without inference and explicitly rebuild or preview context
   with route, privacy, source provenance, usage, and goal-cost transparency.
 
-Exit evidence: clean build, architecture diagnostics, deterministic tests, and a
-usable TUI shell that exercises a persisted fake run.
+Exit evidence at the time: clean build, architecture diagnostics, deterministic
+tests, and a TUI shell exercising a persisted demonstration run. That demonstration
+workflow was subsequently removed from production composition after the real goal
+workflow replaced it.
 
 ## Stage 2: First complete repository workflow (complete)
 
@@ -131,11 +135,29 @@ workflow boundaries without replaying uncertain calls.
   model outages, budget exhaustion, and corrupted/interrupted state.
 - Harden the self-contained Linux x64 package with clean-install, upgrade,
   backup/export, and recovery acceptance coverage.
-- Add other platforms, Avalonia, or gRPC only through existing Business Logic
-  contracts and only when a concrete workflow justifies them.
+- Complete hands-on Avalonia usability and visual-quality acceptance across the
+  production workspace, goal, evidence, and recovery workflows.
+- Replace the conversation-first shell with the ADR 010 docked workbench: a real
+  central document editor plus movable explorer/search, Git, goal/activity,
+  conversation, and bounded-output tools. Persist and recover the validated layout
+  only in private XDG state.
+- Add other platforms or gRPC only through existing Business Logic contracts when a
+  concrete workflow justifies them.
 
-The Linux x64 hardening item is complete for v1.0. The remaining Stage 3 items are
-post-v1 expansion and regression work, not prerequisites for the Avalonia adapter.
+The Linux x64 packaging gate is implemented for the `0.1.0-dev.1` development
+preview. The
+remaining Stage 3 items are
+post-v1 expansion and regression work. Avalonia now covers conversation, appearance,
+trusted workspaces, durable goal creation, and the complete versioned plan-decision
+boundary. Role routing, cost disclosure, bounded production runs, cancellation, and
+durable task/activity/evidence inspection are also available. Semantic status,
+confirmed/cancellable rebuild, bounded preview search, source evidence, usage, and
+attributed cost now have desktop parity. Exact commit approval does too, including
+exact preview, a separate durable decision, denial, and resumable approved state.
+Deliberately confirmed application-state backup and exact correlation-bound Restore
+approval management now have desktop parity as well. Effective framework inspection
+and private workspace-overlay editing are likewise available in Avalonia without
+writing product metadata into user repositories.
 
 ## Deferred until justified
 

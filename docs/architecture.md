@@ -6,14 +6,15 @@ Harness.NET begins as a single-process modular application. It uses direct upwar
 layer references and a dedicated composition root:
 
 ```text
-Data Access -> Business Logic -> Presentation
+Data Access -> Business Logic -> Presentation -> UI Toolkit (Avalonia-only support)
       \              |              /
        +---------- Host/DI ----------+
 ```
 
-The solution contains Data Access, Business Logic, Terminal Presentation, Host, and
-architecture-test projects with central package management. A Roslyn analyzer now
-enforces layer direction and public contract shape during every runtime build.
+The solution contains Data Access, Business Logic, Avalonia and Terminal Presentation,
+an app-neutral Avalonia UI toolkit, Host, and architecture-test projects with central
+package management. A Roslyn analyzer now enforces layer direction and public
+contract shape during every runtime build.
 
 Only interfaces, records, and enums form layer contracts. Prefer enums for closed
 sets and immutable single-value records where primitive values have distinct domain
@@ -44,8 +45,10 @@ Business Logic agent-role boundary.
   tools, keyring access, and Serilog sinks.
 - **Business Logic:** goals, plans, roles, delegation, policy evaluation, approvals,
   budgets, checkpoints, context assembly, retrieval coordination, and workflow state.
-- **Presentation:** Terminal.Gui views and view state consuming only Business Logic
-  interfaces, records, commands, and observable events.
+- **UI toolkit:** public Avalonia controls, semantic themes, accessibility helpers,
+  and adaptive layouts with no dependency on another Harness runtime project.
+- **Presentation:** Avalonia and Terminal.Gui adapters consuming only Business Logic
+  interfaces, records, commands, and streams. Avalonia owns its Rx.NET view state.
 - **Host/composition:** lifecycle, configuration, DI registration, cancellation,
   startup migrations, and presentation selection.
 - **Analyzer:** compile-time diagnostics for reference direction and cross-layer
@@ -67,7 +70,8 @@ automatically.
 
 - Global private framework and typed configuration use XDG configuration storage.
 - SQLite stores operational state, private overlays, summaries, full run history,
-  approvals, checkpoints, usage, artifacts, and vector data.
+  approvals, checkpoints, usage, artifacts, vector data, and the preferred theme ID.
+- Bounded color-token user themes are read from the XDG configuration theme directory.
 - Logs and active worktree state use XDG state locations; disposable caches use the
   XDG cache location.
 - User repositories receive only goal branches, accepted changes, and explicitly

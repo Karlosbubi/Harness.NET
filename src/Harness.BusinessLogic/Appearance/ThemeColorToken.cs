@@ -1,0 +1,31 @@
+namespace Harness.BusinessLogic.Appearance;
+
+public enum ThemeColorToken
+{
+    Window,
+    Header,
+    Panel,
+    Raised,
+    Hover,
+    Editor,
+    Border,
+    BorderStrong,
+    Focus,
+    TextPrimary,
+    TextMuted,
+    TextDim,
+    Accent,
+    AccentStrong,
+    AccentSoft,
+    Success,
+    Warning,
+    Danger,
+    Info,
+    CodeKeyword,
+    CodeType,
+    CodeString,
+    DiffAddBackground,
+    DiffAddText,
+    DiffRemoveBackground,
+    DiffRemoveText,
+}

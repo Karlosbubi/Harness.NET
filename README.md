@@ -7,16 +7,19 @@ repository.
 
 ## Current status
 
-Framework discovery is complete and the Stage 1 walking skeleton is running. It has
+The current build is a `0.1.0-dev.1` development preview, not an alpha or release
+candidate. Framework discovery and the production service slices are substantially
+implemented. The application has
 compile-time layer enforcement, XDG paths, Secret Service access, SQLite migrations,
-redacted local logs, optional OTLP, an adaptive Terminal.Gui shell, and an Ollama
-provider adapter. The OpenRouter adapter adds dynamic chat/embedding discovery,
+redacted local logs, optional OTLP, adaptive Avalonia and Terminal.Gui shells, and an
+Ollama provider adapter. The OpenRouter adapter adds dynamic chat/embedding discovery,
 streaming, strict privacy routing, and fail-closed goal budgets with attributed
-reservation and reconciled-spend reports. The Goals menu creates local-only or
-explicitly capped goals, manages versioned plan approval/denial, and shows reserved
-exposure, reconciled spend, remaining budget, overage, and per-request attribution;
-it also discovers configured chat catalogs and persists an explicit provider/model
-choice independently for the lead, implementer, and reviewer.
+reservation and reconciled-spend reports. The Avalonia goal workspace and TUI Goals
+menu create local-only or explicitly capped goals and manage versioned plan
+approval/denial. Both adapters show reserved exposure, reconciled spend, remaining
+budget, overage, and per-request attribution; they discover configured chat catalogs
+and persist an explicit provider/model choice independently for the lead,
+implementer, and reviewer.
 
 Semantic indexing now reads bounded eligible text directly from the Git index,
 filters generated, binary, sensitive, and oversized content, and creates deterministic
@@ -25,15 +28,28 @@ SQLite vector partitions keyed by provider, model, dimensions, and chunking vers
 Business Logic exposes rebuild and retrieval records ready for presentation adapters.
 
 The current usable workflow is a durable local-model conversation: instructions
-submitted in the TUI are persisted before inference, streamed through Business Logic,
-and reloaded from SQLite on restart. Provider failures are recorded in the transcript.
+submitted in Avalonia or the TUI are persisted before inference, streamed through
+Business Logic, and reloaded from SQLite on restart. Provider failures are recorded
+in the transcript.
 The workspace modal can also inspect, register, select, and explicitly trust a
-Git-backed .NET workspace; the Workspace menu remains available in narrow layouts.
-The Framework menu shows the resolved engineering rules and guidance with locks,
-provenance, privacy, and validation issues, and edits the private workspace overlay.
-The Goals menu creates durable goals with review-cycle limits and optional remote
-caps, proposes and inspects versioned plans, and requires confirmation before plan
-approval provisions an isolated worktree.
+Git-backed .NET workspace in both Avalonia and the TUI; the TUI Workspace menu
+remains available in narrow layouts. Avalonia refreshes the conversation workspace
+context immediately after selection, registration, or trust changes and requires a
+separate confirmation before granting trust.
+For a trusted active workspace, Avalonia exposes real bounded tracked-text search,
+file reading in a syntax-aware editor, Git status and diff inspection, and parsed
+.NET solution/project metadata. It does not display a fabricated file tree, terminal,
+problem count, build result, or goal progress.
+This inspection experience is still modal: the central multi-document editor and
+movable/restorable tool-panel workbench tracked by ADR 010 and Tasks 028-033 are not
+implemented yet and remain release blockers.
+The Avalonia and TUI Framework surfaces show the resolved engineering rules and
+guidance with locks, provenance, privacy, and validation issues, and edit only the
+private workspace overlay without adding repository metadata.
+Avalonia and the TUI create durable goals with review-cycle limits and optional remote
+caps, propose and inspect versioned plans, and require confirmation before plan
+approval provisions an isolated worktree. Avalonia disables approval until the active
+workspace is trusted and explains the exact repository-local capabilities granted.
 Trusted-workspace tools now provide confined file reads, tracked-text search,
 bounded Git status/diff evidence, non-evaluating .NET metadata, approved atomic file
 edits, and cancellable .NET execution in isolated goal worktrees. Agent role
@@ -46,26 +62,33 @@ planning, approved Implementer work, and independent Reviewer decisions with clo
 role tool scopes. Lead plans persist 1-12 ordered tasks with file areas and acceptance
 criteria; Implementer executes one task per call and completed reports recover without
 replay. Reviewer findings drive bounded correction passes until acceptance or the
-configured cycle limit. The TUI shows pending and maximum remaining calls, role routes,
+configured cycle limit. Avalonia and the TUI show pending and maximum remaining calls,
+role routes,
 output ceilings, aggregate cap, active reservations, reconciled spend, and remaining
-budget before model calls.
+budget before model calls. Both can start bounded Lead planning, continue approved
+Implementer/Reviewer work, cancel an active run, and inspect durable tasks, activity,
+and evidence.
 All production roles can request 1-8 relevant chunks through a typed semantic-context
-tool tied to the active goal workspace and strict remote privacy. The Goals menu can
+tool tied to the active goal workspace and strict remote privacy. Avalonia and the
+TUI Goals menu can
 inspect compatible index status without inference, explicitly rebuild after showing
 the embedding route and cost state, and preview attributed matches with source lines,
 distance, usage, and cost.
 Restore is available only after a durable, correlation- and target-bound user
-approval. Approved edit/build/test/restore calls retain durable request/result
-evidence for later workflow and GUI presentation. A deterministic walking-skeleton
-workflow can now be started, paused, resumed after restart, and inspected through
-the TUI using the same presentation-neutral checkpoint contracts intended for a
-future Avalonia adapter.
-Accepted production work has a separate two-step commit flow: Harness.NET records a
-pending request containing the exact branch, HEAD, complete diff hash, message, and
-author, then requires an explicit approve/deny action before a local commit. It never
-integrates the isolated branch automatically.
-The Operations menu creates a non-overwriting, integrity-checked application-state
-archive with explicit schema, byte-count, and SHA-256 evidence. Archives include the
+approval. Avalonia and the TUI can create, inspect, approve, and deny that exact
+one-call authorization without granting general network access. Approved
+edit/build/test/restore calls retain durable request/result evidence for later
+workflow and GUI presentation. The earlier deterministic demonstration workflow is
+no longer composed into either shipped frontend; production goal workflow state is
+the only workflow shown to users.
+Accepted production work has a separate two-step commit flow in Avalonia and the TUI:
+Harness.NET records a pending request containing the exact branch, HEAD, complete diff
+hash and content, message, and author, then requires an explicit approve/deny action
+before a local commit. An interrupted approved commit can be revalidated and resumed.
+Neither adapter integrates the isolated branch automatically.
+The Avalonia and TUI Operations surfaces create a non-overwriting, integrity-checked
+application-state archive with explicit schema, byte-count, and SHA-256 evidence.
+Archives include the
 SQLite state needed for audit and recovery, but exclude credentials, logs, caches,
 worktrees, and repositories. Every pending schema upgrade first creates the same
 verified recovery point under XDG data storage.
@@ -94,7 +117,9 @@ dotnet test Harness.slnx --no-build --no-restore
 dotnet run --project src/Harness.Host/Harness.Host.csproj
 ```
 
-Use `--no-ui` for a non-interactive startup smoke test. Provider modules, role
+The default interactive frontend is the Avalonia desktop conversation and goal shell. Use
+`--ui=terminal` for the complete existing TUI and `--no-ui` for a non-interactive
+startup smoke test. Provider modules, role
 routing, conversation defaults, and optional OTLP export are defined in the shipped
 `harness.xml` and may be overridden through XDG configuration. See
 [runtime configuration](docs/configuration.md) and
@@ -102,7 +127,7 @@ routing, conversation defaults, and optional OTLP export are defined in the ship
 
 ## Linux x64 publish
 
-Publish the self-contained walking skeleton with:
+Publish the self-contained development preview with:
 
 ```bash
 dotnet publish src/Harness.Host/Harness.Host.csproj \

@@ -1,5 +1,6 @@
 using Harness.BusinessLogic.Approvals;
 using Harness.BusinessLogic.Acceptance;
+using Harness.BusinessLogic.Appearance;
 using Harness.BusinessLogic.Agents;
 using Harness.BusinessLogic.Costs;
 using Harness.BusinessLogic.Dashboard;
@@ -13,6 +14,7 @@ using Harness.BusinessLogic.Retrieval;
 using Harness.BusinessLogic.Workspaces;
 using Harness.BusinessLogic.Workflows;
 using Harness.DataAccess.Approvals;
+using Harness.DataAccess.Appearance;
 using Harness.DataAccess.Configuration;
 using Harness.DataAccess.Commits;
 using Harness.DataAccess.Conversations;
@@ -35,10 +37,13 @@ using Harness.DataAccess.Workflows;
 using Harness.Host;
 using Harness.Host.Configuration;
 using Harness.Presentation.Terminal;
+using Harness.Presentation.Avalonia;
+using Harness.UI.Avalonia;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using OperationsBackupResult = Harness.BusinessLogic.Operations.ApplicationBackupResult;
+using BusinessThemeBaseVariant = Harness.BusinessLogic.Appearance.ThemeBaseVariant;
 
 HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
 XdgApplicationPaths applicationPaths = new();
@@ -55,6 +60,8 @@ builder.Services.AddSingleton<IApplicationPaths>(applicationPaths);
 builder.Services.AddSingleton<IDatabaseInitializer, SqliteDatabaseInitializer>();
 builder.Services.AddSingleton<IApplicationBackup, SqliteApplicationBackup>();
 builder.Services.AddSingleton<IApplicationOperationsService, ApplicationOperationsService>();
+builder.Services.AddSingleton<IAppearancePreferenceStore, SqliteAppearancePreferenceStore>();
+builder.Services.AddSingleton<IUserThemeSource, XdgUserThemeSource>();
 builder.Services.AddSingleton<ISecretStore, SecretServiceSecretStore>();
 builder.Services.AddSingleton<IConversationStore, SqliteConversationStore>();
 builder.Services.AddSingleton<IFrameworkSourceReader, FileFrameworkSourceReader>();
@@ -94,13 +101,11 @@ builder.Services.AddSingleton(new FrameworkOptions(configuration.Framework.Rules
         rule.Source))
     .ToArray()));
 builder.Services.AddSingleton<IFrameworkService, FrameworkService>();
-builder.Services.AddSingleton<IWorkflowCheckpointStore, SqliteWorkflowCheckpointStore>();
 builder.Services.AddSingleton<IGoalWorkflowStore, SqliteGoalWorkflowStore>();
 builder.Services.AddSingleton<IGoalWorkflowTaskStore, SqliteGoalWorkflowTaskStore>();
 builder.Services.AddSingleton<IGoalCommitApprovalStore, SqliteGoalCommitApprovalStore>();
 builder.Services.AddSingleton<IGoalCommitter, LibGitGoalCommitter>();
 builder.Services.AddSingleton(TimeProvider.System);
-builder.Services.AddSingleton<IWalkingSkeletonWorkflowService, WalkingSkeletonWorkflowService>();
 builder.Services.AddSingleton<IGoalAcceptanceService, GoalAcceptanceService>();
 foreach (ModelProviderConfiguration provider in configuration.Providers.Values)
 {
@@ -181,6 +186,23 @@ builder.Services.AddSingleton(new ConversationOptions(
     mainProvider.ChatModel,
     configuration.Conversation.WorkspacePath));
 builder.Services.AddSingleton<IDashboardService, ConversationDashboardService>();
+builder.Services.AddSingleton(new AppearanceOptions(HarnessThemeCatalog.BuiltIns
+    .Select(theme => new BuiltInThemeRegistration(
+        new(theme.Id.Value),
+        theme.DisplayName,
+        theme.BaseVariant switch
+        {
+            UiThemeBaseVariant.System => BusinessThemeBaseVariant.System,
+            UiThemeBaseVariant.Light => BusinessThemeBaseVariant.Light,
+            UiThemeBaseVariant.Dark => BusinessThemeBaseVariant.Dark,
+            UiThemeBaseVariant.HighContrast => BusinessThemeBaseVariant.HighContrast,
+            _ => throw new InvalidOperationException("Unsupported UI theme variant."),
+        }))
+    .ToArray()));
+builder.Services.AddSingleton<IAppearanceService, AppearanceService>();
+builder.Services.AddSingleton<AvaloniaPresentationStore>();
+builder.Services.AddSingleton<HarnessThemeController>();
+builder.Services.AddSingleton<IAvaloniaShell, AvaloniaShell>();
 builder.Services.AddSingleton<ITerminalShell, TerminalGuiShell>();
 
 using IHost host = builder.Build();
@@ -233,7 +255,16 @@ try
     }
     else if (runMode is HostRunMode.Interactive)
     {
-        await host.Services.GetRequiredService<ITerminalShell>().RunAsync(shutdown.Token);
+        InteractiveFrontend frontend = HostRunModeResolver.ResolveFrontend(
+            args, Console.IsInputRedirected, Console.IsOutputRedirected);
+        if (frontend is InteractiveFrontend.Avalonia)
+        {
+            await host.Services.GetRequiredService<IAvaloniaShell>().RunAsync(shutdown.Token);
+        }
+        else
+        {
+            await host.Services.GetRequiredService<ITerminalShell>().RunAsync(shutdown.Token);
+        }
     }
     else
     {

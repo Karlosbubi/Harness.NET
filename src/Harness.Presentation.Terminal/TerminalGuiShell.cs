@@ -22,18 +22,15 @@ internal sealed class TerminalGuiShell(
     IGoalWorkflowService goalWorkflowService,
     IGoalAcceptanceService goalAcceptanceService,
     ISemanticIndexService semanticIndexService,
-    IApplicationOperationsService operationsService,
-    IWalkingSkeletonWorkflowService workflowService) : ITerminalShell
+    IApplicationOperationsService operationsService) : ITerminalShell
 {
     public async ValueTask RunAsync(CancellationToken cancellationToken = default)
     {
-        DashboardSnapshot snapshot = await dashboardService.GetSnapshotAsync(cancellationToken);
+        DashboardSnapshot snapshot = await dashboardService.RefreshProviderAsync(cancellationToken);
         WorkspaceView? activeWorkspace = await workspaceService.GetActiveAsync(cancellationToken);
         IReadOnlyList<GoalView> goals = activeWorkspace is null
             ? []
             : await goalService.ListAsync(activeWorkspace.Id, cancellationToken);
-        WorkflowSnapshot? workflow = await workflowService.GetLatestAsync(cancellationToken);
-
         using IApplication application = Application.Create();
         application.Init();
         using HarnessWindow window = new(
@@ -48,11 +45,9 @@ internal sealed class TerminalGuiShell(
             goalAcceptanceService,
             semanticIndexService,
             operationsService,
-            workflowService,
             snapshot,
             activeWorkspace,
             goals,
-            workflow,
             cancellationToken);
         await application.RunAsync(window, cancellationToken);
     }

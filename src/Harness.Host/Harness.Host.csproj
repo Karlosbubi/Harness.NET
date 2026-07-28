@@ -9,6 +9,7 @@
 
     <ProjectReference Include="../Harness.DataAccess/Harness.DataAccess.csproj" />
     <ProjectReference Include="../Harness.BusinessLogic/Harness.BusinessLogic.csproj" />
+    <ProjectReference Include="../Harness.Presentation.Avalonia/Harness.Presentation.Avalonia.csproj" />
     <ProjectReference Include="../Harness.Presentation.Terminal/Harness.Presentation.Terminal.csproj" />
   </ItemGroup>
 

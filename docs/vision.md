@@ -46,7 +46,9 @@ optimizes for useful, inspectable outcomes rather than maximum autonomy.
 ## Current implementation boundary
 
 Harness.NET now includes enforced layer boundaries, XDG storage, additive SQLite
-migrations, local observability, an adaptive Terminal.Gui shell, Ollama and
+migrations, local observability, an adaptive accessible Avalonia conversation and
+goal shell,
+the retained Terminal.Gui workflow adapter, Ollama and
 cost-controlled OpenRouter providers, semantic retrieval, durable goals and plans,
 isolated worktrees, and role-scoped typed tools. A goal-bound production coordinator
 runs Lead planning, pauses for plan approval, resumes Implementer work, and invokes an
@@ -55,8 +57,18 @@ calls, resumes completed safe boundaries, reconciles an already-durable plan, an
 never automatically replays an uncertain call. Lead plans persist ordered bounded
 tasks with file areas and acceptance criteria; Implementer calls execute those tasks
 one at a time before bounded review/revision cycles and exact commit approval.
-All roles can retrieve bounded, goal-attributed semantic context, while the TUI
-provides explicit cost-transparent status, rebuild, and preview controls. The
+All roles can retrieve bounded, goal-attributed semantic context, while both adapters
+provide explicit cost-transparent status, rebuild, and preview controls. The
 self-contained release now has deterministic clean-install, migration, outage,
 cancellation, backup, recovery, and representative-repository acceptance evidence.
-The presentation-neutral Business Logic boundary is ready for an Avalonia adapter.
+Avalonia uses a separate app-neutral toolkit for semantic themes, safe user palettes,
+accessibility infrastructure, and adaptive layout. It now covers trusted workspace
+management plus durable goal creation and the versioned plan-decision boundary. Role
+routing, cost disclosure, bounded/cancellable production runs, and durable task,
+activity, evidence inspection, and explicit semantic context management are now
+available there as well. Exact commit preview, pending request creation, separate
+approve/deny decisions, and approved-commit resumption also have desktop parity.
+Deliberately confirmed application-state backup and exact goal-, target-, and
+correlation-bound Restore approval management now have desktop parity as well.
+Effective framework inspection and private workspace-overlay editing also preserve
+the user-owned framework workflow in the desktop adapter.

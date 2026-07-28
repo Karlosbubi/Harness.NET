@@ -1,0 +1,31 @@
+namespace Harness.UI.Avalonia;
+
+public enum UiThemeColorToken
+{
+    Window,
+    Header,
+    Panel,
+    Raised,
+    Hover,
+    Editor,
+    Border,
+    BorderStrong,
+    Focus,
+    TextPrimary,
+    TextMuted,
+    TextDim,
+    Accent,
+    AccentStrong,
+    AccentSoft,
+    Success,
+    Warning,
+    Danger,
+    Info,
+    CodeKeyword,
+    CodeType,
+    CodeString,
+    DiffAddBackground,
+    DiffAddText,
+    DiffRemoveBackground,
+    DiffRemoveText,
+}

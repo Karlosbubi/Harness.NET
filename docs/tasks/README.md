@@ -26,12 +26,12 @@ passes and its documentation is current.
 | 003 | Done | Add XDG configuration and Secret Service access | 001 | Paths resolve predictably and secrets never enter ordinary configuration. |
 | 004 | Done | Initialize SQLite with Dapper and DbUp | 001, 003 | Startup creates and migrates a versioned database idempotently. |
 | 005 | Done | Configure Serilog and OpenTelemetry | 003 | Redacted JSON logs work locally and OTLP remains opt-in. |
-| 006 | Done | Build the adaptive Terminal.Gui shell | 001, 003 | Fake workspace, activity, detail, composer, and status regions render and collapse. |
+| 006 | Done | Build the initial adaptive Terminal.Gui shell | 001, 003 | The historical demonstration regions render and collapse. |
 | 007 | Done | Add the Ollama chat/embedding connector | 001, 003, 005 | Model discovery, streaming chat, embeddings, cancellation, and failures map to records. |
 | 008 | Done | Add the OpenRouter connector and cost accounting | 001, 003, 005 | Discovery, streaming, embeddings, routing policy, and cost caps are verified. |
 | 009 | Done | Wrap Microsoft Agent Framework in agent roles | 001, 007 | Lead, implementer, and reviewer run behind Business Logic interfaces. |
 | 010 | Done | Add tracked-text semantic indexing | 004, 007, 008 | Compatible index partitions rebuild and retrieve eligible repository chunks. |
-| 011 | Done | Run a checkpointed fake workflow through the TUI | 004, 006, 009 | A persisted fake run pauses, resumes, and exposes expandable evidence. |
+| 011 | Done | Prove checkpoint recovery through the TUI | 004, 006, 009 | The historical demonstration run paused, resumed, and exposed expandable evidence; it is no longer composed in production. |
 | 012 | Done | Publish the Linux x64 walking skeleton | 011 | A self-contained binary starts with correct XDG storage and graceful shutdown. |
 
 ## v1.0 usability backlog
@@ -56,13 +56,24 @@ but the end-user workflow is not complete.
 | 024 | Done | Retrieve relevant repository context | - | Eligible Git-tracked text is chunked, partitioned by embedding configuration, rebuilt, searched, and filtered by policy. |
 | 025 | Done | Use remote models under a cost cap | - | Remote use requires approval, streams through the provider boundary, and enforces estimated plus reconciled per-goal caps. |
 | 026 | Done | Operate and distribute v1.0 reliably | - | A self-contained Linux x64 release passes clean-install, migration, outage, cancellation, recovery, and representative-repository acceptance tests. |
+| 027 | In progress | Deliver the default desktop as a complete product surface | 013-026 | Replace the current conversation-first shell and modal inspection workflow; every visible surface is backed by production state, obvious workspace and goal workflows require no mock or filler UI, accessibility and adaptive layouts pass, and hands-on visual acceptance is recorded. |
+| 028 | Planned | Validate the Dock dependency and package boundary | 027 | A minimal spike pins a mutually compatible stable Dock/Avalonia package set, keeps Dock types inside Presentation, applies Harness theme tokens, passes headless keyboard/focus checks, and preserves the Linux x64 single-file publish. ADR 010 is accepted or amended with measured blockers. |
+| 029 | Planned | Build the central document workbench | 028 | Real workspace files, Git diffs, plans, and evidence open as closable/activatable center tabs backed by typed contracts and honest states; AvaloniaEdit supplies syntax-aware source and diff views with no example documents. |
+| 030 | Planned | Deliver dockable production tool panels | 029 | Real explorer/search, source-control, goal/activity, conversation, and bounded run-output tools can be resized, tabbed, moved, hidden, floated, restored, and reset with accessible keyboard and compact-layout behavior. No unrestricted terminal is introduced. |
+| 031 | Planned | Persist and recover the desktop layout | 030 | A versioned validated layout persists only in private XDG state, safely repairs unknown/duplicate/off-screen panes, survives backup/recovery, and never adds repository metadata. |
+| 032 | Planned | Add safe source editing semantics | 029 | Editing is enabled only for an active approved goal worktree; save uses typed compare-and-swap mutation, dirty state is real, conflicts are actionable, and close/switch requires save, discard, or cancel. |
+| 033 | Planned | Pass docked-workbench product acceptance | 030-032 | Representative wide, compact, HiDPI, keyboard-only, screen-reader, restart, corrupted-layout, and multi-document workflows pass automated checks and recorded hands-on visual review using production data or honest empty states. |
 
 ### v1.0 release gate
 
-All tasks 013-026 must be **Done**. A release candidate must complete a representative
+All tasks 013-033 must be **Done**. A release candidate must complete a representative
 .NET repository change from workspace registration through explicit commit approval,
 survive an injected interruption, and leave both the user repository and private
 Harness.NET state auditable.
+
+The current development-preview version is `0.1.0-dev.1`. Completing the service
+backlog does not by itself establish desktop product maturity; the default Avalonia
+workflow must also pass hands-on usability and visual-quality acceptance.
 
 `eng/verify-v1-release.sh` is the executable gate. Its deterministic suite covers
 provider outages, budget failures, cancellation, interruption reconciliation, and
@@ -119,7 +130,8 @@ model provider.
   context service that maps every query to the goal workspace, 1-8 matches, and strict
   remote privacy. Lead, Implementer, and Reviewer tool scopes include a bounded
   `search_semantic_context` function; remote query embeddings are separately reserved,
-  reconciled, and attributed to the goal. The Goals TUI shows embedding access,
+  reconciled, and attributed to the goal. Avalonia and the Goals TUI show embedding
+  access,
   provider/model/dimensions, current partition, and goal cost state before explicit
   rebuild or search actions. Rebuild requires a separate confirmation, and result
   views expose tracked/skipped files, truncation, chunks, input tokens, cost, source
@@ -150,14 +162,16 @@ model provider.
   report. Strict Lead JSON is rejected unless every task is bounded. The coordinator
   invokes Implementer once per pending task, checkpoints each call and report, resumes
   at the next pending task, reconciles a report durable before its checkpoint, and
-  never replays an uncertain task call. Workflow snapshots and the TUI expose every
-  task and report. Before continuation, the TUI shows pending task calls and the
+  never replays an uncertain task call. Workflow snapshots, Avalonia, and the TUI
+  expose every task and report. Before continuation, both adapters show pending task
+  calls and the
   maximum remaining Reviewer/correction calls alongside routes, output caps, goal cap,
   reservation, spend, and remaining budget. Implementer agent requests require a
   semantic file-area grant, and the atomic edit tool rejects paths outside it.
 - Schema 15 adds one active production run per goal with semantic states and ordered
-  checkpoints. The TUI starts Lead planning with an explicit output ceiling, pauses
-  at the durable plan, and continues approved work through Implementer and independent
+  checkpoints. Avalonia and the TUI start Lead planning with an explicit output
+  ceiling, pause at the durable plan, and continue approved work through Implementer
+  and independent
   Reviewer ceilings while displaying the current cap, reservation, spend, and
   remaining budget. Deterministic recovery tests prove that an already-persisted plan
   is reconciled without another Lead call, a completed implementation resumes at the
@@ -169,8 +183,9 @@ model provider.
 - Task 023 independently reviews diff and tool evidence before acceptance. Schema 16
   persists a separate exact commit request and closed Pending/Approved/Denied/Committed
   states. The request fingerprints goal, workflow run, branch, expected HEAD, complete
-  diff SHA-256, message, and author. The TUI displays the full fingerprint and diff,
-  records it as Pending, then requires a distinct approve/deny action. The Git adapter
+  diff SHA-256, message, and author. Avalonia and the TUI display the full fingerprint
+  and diff, record it as Pending, then require a distinct approve/deny action. The Git
+  adapter
   revalidates the exact worktree and fingerprint, commits only to the isolated branch,
   reconciles an interrupted successful commit, and never merges, rebases, cherry-picks,
   or performs network access.
@@ -200,9 +215,9 @@ model provider.
   privacy and provenance metadata. Workspace-private overlays persist in SQLite
   without repository metadata. Business Logic composes all three document layers,
   effective rules, and source failures into one snapshot. Named XML rules bind into
-  immutable configuration and the resolver. The top-level Framework menu renders
-  the effective snapshot in a scrollable view and edits the private workspace
-  overlay with a supported multiline editor.
+  immutable configuration and the resolver. Avalonia and the TUI render the effective
+  snapshot in a scrollable view and edit the private workspace overlay with a
+  supported multiline editor, without writing Harness.NET metadata to the repository.
 - Task 017 has begun with a typed file-inspection boundary. Business Logic requires
   the requested workspace to be active and explicitly trusted. Data Access accepts
   only confined relative paths, rejects symbolic-link hops and non-UTF-8 files, and
@@ -218,7 +233,7 @@ model provider.
   budgets before schema-versioned SQLite persistence. Plan proposals increment
   revisions and wait for a decision. Approval requires active workspace trust;
   denial requires a reason. Goal, plan, and decision transitions persist atomically
-  and reject stale or duplicate decisions. The TUI now creates and inspects goals,
+  and reject stale or duplicate decisions. Avalonia and the TUI create and inspect goals,
   proposes plans, confirms worktree-granting approval, records denial reasons, and
   displays local-only authorization or fully attributed remote-cost totals. Goal
   identifiers, plan identifiers and revisions, review caps, money, states, decision,
@@ -248,7 +263,9 @@ model provider.
   correlation, capability, and registered entry point; denied, missing, mismatched,
   or replayed requests cannot start the process. Build and Test continue to force
   `--no-restore`, while only an explicitly approved Restore may resolve dependencies.
-- Task 026 adds a typed Operations boundary and TUI/CLI application-state export.
+  Avalonia and the TUI manage the durable exact request and its separate decision;
+  neither surface turns that approval into a global network grant.
+- Task 026 adds a typed Operations boundary and Avalonia/TUI/CLI application-state export.
   Backups use a consistent SQLite snapshot, verify integrity, publish atomically
   without overwrite, restrict Linux permissions, and report semantic path, hash,
   byte-count, schema-version, and failure values. Schema upgrades create and verify

@@ -156,6 +156,20 @@ public sealed class ConversationDashboardServiceTests
         Assert.Equal("Trusted", snapshot.Workspace.Trust);
     }
 
+    [Fact]
+    public async Task Makes_the_empty_workspace_state_explicit()
+    {
+        ConversationDashboardService service = CreateService(
+            new FakeConversationStore(),
+            new FakeModelProvider(null, []));
+
+        DashboardSnapshot snapshot = await service.GetSnapshotAsync();
+
+        Assert.Equal("No workspace selected", snapshot.Workspace.Name);
+        Assert.Equal("Register a Git-backed .NET repository", snapshot.Workspace.Branch);
+        Assert.Equal("Workspace tools unavailable", snapshot.Workspace.Trust);
+    }
+
     private static ConversationDashboardService CreateService(
         IConversationStore store,
         IModelProvider provider,

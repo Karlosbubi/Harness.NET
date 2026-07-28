@@ -34,7 +34,6 @@ internal sealed class HarnessWindow : Window
     private readonly IGoalAcceptanceService goalAcceptanceService;
     private readonly ISemanticIndexService semanticIndexService;
     private readonly IApplicationOperationsService operationsService;
-    private readonly IWalkingSkeletonWorkflowService workflowService;
     private readonly CancellationToken cancellationToken;
     private readonly FrameView workspaceFrame;
     private readonly FrameView activityFrame;
@@ -43,9 +42,6 @@ internal sealed class HarnessWindow : Window
     private readonly Button manageWorkspaces;
     private readonly Button trustWorkspace;
     private readonly MenuItem trustWorkspaceMenuItem;
-    private readonly MenuItem startWorkflowMenuItem;
-    private readonly MenuItem resumeWorkflowMenuItem;
-    private readonly MenuItem inspectWorkflowEvidenceMenuItem;
     private readonly Label activityText;
     private readonly Label detailsText;
     private readonly ListView modelList;
@@ -58,8 +54,6 @@ internal sealed class HarnessWindow : Window
     private WorkspaceView? activeWorkspace;
     private IReadOnlyList<GoalView> goals;
     private DashboardSnapshot latestSnapshot;
-    private WorkflowSnapshot? latestWorkflow;
-    private bool workflowCommandRunning;
 
     internal HarnessWindow(
         IApplication application,
@@ -73,11 +67,9 @@ internal sealed class HarnessWindow : Window
         IGoalAcceptanceService goalAcceptanceService,
         ISemanticIndexService semanticIndexService,
         IApplicationOperationsService operationsService,
-        IWalkingSkeletonWorkflowService workflowService,
         DashboardSnapshot initialSnapshot,
         WorkspaceView? activeWorkspace,
         IReadOnlyList<GoalView> goals,
-        WorkflowSnapshot? initialWorkflow,
         CancellationToken cancellationToken)
     {
         this.application = application;
@@ -91,11 +83,9 @@ internal sealed class HarnessWindow : Window
         this.goalAcceptanceService = goalAcceptanceService;
         this.semanticIndexService = semanticIndexService;
         this.operationsService = operationsService;
-        this.workflowService = workflowService;
         this.activeWorkspace = activeWorkspace;
         this.goals = goals;
         latestSnapshot = initialSnapshot;
-        latestWorkflow = initialWorkflow;
         this.cancellationToken = cancellationToken;
         Title = "Harness.NET";
 
@@ -135,18 +125,6 @@ internal sealed class HarnessWindow : Window
         {
             Enabled = activeWorkspace is { IsTrusted: false },
         };
-        startWorkflowMenuItem = new(
-            "_Start walking skeleton",
-            Key.Empty,
-            () => _ = RunWorkflowAsync(resume: false));
-        resumeWorkflowMenuItem = new(
-            "_Resume",
-            Key.Empty,
-            () => _ = RunWorkflowAsync(resume: true));
-        inspectWorkflowEvidenceMenuItem = new(
-            "_Inspect evidence",
-            Key.Empty,
-            () => _ = InspectWorkflowEvidenceAsync());
         MenuBar menuBar = new(
         [
             new MenuBarItem("_Workspace", [manageWorkspacesMenuItem, trustWorkspaceMenuItem]),
@@ -159,19 +137,13 @@ internal sealed class HarnessWindow : Window
             [
                 new MenuItem("_Manage goals and plans", Key.Empty, () => _ = ManageGoalsAsync()),
             ]),
-            new MenuBarItem("W_orkflow",
-            [
-                startWorkflowMenuItem,
-                resumeWorkflowMenuItem,
-                inspectWorkflowEvidenceMenuItem,
-            ]),
             new MenuBarItem("_Operations",
             [
                 new MenuItem("Create _backup", Key.Empty, () => _ = CreateBackupAsync()),
             ]),
         ]);
         activityFrame = CreateFrame("Activity", activityText);
-        detailsFrame = CreateFrame("Plan | Diff | Evidence", detailsText);
+        detailsFrame = CreateFrame("Provider", detailsText);
         detailsText.Height = Dim.Fill(7);
         modelList = new ListView
         {
@@ -235,14 +207,6 @@ internal sealed class HarnessWindow : Window
 
         Add(menuBar, workspaceFrame, activityFrame, detailsFrame, composerFrame, status);
         Render(initialSnapshot);
-        if (initialWorkflow is not null)
-        {
-            RenderWorkflow(initialWorkflow);
-        }
-        else
-        {
-            UpdateWorkflowCommands();
-        }
         ViewportChanged += (_, _) => ApplyLayout(Viewport.Width);
         Initialized += (_, _) => composer.SetFocus();
     }
@@ -302,12 +266,9 @@ internal sealed class HarnessWindow : Window
         activityText.SetContentHeight(transcriptLines);
         activityText.VerticalScrollBar.Value = Math.Max(0, transcriptLines - activityText.Viewport.Height);
 
-        detailsText.Text = string.Join('\n', snapshot.Plan) +
-                           $"\n\nDIFF\n{snapshot.Diff}\n\nEVIDENCE\n" +
-                           string.Join(
-                               '\n',
-                               snapshot.Evidence.Select(item => $"{item.Title}: {item.Content}")) +
-                           $"\n\nPROVIDER\n{snapshot.Provider.Name}: {snapshot.Provider.Health}" +
+        detailsText.Text = $"{snapshot.Provider.Name}: {snapshot.Provider.Health}\n" +
+                           $"Selected: {snapshot.Provider.SelectedModel}\n" +
+                           $"Discovered: {snapshot.Provider.Models.Count}" +
                            (snapshot.Provider.Error is null
                                ? string.Empty
                                : $"\n{snapshot.Provider.Error}");
@@ -333,9 +294,7 @@ internal sealed class HarnessWindow : Window
         {
             workspaceText.Text = string.Join('\n',
                 "No workspace selected",
-                snapshot.Workspace.Path,
-                string.Empty,
-                snapshot.Goal);
+                "Use Workspace > Manage to register a repository.");
             trustWorkspace.Enabled = false;
             trustWorkspaceMenuItem.Enabled = false;
             return;
@@ -350,125 +309,9 @@ internal sealed class HarnessWindow : Window
             $"State   {(activeWorkspace.IsDirty ? "dirty" : "clean")}",
             $"Trust   {(activeWorkspace.IsTrusted ? "trusted" : "untrusted")}",
             string.Empty,
-            GoalTextFormatter.FormatCompact(goals),
-            string.Empty,
-            snapshot.Goal);
+            GoalTextFormatter.FormatCompact(goals));
         trustWorkspace.Enabled = !activeWorkspace.IsTrusted;
         trustWorkspaceMenuItem.Enabled = !activeWorkspace.IsTrusted;
-    }
-
-    private async Task RunWorkflowAsync(bool resume)
-    {
-        try
-        {
-            workflowCommandRunning = true;
-            SetWorkflowCommandsEnabled(false);
-            IAsyncEnumerable<WorkflowSnapshot> snapshots = resume
-                ? workflowService.ResumeAsync(cancellationToken)
-                : workflowService.StartAsync(cancellationToken);
-            await foreach (WorkflowSnapshot snapshot in snapshots
-                               .WithCancellation(cancellationToken))
-            {
-                application.Invoke(() => RenderWorkflow(snapshot));
-            }
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-        }
-        catch (Exception exception)
-        {
-            application.Invoke(() => status.Text = $"Workflow failed | {exception.Message}");
-        }
-        finally
-        {
-            if (!cancellationToken.IsCancellationRequested)
-            {
-                application.Invoke(() =>
-                {
-                    workflowCommandRunning = false;
-                    UpdateWorkflowCommands();
-                });
-            }
-        }
-    }
-
-    private void RenderWorkflow(WorkflowSnapshot snapshot)
-    {
-        latestWorkflow = snapshot;
-        activityText.Text = WorkflowTextFormatter.FormatActivity(snapshot);
-        int activityLines = activityText.Text?.ToString()?.Count(character => character == '\n') + 1 ?? 1;
-        activityText.SetContentHeight(activityLines);
-        activityText.VerticalScrollBar.Value = Math.Max(0, activityLines - activityText.Viewport.Height);
-        detailsText.Text = $"WORKFLOW {snapshot.State}\n\nEVIDENCE\n" +
-                           WorkflowTextFormatter.FormatEvidence(snapshot);
-        status.Text = snapshot.State switch
-        {
-            WorkflowState.Running => "Walking skeleton running | persisted checkpoints enabled",
-            WorkflowState.Paused => "Walking skeleton paused | resume available",
-            WorkflowState.Completed => "Walking skeleton complete | evidence available",
-            _ => throw new ArgumentOutOfRangeException(nameof(snapshot)),
-        };
-        UpdateWorkflowCommands();
-    }
-
-    private async Task InspectWorkflowEvidenceAsync()
-    {
-        if (latestWorkflow is null)
-        {
-            return;
-        }
-
-        try
-        {
-            using Dialog dialog = new()
-            {
-                Title = $"Workflow evidence | {latestWorkflow.State}",
-                Width = Dim.Percent(85),
-                Height = Dim.Percent(80),
-            };
-            Editor content = new()
-            {
-                Text = WorkflowTextFormatter.FormatEvidence(latestWorkflow),
-                ReadOnly = true,
-                X = 0,
-                Y = 0,
-                Width = Dim.Fill(),
-                Height = Dim.Fill(),
-                ViewportSettings = ViewportSettingsFlags.HasVerticalScrollBar |
-                                   ViewportSettingsFlags.HasHorizontalScrollBar,
-            };
-            dialog.Add(content);
-            dialog.AddButton(new Button { Title = "_Close" });
-            await application.RunAsync(dialog, cancellationToken);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-        }
-        catch (Exception exception)
-        {
-            application.Invoke(() => status.Text = $"Evidence failed | {exception.Message}");
-        }
-    }
-
-    private void UpdateWorkflowCommands()
-    {
-        if (workflowCommandRunning)
-        {
-            SetWorkflowCommandsEnabled(false);
-            return;
-        }
-
-        startWorkflowMenuItem.Enabled = latestWorkflow is null ||
-                                        latestWorkflow.State is WorkflowState.Completed;
-        resumeWorkflowMenuItem.Enabled = latestWorkflow?.CanResume is true;
-        inspectWorkflowEvidenceMenuItem.Enabled = latestWorkflow?.Evidence.Count > 0;
-    }
-
-    private void SetWorkflowCommandsEnabled(bool enabled)
-    {
-        startWorkflowMenuItem.Enabled = enabled;
-        resumeWorkflowMenuItem.Enabled = enabled;
-        inspectWorkflowEvidenceMenuItem.Enabled = enabled && latestWorkflow?.Evidence.Count > 0;
     }
 
     private async Task ManageWorkspacesAsync()

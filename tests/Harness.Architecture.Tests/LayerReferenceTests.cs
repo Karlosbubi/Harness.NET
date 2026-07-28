@@ -12,6 +12,12 @@ public sealed class LayerReferenceTests
             [
                 "src/Harness.DataAccess/Harness.DataAccess.csproj",
             ],
+            ["src/Harness.UI.Avalonia/Harness.UI.Avalonia.csproj"] = [],
+            ["src/Harness.Presentation.Avalonia/Harness.Presentation.Avalonia.csproj"] =
+            [
+                "src/Harness.BusinessLogic/Harness.BusinessLogic.csproj",
+                "src/Harness.UI.Avalonia/Harness.UI.Avalonia.csproj",
+            ],
             ["src/Harness.Presentation.Terminal/Harness.Presentation.Terminal.csproj"] =
             [
                 "src/Harness.BusinessLogic/Harness.BusinessLogic.csproj",
@@ -20,6 +26,7 @@ public sealed class LayerReferenceTests
             [
                 "src/Harness.BusinessLogic/Harness.BusinessLogic.csproj",
                 "src/Harness.DataAccess/Harness.DataAccess.csproj",
+                "src/Harness.Presentation.Avalonia/Harness.Presentation.Avalonia.csproj",
                 "src/Harness.Presentation.Terminal/Harness.Presentation.Terminal.csproj",
             ],
         };
