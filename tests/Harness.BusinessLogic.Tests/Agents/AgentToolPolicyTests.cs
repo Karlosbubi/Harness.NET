@@ -59,9 +59,28 @@ public sealed class AgentToolPolicyTests
             new UnsupportedMutationService(),
             new UnsupportedEvidenceService());
 
-        IList<AITool> tools = factory.Create(role, new("goal-1"));
+        IList<AITool> tools = factory.Create(
+            role,
+            new("goal-1"),
+            role is AgentRole.Implementer ? [new("src")] : []);
 
         Assert.Equal(expectedNames.Split(','), tools.Select(tool => tool.Name));
+    }
+
+    [Theory]
+    [InlineData("src/Feature/File.cs", true)]
+    [InlineData("src/Feature", true)]
+    [InlineData("src/Other/File.cs", false)]
+    [InlineData("../outside.cs", false)]
+    [InlineData("/absolute.cs", false)]
+    public void Delegated_file_areas_confine_implementer_edits(
+        string relativePath,
+        bool expected)
+    {
+        bool allowed = AgentToolFactory.IsWithinFileAreas(
+            relativePath, [new("src/Feature")]);
+
+        Assert.Equal(expected, allowed);
     }
 
     private sealed class UnsupportedInspectionService : IGoalWorkspaceInspectionService

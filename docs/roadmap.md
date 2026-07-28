@@ -78,6 +78,11 @@ Exit evidence: accepted framework and architecture decision records.
 - Completed: a deterministic walking-skeleton workflow persists every safe boundary
   in SQLite, pauses after the lead plan, resumes implementation and review after a
   restart, and exposes full checkpoint evidence through the adaptive TUI.
+- Completed: Lead planning returns a strict bounded delegation contract. Schema 17
+  persists ordered tasks and reports; the coordinator executes one task per scoped
+  Implementer call, reconciles completed reports after interruption, independently
+  reviews the combined result, and exposes tasks and worst-case remaining call counts
+  through presentation-neutral snapshots and the TUI.
 - Completed: a repeatable linux-x64 publish profile produces a self-contained,
   compressed executable with external native libraries and shipped XML defaults.
   The artifact starts without an installed .NET runtime, uses isolated XDG storage,

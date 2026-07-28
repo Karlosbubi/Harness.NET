@@ -92,6 +92,7 @@ builder.Services.AddSingleton(new FrameworkOptions(configuration.Framework.Rules
 builder.Services.AddSingleton<IFrameworkService, FrameworkService>();
 builder.Services.AddSingleton<IWorkflowCheckpointStore, SqliteWorkflowCheckpointStore>();
 builder.Services.AddSingleton<IGoalWorkflowStore, SqliteGoalWorkflowStore>();
+builder.Services.AddSingleton<IGoalWorkflowTaskStore, SqliteGoalWorkflowTaskStore>();
 builder.Services.AddSingleton<IGoalCommitApprovalStore, SqliteGoalCommitApprovalStore>();
 builder.Services.AddSingleton<IGoalCommitter, LibGitGoalCommitter>();
 builder.Services.AddSingleton(TimeProvider.System);
@@ -147,6 +148,7 @@ builder.Services.AddSingleton<IAgentRoleRunner>(services => new AgentRoleRunner(
     services.GetRequiredService<ILoggerFactory>()));
 builder.Services.AddSingleton<IGoalWorkflowService>(services => new GoalWorkflowService(
     services.GetRequiredService<IGoalWorkflowStore>(),
+    services.GetRequiredService<IGoalWorkflowTaskStore>(),
     services.GetRequiredService<IGoalService>(),
     services.GetRequiredService<IAgentRoleRunner>(),
     services.GetRequiredService<TimeProvider>()));

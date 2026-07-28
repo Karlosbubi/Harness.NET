@@ -296,7 +296,8 @@ internal sealed class GoalDialog : Dialog
             "Start lead planning",
             goal,
             [AgentRole.Lead],
-            ["Lead maximum output tokens"]);
+            ["Lead maximum output tokens"],
+            "This starts one bounded Lead call; no repository mutation is authorized.");
         if (maxima is null)
         {
             return;
@@ -326,11 +327,23 @@ internal sealed class GoalDialog : Dialog
             return;
         }
 
+        GoalWorkflowSnapshot? current = await workflowService.GetLatestAsync(
+            goal.Id, cancellationToken);
+        int pendingTasks = current?.Tasks.Count(task => task.State is GoalTaskState.Pending) ?? 0;
+        int remainingReviews = Math.Max(
+            0,
+            goal.ReviewCycleLimit.Value - (current?.ReviewCycle.Value ?? 0));
+        int maximumCorrections = Math.Max(0, remainingReviews - 1);
+        string workload =
+            $"Maximum remaining role calls: {pendingTasks} delegated Implementer + " +
+            $"{remainingReviews} Reviewer + {maximumCorrections} correction Implementer. " +
+            "Acceptance may stop earlier; the aggregate goal cap always applies.";
         MaximumAgentOutputTokens[]? maxima = await CollectOutputMaximaAsync(
             "Continue production run",
             goal,
             [AgentRole.Implementer, AgentRole.Reviewer],
-            ["Implementer maximum output tokens", "Reviewer maximum output tokens"]);
+            ["Implementer maximum output tokens", "Reviewer maximum output tokens"],
+            workload);
         if (maxima is null)
         {
             return;
@@ -574,7 +587,8 @@ internal sealed class GoalDialog : Dialog
         string title,
         GoalView goal,
         IReadOnlyList<AgentRole> roles,
-        IReadOnlyList<string> labels)
+        IReadOnlyList<string> labels,
+        string workloadNote)
     {
         RemoteCostReport? cost = await remoteCostService.GetAsync(goal.Id, cancellationToken);
         IReadOnlyList<GoalModelSelectionView> selections =
@@ -590,7 +604,7 @@ internal sealed class GoalDialog : Dialog
         {
             Title = title,
             Width = Dim.Percent(70),
-            Height = 11 + (labels.Count * 2),
+            Height = 13 + (labels.Count * 2),
         };
         TextField[] fields = labels.Select((label, index) =>
             Field(dialog, label, index * 2, "2048")).ToArray();
@@ -599,15 +613,16 @@ internal sealed class GoalDialog : Dialog
             X = 0,
             Y = labels.Count * 2,
             Width = Dim.Fill(),
-            Height = 5,
+            Height = 7,
             Text = "Each role call is capped; the aggregate goal budget is enforced.\n" +
+                   workloadNote + "\n" +
                    routes + "\n" +
                    GoalTextFormatter.FormatCostStatus(goal, cost),
         };
         Label validation = new()
         {
             X = 0,
-            Y = (labels.Count * 2) + 5,
+            Y = (labels.Count * 2) + 7,
             Width = Dim.Fill(),
         };
         MaximumAgentOutputTokens[]? result = null;

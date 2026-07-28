@@ -31,6 +31,8 @@ public sealed class GoalWorkflowServiceTests
             ],
             planning[^1].Activities.Select(item => item.Kind));
         Assert.Equal(GoalWorkflowState.AwaitingPlanApproval, planning[^1].State);
+        GoalTaskView plannedTask = Assert.Single(planning[^1].Tasks);
+        Assert.Equal(GoalTaskState.Pending, plannedTask.State);
         goals.Approve();
 
         List<GoalWorkflowSnapshot> resumed = await CollectAsync(service.ResumeAsync(new(
@@ -49,6 +51,79 @@ public sealed class GoalWorkflowServiceTests
             agents.Requests.Select(request => request.Role));
         Assert.Equal([1024, 2048, 512],
             agents.Requests.Select(request => request.MaximumOutputTokens?.Value));
+        Assert.Equal(GoalTaskState.Completed, Assert.Single(completedReview.Tasks).State);
+    }
+
+    [Fact]
+    public async Task Lead_delegates_ordered_bounded_tasks_executed_one_at_a_time()
+    {
+        FakeGoalService goals = new();
+        FakeAgentRunner agents = new()
+        {
+            LeadOutput = """
+                {"plan":"Implement two bounded slices.","tasks":[{"title":"Data slice","objective":"Add persistence.","fileAreas":["src/Data"],"acceptanceCriteria":["Store tests pass."]},{"title":"Logic slice","objective":"Add orchestration.","fileAreas":["src/Logic"],"acceptanceCriteria":["Workflow tests pass."]}]}
+                """,
+        };
+        InMemoryGoalWorkflowStore store = new();
+        GoalWorkflowService service = CreateService(store, goals, agents);
+        GoalWorkflowSnapshot planned = (await CollectAsync(
+            service.StartPlanningAsync(new(goals.Goal.Id, new(512)))))[^1];
+        goals.Approve();
+
+        GoalWorkflowSnapshot result = (await CollectAsync(service.ResumeAsync(new(
+            goals.Goal.Id, new(512), new(512)))))[^1];
+
+        Assert.Equal(["Data slice", "Logic slice"],
+            planned.Tasks.Select(task => task.Title.Value));
+        Assert.All(result.Tasks, task => Assert.Equal(GoalTaskState.Completed, task.State));
+        Assert.Equal(
+            [AgentRole.Lead, AgentRole.Implementer, AgentRole.Implementer,
+                AgentRole.Reviewer],
+            agents.Requests.Select(request => request.Role));
+        Assert.Contains("src/Data", agents.Requests[1].Task.Value, StringComparison.Ordinal);
+        Assert.Equal(["src/Data"], agents.Requests[1].FileAreas?.Select(area => area.Value));
+        Assert.DoesNotContain("src/Logic", agents.Requests[1].Task.Value,
+            StringComparison.Ordinal);
+        Assert.Contains("src/Logic", agents.Requests[2].Task.Value, StringComparison.Ordinal);
+        Assert.Equal(["src/Logic"], agents.Requests[2].FileAreas?.Select(area => area.Value));
+    }
+
+    [Fact]
+    public async Task Reconciles_a_durable_task_report_without_replaying_implementer()
+    {
+        FakeGoalService goals = new();
+        goals.Approve();
+        InMemoryGoalWorkflowStore store = new();
+        StoredRunId runId = new(Guid.NewGuid().ToString("N"));
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        await store.StartAsync(
+            new(runId, new(goals.Goal.Id.Value), StoredState.Running, new(0), now, now),
+            Checkpoint(runId, 1, StoredKind.Started, now));
+        await store.AppendAsync(Checkpoint(runId, 0, StoredKind.LeadCallStarted, now),
+            StoredKind.Started, StoredState.Running, StoredState.Running);
+        await store.AppendAsync(Checkpoint(runId, 0, StoredKind.PlanProposed, now),
+            StoredKind.LeadCallStarted, StoredState.Running,
+            StoredState.AwaitingPlanApproval);
+        await store.AppendAsync(Checkpoint(runId, 0, StoredKind.PlanApproved, now),
+            StoredKind.PlanProposed, StoredState.AwaitingPlanApproval, StoredState.Running);
+        StoredGoalWorkflowTask task = Task(runId, 1, now);
+        await store.CreateAsync(runId, [task]);
+        await store.AppendAsync(Checkpoint(runId, 0,
+                StoredKind.ImplementerCallStarted, now),
+            StoredKind.PlanApproved, StoredState.Running, StoredState.Running);
+        await store.StartAsync(task.Id, now);
+        await store.CompleteAsync(task.Id, new("Durable implementation report."), now);
+        FakeAgentRunner agents = new();
+        GoalWorkflowService service = CreateService(store, goals, agents);
+
+        List<GoalWorkflowSnapshot> snapshots = await CollectAsync(service.ResumeAsync(new(
+            goals.Goal.Id, new(512), new(512))));
+
+        Assert.Equal(ViewKind.ImplementationProduced, snapshots[0].Activities[^1].Kind);
+        Assert.Contains("Recovered durable delegated task",
+            snapshots[0].Activities[^1].Summary.Value, StringComparison.Ordinal);
+        Assert.Equal([AgentRole.Reviewer], agents.Requests.Select(request => request.Role));
+        Assert.Equal(GoalWorkflowState.AwaitingAcceptance, snapshots[^1].State);
     }
 
     [Fact]
@@ -65,6 +140,7 @@ public sealed class GoalWorkflowServiceTests
         await store.AppendAsync(
             Checkpoint(runId, 0, StoredKind.LeadCallStarted, now),
             StoredKind.Started, StoredState.Running, StoredState.Running);
+        await store.CreateAsync(runId, [Task(runId, 1, now)]);
         await store.AppendAsync(
             Checkpoint(runId, 0, StoredKind.PlanProposed, now),
             StoredKind.LeadCallStarted, StoredState.Running,
@@ -102,6 +178,7 @@ public sealed class GoalWorkflowServiceTests
         await store.AppendAsync(
             Checkpoint(runId, 0, StoredKind.LeadCallStarted, now),
             StoredKind.Started, StoredState.Running, StoredState.Running);
+        await store.CreateAsync(runId, [Task(runId, 1, now)]);
         FakeAgentRunner agents = new();
         GoalWorkflowService service = CreateService(store, goals, agents);
 
@@ -223,9 +300,18 @@ public sealed class GoalWorkflowServiceTests
     }
 
     private static GoalWorkflowService CreateService(
-        IGoalWorkflowStore store,
+        InMemoryGoalWorkflowStore store,
         IGoalService goals,
-        IAgentRoleRunner agents) => new(store, goals, agents, new FixedTimeProvider());
+        IAgentRoleRunner agents) => new(store, store, goals, agents, new FixedTimeProvider());
+
+    private static StoredGoalWorkflowTask Task(
+        StoredRunId runId,
+        int sequence,
+        DateTimeOffset createdAt) => new(
+        new(Guid.NewGuid().ToString("N")), runId, new(sequence), new($"Task {sequence}"),
+        new("Implement the bounded change."), new("src/"), new("- Build succeeds"),
+        GoalWorkflowTaskState.Pending, Report: null, createdAt,
+        StartedAt: null, CompletedAt: null);
 
     private static StoredGoalWorkflowCheckpoint Checkpoint(
         StoredRunId runId,
@@ -250,6 +336,9 @@ public sealed class GoalWorkflowServiceTests
     private sealed class FakeAgentRunner : IAgentRoleRunner
     {
         internal List<AgentRunRequest> Requests { get; } = [];
+        internal string LeadOutput { get; init; } = """
+            {"plan":"Inspect, implement, build, test, and review.","tasks":[{"title":"Implement change","objective":"Implement the approved bounded change.","fileAreas":["src/"],"acceptanceCriteria":["Build and focused tests pass."]}]}
+            """;
         internal string ReviewerOutput { get; init; } =
             "{\"decision\":\"accept\",\"summary\":\"Diff and evidence are sound.\"}";
         internal Queue<string> ReviewerOutputs { get; } = new();
@@ -269,7 +358,7 @@ public sealed class GoalWorkflowServiceTests
 
             string output = request.Role switch
             {
-                AgentRole.Lead => "1. Inspect. 2. Implement. 3. Build and test. 4. Review.",
+                AgentRole.Lead => LeadOutput,
                 AgentRole.Implementer => "Implemented and verified through typed tools.",
                 AgentRole.Reviewer => ReviewerOutputs.TryDequeue(out string? reviewerOutput)
                     ? reviewerOutput
@@ -342,8 +431,9 @@ public sealed class GoalWorkflowServiceTests
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
-    private sealed class InMemoryGoalWorkflowStore : IGoalWorkflowStore
+    private sealed class InMemoryGoalWorkflowStore : IGoalWorkflowStore, IGoalWorkflowTaskStore
     {
+        private readonly List<StoredGoalWorkflowTask> tasks = [];
         internal StoredGoalWorkflowSnapshot? Snapshot { get; private set; }
 
         public ValueTask<StoredGoalWorkflowSnapshot?> GetLatestAsync(
@@ -386,6 +476,52 @@ public sealed class GoalWorkflowServiceTests
                 },
                 [.. Snapshot.Checkpoints, appended]);
             return ValueTask.FromResult(Snapshot);
+        }
+
+        public ValueTask<IReadOnlyList<StoredGoalWorkflowTask>> CreateAsync(
+            StoredRunId runId,
+            IReadOnlyList<StoredGoalWorkflowTask> values,
+            CancellationToken cancellationToken = default)
+        {
+            tasks.AddRange(values);
+            return ValueTask.FromResult<IReadOnlyList<StoredGoalWorkflowTask>>(values);
+        }
+
+        public ValueTask<IReadOnlyList<StoredGoalWorkflowTask>> ListAsync(
+            StoredRunId runId,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<IReadOnlyList<StoredGoalWorkflowTask>>(
+                tasks.Where(task => task.RunId == runId)
+                    .OrderBy(task => task.Sequence.Value).ToArray());
+
+        public ValueTask<StoredGoalWorkflowTask> StartAsync(
+            GoalWorkflowTaskId taskId,
+            DateTimeOffset startedAt,
+            CancellationToken cancellationToken = default)
+        {
+            int index = tasks.FindIndex(task => task.Id == taskId);
+            tasks[index] = tasks[index] with
+            {
+                State = GoalWorkflowTaskState.InProgress,
+                StartedAt = startedAt,
+            };
+            return ValueTask.FromResult(tasks[index]);
+        }
+
+        public ValueTask<StoredGoalWorkflowTask> CompleteAsync(
+            GoalWorkflowTaskId taskId,
+            GoalWorkflowTaskReport report,
+            DateTimeOffset completedAt,
+            CancellationToken cancellationToken = default)
+        {
+            int index = tasks.FindIndex(task => task.Id == taskId);
+            tasks[index] = tasks[index] with
+            {
+                State = GoalWorkflowTaskState.Completed,
+                Report = report,
+                CompletedAt = completedAt,
+            };
+            return ValueTask.FromResult(tasks[index]);
         }
     }
 

@@ -50,7 +50,7 @@ but the end-user workflow is not complete.
 | 018 | Done | Let agents implement and verify | - | Approved runs can use typed edit/build/test tools with cancellation, output limits, correlation, and separate restore/network approval. |
 | 019 | Done | Isolate work with Git | - | Each approved goal uses a validated branch/worktree, preserves dirty user state, and never merges/rebases automatically. |
 | 020 | Done | Create goals and approve plans | - | Goals, caps, plans, revisions, approvals, and denials persist and every consequential transition is validated. |
-| 021 | Partial | Coordinate lead, implementer, and reviewer agents | The production role sequence, scoped tools, and bounded revision-cycle iteration run end to end; durable lead-authored subtask delegation remains. | Role prompts and tool scopes are wrapped behind Business Logic interfaces and a lead can delegate bounded tasks. |
+| 021 | Done | Coordinate lead, implementer, and reviewer agents | - | Role prompts and tool scopes are wrapped behind Business Logic interfaces and a lead can delegate bounded tasks. |
 | 022 | Done | Resume interrupted work safely | - | Runs checkpoint at safe boundaries, resume completed steps, and mark uncertain calls without automatic replay. |
 | 023 | Done | Review evidence and accept results | - | Diff, tests, tool evidence, review findings, cycle caps, and explicit commit approval work end to end. |
 | 024 | Partial | Retrieve relevant repository context | A presentation-neutral service now filters and chunks tracked text, atomically rebuilds compatible SQLite vector partitions, and retrieves matches; production context assembly and workflow/TUI controls remain. | Eligible Git-tracked text is chunked, partitioned by embedding configuration, rebuilt, searched, and filtered by policy. |
@@ -128,6 +128,16 @@ Harness.NET state auditable.
   worktree edit/build/test capabilities, and Reviewer is read-only with durable
   evidence access. Restore, commit, package, and shell capabilities remain absent.
   OpenRouter reservations conservatively include tool schemas and tool traffic.
+- Schema 17 persists 1-12 ordered Lead-authored tasks with semantic identifiers,
+  sequence, title, objective, file-area boundary, acceptance criteria, state, and full
+  report. Strict Lead JSON is rejected unless every task is bounded. The coordinator
+  invokes Implementer once per pending task, checkpoints each call and report, resumes
+  at the next pending task, reconciles a report durable before its checkpoint, and
+  never replays an uncertain task call. Workflow snapshots and the TUI expose every
+  task and report. Before continuation, the TUI shows pending task calls and the
+  maximum remaining Reviewer/correction calls alongside routes, output caps, goal cap,
+  reservation, spend, and remaining budget. Implementer agent requests require a
+  semantic file-area grant, and the atomic edit tool rejects paths outside it.
 - Schema 15 adds one active production run per goal with semantic states and ordered
   checkpoints. The TUI starts Lead planning with an explicit output ceiling, pauses
   at the durable plan, and continues approved work through Implementer and independent

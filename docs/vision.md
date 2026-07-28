@@ -52,6 +52,8 @@ isolated worktrees, and role-scoped typed tools. A goal-bound production coordin
 runs Lead planning, pauses for plan approval, resumes Implementer work, and invokes an
 independent Reviewer with durable expandable evidence. It checkpoints before model
 calls, resumes completed safe boundaries, reconciles an already-durable plan, and
-never automatically replays an uncertain call. Remaining v1 work centers on bounded
-delegation/revision cycles, explicit accepted-result commit approval, production
-context assembly, and operational hardening before an Avalonia adapter begins.
+never automatically replays an uncertain call. Lead plans persist ordered bounded
+tasks with file areas and acceptance criteria; Implementer calls execute those tasks
+one at a time before bounded review/revision cycles and exact commit approval.
+Remaining v1 work centers on production context assembly and operational hardening
+before an Avalonia adapter begins.

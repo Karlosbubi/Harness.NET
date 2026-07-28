@@ -26,7 +26,9 @@ public sealed class AgentRoleRunnerTests
         AgentRunResult result = await runner.RunAsync(new(
             new("goal-1"),
             role,
-            new("  bounded task  ")));
+            new("  bounded task  "),
+            MaximumOutputTokens: null,
+            FileAreas: role is AgentRole.Implementer ? [new("src")] : null));
 
         Assert.Null(result.Error);
         Assert.Equal($"{role.ToString().ToLowerInvariant()} result", result.Output?.Value);
@@ -62,6 +64,22 @@ public sealed class AgentRoleRunnerTests
         Assert.Equal("invalid_agent_request", result.ErrorCode?.Value);
         Assert.Null(result.Output);
         Assert.Empty(lead.Requests);
+    }
+
+    [Fact]
+    public async Task Rejects_implementer_execution_without_a_bounded_file_area()
+    {
+        CapturingModelProvider implementer = new("unused");
+        AgentRoleRunner runner = CreateRunner(
+            new CapturingModelProvider("unused"),
+            implementer,
+            new CapturingModelProvider("unused"));
+
+        AgentRunResult result = await runner.RunAsync(new(
+            new("goal-1"), AgentRole.Implementer, new("implement")));
+
+        Assert.Equal("invalid_agent_request", result.ErrorCode?.Value);
+        Assert.Empty(implementer.Requests);
     }
 
     [Fact]
@@ -191,14 +209,20 @@ public sealed class AgentRoleRunnerTests
 
     private sealed class EmptyAgentToolFactory : IAgentToolFactory
     {
-        public IList<AITool> Create(AgentRole role, GoalId goalId) => [];
+        public IList<AITool> Create(
+            AgentRole role,
+            GoalId goalId,
+            IReadOnlyList<AgentFileArea> fileAreas) => [];
     }
 
     private sealed class CapturingAgentToolFactory : IAgentToolFactory
     {
         internal string? RelativePath { get; private set; }
 
-        public IList<AITool> Create(AgentRole role, GoalId goalId) =>
+        public IList<AITool> Create(
+            AgentRole role,
+            GoalId goalId,
+            IReadOnlyList<AgentFileArea> fileAreas) =>
         [
             AIFunctionFactory.Create(
                 (string relativePath) =>

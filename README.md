@@ -43,9 +43,12 @@ configured local default or goal-specific selection. Remote role execution carri
 the goal identity, strict privacy policy, and a required output-token ceiling into
 the cost-controlled provider boundary. The production coordinator durably runs Lead
 planning, approved Implementer work, and independent Reviewer decisions with closed
-role tool scopes. Reviewer findings drive bounded correction passes until acceptance
-or the configured cycle limit. The TUI shows role routes, output ceilings, aggregate
-cap, active reservations, reconciled spend, and remaining budget before model calls.
+role tool scopes. Lead plans persist 1-12 ordered tasks with file areas and acceptance
+criteria; Implementer executes one task per call and completed reports recover without
+replay. Reviewer findings drive bounded correction passes until acceptance or the
+configured cycle limit. The TUI shows pending and maximum remaining calls, role routes,
+output ceilings, aggregate cap, active reservations, reconciled spend, and remaining
+budget before model calls.
 Restore is available only after a durable, correlation- and target-bound user
 approval. Approved edit/build/test/restore calls retain durable request/result
 evidence for later workflow and GUI presentation. A deterministic walking-skeleton

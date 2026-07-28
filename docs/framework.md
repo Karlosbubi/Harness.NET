@@ -43,7 +43,13 @@ Data Access -> Business Logic -> Presentation
 
 - A persistent lead owns the goal, repository inspection, plan, delegation, and
   user communication.
+- Lead plans use a closed structured contract containing 1-12 ordered, independently
+  bounded tasks with concrete file areas and acceptance criteria. Tasks and their
+  semantic Pending/InProgress/Completed state persist before plan approval.
 - An implementer owns approved changes and verification.
+- The implementer receives one delegated task per call. A durable completed task
+  report is reconciled after interruption; an uncertain call is never replayed.
+  Atomic edit tools reject paths outside that task's normalized file-area grant.
 - An independent reviewer owns diff, architecture, and evidence review.
 - Specialist exchanges are summarized in the activity timeline and fully expandable.
 - Each goal requires a review-cycle limit. Reaching it pauses the run for user input.
@@ -62,6 +68,9 @@ Data Access -> Business Logic -> Presentation
 - Cost summaries remain inspectable from goal creation through completion. Monetary
   inputs and reports use explicit micro-USD domain values internally and render USD
   at presentation boundaries without hiding sub-cent reservations.
+- Before production continuation, Presentation shows the pending delegated-call count,
+  maximum remaining review/correction calls, per-role output ceilings, selected routes,
+  aggregate cap, active reservations, spend, and remaining budget.
 
 ## Approval and trust policy
 

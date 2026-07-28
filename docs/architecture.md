@@ -88,6 +88,10 @@ search, inspect, atomically edit, build, and test only an approved active goal
 worktree. The independent Reviewer can read the same worktree diff and durable tool
 evidence but cannot edit, build, or test. Restore, package, commit, and unrestricted
 shell capabilities are absent from all automatically invoked role tool sets.
+Each Implementer call also carries the delegated task's normalized file-area grant;
+atomic edit calls outside those repository-relative areas fail before reaching the
+mutation service. Review correction calls receive the union of the accepted tasks'
+areas, while build and test remain bound to the registered goal entry point.
 
 Microsoft Agent Framework function declarations and calls map through provider-neutral
 records before Data Access serializes Ollama or OpenRouter payloads. Tool names,

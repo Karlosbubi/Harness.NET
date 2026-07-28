@@ -12,12 +12,19 @@ internal sealed class AgentToolFactory(
     IWorkspaceMutationService mutationService,
     IToolEvidenceService evidenceService) : IAgentToolFactory
 {
-    public IList<AITool> Create(AgentRole role, GoalId goalId) =>
+    public IList<AITool> Create(
+        AgentRole role,
+        GoalId goalId,
+        IReadOnlyList<AgentFileArea> fileAreas) =>
         AgentToolPolicy.AllowedFor(role)
-            .Select(kind => Create(kind, goalId, role))
+            .Select(kind => Create(kind, goalId, role, fileAreas))
             .ToList();
 
-    private AITool Create(AgentToolKind kind, GoalId goalId, AgentRole role) => kind switch
+    private AITool Create(
+        AgentToolKind kind,
+        GoalId goalId,
+        AgentRole role,
+        IReadOnlyList<AgentFileArea> fileAreas) => kind switch
     {
         AgentToolKind.ReadFile => AIFunctionFactory.Create(
             (string relativePath, CancellationToken cancellationToken) =>
@@ -40,10 +47,21 @@ internal sealed class AgentToolFactory(
         AgentToolKind.ApplyFileEdit => AIFunctionFactory.Create(
             (string correlationId, string relativePath, string? expectedSha256, string content,
                     CancellationToken cancellationToken) =>
-                mutationService.ApplyFileEditAsync(
-                    new(goalId.Value, new ToolCorrelationId(correlationId), relativePath,
-                        expectedSha256, content),
-                    cancellationToken),
+                IsWithinFileAreas(relativePath, fileAreas)
+                    ? mutationService.ApplyFileEditAsync(
+                        new(goalId.Value, new ToolCorrelationId(correlationId), relativePath,
+                            expectedSha256, content),
+                        cancellationToken)
+                    : ValueTask.FromResult(new FileEditView(
+                        goalId.Value,
+                        new(correlationId),
+                        relativePath,
+                        PreviousSha256: null,
+                        NewSha256: null,
+                        BytesWritten: 0,
+                        WasCreated: false,
+                        "task_file_area_denied",
+                        "The delegated task does not authorize edits in this file area.")),
             Options("apply_file_edit",
                 "Apply one atomic file replacement in the approved goal worktree.")),
         AgentToolKind.Build => AIFunctionFactory.Create(
@@ -69,6 +87,40 @@ internal sealed class AgentToolFactory(
         role is AgentRole.Lead
             ? GoalWorkspaceScope.Original
             : GoalWorkspaceScope.ApprovedWorktree;
+
+    internal static bool IsWithinFileAreas(
+        string relativePath,
+        IReadOnlyList<AgentFileArea> fileAreas)
+    {
+        if (!ValidFileArea(relativePath))
+        {
+            return false;
+        }
+
+        string path = Normalize(relativePath);
+        return fileAreas.Any(area =>
+        {
+            string allowed = Normalize(area.Value);
+            return path.Equals(allowed, StringComparison.Ordinal) ||
+                path.StartsWith(allowed + "/", StringComparison.Ordinal);
+        });
+    }
+
+    internal static bool ValidFileArea(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || Path.IsPathRooted(value) ||
+            value.Contains('\\', StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        string normalized = Normalize(value);
+        return normalized.Length > 0 && normalized.Length <= 512 &&
+            normalized.Split('/').All(segment =>
+                segment.Length > 0 && segment is not "." and not "..");
+    }
+
+    private static string Normalize(string value) => value.Trim().TrimEnd('/');
 
     private static AIFunctionFactoryOptions Options(string name, string description) => new()
     {

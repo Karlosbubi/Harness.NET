@@ -34,7 +34,8 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
             string.IsNullOrWhiteSpace(request.Task.Value) ||
             request.Task.Value.Length > MaximumTaskCharacters ||
             !Enum.IsDefined(request.Role) ||
-            request.MaximumOutputTokens?.Value is <= 0)
+            request.MaximumOutputTokens?.Value is <= 0 ||
+            !ValidFileAreas(request.Role, request.FileAreas))
         {
             return new(
                 request?.Role ?? AgentRole.Lead,
@@ -74,7 +75,7 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
                 Instructions(request.Role),
                 Name(request.Role),
                 Description(request.Role),
-                toolFactory.Create(request.Role, request.GoalId),
+                toolFactory.Create(request.Role, request.GoalId, request.FileAreas ?? []),
                 loggerFactory,
                 services: null);
             AgentSession session = await agent.CreateSessionAsync(cancellationToken);
@@ -105,6 +106,19 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
         AgentRole.Reviewer => "reviewer",
         _ => throw new ArgumentOutOfRangeException(nameof(role)),
     };
+
+    private static bool ValidFileAreas(
+        AgentRole role,
+        IReadOnlyList<AgentFileArea>? fileAreas)
+    {
+        if (role is not AgentRole.Implementer)
+        {
+            return fileAreas is null or { Count: 0 };
+        }
+
+        return fileAreas is { Count: > 0 and <= 32 } && fileAreas.All(area =>
+            area is not null && AgentToolFactory.ValidFileArea(area.Value));
+    }
 
     private static string Description(AgentRole role) => role switch
     {

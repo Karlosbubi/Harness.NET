@@ -7,6 +7,7 @@ public sealed record GoalWorkflowSnapshot(
     GoalId GoalId,
     GoalWorkflowState State,
     ReviewCycleCount ReviewCycle,
+    IReadOnlyList<GoalTaskView> Tasks,
     IReadOnlyList<GoalWorkflowActivityView> Activities,
     IReadOnlyList<WorkflowEvidenceView> Evidence,
     bool CanResume,

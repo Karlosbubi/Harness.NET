@@ -1,0 +1,122 @@
+using System.Text.Json;
+using Harness.BusinessLogic.Agents;
+
+namespace Harness.BusinessLogic.Workflows;
+
+internal static class GoalDelegationParser
+{
+    private const int MaximumPlanCharacters = 32_000;
+    private const int MaximumTaskCount = 12;
+
+    internal static GoalDelegation Parse(string value)
+    {
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(value);
+            JsonElement root = document.RootElement;
+            if (root.ValueKind is not JsonValueKind.Object ||
+                !ExactProperties(root, "plan", "tasks") ||
+                !root.TryGetProperty("plan", out JsonElement planElement) ||
+                planElement.ValueKind is not JsonValueKind.String ||
+                !root.TryGetProperty("tasks", out JsonElement tasksElement) ||
+                tasksElement.ValueKind is not JsonValueKind.Array)
+            {
+                return Failure("Lead output must contain exactly 'plan' and 'tasks'.");
+            }
+
+            string? plan = planElement.GetString()?.Trim();
+            if (string.IsNullOrWhiteSpace(plan) || plan.Length > MaximumPlanCharacters ||
+                tasksElement.GetArrayLength() is < 1 or > MaximumTaskCount)
+            {
+                return Failure("A bounded plan and 1-12 delegated tasks are required.");
+            }
+
+            List<GoalDelegatedTask> tasks = [];
+            foreach (JsonElement task in tasksElement.EnumerateArray())
+            {
+                if (task.ValueKind is not JsonValueKind.Object ||
+                    !ExactProperties(task, "title", "objective", "fileAreas",
+                        "acceptanceCriteria") ||
+                    !Text(task, "title", 256, out string title) ||
+                    !Text(task, "objective", 8_192, out string objective) ||
+                    !StringList(task, "fileAreas", 32, 512, out string fileAreas) ||
+                    !StringList(task, "acceptanceCriteria", 32, 512,
+                        out string acceptanceCriteria))
+                {
+                    return Failure(
+                        "Every task requires bounded title, objective, fileAreas, and " +
+                        "acceptanceCriteria values.");
+                }
+
+                tasks.Add(new(new(title), new(objective), new(fileAreas),
+                    new(acceptanceCriteria)));
+            }
+
+            return new(plan, tasks, Error: null);
+        }
+        catch (JsonException exception)
+        {
+            return Failure($"Lead output is not valid delegation JSON: {exception.Message}");
+        }
+    }
+
+    private static bool ExactProperties(JsonElement element, params string[] expected)
+    {
+        string[] actual = element.EnumerateObject().Select(property => property.Name).ToArray();
+        return actual.Length == expected.Length &&
+            expected.All(name => actual.Contains(name, StringComparer.Ordinal));
+    }
+
+    private static bool Text(
+        JsonElement element,
+        string property,
+        int maximumCharacters,
+        out string value)
+    {
+        value = string.Empty;
+        if (!element.TryGetProperty(property, out JsonElement child) ||
+            child.ValueKind is not JsonValueKind.String)
+        {
+            return false;
+        }
+
+        value = child.GetString()?.Trim() ?? string.Empty;
+        return value.Length is > 0 && value.Length <= maximumCharacters;
+    }
+
+    private static bool StringList(
+        JsonElement element,
+        string property,
+        int maximumItems,
+        int maximumItemCharacters,
+        out string value)
+    {
+        value = string.Empty;
+        if (!element.TryGetProperty(property, out JsonElement child) ||
+            child.ValueKind is not JsonValueKind.Array ||
+            child.GetArrayLength() is < 1 || child.GetArrayLength() > maximumItems)
+        {
+            return false;
+        }
+
+        string[] items = child.EnumerateArray()
+            .Select(item => item.ValueKind is JsonValueKind.String
+                ? item.GetString()?.Trim() ?? string.Empty
+                : string.Empty)
+            .ToArray();
+        if (items.Any(item => item.Length is 0 || item.Length > maximumItemCharacters))
+        {
+            return false;
+        }
+
+        if (property == "fileAreas" && items.Any(item => !AgentToolFactory.ValidFileArea(item)))
+        {
+            return false;
+        }
+
+        value = string.Join("\n", items.Select(item => $"- {item}"));
+        return true;
+    }
+
+    private static GoalDelegation Failure(string error) => new(null, [], error);
+}

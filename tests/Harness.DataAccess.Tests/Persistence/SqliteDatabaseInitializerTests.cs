@@ -30,7 +30,7 @@ public sealed class SqliteDatabaseInitializerTests : IDisposable
 
         Assert.True(first.DatabaseCreated);
         Assert.False(second.DatabaseCreated);
-        Assert.Equal(16, first.SchemaVersion);
+        Assert.Equal(17, first.SchemaVersion);
         Assert.Equal(first.SchemaVersion, second.SchemaVersion);
         Assert.True(File.Exists(databasePath));
 
@@ -40,8 +40,9 @@ public sealed class SqliteDatabaseInitializerTests : IDisposable
         command.CommandText =
             "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' " +
             "AND name IN ('SchemaVersions', 'goal_workflow_runs', " +
-            "'goal_workflow_checkpoints', 'goal_commit_approvals');";
-        Assert.Equal(4L, (long)command.ExecuteScalar()!);
+            "'goal_workflow_checkpoints', 'goal_workflow_tasks', " +
+            "'goal_commit_approvals');";
+        Assert.Equal(5L, (long)command.ExecuteScalar()!);
     }
 
     public void Dispose()

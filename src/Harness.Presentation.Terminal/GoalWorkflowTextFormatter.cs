@@ -12,6 +12,16 @@ internal static class GoalWorkflowTextFormatter
         $"Completed review cycles: {snapshot.ReviewCycle.Value}",
         snapshot.RequiresUserDirection ? "Action: user direction required" : string.Empty,
         string.Empty,
+        "DELEGATED TASKS",
+        snapshot.Tasks.Count == 0
+            ? "No delegated tasks yet."
+            : string.Join("\n\n", snapshot.Tasks.Select(task =>
+                $"{task.Sequence.Value}. [{task.State}] {task.Title.Value}\n" +
+                $"Objective: {task.Objective.Value}\n" +
+                $"File areas:\n{task.FileAreas.Value}\n" +
+                $"Acceptance criteria:\n{task.AcceptanceCriteria.Value}" +
+                (task.Report is null ? string.Empty : $"\nReport:\n{task.Report.Value}"))),
+        string.Empty,
         "ACTIVITY",
         string.Join("\n", snapshot.Activities.Select(item =>
             $"{item.Sequence}. {item.Actor} | {item.Kind} | {item.Summary.Value}")),

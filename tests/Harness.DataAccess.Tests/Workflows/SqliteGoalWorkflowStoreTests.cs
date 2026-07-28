@@ -95,13 +95,21 @@ public sealed class SqliteGoalWorkflowStoreTests : IDisposable
             GoalWorkflowCheckpointKind.ImplementerCallStarted,
             GoalWorkflowRunState.Running, GoalWorkflowRunState.Running);
         await store.AppendAsync(Checkpoint(runId, 0,
-                GoalWorkflowCheckpointKind.ReviewerCallStarted, now.AddSeconds(6)),
+                GoalWorkflowCheckpointKind.ImplementerCallStarted, now.AddSeconds(6)),
+            GoalWorkflowCheckpointKind.ImplementationProduced,
+            GoalWorkflowRunState.Running, GoalWorkflowRunState.Running);
+        await store.AppendAsync(Checkpoint(runId, 0,
+                GoalWorkflowCheckpointKind.ImplementationProduced, now.AddSeconds(7)),
+            GoalWorkflowCheckpointKind.ImplementerCallStarted,
+            GoalWorkflowRunState.Running, GoalWorkflowRunState.Running);
+        await store.AppendAsync(Checkpoint(runId, 0,
+                GoalWorkflowCheckpointKind.ReviewerCallStarted, now.AddSeconds(8)),
             GoalWorkflowCheckpointKind.ImplementationProduced,
             GoalWorkflowRunState.Running, GoalWorkflowRunState.Running);
 
         StoredGoalWorkflowSnapshot reviewed = await store.AppendAsync(
             Checkpoint(runId, 0, GoalWorkflowCheckpointKind.ReviewCompleted,
-                now.AddSeconds(7)),
+                now.AddSeconds(9)),
             GoalWorkflowCheckpointKind.ReviewerCallStarted,
             GoalWorkflowRunState.Running,
             GoalWorkflowRunState.Running,
