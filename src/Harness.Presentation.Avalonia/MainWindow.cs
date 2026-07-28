@@ -35,7 +35,6 @@ internal sealed class MainWindow : Window
     private readonly Button send = new() { Content = "Send" };
     private readonly Button cancel = new() { Content = "Cancel" };
     private readonly Button manageWorkspaces = new() { Content = "Manage workspaces" };
-    private readonly Button inspectWorkspace = new() { Content = "Inspect workspace" };
     private readonly Button manageFramework = new() { Content = "Engineering framework" };
     private readonly Button manageGoals = new() { Content = "Goals and plans" };
     private readonly Button operations = new() { Content = "Application operations" };
@@ -54,6 +53,7 @@ internal sealed class MainWindow : Window
     private readonly Border primary = new();
     private readonly Border utility = new();
     private readonly Border footer = new();
+    private WorkbenchDockHost? workbench;
     private bool suppressSelection;
     private bool loaded;
 
@@ -96,14 +96,15 @@ internal sealed class MainWindow : Window
         navigation.Child = BuildNavigation();
         primary.Child = BuildPrimary();
         utility.Child = BuildUtility();
-        AdaptiveWorkspace workspaceLayout = new()
-        {
-            Navigation = navigation,
-            Primary = primary,
-            Utility = utility,
-        };
-        Grid.SetRow(workspaceLayout, 1);
-        root.Children.Add(workspaceLayout);
+        workbench = new(
+            inspectionService,
+            () => store.Current,
+            navigation,
+            primary,
+            utility,
+            cancellationToken);
+        Grid.SetRow(workbench.Control, 1);
+        root.Children.Add(workbench.Control);
 
         footer.Child = BuildFooter();
         Grid.SetRow(footer, 2);
@@ -173,7 +174,6 @@ internal sealed class MainWindow : Window
                 new TextBlock { Text = "WORKSPACE", FontSize = 11, FontWeight = FontWeight.Bold },
                 workspace,
                 manageWorkspaces,
-                inspectWorkspace,
                 new Separator(),
                 new TextBlock { Text = "AVAILABLE", FontSize = 11, FontWeight = FontWeight.Bold },
                 new TextBlock { Text = "● Conversation", TextWrapping = TextWrapping.Wrap },
@@ -317,16 +317,6 @@ internal sealed class MainWindow : Window
             WorkspaceDialog dialog = new(store, cancellationToken);
             await dialog.ShowDialog(this);
         };
-        inspectWorkspace.Click += async (_, _) =>
-        {
-            if (store.Current.Workspaces.Registered.FirstOrDefault(item => item.IsActive) is not { } active)
-            {
-                return;
-            }
-
-            WorkspaceInspectorDialog dialog = new(inspectionService, active, cancellationToken);
-            await dialog.ShowDialog(this);
-        };
         manageGoals.Click += async (_, _) =>
         {
             GoalDialog dialog = new(store, cancellationToken);
@@ -354,6 +344,10 @@ internal sealed class MainWindow : Window
         loaded = true;
         themeController.Attach(this);
         await store.LoadAsync(cancellationToken);
+        if (workbench is not null)
+        {
+            await workbench.RefreshAsync();
+        }
         composer.Focus();
     }
 
@@ -369,9 +363,6 @@ internal sealed class MainWindow : Window
             cancel.IsVisible = state.IsStreaming;
             manageGoals.IsEnabled = !state.IsLoading &&
                                     state.Workspaces.Registered.Any(item => item.IsActive);
-            inspectWorkspace.IsEnabled = !state.IsLoading &&
-                                         state.Workspaces.Registered.Any(item =>
-                                             item.IsActive && item.IsTrusted);
             manageFramework.IsEnabled = !state.IsLoading &&
                                         state.Workspaces.Registered.Any(item => item.IsActive);
             DashboardSnapshot? dashboard = state.Dashboard;
@@ -423,6 +414,7 @@ internal sealed class MainWindow : Window
                     : string.Join("\n", appearance.Issues.Select(issue =>
                         $"⚠ {issue.SourceName}: {issue.Message}"));
             }
+            workbench?.Update(state);
         }
         finally
         {

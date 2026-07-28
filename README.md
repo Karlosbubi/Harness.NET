@@ -40,9 +40,12 @@ For a trusted active workspace, Avalonia exposes real bounded tracked-text searc
 file reading in a syntax-aware editor, Git status and diff inspection, and parsed
 .NET solution/project metadata. It does not display a fabricated file tree, terminal,
 problem count, build result, or goal progress.
-This inspection experience is still modal: the central multi-document editor and
-movable/restorable tool-panel workbench tracked by ADR 010 and Tasks 028-033 are not
-implemented yet and remain release blockers.
+The modal inspector has been replaced by the first Dock-based workbench: source and
+diff content open in a central document region while real workspace/search, Git,
+goal context, and conversation controls occupy tool regions. Layout persistence,
+safe source editing, full panel manipulation, adaptive/accessibility validation, and
+recorded visual acceptance tracked by ADR 010 and Tasks 028-033 remain release
+blockers.
 The Avalonia and TUI Framework surfaces show the resolved engineering rules and
 guidance with locks, provenance, privacy, and validation issues, and edit only the
 private workspace overlay without adding repository metadata.

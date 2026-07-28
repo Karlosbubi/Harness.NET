@@ -3,6 +3,7 @@ using Avalonia.Headless;
 using Avalonia.Media;
 using Avalonia.VisualTree;
 using AvaloniaEdit;
+using Dock.Avalonia.Controls;
 using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Workspaces;
 using Harness.UI.Avalonia;
@@ -55,7 +56,7 @@ public sealed class PresentationControlTests
     }
 
     [Fact]
-    public async Task Workspace_inspector_exposes_real_file_git_and_dotnet_surfaces()
+    public async Task Docked_workbench_opens_real_workspace_file_as_center_document()
     {
         using HeadlessUnitTestSession session =
             HeadlessUnitTestSession.StartNew(typeof(PresentationTestApplication));
@@ -70,18 +71,32 @@ public sealed class PresentationControlTests
                 IsActive: true,
                 "main",
                 IsDirty: true);
-            WorkspaceInspectorDialog dialog = new(
+            AvaloniaShellState shell = AvaloniaShellState.Initial with
+            {
+                Workspaces = WorkspaceManagementState.Initial with { Registered = [workspace] },
+                IsLoading = false,
+            };
+            WorkbenchDockHost workbench = new(
                 new InspectionService(),
-                workspace,
+                () => shell,
+                new TextBlock { Text = "Workspace" },
+                new TextBlock { Text = "Conversation" },
+                new TextBlock { Text = "Goal context" },
                 CancellationToken.None);
-            dialog.Show();
+            Window window = new() { Content = workbench.Control };
+            window.Show();
+            workbench.Update(shell);
+            workbench.OpenFileAsync("src/App.cs").AsTask().GetAwaiter().GetResult();
 
-            TabControl tabs = Assert.Single(dialog.GetVisualDescendants().OfType<TabControl>());
-            Assert.Equal(3, tabs.ItemCount);
-            Assert.Single(dialog.GetVisualDescendants().OfType<TextEditor>());
-            Assert.Contains(dialog.GetVisualDescendants().OfType<Button>(), button =>
-                string.Equals(button.Content?.ToString(), "Open file", StringComparison.Ordinal));
-            dialog.Close();
+            Assert.IsType<DockControl>(workbench.Control);
+            Assert.Equal(
+                ["document.workspace.overview", "document.file.workspace-1.src/App.cs"],
+                workbench.Documents.VisibleDockables?.Select(item => item.Id).ToArray() ?? []);
+            TextEditor editor = Assert.IsType<TextEditor>(workbench.Documents.ActiveDockable?.Context);
+            Assert.Equal("namespace Example;", editor.Text);
+            Assert.True(editor.IsReadOnly);
+            Assert.NotNull(workbench.Control.Template);
+            window.Close();
         }, CancellationToken.None);
     }
 

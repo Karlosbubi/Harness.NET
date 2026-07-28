@@ -26,6 +26,23 @@ and multiple layout serializers. Its current 12.x control packages target Avalon
 packages do not all publish on the same cadence. Compatibility must therefore be
 proved against Harness.NET's pinned Avalonia version before adoption is accepted.
 
+## Compatibility checkpoint
+
+The first implementation checkpoint pins `Dock.Avalonia`,
+`Dock.Avalonia.Themes.Fluent`, and `Dock.Model.Mvvm` at stable version `12.0.0.2`.
+The three packages are published from the same Dock source revision, expose .NET 10
+assets, and restore beside Avalonia 12.1.0 and AvaloniaEdit 12.0.0. Dock remains a
+Presentation-only dependency; no Dock contract crosses into Business Logic, Data
+Access, or the reusable presentation toolkit.
+
+A code-first layout now constructs successfully under Avalonia Headless with the
+Dock Fluent theme, and a focused interaction check opens a real bounded
+`WorkspaceFileView` in AvaloniaEdit while retaining and activating center document
+tabs. The complete Linux x64 lifecycle verifier also passes with the Dock assemblies
+inside the self-contained publication. Keyboard/focus traversal, floating-window
+ownership, compact layout, assistive-technology behavior, restoration, and measured
+multi-document performance remain required before this record can become Accepted.
+
 ## Proposed decision
 
 Use Dock as the preferred docking engine, subject to a narrow compatibility and
@@ -77,8 +94,9 @@ Presentation; Business Logic and Data Access contracts do not expose them.
 
 ## Consequences
 
-- The current modal workspace inspector is temporary and will be decomposed into
-  workbench documents and tools rather than treated as the final editor experience.
+- The modal workspace inspector has been removed. Its real file/search/Git behavior
+  now lives in the workbench; incomplete layout and editing behavior remains tracked
+  explicitly rather than being represented by placeholder panels.
 - Dock dependencies remain confined to `Harness.Presentation.Avalonia`; the reusable
   `Harness.UI.Avalonia` toolkit stays application- and docking-engine-neutral.
 - Layout persistence is private application state and participates in backup and
