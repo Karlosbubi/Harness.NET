@@ -1,4 +1,5 @@
 using Harness.BusinessLogic.Costs;
+using Harness.BusinessLogic.Goals;
 using Harness.DataAccess.Models;
 
 namespace Harness.BusinessLogic.Tests.Costs;
@@ -28,7 +29,7 @@ public sealed class RemoteCostServiceTests
                 createdAt.AddSeconds(1))]);
         RemoteCostService service = new(new StubCostStore(ledger));
 
-        RemoteCostReport report = Assert.IsType<RemoteCostReport>(await service.GetAsync("goal-1"));
+        RemoteCostReport report = Assert.IsType<RemoteCostReport>(await service.GetAsync(new("goal-1")));
 
         Assert.Equal(new MicroUsdAmount(100), report.CostCap);
         Assert.Equal(new MicroUsdAmount(20), report.ReservedCost);

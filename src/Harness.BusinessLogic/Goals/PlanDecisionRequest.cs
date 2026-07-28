@@ -1,7 +1,7 @@
 namespace Harness.BusinessLogic.Goals;
 
 public sealed record PlanDecisionRequest(
-    string GoalId,
-    string PlanId,
-    string Decision,
+    GoalId GoalId,
+    PlanId PlanId,
+    PlanDecision Decision,
     string? Reason);

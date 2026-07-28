@@ -1,12 +1,14 @@
+using Harness.BusinessLogic.Costs;
+
 namespace Harness.BusinessLogic.Goals;
 
 public sealed record GoalView(
-    string Id,
+    GoalId Id,
     string WorkspaceId,
     string Title,
     string Objective,
-    int ReviewCycleLimit,
-    long? RemoteBudgetMicrousd,
-    string State,
+    ReviewCycleLimit ReviewCycleLimit,
+    MicroUsdAmount? RemoteBudget,
+    GoalState State,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);

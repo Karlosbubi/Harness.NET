@@ -7,7 +7,7 @@ public interface IGoalService
         CancellationToken cancellationToken = default);
 
     ValueTask<GoalView?> GetAsync(
-        string goalId,
+        GoalId goalId,
         CancellationToken cancellationToken = default);
 
     ValueTask<IReadOnlyList<GoalView>> ListAsync(
@@ -15,7 +15,7 @@ public interface IGoalService
         CancellationToken cancellationToken = default);
 
     ValueTask<PlanView?> GetCurrentPlanAsync(
-        string goalId,
+        GoalId goalId,
         CancellationToken cancellationToken = default);
 
     ValueTask<PlanResult> ProposePlanAsync(

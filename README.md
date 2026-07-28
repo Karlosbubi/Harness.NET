@@ -12,8 +12,10 @@ compile-time layer enforcement, XDG paths, Secret Service access, SQLite migrati
 redacted local logs, optional OTLP, an adaptive Terminal.Gui shell, and an Ollama
 provider adapter. The OpenRouter adapter adds dynamic chat/embedding discovery,
 streaming, strict privacy routing, and fail-closed goal budgets with attributed
-reservation and reconciled-spend reports; remote goal/model selection is not yet a
-complete TUI workflow.
+reservation and reconciled-spend reports. The Goals menu creates local-only or
+explicitly capped goals, manages versioned plan approval/denial, and shows reserved
+exposure, reconciled spend, remaining budget, overage, and per-request attribution;
+goal-specific remote model selection is not yet complete.
 
 Semantic indexing now reads bounded eligible text directly from the Git index,
 filters generated, binary, sensitive, and oversized content, and creates deterministic
@@ -28,6 +30,9 @@ The workspace modal can also inspect, register, select, and explicitly trust a
 Git-backed .NET workspace; the Workspace menu remains available in narrow layouts.
 The Framework menu shows the resolved engineering rules and guidance with locks,
 provenance, privacy, and validation issues, and edits the private workspace overlay.
+The Goals menu creates durable goals with review-cycle limits and optional remote
+caps, proposes and inspects versioned plans, and requires confirmation before plan
+approval provisions an isolated worktree.
 Trusted-workspace tools now provide confined file reads, tracked-text search,
 bounded Git status/diff evidence, non-evaluating .NET metadata, approved atomic file
 edits, and cancellable .NET execution in isolated goal worktrees. Agent role

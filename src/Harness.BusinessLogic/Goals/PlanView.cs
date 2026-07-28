@@ -1,10 +1,10 @@
 namespace Harness.BusinessLogic.Goals;
 
 public sealed record PlanView(
-    string Id,
-    string GoalId,
-    int Revision,
+    PlanId Id,
+    GoalId GoalId,
+    PlanRevision Revision,
     string Content,
-    string State,
+    PlanState State,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);

@@ -49,12 +49,12 @@ but the end-user workflow is not complete.
 | 017 | Done | Let agents inspect safely | - | Typed, path-confined read/search/status/diff/project/build-information tools run only in a trusted workspace and return bounded records. |
 | 018 | Done | Let agents implement and verify | - | Approved runs can use typed edit/build/test tools with cancellation, output limits, correlation, and separate restore/network approval. |
 | 019 | Done | Isolate work with Git | - | Each approved goal uses a validated branch/worktree, preserves dirty user state, and never merges/rebases automatically. |
-| 020 | Partial | Create goals and approve plans | Goals, caps, versioned plans, worktree grants, and scoped restore approvals exist below Presentation; the TUI workflow remains. | Goals, caps, plans, revisions, approvals, and denials persist and every consequential transition is validated. |
+| 020 | Done | Create goals and approve plans | - | Goals, caps, plans, revisions, approvals, and denials persist and every consequential transition is validated. |
 | 021 | Partial | Coordinate lead, implementer, and reviewer agents | All roles execute behind Business Logic contracts, but bounded delegation and role-specific tool scopes are not coordinated. | Role prompts and tool scopes are wrapped behind Business Logic interfaces and a lead can delegate bounded tasks. |
 | 022 | Partial | Resume interrupted work safely | The deterministic walking skeleton resumes from persisted safe boundaries and incomplete tool calls remain identifiable, but production-run reconciliation is absent. | Runs checkpoint at safe boundaries, resume completed steps, and mark uncertain calls without automatic replay. |
 | 023 | Partial | Review evidence and accept results | Tool requests/results are durable and queryable, but there is no independent review loop or commit approval. | Diff, tests, tool evidence, review findings, cycle caps, and explicit commit approval work end to end. |
 | 024 | Partial | Retrieve relevant repository context | A presentation-neutral service now filters and chunks tracked text, atomically rebuilds compatible SQLite vector partitions, and retrieves matches; production context assembly and workflow/TUI controls remain. | Eligible Git-tracked text is chunked, partitioned by embedding configuration, rebuilt, searched, and filtered by policy. |
-| 025 | Partial | Use remote models under a cost cap | OpenRouter now fails closed without an approved budget, reserves discovered worst-case estimates, reconciles returned charges, and exposes an attributed cost report; goal-specific model selection and TUI authorization remain. | Remote use requires approval, streams through the provider boundary, and enforces estimated plus reconciled per-goal caps. |
+| 025 | Partial | Use remote models under a cost cap | OpenRouter fails closed without an approved budget, reserves discovered worst-case estimates, reconciles returned charges, and exposes its attributed report in the goal TUI; goal-specific model selection remains. | Remote use requires approval, streams through the provider boundary, and enforces estimated plus reconciled per-goal caps. |
 | 026 | Partial | Operate and distribute v1.0 reliably | A verified self-contained walking-skeleton package exists, but upgrades, backup/export, hardening, and production recovery acceptance remain. | A self-contained Linux x64 release passes clean-install, migration, outage, cancellation, recovery, and representative-repository acceptance tests. |
 
 ### v1.0 release gate
@@ -153,7 +153,11 @@ Harness.NET state auditable.
   budgets before schema-versioned SQLite persistence. Plan proposals increment
   revisions and wait for a decision. Approval requires active workspace trust;
   denial requires a reason. Goal, plan, and decision transitions persist atomically
-  and reject stale or duplicate decisions.
+  and reject stale or duplicate decisions. The TUI now creates and inspects goals,
+  proposes plans, confirms worktree-granting approval, records denial reasons, and
+  displays local-only authorization or fully attributed remote-cost totals. Goal
+  identifiers, plan identifiers and revisions, review caps, money, states, decision,
+  approval, and worktree values cross Presentation through semantic records/enums.
 - Task 019 has a structured Git worktree adapter with canonical goal identifiers,
   deterministic Harness-owned branch/path names, bounded diagnostics, cancellation,
   and idempotent retry. Tests verify that worktrees start at the recorded base commit

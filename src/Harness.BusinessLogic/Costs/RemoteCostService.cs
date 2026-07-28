@@ -1,18 +1,24 @@
 using Harness.DataAccess.Models;
+using Harness.BusinessLogic.Goals;
 
 namespace Harness.BusinessLogic.Costs;
 
 internal sealed class RemoteCostService(IRemoteCostStore costStore) : IRemoteCostService
 {
     public async ValueTask<RemoteCostReport?> GetAsync(
-        string goalId,
+        GoalId goalId,
         CancellationToken cancellationToken = default)
     {
-        RemoteCostLedger? ledger = await costStore.GetLedgerAsync(goalId, cancellationToken);
+        if (goalId is null || string.IsNullOrWhiteSpace(goalId.Value))
+        {
+            return null;
+        }
+
+        RemoteCostLedger? ledger = await costStore.GetLedgerAsync(goalId.Value, cancellationToken);
         return ledger is null
             ? null
             : new(
-                ledger.GoalId,
+                new(ledger.GoalId),
                 new(ledger.CostCap.Value),
                 new(ledger.ReservedCost.Value),
                 new(ledger.ReconciledCost.Value),

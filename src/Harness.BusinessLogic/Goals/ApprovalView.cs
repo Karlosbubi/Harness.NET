@@ -1,10 +1,10 @@
 namespace Harness.BusinessLogic.Goals;
 
 public sealed record ApprovalView(
-    string Id,
-    string GoalId,
-    string PlanId,
-    string Kind,
-    string Decision,
+    GoalApprovalId Id,
+    GoalId GoalId,
+    PlanId PlanId,
+    ApprovalKind Kind,
+    ApprovalDecision Decision,
     string? Reason,
     DateTimeOffset DecidedAt);

@@ -36,8 +36,8 @@ internal sealed class GoalService(
             workspace.Id,
             request.Title.Trim(),
             request.Objective.Trim(),
-            request.ReviewCycleLimit,
-            request.RemoteBudgetMicrousd,
+            request.ReviewCycleLimit.Value,
+            request.RemoteBudget?.Value,
             "Draft",
             now,
             now), cancellationToken);
@@ -45,9 +45,11 @@ internal sealed class GoalService(
     }
 
     public async ValueTask<GoalView?> GetAsync(
-        string goalId,
+        GoalId goalId,
         CancellationToken cancellationToken = default) =>
-        (await goalStore.GetAsync(goalId, cancellationToken))?.ToView();
+        goalId is null || string.IsNullOrWhiteSpace(goalId.Value)
+            ? null
+            : (await goalStore.GetAsync(goalId.Value, cancellationToken))?.ToView();
 
     public async ValueTask<IReadOnlyList<GoalView>> ListAsync(
         string workspaceId,
@@ -57,22 +59,27 @@ internal sealed class GoalService(
         .ToArray();
 
     public async ValueTask<PlanView?> GetCurrentPlanAsync(
-        string goalId,
+        GoalId goalId,
         CancellationToken cancellationToken = default) =>
-        (await goalStore.GetCurrentPlanAsync(goalId, cancellationToken))?.ToView();
+        goalId is null || string.IsNullOrWhiteSpace(goalId.Value)
+            ? null
+            : (await goalStore.GetCurrentPlanAsync(goalId.Value, cancellationToken))?.ToView();
 
     public async ValueTask<PlanResult> ProposePlanAsync(
         PlanProposalRequest request,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(request.Content) || request.Content.Length > MaximumPlanCharacters)
+        if (request.GoalId is null ||
+            string.IsNullOrWhiteSpace(request.GoalId.Value) ||
+            string.IsNullOrWhiteSpace(request.Content) ||
+            request.Content.Length > MaximumPlanCharacters)
         {
             return PlanFailure(
                 "invalid_plan",
                 $"The plan must contain 1-{MaximumPlanCharacters} characters.");
         }
 
-        StoredGoal? goal = await goalStore.GetAsync(request.GoalId, cancellationToken);
+        StoredGoal? goal = await goalStore.GetAsync(request.GoalId.Value, cancellationToken);
         if (goal is null)
         {
             return PlanFailure("goal_missing", "The goal does not exist.");
@@ -117,14 +124,17 @@ internal sealed class GoalService(
         PlanDecisionRequest request,
         CancellationToken cancellationToken = default)
     {
-        bool approve = request.Decision.Equals("Approve", StringComparison.OrdinalIgnoreCase);
-        bool deny = request.Decision.Equals("Deny", StringComparison.OrdinalIgnoreCase);
-        if (!approve && !deny)
+        if (request.GoalId is null ||
+            string.IsNullOrWhiteSpace(request.GoalId.Value) ||
+            request.PlanId is null ||
+            string.IsNullOrWhiteSpace(request.PlanId.Value) ||
+            !Enum.IsDefined(request.Decision))
         {
             return PlanFailure("invalid_decision", "The decision must be Approve or Deny.");
         }
 
-        if (deny && string.IsNullOrWhiteSpace(request.Reason))
+        bool approve = request.Decision is PlanDecision.Approve;
+        if (request.Decision is PlanDecision.Deny && string.IsNullOrWhiteSpace(request.Reason))
         {
             return PlanFailure("invalid_decision", "A denial reason is required.");
         }
@@ -136,9 +146,9 @@ internal sealed class GoalService(
                 $"The decision reason cannot exceed {MaximumDecisionReasonCharacters} characters.");
         }
 
-        StoredGoal? goal = await goalStore.GetAsync(request.GoalId, cancellationToken);
-        StoredPlan? plan = await goalStore.GetCurrentPlanAsync(request.GoalId, cancellationToken);
-        if (goal is null || plan is null || !plan.Id.Equals(request.PlanId, StringComparison.Ordinal))
+        StoredGoal? goal = await goalStore.GetAsync(request.GoalId.Value, cancellationToken);
+        StoredPlan? plan = await goalStore.GetCurrentPlanAsync(request.GoalId.Value, cancellationToken);
+        if (goal is null || plan is null || !plan.Id.Equals(request.PlanId.Value, StringComparison.Ordinal))
         {
             return PlanFailure("plan_missing", "The current plan does not match the decision request.");
         }
@@ -230,12 +240,12 @@ internal sealed class GoalService(
             return $"The objective must contain 1-{MaximumObjectiveCharacters} characters.";
         }
 
-        if (request.ReviewCycleLimit is < 1 or > 20)
+        if (request.ReviewCycleLimit is null || request.ReviewCycleLimit.Value is < 1 or > 20)
         {
             return "The review-cycle limit must be between 1 and 20.";
         }
 
-        return request.RemoteBudgetMicrousd is <= 0
+        return request.RemoteBudget?.Value is <= 0
             ? "The remote-model budget must be positive when provided."
             : null;
     }
@@ -247,31 +257,31 @@ internal sealed class GoalService(
 internal static class StoredGoalMapping
 {
     internal static GoalView ToView(this StoredGoal goal) => new(
-        goal.Id,
+        new(goal.Id),
         goal.WorkspaceId,
         goal.Title,
         goal.Objective,
-        goal.ReviewCycleLimit,
-        goal.RemoteBudgetMicrousd,
-        goal.State,
+        new(goal.ReviewCycleLimit),
+        goal.RemoteBudgetMicrousd is null ? null : new(goal.RemoteBudgetMicrousd.Value),
+        ParseEnum<GoalState>(goal.State, "goal state"),
         goal.CreatedAt,
         goal.UpdatedAt);
 
     internal static PlanView ToView(this StoredPlan plan) => new(
-        plan.Id,
-        plan.GoalId,
-        plan.Revision,
+        new(plan.Id),
+        new(plan.GoalId),
+        new(plan.Revision),
         plan.Content,
-        plan.State,
+        ParseEnum<PlanState>(plan.State, "plan state"),
         plan.CreatedAt,
         plan.UpdatedAt);
 
     internal static ApprovalView ToView(this StoredApproval approval) => new(
-        approval.Id,
-        approval.GoalId,
-        approval.PlanId,
-        approval.Kind,
-        approval.Decision,
+        new(approval.Id),
+        new(approval.GoalId),
+        new(approval.PlanId),
+        ParseEnum<ApprovalKind>(approval.Kind, "approval kind"),
+        ParseEnum<ApprovalDecision>(approval.Decision, "approval decision"),
         approval.Reason,
         approval.DecidedAt);
 
@@ -282,13 +292,19 @@ internal static class StoredGoalMapping
         snapshot.Worktree is null
             ? null
             : new(
-                snapshot.Worktree.GoalId,
+                new(snapshot.Worktree.GoalId),
                 snapshot.Worktree.WorkspaceId,
                 snapshot.Worktree.Branch,
                 snapshot.Worktree.Path,
                 snapshot.Worktree.BaseCommit,
-                snapshot.Worktree.State,
+                ParseEnum<GoalWorktreeState>(snapshot.Worktree.State, "goal worktree state"),
                 snapshot.Worktree.CreatedAt),
         ErrorCode: null,
         Error: null);
+
+    private static TEnum ParseEnum<TEnum>(string value, string field)
+        where TEnum : struct, Enum =>
+        Enum.TryParse(value, ignoreCase: false, out TEnum parsed) && Enum.IsDefined(parsed)
+            ? parsed
+            : throw new InvalidDataException($"Stored {field} '{value}' is invalid.");
 }

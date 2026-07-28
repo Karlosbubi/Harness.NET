@@ -1,7 +1,9 @@
+using Harness.BusinessLogic.Goals;
+
 namespace Harness.BusinessLogic.Costs;
 
 public sealed record RemoteCostReport(
-    string GoalId,
+    GoalId GoalId,
     MicroUsdAmount CostCap,
     MicroUsdAmount ReservedCost,
     MicroUsdAmount ReconciledCost,

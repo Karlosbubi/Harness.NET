@@ -1,8 +1,10 @@
+using Harness.BusinessLogic.Costs;
+
 namespace Harness.BusinessLogic.Goals;
 
 public sealed record GoalCreateRequest(
     string WorkspaceId,
     string Title,
     string Objective,
-    int ReviewCycleLimit,
-    long? RemoteBudgetMicrousd);
+    ReviewCycleLimit ReviewCycleLimit,
+    MicroUsdAmount? RemoteBudget);

@@ -49,10 +49,12 @@ Exit evidence: accepted framework and architecture decision records.
   text. Git inspection supplies bounded status and diff evidence with branch and
   HEAD identity. Non-evaluating .NET inspection parses solution, project, reference,
   target-framework, language, and SDK-policy metadata into bounded records.
-- In progress: schema-versioned draft goals persist against the active workspace
+- Completed: schema-versioned draft goals persist against the active workspace
   with validated review-cycle and optional remote-cost caps. Versioned plan
-  proposals and atomic approval/denial transitions now exist below Presentation;
-  approval also persists a worktree-bound capability grant. The TUI workflow remains.
+  proposals and atomic approval/denial transitions are exposed through the TUI;
+  approval also persists a worktree-bound capability grant. Goal inspection shows
+  local-only authorization or the cap, reservations, reconciled spend, remainder,
+  overage, and per-provider/model request attribution.
 - Completed: a structured, cancellable Git adapter creates deterministic goal
   branches/worktrees under XDG state, records the base commit, retries idempotently,
   and preserves dirty original-worktree state. Approval provisions isolation first,

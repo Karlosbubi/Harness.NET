@@ -1,8 +1,10 @@
+using Harness.BusinessLogic.Goals;
+
 namespace Harness.BusinessLogic.Costs;
 
 public interface IRemoteCostService
 {
     ValueTask<RemoteCostReport?> GetAsync(
-        string goalId,
+        GoalId goalId,
         CancellationToken cancellationToken = default);
 }

@@ -1,5 +1,5 @@
 namespace Harness.BusinessLogic.Goals;
 
 public sealed record PlanProposalRequest(
-    string GoalId,
+    GoalId GoalId,
     string Content);

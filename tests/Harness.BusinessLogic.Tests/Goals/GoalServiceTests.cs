@@ -1,4 +1,5 @@
 using Harness.BusinessLogic.Goals;
+using Harness.BusinessLogic.Costs;
 using Harness.DataAccess.Goals;
 using Harness.DataAccess.Workspaces;
 using Harness.DataAccess.Worktrees;
@@ -17,11 +18,11 @@ public sealed class GoalServiceTests
             "workspace-id",
             " Add typed edits ",
             " Implement exact replacement edits. ",
-            3,
-            1_000_000));
+            new(3),
+            new(1_000_000)));
 
         Assert.Null(result.Error);
-        Assert.Equal("Draft", result.Goal?.State);
+        Assert.Equal(GoalState.Draft, result.Goal?.State);
         Assert.Equal("Add typed edits", result.Goal?.Title);
         Assert.Equal("Implement exact replacement edits.", result.Goal?.Objective);
         Assert.Equal("workspace-id", store.Created?.WorkspaceId);
@@ -37,8 +38,8 @@ public sealed class GoalServiceTests
             "workspace-id",
             "Goal",
             "Objective",
-            0,
-            -1));
+            new(0),
+            new(-1)));
 
         Assert.Equal("invalid_goal", result.ErrorCode);
         Assert.Null(store.Created);
@@ -54,7 +55,7 @@ public sealed class GoalServiceTests
             "another-workspace",
             "Goal",
             "Objective",
-            2,
+            new(2),
             null));
 
         Assert.Equal("workspace_not_active", result.ErrorCode);
@@ -68,12 +69,12 @@ public sealed class GoalServiceTests
         FakeGoalStore store = new(goal);
         GoalService service = CreateService(store, CreateWorkspace());
 
-        PlanResult result = await service.ProposePlanAsync(new(goal.Id, "1. Implement\n2. Test"));
+        PlanResult result = await service.ProposePlanAsync(new(new(goal.Id), "1. Implement\n2. Test"));
 
         Assert.Null(result.Error);
-        Assert.Equal("AwaitingPlanApproval", result.Goal?.State);
-        Assert.Equal("Pending", result.Plan?.State);
-        Assert.Equal(1, result.Plan?.Revision);
+        Assert.Equal(GoalState.AwaitingPlanApproval, result.Goal?.State);
+        Assert.Equal(PlanState.Pending, result.Plan?.State);
+        Assert.Equal(1, result.Plan?.Revision.Value);
     }
 
     [Fact]
@@ -82,15 +83,33 @@ public sealed class GoalServiceTests
         StoredGoal goal = CreateGoal("Draft");
         FakeGoalStore store = new(goal);
         GoalService service = CreateService(store, CreateWorkspace());
-        PlanResult proposal = await service.ProposePlanAsync(new(goal.Id, "Implement and test."));
+        PlanResult proposal = await service.ProposePlanAsync(new(new(goal.Id), "Implement and test."));
 
         PlanResult result = await service.DecidePlanAsync(new(
-            goal.Id,
+            new(goal.Id),
             proposal.Plan!.Id,
-            "Approve",
+            PlanDecision.Approve,
             Reason: null));
 
         Assert.Equal("workspace_not_trusted", result.ErrorCode);
+        Assert.Equal("Pending", store.CurrentPlan?.State);
+    }
+
+    [Fact]
+    public async Task Rejects_an_undefined_plan_decision()
+    {
+        StoredGoal goal = CreateGoal("Draft");
+        FakeGoalStore store = new(goal);
+        GoalService service = CreateService(store, CreateWorkspace(isTrusted: true));
+        PlanResult proposal = await service.ProposePlanAsync(new(new(goal.Id), "Implement and test."));
+
+        PlanResult result = await service.DecidePlanAsync(new(
+            new(goal.Id),
+            proposal.Plan!.Id,
+            (PlanDecision)int.MaxValue,
+            null));
+
+        Assert.Equal("invalid_decision", result.ErrorCode);
         Assert.Equal("Pending", store.CurrentPlan?.State);
     }
 
@@ -100,19 +119,19 @@ public sealed class GoalServiceTests
         StoredGoal goal = CreateGoal("Draft");
         FakeGoalStore store = new(goal);
         GoalService service = CreateService(store, CreateWorkspace(isTrusted: true));
-        PlanResult first = await service.ProposePlanAsync(new(goal.Id, "First plan"));
+        PlanResult first = await service.ProposePlanAsync(new(new(goal.Id), "First plan"));
 
         PlanResult denied = await service.DecidePlanAsync(new(
-            goal.Id,
+            new(goal.Id),
             first.Plan!.Id,
-            "Deny",
+            PlanDecision.Deny,
             "Add migration tests."));
-        PlanResult revised = await service.ProposePlanAsync(new(goal.Id, "Revised plan with migration tests"));
+        PlanResult revised = await service.ProposePlanAsync(new(new(goal.Id), "Revised plan with migration tests"));
 
-        Assert.Equal("Denied", denied.Approval?.Decision);
+        Assert.Equal(ApprovalDecision.Denied, denied.Approval?.Decision);
         Assert.Equal("Add migration tests.", denied.Approval?.Reason);
-        Assert.Equal(2, revised.Plan?.Revision);
-        Assert.Equal("Pending", revised.Plan?.State);
+        Assert.Equal(2, revised.Plan?.Revision.Value);
+        Assert.Equal(PlanState.Pending, revised.Plan?.State);
     }
 
     [Fact]
@@ -121,23 +140,23 @@ public sealed class GoalServiceTests
         StoredGoal goal = CreateGoal("Draft");
         FakeGoalStore store = new(goal);
         GoalService service = CreateService(store, CreateWorkspace(isTrusted: true));
-        PlanResult proposal = await service.ProposePlanAsync(new(goal.Id, "Implement and test."));
+        PlanResult proposal = await service.ProposePlanAsync(new(new(goal.Id), "Implement and test."));
 
         PlanResult approved = await service.DecidePlanAsync(new(
-            goal.Id,
+            new(goal.Id),
             proposal.Plan!.Id,
-            "Approve",
+            PlanDecision.Approve,
             "Proceed."));
         PlanResult duplicate = await service.DecidePlanAsync(new(
-            goal.Id,
+            new(goal.Id),
             proposal.Plan.Id,
-            "Approve",
+            PlanDecision.Approve,
             null));
 
-        Assert.Equal("Approved", approved.Goal?.State);
-        Assert.Equal("Approved", approved.Plan?.State);
-        Assert.Equal("Approved", approved.Approval?.Decision);
-        Assert.Equal("Active", approved.Worktree?.State);
+        Assert.Equal(GoalState.Approved, approved.Goal?.State);
+        Assert.Equal(PlanState.Approved, approved.Plan?.State);
+        Assert.Equal(ApprovalDecision.Approved, approved.Approval?.Decision);
+        Assert.Equal(GoalWorktreeState.Active, approved.Worktree?.State);
         Assert.Equal("/state/worktrees/goal-id", approved.Worktree?.Path);
         Assert.Equal("invalid_transition", duplicate.ErrorCode);
     }
@@ -156,12 +175,12 @@ public sealed class GoalServiceTests
             "worktree_create_failed",
             "Git failed."));
         GoalService service = CreateService(store, CreateWorkspace(isTrusted: true), manager);
-        PlanResult proposal = await service.ProposePlanAsync(new(goal.Id, "Implement and test."));
+        PlanResult proposal = await service.ProposePlanAsync(new(new(goal.Id), "Implement and test."));
 
         PlanResult result = await service.DecidePlanAsync(new(
-            goal.Id,
+            new(goal.Id),
             proposal.Plan!.Id,
-            "Approve",
+            PlanDecision.Approve,
             null));
 
         Assert.Equal("worktree_create_failed", result.ErrorCode);

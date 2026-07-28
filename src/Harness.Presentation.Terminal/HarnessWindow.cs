@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
+using Harness.BusinessLogic.Costs;
 using Harness.BusinessLogic.Dashboard;
 using Harness.BusinessLogic.Framework;
+using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Workflows;
 using Harness.BusinessLogic.Workspaces;
 using Terminal.Gui.App;
@@ -21,6 +23,8 @@ internal sealed class HarnessWindow : Window
     private readonly IDashboardService dashboardService;
     private readonly IWorkspaceService workspaceService;
     private readonly IFrameworkService frameworkService;
+    private readonly IGoalService goalService;
+    private readonly IRemoteCostService remoteCostService;
     private readonly IWalkingSkeletonWorkflowService workflowService;
     private readonly CancellationToken cancellationToken;
     private readonly FrameView workspaceFrame;
@@ -43,6 +47,7 @@ internal sealed class HarnessWindow : Window
     private readonly Label status;
     private string[] availableModelIds = [];
     private WorkspaceView? activeWorkspace;
+    private IReadOnlyList<GoalView> goals;
     private DashboardSnapshot latestSnapshot;
     private WorkflowSnapshot? latestWorkflow;
     private bool workflowCommandRunning;
@@ -52,9 +57,12 @@ internal sealed class HarnessWindow : Window
         IDashboardService dashboardService,
         IWorkspaceService workspaceService,
         IFrameworkService frameworkService,
+        IGoalService goalService,
+        IRemoteCostService remoteCostService,
         IWalkingSkeletonWorkflowService workflowService,
         DashboardSnapshot initialSnapshot,
         WorkspaceView? activeWorkspace,
+        IReadOnlyList<GoalView> goals,
         WorkflowSnapshot? initialWorkflow,
         CancellationToken cancellationToken)
     {
@@ -62,8 +70,11 @@ internal sealed class HarnessWindow : Window
         this.dashboardService = dashboardService;
         this.workspaceService = workspaceService;
         this.frameworkService = frameworkService;
+        this.goalService = goalService;
+        this.remoteCostService = remoteCostService;
         this.workflowService = workflowService;
         this.activeWorkspace = activeWorkspace;
+        this.goals = goals;
         latestSnapshot = initialSnapshot;
         latestWorkflow = initialWorkflow;
         this.cancellationToken = cancellationToken;
@@ -124,6 +135,10 @@ internal sealed class HarnessWindow : Window
             [
                 new MenuItem("_Inspect effective", Key.Empty, () => _ = InspectFrameworkAsync()),
                 new MenuItem("_Edit private overlay", Key.Empty, () => _ = EditPrivateOverlayAsync()),
+            ]),
+            new MenuBarItem("_Goals",
+            [
+                new MenuItem("_Manage goals and plans", Key.Empty, () => _ = ManageGoalsAsync()),
             ]),
             new MenuBarItem("W_orkflow",
             [
@@ -312,6 +327,8 @@ internal sealed class HarnessWindow : Window
             $"State   {(activeWorkspace.IsDirty ? "dirty" : "clean")}",
             $"Trust   {(activeWorkspace.IsTrusted ? "trusted" : "untrusted")}",
             string.Empty,
+            GoalTextFormatter.FormatCompact(goals),
+            string.Empty,
             snapshot.Goal);
         trustWorkspace.Enabled = !activeWorkspace.IsTrusted;
         trustWorkspaceMenuItem.Enabled = !activeWorkspace.IsTrusted;
@@ -447,6 +464,7 @@ internal sealed class HarnessWindow : Window
             if (dialog.Result is not null)
             {
                 activeWorkspace = dialog.Result;
+                goals = await goalService.ListAsync(activeWorkspace.Id, cancellationToken);
                 application.Invoke(() => RenderWorkspace(latestSnapshot));
             }
         }
@@ -456,6 +474,41 @@ internal sealed class HarnessWindow : Window
         catch (Exception exception)
         {
             application.Invoke(() => status.Text = $"Workspace command failed | {exception.Message}");
+        }
+    }
+
+    private async Task ManageGoalsAsync()
+    {
+        if (activeWorkspace is null)
+        {
+            MessageBox.Query(
+                application,
+                "Goals",
+                "Select a workspace before managing goals.",
+                "_Close");
+            return;
+        }
+
+        try
+        {
+            goals = await goalService.ListAsync(activeWorkspace.Id, cancellationToken);
+            using GoalDialog dialog = new(
+                application,
+                goalService,
+                remoteCostService,
+                activeWorkspace.Id,
+                goals,
+                cancellationToken);
+            await application.RunAsync(dialog, cancellationToken);
+            goals = dialog.Goals;
+            application.Invoke(() => RenderWorkspace(latestSnapshot));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception)
+        {
+            application.Invoke(() => status.Text = $"Goal command failed | {exception.Message}");
         }
     }
 

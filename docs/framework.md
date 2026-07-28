@@ -51,11 +51,17 @@ Data Access -> Business Logic -> Presentation
   remain visible and cancellable.
 - OpenRouter goals require an aggregate monetary cap. The connector reserves an
   estimated maximum before each request and reconciles it with returned usage cost.
+- Goals are local-only by default. Harness.NET never treats a configured credential
+  as spending authorization, never permits an uncapped remote request, and requires
+  an explicit per-goal cap before remote inference.
 - Remote-cost evidence distinguishes active reservations, reconciled charges, and
   released reservations. The goal cost report exposes the cap, reserved exposure,
   actual spend, remaining budget, and any overage, with provider, model, operation,
   and request attribution. Remote calls fail closed when pricing or authorization
   is unavailable; live provider checks must use the smallest practical bounded request.
+- Cost summaries remain inspectable from goal creation through completion. Monetary
+  inputs and reports use explicit micro-USD domain values internally and render USD
+  at presentation boundaries without hiding sub-cent reservations.
 
 ## Approval and trust policy
 
