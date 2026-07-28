@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using Harness.BusinessLogic.Agents;
+using Harness.BusinessLogic.Acceptance;
 using Harness.BusinessLogic.Costs;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Workflows;
@@ -17,6 +18,7 @@ internal sealed class GoalDialog : Dialog
     private readonly IRemoteCostService remoteCostService;
     private readonly IGoalModelService modelService;
     private readonly IGoalWorkflowService workflowService;
+    private readonly IGoalAcceptanceService acceptanceService;
     private readonly string workspaceId;
     private readonly CancellationToken cancellationToken;
     private readonly ListView goalList;
@@ -29,6 +31,7 @@ internal sealed class GoalDialog : Dialog
     private readonly Button startRun;
     private readonly Button resumeRun;
     private readonly Button inspectRun;
+    private readonly Button manageCommit;
     private readonly Label status;
     private IReadOnlyList<GoalView> goals;
 
@@ -38,6 +41,7 @@ internal sealed class GoalDialog : Dialog
         IRemoteCostService remoteCostService,
         IGoalModelService modelService,
         IGoalWorkflowService workflowService,
+        IGoalAcceptanceService acceptanceService,
         string workspaceId,
         IReadOnlyList<GoalView> goals,
         CancellationToken cancellationToken)
@@ -47,6 +51,7 @@ internal sealed class GoalDialog : Dialog
         this.remoteCostService = remoteCostService;
         this.modelService = modelService;
         this.workflowService = workflowService;
+        this.acceptanceService = acceptanceService;
         this.workspaceId = workspaceId;
         this.goals = goals;
         this.cancellationToken = cancellationToken;
@@ -101,6 +106,11 @@ internal sealed class GoalDialog : Dialog
             Pos.Right(resumeRun) + 1,
             Pos.AnchorEnd(4),
             () => InspectRunAsync());
+        manageCommit = CommandButton(
+            "_Commit",
+            Pos.Right(inspectRun) + 1,
+            Pos.AnchorEnd(4),
+            () => ManageCommitAsync());
         goalList.ValueChanged += (_, _) => SetCommandsEnabled(enabled: true);
         SetGoalSource();
         status = new()
@@ -122,6 +132,7 @@ internal sealed class GoalDialog : Dialog
             startRun,
             resumeRun,
             inspectRun,
+            manageCommit,
             status);
         AddButton(new Button { Title = "_Close" });
     }
@@ -359,6 +370,198 @@ internal sealed class GoalDialog : Dialog
         await ShowRunAsync(snapshot);
     }
 
+    private async Task ManageCommitAsync()
+    {
+        GoalView? goal = SelectedGoal();
+        if (goal is null)
+        {
+            status.Text = "Select a goal.";
+            return;
+        }
+
+        GoalWorkflowSnapshot? workflow = await workflowService.GetLatestAsync(
+            goal.Id, cancellationToken);
+        if (workflow is null)
+        {
+            status.Text = "The selected goal has no production run.";
+            return;
+        }
+
+        GoalCommitApprovalView? approval = await acceptanceService.GetAsync(
+            goal.Id, workflow.Id, cancellationToken);
+        if (approval is null)
+        {
+            GoalCommitPreviewResult previewResult = await acceptanceService.PreviewAsync(
+                goal.Id, cancellationToken);
+            if (previewResult.Preview is null)
+            {
+                status.Text = previewResult.Error ?? "The goal is not ready for commit approval.";
+                return;
+            }
+
+            GoalCommitApprovalRequest? request = await CollectCommitRequestAsync(
+                previewResult.Preview);
+            if (request is null)
+            {
+                return;
+            }
+
+            GoalCommitApprovalResult requested = await acceptanceService.RequestAsync(
+                request, cancellationToken);
+            status.Text = requested.Error ??
+                "Exact commit request recorded as Pending; open Commit again to approve or deny.";
+            return;
+        }
+
+        if (approval.State is GoalCommitApprovalState.Committed or
+            GoalCommitApprovalState.Denied)
+        {
+            using Dialog detail = ReadOnlyDialog(
+                $"Commit | {approval.State}", GoalCommitTextFormatter.Format(approval));
+            await application.RunAsync(detail, cancellationToken);
+            return;
+        }
+
+        GoalCommitDecision? decision;
+        if (approval.State is GoalCommitApprovalState.Pending)
+        {
+            decision = await CollectCommitDecisionAsync(approval);
+        }
+        else
+        {
+            int? choice = MessageBox.Query(
+                application,
+                "Resume approved commit",
+                $"Revalidate and commit the approved fingerprint?\n" +
+                $"Branch: {approval.Branch.Value}\nDiff SHA-256: {approval.DiffHash.Value}",
+                "_Resume commit",
+                "_Cancel");
+            decision = choice == 0 ? GoalCommitDecision.Approve : null;
+        }
+
+        if (decision is null)
+        {
+            return;
+        }
+
+        if (decision is GoalCommitDecision.Deny)
+        {
+            string? reason = await CollectMultilineAsync(
+                "Deny exact commit", "Required reason", requireValue: true);
+            if (reason is null)
+            {
+                return;
+            }
+
+            GoalCommitApprovalResult denied = await acceptanceService.DecideAsync(new(
+                approval.Id, GoalCommitDecision.Deny, new(reason)), cancellationToken);
+            status.Text = denied.Error ?? "Commit denied; no Git commit was created.";
+            return;
+        }
+
+        GoalCommitApprovalResult committed = await acceptanceService.DecideAsync(new(
+            approval.Id, GoalCommitDecision.Approve, Reason: null), cancellationToken);
+        status.Text = committed.Error ??
+            $"Committed exact approved diff | {committed.Approval?.CommitSha?.Value}";
+    }
+
+    private async Task<GoalCommitDecision?> CollectCommitDecisionAsync(
+        GoalCommitApprovalView approval)
+    {
+        using Dialog dialog = ReadOnlyDialog(
+            "Decide exact commit request", GoalCommitTextFormatter.Format(approval));
+        GoalCommitDecision? result = null;
+        Button approve = new() { Title = "_Approve exact diff" };
+        approve.Accepting += (_, args) =>
+        {
+            args.Handled = true;
+            result = GoalCommitDecision.Approve;
+            dialog.RequestStop();
+        };
+        Button deny = new() { Title = "_Deny" };
+        deny.Accepting += (_, args) =>
+        {
+            args.Handled = true;
+            result = GoalCommitDecision.Deny;
+            dialog.RequestStop();
+        };
+        dialog.AddButton(approve);
+        dialog.AddButton(deny);
+        await application.RunAsync(dialog, cancellationToken);
+        return result;
+    }
+
+    private async Task<GoalCommitApprovalRequest?> CollectCommitRequestAsync(
+        GoalCommitPreview preview)
+    {
+        using Dialog dialog = new()
+        {
+            Title = "Request exact commit approval",
+            Width = Dim.Percent(90),
+            Height = Dim.Percent(90),
+        };
+        dialog.Add(new Label
+        {
+            X = 0,
+            Y = 0,
+            Width = Dim.Fill(),
+            Text = $"Branch: {preview.Branch.Value} | files: {preview.ChangedFileCount.Value}\n" +
+                   $"HEAD: {preview.Head.Value}\nDiff SHA-256: {preview.DiffHash.Value}",
+        });
+        Editor diff = new()
+        {
+            Text = preview.Diff.Value,
+            ReadOnly = true,
+            X = 0,
+            Y = 3,
+            Width = Dim.Fill(),
+            Height = Dim.Fill(10),
+            ViewportSettings = ViewportSettingsFlags.HasVerticalScrollBar |
+                               ViewportSettingsFlags.HasHorizontalScrollBar,
+        };
+        Pos fieldsY = Pos.AnchorEnd(9);
+        TextField message = Field(dialog, "Commit message", fieldsY, string.Empty);
+        TextField authorName = Field(dialog, "Author name", Pos.AnchorEnd(7), string.Empty);
+        TextField authorEmail = Field(dialog, "Author email", Pos.AnchorEnd(5), string.Empty);
+        Label validation = new()
+        {
+            X = 0,
+            Y = Pos.AnchorEnd(3),
+            Width = Dim.Fill(),
+        };
+        GoalCommitApprovalRequest? result = null;
+        Button request = new() { Title = "_Record pending request" };
+        request.Accepting += (_, args) =>
+        {
+            args.Handled = true;
+            string messageValue = message.Text?.ToString() ?? string.Empty;
+            string nameValue = authorName.Text?.ToString() ?? string.Empty;
+            string emailValue = authorEmail.Text?.ToString() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(messageValue) ||
+                string.IsNullOrWhiteSpace(nameValue) ||
+                string.IsNullOrWhiteSpace(emailValue))
+            {
+                validation.Text = "Commit message, author name, and author email are required.";
+                return;
+            }
+
+            result = new(
+                preview.GoalId,
+                preview.RunId,
+                preview.Head,
+                preview.DiffHash,
+                new(messageValue),
+                new(nameValue),
+                new(emailValue));
+            dialog.RequestStop();
+        };
+        dialog.Add(diff, validation);
+        dialog.AddButton(request);
+        dialog.AddButton(new Button { Title = "_Cancel" });
+        await application.RunAsync(dialog, cancellationToken);
+        return result;
+    }
+
     private async Task ShowRunAsync(GoalWorkflowSnapshot snapshot)
     {
         using Dialog dialog = ReadOnlyDialog(
@@ -594,9 +797,10 @@ internal sealed class GoalDialog : Dialog
         startRun.Enabled = enabled && state is GoalState.Draft or GoalState.NeedsPlanRevision;
         resumeRun.Enabled = enabled && state is not null;
         inspectRun.Enabled = enabled && state is not null;
+        manageCommit.Enabled = enabled && state is GoalState.Approved;
     }
 
-    private static TextField Field(Dialog dialog, string label, int y, string value)
+    private static TextField Field(Dialog dialog, string label, Pos y, string value)
     {
         dialog.Add(new Label { Text = label, X = 0, Y = y });
         TextField field = new()

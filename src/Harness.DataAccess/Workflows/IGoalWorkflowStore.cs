@@ -16,5 +16,6 @@ public interface IGoalWorkflowStore
         GoalWorkflowCheckpointKind expectedCheckpoint,
         GoalWorkflowRunState expectedState,
         GoalWorkflowRunState nextState,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        GoalWorkflowReviewCycle? nextReviewCycle = null);
 }

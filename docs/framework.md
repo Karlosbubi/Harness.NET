@@ -76,7 +76,9 @@ Data Access -> Business Logic -> Presentation
   Remote planning authorization is separate from plan approval and grants no
   repository mutation capability.
 - Accepted work is committed to the isolated goal branch after approval. Harness.NET
-  does not merge, rebase, or cherry-pick it automatically.
+  records the complete diff and its SHA-256 as a pending request, then requires a
+  separate explicit approve/deny action. It revalidates branch, HEAD, and diff before
+  committing and does not merge, rebase, or cherry-pick automatically.
 
 ## Framework representation
 

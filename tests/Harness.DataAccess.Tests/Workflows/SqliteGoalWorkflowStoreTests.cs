@@ -18,7 +18,7 @@ public sealed class SqliteGoalWorkflowStoreTests : IDisposable
         GoalWorkflowRunId runId = new(Guid.NewGuid().ToString("N"));
         DateTimeOffset now = DateTimeOffset.Parse("2026-07-28T18:00:00Z");
         await store.StartAsync(
-            new(runId, new(goalId), GoalWorkflowRunState.Running, 0, now, now),
+            new(runId, new(goalId), GoalWorkflowRunState.Running, new(0), now, now),
             Checkpoint(runId, 1, GoalWorkflowCheckpointKind.Started, now));
         await store.AppendAsync(
             Checkpoint(runId, 0, GoalWorkflowCheckpointKind.LeadCallStarted,
@@ -55,14 +55,62 @@ public sealed class SqliteGoalWorkflowStoreTests : IDisposable
         DateTimeOffset now = DateTimeOffset.UtcNow;
         GoalWorkflowRunId first = new(Guid.NewGuid().ToString("N"));
         await store.StartAsync(
-            new(first, new(goalId), GoalWorkflowRunState.Running, 0, now, now),
+            new(first, new(goalId), GoalWorkflowRunState.Running, new(0), now, now),
             Checkpoint(first, 1, GoalWorkflowCheckpointKind.Started, now));
         GoalWorkflowRunId second = new(Guid.NewGuid().ToString("N"));
 
         await Assert.ThrowsAsync<SqliteException>(async () =>
             await store.StartAsync(
-                new(second, new(goalId), GoalWorkflowRunState.Running, 0, now, now),
+                new(second, new(goalId), GoalWorkflowRunState.Running, new(0), now, now),
                 Checkpoint(second, 1, GoalWorkflowCheckpointKind.Started, now)));
+    }
+
+    [Fact]
+    public async Task Review_completion_atomically_advances_the_semantic_cycle()
+    {
+        (SqliteGoalWorkflowStore store, string goalId) = await CreateStoreAsync();
+        GoalWorkflowRunId runId = new(Guid.NewGuid().ToString("N"));
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-28T18:00:00Z");
+        await store.StartAsync(
+            new(runId, new(goalId), GoalWorkflowRunState.Running, new(0), now, now),
+            Checkpoint(runId, 1, GoalWorkflowCheckpointKind.Started, now));
+        await store.AppendAsync(Checkpoint(runId, 0,
+                GoalWorkflowCheckpointKind.LeadCallStarted, now.AddSeconds(1)),
+            GoalWorkflowCheckpointKind.Started,
+            GoalWorkflowRunState.Running, GoalWorkflowRunState.Running);
+        await store.AppendAsync(Checkpoint(runId, 0,
+                GoalWorkflowCheckpointKind.PlanProposed, now.AddSeconds(2)),
+            GoalWorkflowCheckpointKind.LeadCallStarted,
+            GoalWorkflowRunState.Running, GoalWorkflowRunState.AwaitingPlanApproval);
+        await store.AppendAsync(Checkpoint(runId, 0,
+                GoalWorkflowCheckpointKind.PlanApproved, now.AddSeconds(3)),
+            GoalWorkflowCheckpointKind.PlanProposed,
+            GoalWorkflowRunState.AwaitingPlanApproval, GoalWorkflowRunState.Running);
+        await store.AppendAsync(Checkpoint(runId, 0,
+                GoalWorkflowCheckpointKind.ImplementerCallStarted, now.AddSeconds(4)),
+            GoalWorkflowCheckpointKind.PlanApproved,
+            GoalWorkflowRunState.Running, GoalWorkflowRunState.Running);
+        await store.AppendAsync(Checkpoint(runId, 0,
+                GoalWorkflowCheckpointKind.ImplementationProduced, now.AddSeconds(5)),
+            GoalWorkflowCheckpointKind.ImplementerCallStarted,
+            GoalWorkflowRunState.Running, GoalWorkflowRunState.Running);
+        await store.AppendAsync(Checkpoint(runId, 0,
+                GoalWorkflowCheckpointKind.ReviewerCallStarted, now.AddSeconds(6)),
+            GoalWorkflowCheckpointKind.ImplementationProduced,
+            GoalWorkflowRunState.Running, GoalWorkflowRunState.Running);
+
+        StoredGoalWorkflowSnapshot reviewed = await store.AppendAsync(
+            Checkpoint(runId, 0, GoalWorkflowCheckpointKind.ReviewCompleted,
+                now.AddSeconds(7)),
+            GoalWorkflowCheckpointKind.ReviewerCallStarted,
+            GoalWorkflowRunState.Running,
+            GoalWorkflowRunState.Running,
+            nextReviewCycle: new(1));
+
+        Assert.Equal(1, reviewed.Run.ReviewCycle.Value);
+        StoredGoalWorkflowSnapshot reloaded = Assert.IsType<StoredGoalWorkflowSnapshot>(
+            await store.GetLatestAsync(new(goalId)));
+        Assert.Equal(1, reloaded.Run.ReviewCycle.Value);
     }
 
     private async ValueTask<(SqliteGoalWorkflowStore Store, string GoalId)> CreateStoreAsync()

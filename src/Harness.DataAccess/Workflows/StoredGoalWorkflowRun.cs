@@ -4,6 +4,6 @@ public sealed record StoredGoalWorkflowRun(
     GoalWorkflowRunId Id,
     GoalWorkflowGoalId GoalId,
     GoalWorkflowRunState State,
-    int ReviewCycle,
+    GoalWorkflowReviewCycle ReviewCycle,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);

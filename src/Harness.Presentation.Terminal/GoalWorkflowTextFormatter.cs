@@ -9,6 +9,7 @@ internal static class GoalWorkflowTextFormatter
         $"Run:   {snapshot.Id.Value}",
         $"Goal:  {snapshot.GoalId.Value}",
         $"State: {snapshot.State}",
+        $"Completed review cycles: {snapshot.ReviewCycle.Value}",
         snapshot.RequiresUserDirection ? "Action: user direction required" : string.Empty,
         string.Empty,
         "ACTIVITY",

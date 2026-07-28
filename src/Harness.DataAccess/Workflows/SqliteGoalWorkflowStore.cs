@@ -49,7 +49,7 @@ internal sealed class SqliteGoalWorkflowStore(IApplicationPaths applicationPaths
             Id = run.Id.Value,
             GoalId = run.GoalId.Value,
             State = run.State.ToString(),
-            run.ReviewCycle,
+            ReviewCycle = run.ReviewCycle.Value,
             CreatedAt = Format(run.CreatedAt),
             UpdatedAt = Format(run.UpdatedAt),
         }, transaction, cancellationToken: cancellationToken));
@@ -63,11 +63,13 @@ internal sealed class SqliteGoalWorkflowStore(IApplicationPaths applicationPaths
         GoalWorkflowCheckpointKind expectedCheckpoint,
         GoalWorkflowRunState expectedState,
         GoalWorkflowRunState nextState,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        GoalWorkflowReviewCycle? nextReviewCycle = null)
     {
         ValidateCheckpoint(checkpoint, allowUnsequenced: true);
         if (!Enum.IsDefined(expectedCheckpoint) || !Enum.IsDefined(expectedState) ||
             !Enum.IsDefined(nextState) ||
+            (nextReviewCycle is not null && nextReviewCycle.Value < 1) ||
             !IsValidTransition(expectedCheckpoint, checkpoint.Kind, expectedState, nextState))
         {
             throw new ArgumentException("The goal workflow transition is invalid.");
@@ -79,9 +81,12 @@ internal sealed class SqliteGoalWorkflowStore(IApplicationPaths applicationPaths
         GoalWorkflowRunRow? run = await connection.QuerySingleOrDefaultAsync<GoalWorkflowRunRow>(
             new CommandDefinition("""
                 UPDATE goal_workflow_runs
-                SET state = @nextState, updated_at = @updatedAt
+                SET state = @nextState,
+                    review_cycle = COALESCE(@nextReviewCycle, review_cycle),
+                    updated_at = @updatedAt
                 WHERE id = @runId
                   AND state = @expectedState
+                  AND (@nextReviewCycle IS NULL OR @nextReviewCycle = review_cycle + 1)
                   AND (SELECT kind FROM goal_workflow_checkpoints
                        WHERE run_id = @runId ORDER BY sequence DESC LIMIT 1) = @expectedCheckpoint
                 RETURNING id, goal_id AS GoalId, state, review_cycle AS ReviewCycle,
@@ -92,6 +97,7 @@ internal sealed class SqliteGoalWorkflowStore(IApplicationPaths applicationPaths
                 expectedState = expectedState.ToString(),
                 expectedCheckpoint = expectedCheckpoint.ToString(),
                 nextState = nextState.ToString(),
+                nextReviewCycle = nextReviewCycle?.Value,
                 updatedAt = Format(checkpoint.CreatedAt),
             }, transaction, cancellationToken: cancellationToken));
         if (run is null)
@@ -146,11 +152,19 @@ internal sealed class SqliteGoalWorkflowStore(IApplicationPaths applicationPaths
         (GoalWorkflowCheckpointKind.ReviewerCallStarted,
             GoalWorkflowCheckpointKind.ReviewCompleted,
             GoalWorkflowRunState.Running,
+            GoalWorkflowRunState.Running) => true,
+        (GoalWorkflowCheckpointKind.ReviewerCallStarted,
+            GoalWorkflowCheckpointKind.ReviewCompleted,
+            GoalWorkflowRunState.Running,
             GoalWorkflowRunState.AwaitingAcceptance) => true,
         (GoalWorkflowCheckpointKind.ReviewerCallStarted,
             GoalWorkflowCheckpointKind.ReviewCompleted,
             GoalWorkflowRunState.Running,
             GoalWorkflowRunState.NeedsDirection) => true,
+        (GoalWorkflowCheckpointKind.ReviewCompleted,
+            GoalWorkflowCheckpointKind.ImplementerCallStarted,
+            GoalWorkflowRunState.Running,
+            GoalWorkflowRunState.Running) => true,
         (GoalWorkflowCheckpointKind.ReviewCompleted,
             GoalWorkflowCheckpointKind.Accepted,
             GoalWorkflowRunState.AwaitingAcceptance,
@@ -228,7 +242,8 @@ internal sealed class SqliteGoalWorkflowStore(IApplicationPaths applicationPaths
         ValidateGoalId(run.GoalId);
         if (run.Id is null || !Guid.TryParseExact(run.Id.Value, "N", out _) ||
             !Enum.IsDefined(run.State) || run.State is not GoalWorkflowRunState.Running ||
-            run.ReviewCycle < 0 || run.UpdatedAt < run.CreatedAt)
+            run.ReviewCycle is null || run.ReviewCycle.Value < 0 ||
+            run.UpdatedAt < run.CreatedAt)
         {
             throw new ArgumentException("The goal workflow run is invalid.");
         }
@@ -283,7 +298,7 @@ internal sealed class SqliteGoalWorkflowStore(IApplicationPaths applicationPaths
         public string UpdatedAt { get; init; } = string.Empty;
 
         internal StoredGoalWorkflowRun ToRecord() => new(
-            new(Id), new(GoalId), Enum.Parse<GoalWorkflowRunState>(State), ReviewCycle,
+            new(Id), new(GoalId), Enum.Parse<GoalWorkflowRunState>(State), new(ReviewCycle),
             DateTimeOffset.Parse(CreatedAt, CultureInfo.InvariantCulture),
             DateTimeOffset.Parse(UpdatedAt, CultureInfo.InvariantCulture));
     }

@@ -40,6 +40,7 @@ public sealed class GoalWorkflowServiceTests
 
         GoalWorkflowSnapshot completedReview = resumed[^1];
         Assert.Equal(GoalWorkflowState.AwaitingAcceptance, completedReview.State);
+        Assert.Equal(1, completedReview.ReviewCycle.Value);
         Assert.Equal(ViewKind.ReviewCompleted,
             completedReview.Activities[^1].Kind);
         Assert.False(completedReview.RequiresUserDirection);
@@ -59,7 +60,7 @@ public sealed class GoalWorkflowServiceTests
         StoredRunId runId = new(Guid.NewGuid().ToString("N"));
         DateTimeOffset now = DateTimeOffset.UtcNow;
         await store.StartAsync(
-            new(runId, new(goals.Goal.Id.Value), StoredState.Running, 0, now, now),
+            new(runId, new(goals.Goal.Id.Value), StoredState.Running, new(0), now, now),
             Checkpoint(runId, 1, StoredKind.Started, now));
         await store.AppendAsync(
             Checkpoint(runId, 0, StoredKind.LeadCallStarted, now),
@@ -96,7 +97,7 @@ public sealed class GoalWorkflowServiceTests
         StoredRunId runId = new(Guid.NewGuid().ToString("N"));
         DateTimeOffset now = DateTimeOffset.UtcNow;
         await store.StartAsync(
-            new(runId, new(goals.Goal.Id.Value), StoredState.Running, 0, now, now),
+            new(runId, new(goals.Goal.Id.Value), StoredState.Running, new(0), now, now),
             Checkpoint(runId, 1, StoredKind.Started, now));
         await store.AppendAsync(
             Checkpoint(runId, 0, StoredKind.LeadCallStarted, now),
@@ -132,6 +133,41 @@ public sealed class GoalWorkflowServiceTests
 
         Assert.Equal(GoalWorkflowState.NeedsDirection, result.State);
         Assert.True(result.RequiresUserDirection);
+        Assert.Equal(2, result.ReviewCycle.Value);
+        Assert.Equal(
+            [AgentRole.Lead, AgentRole.Implementer, AgentRole.Reviewer,
+                AgentRole.Implementer, AgentRole.Reviewer],
+            agents.Requests.Select(request => request.Role));
+        Assert.Contains("configured 2-cycle limit", result.Activities[^1].Summary.Value,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Reviewer_findings_drive_a_bounded_correction_then_re_review()
+    {
+        FakeGoalService goals = new();
+        FakeAgentRunner agents = new();
+        agents.ReviewerOutputs.Enqueue(
+            "{\"decision\":\"revise\",\"summary\":\"Add the missing boundary test.\"}");
+        agents.ReviewerOutputs.Enqueue(
+            "{\"decision\":\"accept\",\"summary\":\"Boundary test is now durable.\"}");
+        InMemoryGoalWorkflowStore store = new();
+        GoalWorkflowService service = CreateService(store, goals, agents);
+        await CollectAsync(service.StartPlanningAsync(new(goals.Goal.Id, new(512))));
+        goals.Approve();
+
+        GoalWorkflowSnapshot result = (await CollectAsync(service.ResumeAsync(new(
+            goals.Goal.Id, new(512), new(512)))))[^1];
+
+        Assert.Equal(GoalWorkflowState.AwaitingAcceptance, result.State);
+        Assert.Equal(2, result.ReviewCycle.Value);
+        Assert.Equal(
+            [AgentRole.Lead, AgentRole.Implementer, AgentRole.Reviewer,
+                AgentRole.Implementer, AgentRole.Reviewer],
+            agents.Requests.Select(request => request.Role));
+        AgentRunRequest correction = agents.Requests[^2];
+        Assert.Contains("Add the missing boundary test", correction.Task.Value,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -216,6 +252,7 @@ public sealed class GoalWorkflowServiceTests
         internal List<AgentRunRequest> Requests { get; } = [];
         internal string ReviewerOutput { get; init; } =
             "{\"decision\":\"accept\",\"summary\":\"Diff and evidence are sound.\"}";
+        internal Queue<string> ReviewerOutputs { get; } = new();
         internal AgentRole? CancelRole { get; init; }
         internal CancellationTokenSource? Cancellation { get; init; }
 
@@ -234,7 +271,9 @@ public sealed class GoalWorkflowServiceTests
             {
                 AgentRole.Lead => "1. Inspect. 2. Implement. 3. Build and test. 4. Review.",
                 AgentRole.Implementer => "Implemented and verified through typed tools.",
-                AgentRole.Reviewer => ReviewerOutput,
+                AgentRole.Reviewer => ReviewerOutputs.TryDequeue(out string? reviewerOutput)
+                    ? reviewerOutput
+                    : ReviewerOutput,
                 _ => throw new ArgumentOutOfRangeException(nameof(request)),
             };
             return ValueTask.FromResult(new AgentRunResult(
@@ -325,7 +364,8 @@ public sealed class GoalWorkflowServiceTests
             StoredKind expectedCheckpoint,
             StoredState expectedState,
             StoredState nextState,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            GoalWorkflowReviewCycle? nextReviewCycle = null)
         {
             if (Snapshot is null || Snapshot.Run.State != expectedState ||
                 Snapshot.Checkpoints[^1].Kind != expectedCheckpoint)
@@ -338,7 +378,12 @@ public sealed class GoalWorkflowServiceTests
                 Sequence = Snapshot.Checkpoints.Count + 1,
             };
             Snapshot = new(
-                Snapshot.Run with { State = nextState, UpdatedAt = checkpoint.CreatedAt },
+                Snapshot.Run with
+                {
+                    State = nextState,
+                    ReviewCycle = nextReviewCycle ?? Snapshot.Run.ReviewCycle,
+                    UpdatedAt = checkpoint.CreatedAt,
+                },
                 [.. Snapshot.Checkpoints, appended]);
             return ValueTask.FromResult(Snapshot);
         }

@@ -1,4 +1,5 @@
 using Harness.BusinessLogic.Approvals;
+using Harness.BusinessLogic.Acceptance;
 using Harness.BusinessLogic.Agents;
 using Harness.BusinessLogic.Costs;
 using Harness.BusinessLogic.Dashboard;
@@ -12,6 +13,7 @@ using Harness.BusinessLogic.Workspaces;
 using Harness.BusinessLogic.Workflows;
 using Harness.DataAccess.Approvals;
 using Harness.DataAccess.Configuration;
+using Harness.DataAccess.Commits;
 using Harness.DataAccess.Conversations;
 using Harness.DataAccess.Evidence;
 using Harness.DataAccess.Execution;
@@ -90,8 +92,11 @@ builder.Services.AddSingleton(new FrameworkOptions(configuration.Framework.Rules
 builder.Services.AddSingleton<IFrameworkService, FrameworkService>();
 builder.Services.AddSingleton<IWorkflowCheckpointStore, SqliteWorkflowCheckpointStore>();
 builder.Services.AddSingleton<IGoalWorkflowStore, SqliteGoalWorkflowStore>();
+builder.Services.AddSingleton<IGoalCommitApprovalStore, SqliteGoalCommitApprovalStore>();
+builder.Services.AddSingleton<IGoalCommitter, LibGitGoalCommitter>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IWalkingSkeletonWorkflowService, WalkingSkeletonWorkflowService>();
+builder.Services.AddSingleton<IGoalAcceptanceService, GoalAcceptanceService>();
 foreach (ModelProviderConfiguration provider in configuration.Providers.Values)
 {
     builder.Services.AddKeyedSingleton<IModelProvider>(

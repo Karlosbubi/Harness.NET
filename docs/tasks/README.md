@@ -50,9 +50,9 @@ but the end-user workflow is not complete.
 | 018 | Done | Let agents implement and verify | - | Approved runs can use typed edit/build/test tools with cancellation, output limits, correlation, and separate restore/network approval. |
 | 019 | Done | Isolate work with Git | - | Each approved goal uses a validated branch/worktree, preserves dirty user state, and never merges/rebases automatically. |
 | 020 | Done | Create goals and approve plans | - | Goals, caps, plans, revisions, approvals, and denials persist and every consequential transition is validated. |
-| 021 | Partial | Coordinate lead, implementer, and reviewer agents | The production role sequence and scoped tools run end to end, but durable bounded subtask delegation and revision-cycle iteration remain. | Role prompts and tool scopes are wrapped behind Business Logic interfaces and a lead can delegate bounded tasks. |
+| 021 | Partial | Coordinate lead, implementer, and reviewer agents | The production role sequence, scoped tools, and bounded revision-cycle iteration run end to end; durable lead-authored subtask delegation remains. | Role prompts and tool scopes are wrapped behind Business Logic interfaces and a lead can delegate bounded tasks. |
 | 022 | Done | Resume interrupted work safely | - | Runs checkpoint at safe boundaries, resume completed steps, and mark uncertain calls without automatic replay. |
-| 023 | Partial | Review evidence and accept results | The independent Reviewer inspects diff/evidence and returns a validated closed decision, but automated revision cycles and explicit commit approval remain. | Diff, tests, tool evidence, review findings, cycle caps, and explicit commit approval work end to end. |
+| 023 | Done | Review evidence and accept results | - | Diff, tests, tool evidence, review findings, cycle caps, and explicit commit approval work end to end. |
 | 024 | Partial | Retrieve relevant repository context | A presentation-neutral service now filters and chunks tracked text, atomically rebuilds compatible SQLite vector partitions, and retrieves matches; production context assembly and workflow/TUI controls remain. | Eligible Git-tracked text is chunked, partitioned by embedding configuration, rebuilt, searched, and filtered by policy. |
 | 025 | Done | Use remote models under a cost cap | - | Remote use requires approval, streams through the provider boundary, and enforces estimated plus reconciled per-goal caps. |
 | 026 | Partial | Operate and distribute v1.0 reliably | A verified self-contained walking-skeleton package exists, but upgrades, backup/export, hardening, and production recovery acceptance remain. | A self-contained Linux x64 release passes clean-install, migration, outage, cancellation, recovery, and representative-repository acceptance tests. |
@@ -136,7 +136,17 @@ Harness.NET state auditable.
   is reconciled without another Lead call, a completed implementation resumes at the
   Reviewer boundary, and uncertain role calls become user-direction checkpoints
   without replay. Reviewer output is strict JSON with a closed accept/revise decision;
-  malformed or revise results cannot enter acceptance.
+  malformed results cannot enter acceptance. Revision findings drive a bounded
+  Implementer correction and independent re-review; the durable semantic cycle count
+  stops the loop at the goal limit and requires user direction.
+- Task 023 independently reviews diff and tool evidence before acceptance. Schema 16
+  persists a separate exact commit request and closed Pending/Approved/Denied/Committed
+  states. The request fingerprints goal, workflow run, branch, expected HEAD, complete
+  diff SHA-256, message, and author. The TUI displays the full fingerprint and diff,
+  records it as Pending, then requires a distinct approve/deny action. The Git adapter
+  revalidates the exact worktree and fingerprint, commits only to the isolated branch,
+  reconciles an interrupted successful commit, and never merges, rebases, cherry-picks,
+  or performs network access.
 - Task 011 persists semantic workflow runs and ordered checkpoints in schema 11.
   Deterministic store and orchestration tests prove plan-time pause, process-restart
   resume, recovery after interruption at an already persisted implementation

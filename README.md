@@ -41,14 +41,21 @@ execution now runs lead, implementer, and reviewer prompts through Microsoft Age
 Framework behind semantic Business Logic contracts, with each role using its
 configured local default or goal-specific selection. Remote role execution carries
 the goal identity, strict privacy policy, and a required output-token ceiling into
-the cost-controlled provider boundary. Role delegation and tool scopes are not
-coordinated yet.
+the cost-controlled provider boundary. The production coordinator durably runs Lead
+planning, approved Implementer work, and independent Reviewer decisions with closed
+role tool scopes. Reviewer findings drive bounded correction passes until acceptance
+or the configured cycle limit. The TUI shows role routes, output ceilings, aggregate
+cap, active reservations, reconciled spend, and remaining budget before model calls.
 Restore is available only after a durable, correlation- and target-bound user
 approval. Approved edit/build/test/restore calls retain durable request/result
 evidence for later workflow and GUI presentation. A deterministic walking-skeleton
 workflow can now be started, paused, resumed after restart, and inspected through
 the TUI using the same presentation-neutral checkpoint contracts intended for a
 future Avalonia adapter.
+Accepted production work has a separate two-step commit flow: Harness.NET records a
+pending request containing the exact branch, HEAD, complete diff hash, message, and
+author, then requires an explicit approve/deny action before a local commit. It never
+integrates the isolated branch automatically.
 
 Start with:
 

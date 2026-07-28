@@ -12,6 +12,7 @@ public sealed class GoalWorkflowTextFormatterTests
             new("run-1"),
             new GoalId("goal-1"),
             GoalWorkflowState.NeedsDirection,
+            new(2),
             [new(1, GoalWorkflowCheckpointKind.UserDirectionRequired,
                 WorkflowActor.System, new("Uncertain call was not replayed."))],
             [new(1, new("Recovery notice"), new("Inspect cost evidence."))],

@@ -52,7 +52,7 @@ internal sealed class GoalWorkflowService(
         DateTimeOffset now = timeProvider.GetUtcNow();
         StoredRunId runId = new(Guid.NewGuid().ToString("N"));
         StoredGoalWorkflowSnapshot snapshot = await store.StartAsync(
-            new(runId, new(goal.Id.Value), StoredState.Running, ReviewCycle: 0, now, now),
+            new(runId, new(goal.Id.Value), StoredState.Running, new(0), now, now),
             Checkpoint(runId, StoredKind.Started, StoredActor.System,
                 "Goal workflow started.", null, null, now) with { Sequence = 1 },
             cancellationToken);
@@ -234,55 +234,119 @@ internal sealed class GoalWorkflowService(
             yield break;
         }
 
-        string reviewerTask = ReviewerTask(goal, plan, implementationOutput);
-        snapshot = await AppendAsync(snapshot, StoredKind.ReviewerCallStarted,
-            StoredActor.Reviewer,
-            "Independent reviewer model call started against diff and durable evidence.",
-            "Reviewer prompt", reviewerTask,
-            StoredKind.ImplementationProduced, StoredState.Running,
-            StoredState.Running, cancellationToken);
-        yield return ToView(snapshot);
-
-        AgentRunResult review;
-        try
+        while (true)
         {
-            review = await agentRunner.RunAsync(new(
-                goal.Id,
-                AgentRole.Reviewer,
-                new(reviewerTask),
-                request.ReviewerMaximumOutputTokens), cancellationToken);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            await MarkUncertainAsync(snapshot,
-                "Reviewer call was cancelled after it started and was not replayed.");
-            throw;
-        }
-
-        if (review.Output is null)
-        {
-            snapshot = await MarkDirectionAsync(snapshot,
-                $"Reviewer call failed and was not replayed: {review.Error?.Value}",
-                cancellationToken);
+            string reviewerTask = ReviewerTask(goal, plan, implementationOutput);
+            snapshot = await AppendAsync(snapshot, StoredKind.ReviewerCallStarted,
+                StoredActor.Reviewer,
+                "Independent reviewer model call started against diff and durable evidence.",
+                "Reviewer prompt", reviewerTask,
+                StoredKind.ImplementationProduced, StoredState.Running,
+                StoredState.Running, cancellationToken);
             yield return ToView(snapshot);
-            yield break;
-        }
 
-        GoalReviewResult decision = GoalReviewParser.Parse(review.Output.Value);
-        StoredState nextState = decision.Decision is GoalReviewDecision.Accept
-            ? StoredState.AwaitingAcceptance
-            : StoredState.NeedsDirection;
-        string summary = decision.Decision switch
-        {
-            GoalReviewDecision.Accept => "Independent reviewer accepted the implementation evidence.",
-            GoalReviewDecision.Revise => "Independent reviewer requested revision; user direction is required.",
-            _ => $"Reviewer returned an invalid structured decision: {decision.Error}",
-        };
-        snapshot = await AppendAsync(snapshot, StoredKind.ReviewCompleted,
-            StoredActor.Reviewer, summary, "Independent review", review.Output.Value,
-            StoredKind.ReviewerCallStarted, StoredState.Running, nextState,
-            cancellationToken);
-        yield return ToView(snapshot);
+            AgentRunResult review;
+            try
+            {
+                review = await agentRunner.RunAsync(new(
+                    goal.Id,
+                    AgentRole.Reviewer,
+                    new(reviewerTask),
+                    request.ReviewerMaximumOutputTokens), cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                await MarkUncertainAsync(snapshot,
+                    "Reviewer call was cancelled after it started and was not replayed.");
+                throw;
+            }
+
+            if (review.Output is null)
+            {
+                snapshot = await MarkDirectionAsync(snapshot,
+                    $"Reviewer call failed and was not replayed: {review.Error?.Value}",
+                    cancellationToken);
+                yield return ToView(snapshot);
+                yield break;
+            }
+
+            GoalReviewResult decision = GoalReviewParser.Parse(review.Output.Value);
+            int completedCycle = snapshot.Run.ReviewCycle.Value + 1;
+            bool revisionAllowed = decision.Decision is GoalReviewDecision.Revise &&
+                completedCycle < goal.ReviewCycleLimit.Value;
+            StoredState nextState = decision.Decision switch
+            {
+                GoalReviewDecision.Accept => StoredState.AwaitingAcceptance,
+                GoalReviewDecision.Revise when revisionAllowed => StoredState.Running,
+                _ => StoredState.NeedsDirection,
+            };
+            string summary = decision.Decision switch
+            {
+                GoalReviewDecision.Accept =>
+                    $"Independent reviewer accepted review cycle {completedCycle}.",
+                GoalReviewDecision.Revise when revisionAllowed =>
+                    $"Independent reviewer requested revision after cycle {completedCycle}; " +
+                    "a bounded correction pass will follow.",
+                GoalReviewDecision.Revise =>
+                    $"Independent reviewer requested revision at the configured " +
+                    $"{goal.ReviewCycleLimit.Value}-cycle limit; user direction is required.",
+                _ => $"Reviewer returned an invalid structured decision: {decision.Error}",
+            };
+            snapshot = await AppendAsync(snapshot, StoredKind.ReviewCompleted,
+                StoredActor.Reviewer, summary, "Independent review", review.Output.Value,
+                StoredKind.ReviewerCallStarted, StoredState.Running, nextState,
+                cancellationToken, new(completedCycle));
+            yield return ToView(snapshot);
+
+            if (!revisionAllowed)
+            {
+                yield break;
+            }
+
+            string revisionTask = RevisionTask(goal, plan, review.Output);
+            snapshot = await AppendAsync(snapshot, StoredKind.ImplementerCallStarted,
+                StoredActor.Implementer,
+                $"Implementer correction pass started for review cycle {completedCycle}.",
+                "Implementer revision prompt", revisionTask,
+                StoredKind.ReviewCompleted, StoredState.Running,
+                StoredState.Running, cancellationToken);
+            yield return ToView(snapshot);
+
+            AgentRunResult revision;
+            try
+            {
+                revision = await agentRunner.RunAsync(new(
+                    goal.Id,
+                    AgentRole.Implementer,
+                    new(revisionTask),
+                    request.ImplementerMaximumOutputTokens), cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                await MarkUncertainAsync(snapshot,
+                    "Implementer correction call was cancelled after it started; " +
+                    "completed tool evidence must be inspected.");
+                throw;
+            }
+
+            if (revision.Output is null)
+            {
+                snapshot = await MarkDirectionAsync(snapshot,
+                    $"Implementer correction failed and was not replayed: {revision.Error?.Value}",
+                    cancellationToken);
+                yield return ToView(snapshot);
+                yield break;
+            }
+
+            implementationOutput = revision.Output;
+            snapshot = await AppendAsync(snapshot, StoredKind.ImplementationProduced,
+                StoredActor.Implementer,
+                $"Implementer completed the correction requested after review cycle {completedCycle}.",
+                "Implementation correction report", implementationOutput.Value,
+                StoredKind.ImplementerCallStarted, StoredState.Running,
+                StoredState.Running, cancellationToken);
+            yield return ToView(snapshot);
+        }
     }
 
     private async ValueTask<GoalView> RequireGoalAsync(
@@ -318,11 +382,12 @@ internal sealed class GoalWorkflowService(
         StoredKind expectedKind,
         StoredState expectedState,
         StoredState nextState,
-        CancellationToken cancellationToken) =>
+        CancellationToken cancellationToken,
+        GoalWorkflowReviewCycle? nextReviewCycle = null) =>
         await store.AppendAsync(
             Checkpoint(snapshot.Run.Id, kind, actor, summary, evidenceTitle,
                 evidenceContent, timeProvider.GetUtcNow()),
-            expectedKind, expectedState, nextState, cancellationToken);
+            expectedKind, expectedState, nextState, cancellationToken, nextReviewCycle);
 
     private static StoredGoalWorkflowCheckpoint Checkpoint(
         StoredRunId runId,
@@ -376,6 +441,22 @@ internal sealed class GoalWorkflowService(
         {"decision":"revise","summary":"specific evidence-based rationale"}
         """;
 
+    private static string RevisionTask(
+        GoalView goal,
+        PlanView plan,
+        AgentOutput review) => $$"""
+        Correct only the concrete findings from the independent review for goal
+        '{{goal.Title}}'. Use only typed goal-worktree tools, inspect before editing, preserve
+        the approved plan's scope, and build and test without restore. Do not claim success
+        without durable tool evidence.
+
+        APPROVED PLAN
+        {{plan.Content}}
+
+        REVIEW FINDINGS
+        {{review.Value}}
+        """;
+
     private static void ValidateStart(GoalWorkflowStartRequest request)
     {
         if (request is null || !ValidGoalId(request.GoalId) ||
@@ -418,6 +499,7 @@ internal sealed class GoalWorkflowService(
                 StoredState.Completed => GoalWorkflowState.Completed,
                 _ => throw new ArgumentOutOfRangeException(nameof(snapshot)),
             },
+            new(snapshot.Run.ReviewCycle.Value),
             snapshot.Checkpoints.Select(checkpoint => new GoalWorkflowActivityView(
                 checkpoint.Sequence,
                 checkpoint.Kind switch

@@ -22,7 +22,10 @@ required gaps.
 The implementer produces changes and evidence, then an independent reviewer approves
 or returns findings. The loop pauses at the goal's configured review-cycle limit.
 Accepted work is committed to the goal branch only after approval and is never merged
-automatically.
+automatically. Commit approval is a separate durable decision over the exact goal,
+workflow run, isolated branch, expected HEAD, complete diff SHA-256, commit message,
+and author identity. The commit adapter revalidates that fingerprint immediately
+before writing the commit and can reconcile the same commit after interruption.
 
 ## Consequences
 

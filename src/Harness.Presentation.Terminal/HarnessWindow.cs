@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using Harness.BusinessLogic.Agents;
+using Harness.BusinessLogic.Acceptance;
 using Harness.BusinessLogic.Costs;
 using Harness.BusinessLogic.Dashboard;
 using Harness.BusinessLogic.Framework;
@@ -28,6 +29,7 @@ internal sealed class HarnessWindow : Window
     private readonly IRemoteCostService remoteCostService;
     private readonly IGoalModelService goalModelService;
     private readonly IGoalWorkflowService goalWorkflowService;
+    private readonly IGoalAcceptanceService goalAcceptanceService;
     private readonly IWalkingSkeletonWorkflowService workflowService;
     private readonly CancellationToken cancellationToken;
     private readonly FrameView workspaceFrame;
@@ -64,6 +66,7 @@ internal sealed class HarnessWindow : Window
         IRemoteCostService remoteCostService,
         IGoalModelService goalModelService,
         IGoalWorkflowService goalWorkflowService,
+        IGoalAcceptanceService goalAcceptanceService,
         IWalkingSkeletonWorkflowService workflowService,
         DashboardSnapshot initialSnapshot,
         WorkspaceView? activeWorkspace,
@@ -79,6 +82,7 @@ internal sealed class HarnessWindow : Window
         this.remoteCostService = remoteCostService;
         this.goalModelService = goalModelService;
         this.goalWorkflowService = goalWorkflowService;
+        this.goalAcceptanceService = goalAcceptanceService;
         this.workflowService = workflowService;
         this.activeWorkspace = activeWorkspace;
         this.goals = goals;
@@ -505,6 +509,7 @@ internal sealed class HarnessWindow : Window
                 remoteCostService,
                 goalModelService,
                 goalWorkflowService,
+                goalAcceptanceService,
                 activeWorkspace.Id,
                 goals,
                 cancellationToken);
