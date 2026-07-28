@@ -1,5 +1,7 @@
 namespace Harness.DataAccess.Models;
 
 public sealed record ChatMessage(
-    string Role,
-    string Content);
+    ChatRole Role,
+    string Content,
+    IReadOnlyList<ChatToolCall>? ToolCalls = null,
+    ChatToolResult? ToolResult = null);

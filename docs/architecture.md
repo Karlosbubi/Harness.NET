@@ -82,6 +82,19 @@ execute repository code only after workspace trust. Restore and package operatio
 remain separately approval-gated because they may use the network or change project
 metadata.
 
+Role scopes are closed semantic sets. Before plan approval, the Lead can read,
+search, and inspect only the trusted original workspace. The Implementer can read,
+search, inspect, atomically edit, build, and test only an approved active goal
+worktree. The independent Reviewer can read the same worktree diff and durable tool
+evidence but cannot edit, build, or test. Restore, package, commit, and unrestricted
+shell capabilities are absent from all automatically invoked role tool sets.
+
+Microsoft Agent Framework function declarations and calls map through provider-neutral
+records before Data Access serializes Ollama or OpenRouter payloads. Tool names,
+roles, calls, results, and scopes use enums or semantic single-value records. Remote
+cost reservation estimates include tool schemas and accumulated tool traffic, and
+each function-call round remains attributed to the goal, role, provider, and model.
+
 ## Required qualities
 
 - Provider and agent-framework types stop at their owning boundary.

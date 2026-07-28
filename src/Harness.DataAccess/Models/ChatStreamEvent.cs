@@ -6,4 +6,5 @@ public sealed record ChatStreamEvent(
     bool Done,
     string? DoneReason,
     ProviderUsage Usage,
-    ProviderError? Error);
+    ProviderError? Error,
+    IReadOnlyList<ChatToolCall>? ToolCalls = null);

@@ -126,11 +126,8 @@ internal sealed class OpenRouterModelProvider(
             message.Content = JsonContent.Create(new OpenRouterChatRequestPayload
             {
                 Model = request.Model,
-                Messages = request.Messages.Select(item => new OpenRouterRequestMessage
-                {
-                    Role = item.Role,
-                    Content = item.Content,
-                }).ToArray(),
+                Messages = request.Messages.Select(MapMessage).ToArray(),
+                Tools = MapTools(request.Tools),
                 Stream = true,
                 MaxTokens = request.MaximumOutputTokens!.Value,
                 Provider = CreateRouting(request.RemoteScope.PrivacyPolicy),
@@ -173,6 +170,7 @@ internal sealed class OpenRouterModelProvider(
                 requestAccepted = true;
                 await using Stream stream = await response.Content.ReadAsStreamAsync(cancellationToken);
                 using StreamReader reader = new(stream);
+                Dictionary<int, OpenRouterToolCallBuilder> toolCalls = [];
                 while (await reader.ReadLineAsync(cancellationToken) is { } line)
                 {
                     if (string.IsNullOrWhiteSpace(line) || line.StartsWith(':'))
@@ -197,7 +195,8 @@ internal sealed class OpenRouterModelProvider(
                                 Done: true,
                                 DoneReason: null,
                                 new(0, 0, actualCost),
-                                Error: null);
+                                Error: null,
+                                CompleteToolCalls(toolCalls));
                         }
 
                         break;
@@ -236,6 +235,14 @@ internal sealed class OpenRouterModelProvider(
                     actualCost = chunkCost ?? actualCost;
                     bool done = choice?.FinishReason is not null || chunk.Usage is not null;
                     completed |= done;
+                    if (choice?.Delta is not null)
+                    {
+                        AccumulateToolCalls(choice.Delta.ToolCalls, toolCalls);
+                    }
+
+                    IReadOnlyList<ChatToolCall>? completedCalls = done
+                        ? CompleteToolCalls(toolCalls)
+                        : null;
                     if (choice is not null || chunk.Usage is not null)
                     {
                         yield return new(
@@ -247,7 +254,8 @@ internal sealed class OpenRouterModelProvider(
                                 chunk.Usage?.PromptTokens ?? 0,
                                 chunk.Usage?.CompletionTokens ?? 0,
                                 chunkCost),
-                            Error: null);
+                            Error: null,
+                            completedCalls);
                     }
                 }
             }
@@ -266,6 +274,90 @@ internal sealed class OpenRouterModelProvider(
                 await remoteCostStore.ReleaseAsync(reservation.Id, CancellationToken.None);
             }
         }
+    }
+
+    private static OpenRouterRequestMessage MapMessage(ChatMessage message) => new()
+    {
+        Role = message.Role switch
+        {
+            ChatRole.System => "system",
+            ChatRole.User => "user",
+            ChatRole.Assistant => "assistant",
+            ChatRole.Tool => "tool",
+            _ => throw new ArgumentOutOfRangeException(nameof(message)),
+        },
+        Content = message.ToolResult?.Result.Value ??
+            (string.IsNullOrEmpty(message.Content) ? null : message.Content),
+        ToolCalls = message.ToolCalls?.Select(call => new OpenRouterToolCall
+        {
+            Id = call.Id.Value,
+            Function = new()
+            {
+                Name = call.Name.Value,
+                Arguments = call.Arguments.Value,
+            },
+        }).ToArray(),
+        ToolCallId = message.ToolResult?.CallId.Value,
+    };
+
+    private static OpenRouterToolDefinition[]? MapTools(
+        IReadOnlyList<ChatToolDefinition>? tools)
+    {
+        if (tools is null || tools.Count == 0)
+        {
+            return null;
+        }
+
+        return tools.Select(tool => new OpenRouterToolDefinition
+        {
+            Function = new()
+            {
+                Name = tool.Name.Value,
+                Description = tool.Description.Value,
+                Parameters = JsonDocument.Parse(tool.JsonSchema.Value).RootElement.Clone(),
+            },
+        }).ToArray();
+    }
+
+    private static void AccumulateToolCalls(
+        IReadOnlyList<OpenRouterToolCall> deltas,
+        Dictionary<int, OpenRouterToolCallBuilder> calls)
+    {
+        foreach (OpenRouterToolCall delta in deltas)
+        {
+            int index = delta.Index ?? calls.Count;
+            if (!calls.TryGetValue(index, out OpenRouterToolCallBuilder? builder))
+            {
+                builder = new();
+                calls[index] = builder;
+            }
+
+            builder.Id ??= delta.Id;
+            builder.Name ??= delta.Function.Name;
+            builder.Arguments.Append(delta.Function.Arguments);
+        }
+    }
+
+    private static IReadOnlyList<ChatToolCall>? CompleteToolCalls(
+        IReadOnlyDictionary<int, OpenRouterToolCallBuilder> calls) =>
+        calls.Count == 0
+            ? null
+            : calls.OrderBy(item => item.Key)
+                .Select(item => new ChatToolCall(
+                    new(item.Value.Id ?? $"openrouter-{Guid.NewGuid():N}-{item.Key}"),
+                    new(item.Value.Name ?? string.Empty),
+                    new(item.Value.Arguments.Length == 0
+                        ? "{}"
+                        : item.Value.Arguments.ToString())))
+                .ToArray();
+
+    private sealed class OpenRouterToolCallBuilder
+    {
+        internal string? Id { get; set; }
+
+        internal string? Name { get; set; }
+
+        internal StringBuilder Arguments { get; } = new();
     }
 
     public async ValueTask<EmbeddingResult> EmbedAsync(
@@ -542,8 +634,20 @@ internal sealed class OpenRouterModelProvider(
     private static MicroUsd EstimateChatCost(ChatRequest request, ModelPricing pricing)
     {
         long estimatedInputTokens = request.Messages.Sum(message =>
-            (long)Encoding.UTF8.GetByteCount(message.Role) +
-            Encoding.UTF8.GetByteCount(message.Content));
+            (long)Encoding.UTF8.GetByteCount(message.Role.ToString()) +
+            Encoding.UTF8.GetByteCount(message.Content) +
+            (message.ToolCalls?.Sum(call =>
+                Encoding.UTF8.GetByteCount(call.Id.Value) +
+                Encoding.UTF8.GetByteCount(call.Name.Value) +
+                Encoding.UTF8.GetByteCount(call.Arguments.Value)) ?? 0) +
+            (message.ToolResult is null
+                ? 0
+                : Encoding.UTF8.GetByteCount(message.ToolResult.CallId.Value) +
+                  Encoding.UTF8.GetByteCount(message.ToolResult.Result.Value)));
+        estimatedInputTokens += request.Tools?.Sum(tool =>
+            (long)Encoding.UTF8.GetByteCount(tool.Name.Value) +
+            Encoding.UTF8.GetByteCount(tool.Description.Value) +
+            Encoding.UTF8.GetByteCount(tool.JsonSchema.Value)) ?? 0;
         decimal usd = pricing.UsdPerRequest +
             (estimatedInputTokens * pricing.InputUsdPerToken) +
             (request.MaximumOutputTokens!.Value * pricing.OutputUsdPerToken);

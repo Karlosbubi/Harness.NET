@@ -121,7 +121,17 @@ internal sealed class ConversationDashboardService(
             conversation.Model,
             messages
                 .Where(message => message.Status == "Complete")
-                .Select(message => new ChatMessage(message.Role, message.Content))
+                .Select(message => new ChatMessage(
+                    message.Role switch
+                    {
+                        "system" => ChatRole.System,
+                        "user" => ChatRole.User,
+                        "assistant" => ChatRole.Assistant,
+                        "tool" => ChatRole.Tool,
+                        _ => throw new InvalidOperationException(
+                            $"Unsupported persisted chat role '{message.Role}'."),
+                    },
+                    message.Content))
                 .ToArray());
         StringBuilder content = new();
         StringBuilder thinking = new();

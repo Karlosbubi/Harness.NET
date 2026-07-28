@@ -50,7 +50,7 @@ but the end-user workflow is not complete.
 | 018 | Done | Let agents implement and verify | - | Approved runs can use typed edit/build/test tools with cancellation, output limits, correlation, and separate restore/network approval. |
 | 019 | Done | Isolate work with Git | - | Each approved goal uses a validated branch/worktree, preserves dirty user state, and never merges/rebases automatically. |
 | 020 | Done | Create goals and approve plans | - | Goals, caps, plans, revisions, approvals, and denials persist and every consequential transition is validated. |
-| 021 | Partial | Coordinate lead, implementer, and reviewer agents | All roles execute behind Business Logic contracts, but bounded delegation and role-specific tool scopes are not coordinated. | Role prompts and tool scopes are wrapped behind Business Logic interfaces and a lead can delegate bounded tasks. |
+| 021 | Partial | Coordinate lead, implementer, and reviewer agents | Role-specific typed tools and provider function-call loops are enforced, but durable bounded delegation and production orchestration are not coordinated. | Role prompts and tool scopes are wrapped behind Business Logic interfaces and a lead can delegate bounded tasks. |
 | 022 | Partial | Resume interrupted work safely | The deterministic walking skeleton resumes from persisted safe boundaries and incomplete tool calls remain identifiable, but production-run reconciliation is absent. | Runs checkpoint at safe boundaries, resume completed steps, and mark uncertain calls without automatic replay. |
 | 023 | Partial | Review evidence and accept results | Tool requests/results are durable and queryable, but there is no independent review loop or commit approval. | Diff, tests, tool evidence, review findings, cycle caps, and explicit commit approval work end to end. |
 | 024 | Partial | Retrieve relevant repository context | A presentation-neutral service now filters and chunks tracked text, atomically rebuilds compatible SQLite vector partitions, and retrieves matches; production context assembly and workflow/TUI controls remain. | Eligible Git-tracked text is chunked, partitioned by embedding configuration, rebuilt, searched, and filtered by policy. |
@@ -121,6 +121,13 @@ Harness.NET state auditable.
   prompts through separate configured provider/model routes and verify invalid
   requests, incomplete composition, and provider-failure mapping without exposing
   framework types to Presentation.
+- Task 021 now maps Microsoft Agent Framework functions through provider-neutral
+  semantic definitions, calls, and results into Ollama and OpenRouter. Deterministic
+  tests prove a complete model-tool-model loop and closed role scopes: Lead is
+  read-only against the trusted original workspace, Implementer gains only approved
+  worktree edit/build/test capabilities, and Reviewer is read-only with durable
+  evidence access. Restore, commit, package, and shell capabilities remain absent.
+  OpenRouter reservations conservatively include tool schemas and tool traffic.
 - Task 011 persists semantic workflow runs and ordered checkpoints in schema 11.
   Deterministic store and orchestration tests prove plan-time pause, process-restart
   resume, recovery after interruption at an already persisted implementation

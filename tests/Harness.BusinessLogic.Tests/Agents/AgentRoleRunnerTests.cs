@@ -2,6 +2,7 @@ using Harness.BusinessLogic.Agents;
 using Harness.BusinessLogic.Goals;
 using Harness.DataAccess.Models;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.AI;
 using System.Runtime.CompilerServices;
 
 namespace Harness.BusinessLogic.Tests.Agents;
@@ -38,7 +39,7 @@ public sealed class AgentRoleRunnerTests
         };
         ChatRequest request = Assert.Single(selected.Requests);
         Assert.Equal(expectedModel, request.Model);
-        Assert.Equal("system", request.Messages[0].Role);
+        Assert.Equal(Harness.DataAccess.Models.ChatRole.System, request.Messages[0].Role);
         Assert.Contains(expectedPrompt, request.Messages[0].Content, StringComparison.Ordinal);
         Assert.Equal("bounded task", request.Messages[^1].Content);
         Assert.Null(request.RemoteScope);
@@ -98,6 +99,7 @@ public sealed class AgentRoleRunnerTests
                     provider),
                 ErrorCode: null,
                 Error: null)),
+            new EmptyAgentToolFactory(),
             NullLoggerFactory.Instance);
 
         AgentRunResult missingCap = await runner.RunAsync(new(
@@ -121,6 +123,34 @@ public sealed class AgentRoleRunnerTests
         Assert.Equal(512, request.MaximumOutputTokens?.Value);
     }
 
+    [Fact]
+    public async Task Invokes_provider_tool_calls_and_returns_the_result_to_the_model()
+    {
+        ToolCallingModelProvider provider = new();
+        CapturingAgentToolFactory tools = new();
+        AgentRoleRunner runner = new(
+            new StubRouteResolver(role => Route(role, "tool-model", provider)),
+            tools,
+            NullLoggerFactory.Instance);
+
+        AgentRunResult result = await runner.RunAsync(new(
+            new("goal-tools"),
+            AgentRole.Lead,
+            new("inspect")));
+
+        Assert.Null(result.Error);
+        Assert.Equal("finished after tool", result.Output?.Value);
+        Assert.Equal("src/Program.cs", tools.RelativePath);
+        Assert.Equal(2, provider.Requests.Count);
+        Assert.Equal("read_file", Assert.Single(provider.Requests[0].Tools!).Name.Value);
+        ChatToolResult returned = Assert.Single(
+            provider.Requests[1].Messages,
+            message => message.ToolResult is not null)
+            .ToolResult!;
+        Assert.Equal("call-1", returned.CallId.Value);
+        Assert.Contains("bounded file", returned.Result.Value, StringComparison.Ordinal);
+    }
+
     private static AgentRoleRunner CreateRunner(
         IModelProvider lead,
         IModelProvider implementer,
@@ -132,6 +162,7 @@ public sealed class AgentRoleRunnerTests
             AgentRole.Reviewer => Route(role, "reviewer-model", reviewer),
             _ => throw new ArgumentOutOfRangeException(nameof(role)),
         }),
+        new EmptyAgentToolFactory(),
         NullLoggerFactory.Instance);
 
     private static GoalModelRouteResult Route(
@@ -156,6 +187,74 @@ public sealed class AgentRoleRunnerTests
             AgentRole role,
             CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(resolve(role));
+    }
+
+    private sealed class EmptyAgentToolFactory : IAgentToolFactory
+    {
+        public IList<AITool> Create(AgentRole role, GoalId goalId) => [];
+    }
+
+    private sealed class CapturingAgentToolFactory : IAgentToolFactory
+    {
+        internal string? RelativePath { get; private set; }
+
+        public IList<AITool> Create(AgentRole role, GoalId goalId) =>
+        [
+            AIFunctionFactory.Create(
+                (string relativePath) =>
+                {
+                    RelativePath = relativePath;
+                    return "bounded file";
+                },
+                new()
+                {
+                    Name = "read_file",
+                    Description = "Read a bounded file.",
+                }),
+        ];
+    }
+
+    private sealed class ToolCallingModelProvider : IModelProvider
+    {
+        internal List<ChatRequest> Requests { get; } = [];
+
+        public ValueTask<ModelCatalog> GetModelsAsync(CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public async IAsyncEnumerable<ChatStreamEvent> StreamChatAsync(
+            ChatRequest request,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            Requests.Add(request);
+            await Task.Yield();
+            cancellationToken.ThrowIfCancellationRequested();
+            if (Requests.Count == 1)
+            {
+                yield return new(
+                    string.Empty,
+                    string.Empty,
+                    Done: true,
+                    DoneReason: "tool_calls",
+                    new(4, 1),
+                    Error: null,
+                    [new(new("call-1"), new("read_file"),
+                        new("{\"relativePath\":\"src/Program.cs\"}"))]);
+                yield break;
+            }
+
+            yield return new(
+                "finished after tool",
+                string.Empty,
+                Done: true,
+                DoneReason: "stop",
+                new(8, 4),
+                Error: null);
+        }
+
+        public ValueTask<EmbeddingResult> EmbedAsync(
+            EmbeddingRequest request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
     }
 
     private sealed class CapturingModelProvider : IModelProvider

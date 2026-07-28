@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using Harness.DataAccess.Models;
 using Harness.DataAccess.Models.Ollama;
 
@@ -58,7 +59,7 @@ public sealed class OllamaModelProviderTests
 
         List<ChatStreamEvent> events = [];
         await foreach (ChatStreamEvent item in provider.StreamChatAsync(
-                           new("gemma4:latest", [new("user", "hi")])))
+                           new("gemma4:latest", [new(ChatRole.User, "hi")])))
         {
             events.Add(item);
         }
@@ -81,7 +82,7 @@ public sealed class OllamaModelProviderTests
 
         List<ChatStreamEvent> events = [];
         await foreach (ChatStreamEvent item in provider.StreamChatAsync(
-                           new("model", [new("user", "hi")])))
+                           new("model", [new(ChatRole.User, "hi")])))
         {
             events.Add(item);
         }
@@ -89,6 +90,44 @@ public sealed class OllamaModelProviderTests
         Assert.Equal("partial", events[0].Content);
         Assert.Equal("stream_error", events[1].Error?.Code);
         Assert.Equal("model runner stopped", events[1].Error?.Message);
+    }
+
+    [Fact]
+    public async Task Maps_typed_tools_calls_and_results()
+    {
+        string? requestJson = null;
+        using HttpClient httpClient = CreateClient(async (request, cancellationToken) =>
+        {
+            requestJson = await request.Content!.ReadAsStringAsync(cancellationToken);
+            return JsonResponse(
+                "{\"message\":{\"tool_calls\":[{\"function\":{" +
+                "\"name\":\"read_file\",\"arguments\":{\"relativePath\":\"README.md\"}}}]}," +
+                "\"done\":true,\"done_reason\":\"stop\"}\n",
+                "application/x-ndjson");
+        });
+        OllamaModelProvider provider = new(httpClient);
+
+        ChatStreamEvent result = Assert.Single(await CollectAsync(provider.StreamChatAsync(new(
+            "tool-model",
+            [
+                new(ChatRole.User, "inspect"),
+                new(ChatRole.Tool, string.Empty, ToolResult: new(
+                    new("previous-call"), new("{\"content\":\"prior\"}"))),
+            ],
+            Tools:
+            [
+                new(new("read_file"), new("Read one file."),
+                    new("{\"type\":\"object\",\"properties\":{}}")),
+            ]))));
+
+        ChatToolCall call = Assert.Single(result.ToolCalls!);
+        Assert.Equal("read_file", call.Name.Value);
+        Assert.Contains("README.md", call.Arguments.Value, StringComparison.Ordinal);
+        using JsonDocument body = JsonDocument.Parse(requestJson!);
+        Assert.Equal("read_file", body.RootElement.GetProperty("tools")[0]
+            .GetProperty("function").GetProperty("name").GetString());
+        Assert.Equal("{\"content\":\"prior\"}", body.RootElement.GetProperty("messages")[1]
+            .GetProperty("content").GetString());
     }
 
     [Fact]
@@ -165,6 +204,17 @@ public sealed class OllamaModelProviderTests
     {
         Content = new StringContent(json, Encoding.UTF8, mediaType),
     };
+
+    private static async Task<List<T>> CollectAsync<T>(IAsyncEnumerable<T> source)
+    {
+        List<T> values = [];
+        await foreach (T value in source)
+        {
+            values.Add(value);
+        }
+
+        return values;
+    }
 
     private sealed class StubHttpMessageHandler(
         Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> handler)

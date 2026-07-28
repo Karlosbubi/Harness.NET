@@ -7,15 +7,19 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
 {
     private const int MaximumTaskCharacters = 64 * 1024;
     private readonly IGoalModelRouteResolver routeResolver;
+    private readonly IAgentToolFactory toolFactory;
     private readonly ILoggerFactory loggerFactory;
 
     public AgentRoleRunner(
         IGoalModelRouteResolver routeResolver,
+        IAgentToolFactory toolFactory,
         ILoggerFactory loggerFactory)
     {
         ArgumentNullException.ThrowIfNull(routeResolver);
+        ArgumentNullException.ThrowIfNull(toolFactory);
         ArgumentNullException.ThrowIfNull(loggerFactory);
         this.routeResolver = routeResolver;
+        this.toolFactory = toolFactory;
         this.loggerFactory = loggerFactory;
     }
 
@@ -70,7 +74,7 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
                 Instructions(request.Role),
                 Name(request.Role),
                 Description(request.Role),
-                tools: [],
+                toolFactory.Create(request.Role, request.GoalId),
                 loggerFactory,
                 services: null);
             AgentSession session = await agent.CreateSessionAsync(cancellationToken);

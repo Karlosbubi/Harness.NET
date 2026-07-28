@@ -71,7 +71,7 @@ public sealed class OpenRouterModelProviderTests
         List<ChatStreamEvent> events = [];
         await foreach (ChatStreamEvent item in provider.StreamChatAsync(new(
                            "openai/gpt-5-mini",
-                           [new("user", "hi")],
+                           [new(ChatRole.User, "hi")],
                            new(
                                "goal-1",
                                ProviderPrivacyPolicy.NoCollectionAndZeroDataRetention,
@@ -130,6 +130,51 @@ public sealed class OpenRouterModelProviderTests
     }
 
     [Fact]
+    public async Task Maps_streamed_tool_calls_and_sends_typed_definitions()
+    {
+        string? requestJson = null;
+        using HttpClient httpClient = CreateClient(async (request, cancellationToken) =>
+        {
+            if (request.Method == HttpMethod.Get)
+            {
+                return JsonResponse(ModelsJson("openai/gpt-5-mini", "text"));
+            }
+
+            requestJson = await request.Content!.ReadAsStringAsync(cancellationToken);
+            return JsonResponse(
+                "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{" +
+                "\"index\":0,\"id\":\"call-9\",\"function\":{" +
+                "\"name\":\"read_file\",\"arguments\":\"{\\\"relativePath\\\":\\\"\"}}]}}]}\n\n" +
+                "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{" +
+                "\"index\":0,\"function\":{\"arguments\":\"README.md\\\"}\"}}]}," +
+                "\"finish_reason\":\"tool_calls\"}]," +
+                "\"usage\":{\"prompt_tokens\":8,\"completion_tokens\":3,\"cost\":0.000004}}\n\n" +
+                "data: [DONE]\n\n",
+                "text/event-stream");
+        });
+        StubRemoteCostStore costs = new();
+        OpenRouterModelProvider provider = CreateProvider(httpClient, costs);
+
+        List<ChatStreamEvent> events = await CollectAsync(provider.StreamChatAsync(new(
+            "openai/gpt-5-mini",
+            [new(ChatRole.User, "inspect")],
+            new("goal-tools", ProviderPrivacyPolicy.NoCollectionAndZeroDataRetention,
+                RemoteModelRole.Reviewer),
+            new(16),
+            [new(new("read_file"), new("Read one file."),
+                new("{\"type\":\"object\",\"properties\":{}}"))])));
+
+        ChatToolCall call = Assert.Single(events.SelectMany(item => item.ToolCalls ?? []));
+        Assert.Equal("call-9", call.Id.Value);
+        Assert.Equal("read_file", call.Name.Value);
+        Assert.Equal("{\"relativePath\":\"README.md\"}", call.Arguments.Value);
+        Assert.Equal(RemoteModelRole.Reviewer, costs.Request?.Role);
+        using JsonDocument body = JsonDocument.Parse(requestJson!);
+        Assert.Equal("read_file", body.RootElement.GetProperty("tools")[0]
+            .GetProperty("function").GetProperty("name").GetString());
+    }
+
+    [Fact]
     public async Task Rejects_chat_without_goal_scope_before_transport_or_reservation()
     {
         int requests = 0;
@@ -142,7 +187,7 @@ public sealed class OpenRouterModelProviderTests
         OpenRouterModelProvider provider = CreateProvider(httpClient, costs);
 
         ChatStreamEvent result = Assert.Single(await CollectAsync(provider.StreamChatAsync(
-            new("model", [new("user", "hello")], MaximumOutputTokens: new(10)))));
+            new("model", [new(ChatRole.User, "hello")], MaximumOutputTokens: new(10)))));
 
         Assert.Equal("remote_scope_required", result.Error?.Code);
         Assert.Equal(0, requests);

@@ -38,7 +38,7 @@ public sealed class OllamaLiveIntegrationTests
         List<ChatStreamEvent> events = [];
         await foreach (ChatStreamEvent item in provider.StreamChatAsync(new(
                            expectedModel,
-                           [new("user", "Reply with exactly HARNESS_PROVIDER_OK")])) )
+                           [new(ChatRole.User, "Reply with exactly HARNESS_PROVIDER_OK")])) )
         {
             events.Add(item);
         }

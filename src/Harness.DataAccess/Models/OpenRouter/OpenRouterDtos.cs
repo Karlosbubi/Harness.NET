@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using System.Text.Json;
 
 namespace Harness.DataAccess.Models.OpenRouter;
 
@@ -7,6 +8,9 @@ internal sealed class OpenRouterChatRequestPayload
     public string Model { get; init; } = string.Empty;
 
     public OpenRouterRequestMessage[] Messages { get; init; } = [];
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public OpenRouterToolDefinition[]? Tools { get; init; }
 
     public bool Stream { get; init; }
 
@@ -34,7 +38,50 @@ internal sealed class OpenRouterRequestMessage
 {
     public string Role { get; init; } = string.Empty;
 
-    public string Content { get; init; } = string.Empty;
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Content { get; init; }
+
+    [JsonPropertyName("tool_calls")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public OpenRouterToolCall[]? ToolCalls { get; init; }
+
+    [JsonPropertyName("tool_call_id")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ToolCallId { get; init; }
+}
+
+internal sealed class OpenRouterToolDefinition
+{
+    public string Type { get; init; } = "function";
+
+    public OpenRouterFunctionDefinition Function { get; init; } = new();
+}
+
+internal sealed class OpenRouterFunctionDefinition
+{
+    public string Name { get; init; } = string.Empty;
+
+    public string Description { get; init; } = string.Empty;
+
+    public JsonElement Parameters { get; init; }
+}
+
+internal sealed class OpenRouterToolCall
+{
+    public int? Index { get; init; }
+
+    public string? Id { get; init; }
+
+    public string Type { get; init; } = "function";
+
+    public OpenRouterFunctionCall Function { get; init; } = new();
+}
+
+internal sealed class OpenRouterFunctionCall
+{
+    public string? Name { get; init; }
+
+    public string? Arguments { get; init; }
 }
 
 internal sealed class OpenRouterProviderPreferences
@@ -108,6 +155,9 @@ internal sealed class OpenRouterDelta
     public string? Content { get; init; }
 
     public string? Reasoning { get; init; }
+
+    [JsonPropertyName("tool_calls")]
+    public OpenRouterToolCall[] ToolCalls { get; init; } = [];
 }
 
 internal sealed class OpenRouterEmbeddingResponse

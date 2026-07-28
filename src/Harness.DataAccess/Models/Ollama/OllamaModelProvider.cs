@@ -81,15 +81,12 @@ internal sealed class OllamaModelProvider(HttpClient httpClient) : IModelProvide
     {
         using HttpRequestMessage message = new(HttpMethod.Post, "api/chat")
         {
-            Content = JsonContent.Create(new
+            Content = JsonContent.Create(new OllamaChatRequestPayload
             {
-                model = request.Model,
-                messages = request.Messages.Select(item => new
-                {
-                    role = item.Role,
-                    content = item.Content,
-                }),
-                stream = true,
+                Model = request.Model,
+                Messages = request.Messages.Select(MapMessage).ToArray(),
+                Stream = true,
+                Tools = MapTools(request.Tools),
             }),
         };
 
@@ -161,17 +158,61 @@ internal sealed class OllamaModelProvider(HttpClient httpClient) : IModelProvide
 
                 if (chunk is not null)
                 {
+                    ChatToolCall[] toolCalls = chunk.Message?.ToolCalls
+                        .Select((call, index) => new ChatToolCall(
+                            new($"ollama-{Guid.NewGuid():N}-{index}"),
+                            new(call.Function.Name),
+                            new(call.Function.Arguments.ValueKind is JsonValueKind.Undefined
+                                ? "{}"
+                                : call.Function.Arguments.GetRawText())))
+                        .ToArray() ?? [];
                     yield return new(
                         chunk.Message?.Content ?? string.Empty,
                         chunk.Message?.Thinking ?? string.Empty,
                         chunk.Done,
                         chunk.DoneReason,
                         new(chunk.PromptEvalCount, chunk.EvalCount),
-                        Error: null);
+                        Error: null,
+                        toolCalls.Length == 0 ? null : toolCalls);
                 }
             }
         }
     }
+
+    private static OllamaRequestMessage MapMessage(ChatMessage message) => new()
+    {
+        Role = message.Role switch
+        {
+            ChatRole.System => "system",
+            ChatRole.User => "user",
+            ChatRole.Assistant => "assistant",
+            ChatRole.Tool => "tool",
+            _ => throw new ArgumentOutOfRangeException(nameof(message)),
+        },
+        Content = message.ToolResult?.Result.Value ?? message.Content,
+        ToolCalls = message.ToolCalls?.Select(call => new OllamaToolCall
+        {
+            Function = new()
+            {
+                Name = call.Name.Value,
+                Arguments = JsonDocument.Parse(call.Arguments.Value).RootElement.Clone(),
+            },
+        }).ToArray(),
+    };
+
+    private static OllamaToolDefinition[]? MapTools(
+        IReadOnlyList<ChatToolDefinition>? tools) =>
+        tools is null || tools.Count == 0
+            ? null
+            : tools.Select(tool => new OllamaToolDefinition
+            {
+                Function = new()
+                {
+                    Name = tool.Name.Value,
+                    Description = tool.Description.Value,
+                    Parameters = JsonDocument.Parse(tool.JsonSchema.Value).RootElement.Clone(),
+                },
+            }).ToArray();
 
     public async ValueTask<EmbeddingResult> EmbedAsync(
         EmbeddingRequest request,

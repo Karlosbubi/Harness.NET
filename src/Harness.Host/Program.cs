@@ -74,6 +74,7 @@ builder.Services.AddSingleton<IWorkspaceTextSearcher, GitWorkspaceTextSearcher>(
 builder.Services.AddSingleton<IWorkspaceGitInspector, LibGitWorkspaceGitInspector>();
 builder.Services.AddSingleton<IWorkspaceDotNetInspector, WorkspaceDotNetInspector>();
 builder.Services.AddSingleton<IWorkspaceInspectionService, WorkspaceInspectionService>();
+builder.Services.AddSingleton<IGoalWorkspaceInspectionService, GoalWorkspaceInspectionService>();
 builder.Services.AddSingleton<ITrackedTextCatalogReader, GitTrackedTextCatalogReader>();
 builder.Services.AddSingleton<ISemanticIndexStore, SqliteSemanticIndexStore>();
 builder.Services.AddSingleton<IFrameworkResolver, FrameworkResolver>();
@@ -133,6 +134,10 @@ builder.Services.AddSingleton<IGoalModelRouteResolver>(services =>
     services.GetRequiredService<GoalModelService>());
 builder.Services.AddSingleton<IAgentRoleRunner>(services => new AgentRoleRunner(
     services.GetRequiredService<IGoalModelRouteResolver>(),
+    new AgentToolFactory(
+        services.GetRequiredService<IGoalWorkspaceInspectionService>(),
+        services.GetRequiredService<IWorkspaceMutationService>(),
+        services.GetRequiredService<IToolEvidenceService>()),
     services.GetRequiredService<ILoggerFactory>()));
 ModelProviderConfiguration embeddingProvider =
     configuration.Providers[configuration.Routing.Embedding];

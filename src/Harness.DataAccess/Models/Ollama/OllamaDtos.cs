@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using System.Text.Json;
 
 namespace Harness.DataAccess.Models.Ollama;
 
@@ -52,6 +53,60 @@ internal sealed class OllamaResponseMessage
     public string? Content { get; init; }
 
     public string? Thinking { get; init; }
+
+    [JsonPropertyName("tool_calls")]
+    public OllamaToolCall[] ToolCalls { get; init; } = [];
+}
+
+internal sealed class OllamaChatRequestPayload
+{
+    public string Model { get; init; } = string.Empty;
+
+    public OllamaRequestMessage[] Messages { get; init; } = [];
+
+    public bool Stream { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public OllamaToolDefinition[]? Tools { get; init; }
+}
+
+internal sealed class OllamaRequestMessage
+{
+    public string Role { get; init; } = string.Empty;
+
+    public string Content { get; init; } = string.Empty;
+
+    [JsonPropertyName("tool_calls")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public OllamaToolCall[]? ToolCalls { get; init; }
+}
+
+internal sealed class OllamaToolDefinition
+{
+    public string Type { get; init; } = "function";
+
+    public OllamaFunctionDefinition Function { get; init; } = new();
+}
+
+internal sealed class OllamaFunctionDefinition
+{
+    public string Name { get; init; } = string.Empty;
+
+    public string Description { get; init; } = string.Empty;
+
+    public JsonElement Parameters { get; init; }
+}
+
+internal sealed class OllamaToolCall
+{
+    public OllamaFunctionCall Function { get; init; } = new();
+}
+
+internal sealed class OllamaFunctionCall
+{
+    public string Name { get; init; } = string.Empty;
+
+    public JsonElement Arguments { get; init; }
 }
 
 internal sealed class OllamaEmbeddingResponse
