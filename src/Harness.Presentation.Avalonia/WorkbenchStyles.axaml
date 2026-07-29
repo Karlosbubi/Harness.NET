@@ -98,6 +98,42 @@
   <Style Selector="ListBox.palette-results ListBoxItem:pointerover /template/ ContentPresenter">
     <Setter Property="Background" Value="{DynamicResource Harness.Hover}" />
   </Style>
+  <Style Selector="Button.palette-command">
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+  </Style>
+  <Style Selector="Button.palette-command:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="Transparent" />
+  </Style>
+
+  <!-- Searchable application settings. -->
+  <Style Selector="Window.settings">
+    <Setter Property="Background" Value="{DynamicResource Harness.Window}" />
+  </Style>
+  <Style Selector="Border.settings-navigation">
+    <Setter Property="Padding" Value="20" />
+    <Setter Property="Background" Value="{DynamicResource Harness.Panel}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Harness.Border}" />
+    <Setter Property="BorderThickness" Value="0,0,1,0" />
+  </Style>
+  <Style Selector="Border.settings-page">
+    <Setter Property="Padding" Value="32,26" />
+    <Setter Property="Background" Value="{DynamicResource Harness.Editor}" />
+  </Style>
+  <Style Selector="ListBox.settings-categories">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+  </Style>
+  <Style Selector="ListBox.settings-categories ListBoxItem">
+    <Setter Property="Padding" Value="10,8" />
+    <Setter Property="Margin" Value="0,1" />
+    <Setter Property="CornerRadius" Value="6" />
+  </Style>
+  <Style Selector="ListBox.settings-categories ListBoxItem:selected /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource Harness.AccentSoft}" />
+  </Style>
 
   <!-- Command bar: the visible, discoverable entry point to the command palette. -->
   <Style Selector="Button.command-bar">

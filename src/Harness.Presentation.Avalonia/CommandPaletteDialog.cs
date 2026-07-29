@@ -67,7 +67,7 @@ internal sealed class CommandPaletteDialog : Window
         Opened += (_, _) => query.Focus();
     }
 
-    private static Control Row(PaletteCommand command)
+    private Control Row(PaletteCommand command)
     {
         StackPanel text = new()
         {
@@ -98,8 +98,21 @@ internal sealed class CommandPaletteDialog : Window
             row.Children.Add(chip);
         }
 
-        row.Opacity = command.IsAvailable ? 1 : 0.55;
-        return row;
+        Button action = new()
+        {
+            Content = row,
+            IsEnabled = command.IsAvailable,
+            Opacity = command.IsAvailable ? 1 : 0.55,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+        };
+        action.Classes.Add("palette-command");
+        AutomationProperties.SetName(action, command.Title);
+        action.Click += async (_, _) =>
+        {
+            Close();
+            await command.InvokeAsync();
+        };
+        return action;
     }
 
     private void Apply()

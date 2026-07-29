@@ -30,6 +30,23 @@ namespace Harness.Presentation.Avalonia.Tests;
 public sealed class PresentationControlTests
 {
     [Fact]
+    public void Settings_search_matches_stable_categories_and_related_terms()
+    {
+        Assert.Equal(7, SettingsCatalog.All.Count);
+        Assert.Equal(
+            SettingsCategoryId.Appearance,
+            Assert.Single(SettingsCatalog.Filter("contrast")).Id);
+        Assert.Equal(
+            SettingsCategoryId.ModelsAndRoles,
+            Assert.Single(SettingsCatalog.Filter("reviewer")).Id);
+        Assert.Equal(
+            SettingsCategoryId.StorageAndRecovery,
+            Assert.Single(SettingsCatalog.Filter("backup")).Id);
+        Assert.Empty(SettingsCatalog.Filter("not-a-real-setting"));
+        Assert.Single(SettingsCatalog.All, category => category.IsAvailable);
+    }
+
+    [Fact]
     public void Closing_a_document_decision_dialog_defaults_to_cancel()
     {
         Assert.Equal(WorkbenchUnsavedDecision.Cancel, default(WorkbenchUnsavedDecision));
@@ -1055,7 +1072,7 @@ public sealed class PresentationControlTests
             Window firstWindow = new() { Content = first.Control };
             firstWindow.Show();
             StackPanel layoutActions = Assert.IsType<StackPanel>(first.LayoutActions);
-            Assert.Contains(layoutActions.Children, item =>
+            Assert.Contains(Assert.IsType<StackPanel>(first.DocumentActions).Children, item =>
                 AutomationProperties.GetName(item) == "Workbench layout status");
             Assert.Contains(layoutActions.Children, item =>
                 AutomationProperties.GetName(item) == "Save current panel layout");

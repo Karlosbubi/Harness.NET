@@ -1,3 +1,4 @@
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Input;
@@ -123,6 +124,21 @@ public sealed class CommandPaletteDialogTests
         IReadOnlyList<PaletteCommand> commands = [Command("Alpha"), Command("Beta")];
 
         await WithPalette(commands, (_, _, results) => Assert.Equal(2, results.ItemCount));
+    }
+
+    [Fact]
+    public async Task Available_commands_expose_direct_accessible_actions()
+    {
+        IReadOnlyList<PaletteCommand> commands = [Command("Save workbench layout")];
+
+        await WithPalette(commands, (palette, _, _) =>
+        {
+            Button action = Assert.Single(
+                palette.GetLogicalDescendants().OfType<Button>(),
+                item => item.Classes.Contains("palette-command"));
+            Assert.True(action.IsEnabled);
+            Assert.Equal("Save workbench layout", AutomationProperties.GetName(action));
+        });
     }
 
     [Fact]

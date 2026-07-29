@@ -38,7 +38,6 @@ internal sealed class MainWindow : Window
     private readonly TextBlock goalContext = new() { TextWrapping = TextWrapping.Wrap };
     private readonly ItemsControl evidence = new();
     private readonly ComboBox modelPicker = new();
-    private readonly ComboBox themePicker = new();
     private readonly Button send = new() { Content = "Send" };
     private readonly Button cancel = new() { Content = "Cancel" };
     private readonly Button openWorkspace = new() { Content = "Open workspace" };
@@ -47,6 +46,7 @@ internal sealed class MainWindow : Window
     private readonly Button manageGoals = new() { Content = "Goals" };
     private readonly Button goalAction = new() { Content = "Create or select a goal" };
     private readonly Button operations = new() { Content = "Operations" };
+    private readonly Button settings = new() { Content = "Settings" };
     private readonly Button commandBar = new()
     {
         Classes = { "command-bar" },
@@ -58,10 +58,10 @@ internal sealed class MainWindow : Window
         Content = "↻",
         AccessibleName = "Refresh provider models",
     };
-    private readonly AccessibleIconButton reloadThemes = new()
+    private readonly AccessibleIconButton openSettings = new()
     {
-        Content = "↻",
-        AccessibleName = "Reload user themes",
+        Content = "⚙",
+        AccessibleName = "Open Settings",
     };
     private readonly Border header = new();
     private readonly Border navigation = new();
@@ -76,11 +76,6 @@ internal sealed class MainWindow : Window
     private readonly TextBlock modelLabel = new()
     {
         Text = "Chat",
-        VerticalAlignment = VerticalAlignment.Center,
-    };
-    private readonly TextBlock themeLabel = new()
-    {
-        Text = "Theme",
         VerticalAlignment = VerticalAlignment.Center,
     };
     private WorkbenchDockHost? workbench;
@@ -229,10 +224,7 @@ internal sealed class MainWindow : Window
             Children =
             {
                 Cluster(modelLabel, modelPicker, refreshProvider),
-                Cluster(themeLabel, themePicker, reloadThemes),
-                workbench?.LayoutActions is { } layoutActions
-                    ? Cluster(layoutActions)
-                    : new TextBlock(),
+                Cluster(openSettings),
             },
         };
         Grid.SetColumn(commandBar, 2);
@@ -248,15 +240,11 @@ internal sealed class MainWindow : Window
         Grid.SetColumn(actionScroller, 3);
         grid.Children.Add(actionScroller);
         AutomationProperties.SetName(modelPicker, "Conversation model");
-        AutomationProperties.SetName(themePicker, "Color theme");
         modelPicker.MinWidth = 120;
-        themePicker.MinWidth = 100;
         modelPicker.Classes.Add("toolbar-input");
-        themePicker.Classes.Add("toolbar-input");
         refreshProvider.Classes.Add("icon");
-        reloadThemes.Classes.Add("icon");
+        openSettings.Classes.Add("icon");
         modelLabel.Classes.Add("cluster-label");
-        themeLabel.Classes.Add("cluster-label");
         return grid;
     }
 
@@ -310,7 +298,6 @@ internal sealed class MainWindow : Window
         // The palette keeps its keyboard shortcut when the bar is hidden for width.
         commandBar.IsVisible = !compact;
         modelLabel.IsVisible = !compact;
-        themeLabel.IsVisible = !compact;
     }
 
     private Control BuildNavigation()
@@ -331,10 +318,11 @@ internal sealed class MainWindow : Window
                 manageFramework,
                 new Separator(),
                 new TextBlock { Text = "APPLICATION", FontSize = 11, FontWeight = FontWeight.Bold },
+                settings,
                 operations,
             },
         };
-        foreach (Button button in new[] { manageWorkspaces, manageGoals, manageFramework, operations })
+        foreach (Button button in new[] { manageWorkspaces, manageGoals, manageFramework, settings, operations })
         {
             button.Classes.Add("command");
             button.HorizontalAlignment = HorizontalAlignment.Stretch;
@@ -343,6 +331,7 @@ internal sealed class MainWindow : Window
         AutomationProperties.SetName(manageWorkspaces, "Manage workspaces");
         AutomationProperties.SetName(manageGoals, "Goals and plans");
         AutomationProperties.SetName(manageFramework, "Engineering framework");
+        AutomationProperties.SetName(settings, "Application settings");
         AutomationProperties.SetName(operations, "Application operations");
         AutomationProperties.SetName(panel, "Workspace navigation");
         return panel;
@@ -465,17 +454,9 @@ internal sealed class MainWindow : Window
                 await store.SelectModelAsync(model, cancellationToken);
             }
         };
-        themePicker.SelectionChanged += async (_, _) =>
-        {
-            if (!suppressSelection && themePicker.SelectedItem is ThemeChoice choice)
-            {
-                await store.SelectThemeAsync(choice.Id, cancellationToken);
-            }
-        };
         refreshProvider.Click +=
             async (_, _) => await store.RefreshProviderAsync(cancellationToken);
-        reloadThemes.Click +=
-            async (_, _) => await store.RefreshThemesAsync(cancellationToken);
+        openSettings.Click += async (_, _) => await ShowSettingsAsync();
         openWorkspace.Click += async (_, _) => await ShowWorkspaceDialogAsync(true);
         manageWorkspaces.Click += async (_, _) => await ShowWorkspaceDialogAsync(false);
         manageGoals.Click += async (_, _) =>
@@ -493,6 +474,7 @@ internal sealed class MainWindow : Window
             FrameworkDialog dialog = new(store, cancellationToken);
             await dialog.ShowDialog(this);
         };
+        settings.Click += async (_, _) => await ShowSettingsAsync();
         operations.Click += async (_, _) =>
         {
             OperationsDialog dialog = new(store, cancellationToken);
@@ -515,6 +497,11 @@ internal sealed class MainWindow : Window
         {
             args.Handled = true;
             await ShowQuickOpenAsync();
+        }
+        else if (args.KeyModifiers == KeyModifiers.Control && args.Key is Key.OemComma)
+        {
+            args.Handled = true;
+            await ShowSettingsAsync();
         }
     }
 
@@ -569,6 +556,8 @@ internal sealed class MainWindow : Window
             new("framework.manage", "Framework", "Effective framework…",
                 () => new(ShowDialogAsync(new FrameworkDialog(store, cancellationToken))),
                 UnavailableReason: needsWorkspace),
+            new("settings.open", "Application", "Settings…",
+                () => new(ShowSettingsAsync()), "Ctrl+,"),
             new("operations.manage", "Application", "Operations and backup…",
                 () => new(ShowDialogAsync(new OperationsDialog(store, cancellationToken)))),
             new("provider.refresh", "Providers", "Refresh provider health",
@@ -600,6 +589,9 @@ internal sealed class MainWindow : Window
     }
 
     private async Task ShowDialogAsync(Window dialog) => await dialog.ShowDialog(this);
+
+    private async Task ShowSettingsAsync() =>
+        await new SettingsWindow(store, cancellationToken).ShowDialog(this);
 
     private async void OnOpened(object? sender, EventArgs eventArgs)
     {
@@ -709,18 +701,6 @@ internal sealed class MainWindow : Window
             {
                 themeController.Register(AvaloniaThemeMapper.UserThemes(appearance));
                 themeController.Select(new(appearance.EffectiveThemeId.Value));
-                ThemeChoice[] choices = appearance.Themes
-                    .Select(theme => new ThemeChoice(theme.Id.Value, theme.DisplayName))
-                    .ToArray();
-                themePicker.ItemsSource = choices;
-                themePicker.SelectedItem = choices.FirstOrDefault(choice =>
-                    choice.Id == appearance.PreferredThemeId.Value);
-                ToolTip.SetTip(
-                    themePicker,
-                    appearance.Issues.Count == 0
-                        ? "All installed themes are valid."
-                        : string.Join("\n", appearance.Issues.Select(issue =>
-                            $"⚠ {issue.SourceName}: {issue.Message}")));
             }
             workbench?.Update(state);
         }
@@ -863,11 +843,6 @@ internal sealed class MainWindow : Window
         Application.Current?.TryFindResource(HarnessThemeResources.Key(token), out object? value) is true
             ? value as IBrush
             : null;
-
-    private sealed record ThemeChoice(string Id, string Name)
-    {
-        public override string ToString() => Name;
-    }
 
     private sealed class CompositeDisposable : IDisposable
     {

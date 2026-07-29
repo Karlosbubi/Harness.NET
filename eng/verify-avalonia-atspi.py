@@ -562,7 +562,11 @@ def main() -> int:
             register_workspace(application, repository)
             create_and_approve_goal(application)
             verify_documents_and_search(application, repository)
-            application.invoke("Save current panel layout")
+            application.invoke("Open the command palette")
+            application.wait_for_name("Command palette filter", "entry")
+            application.set_text("Command palette filter", "save layout")
+            application.wait_for_name("Save workbench layout", "push button")
+            application.invoke("Save workbench layout")
             application.wait_for_name("Layout saved", "label")
             stop(process)
             process = None

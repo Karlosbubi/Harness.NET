@@ -737,7 +737,7 @@ internal sealed class WorkbenchDockHost
             Orientation = AvaloniaOrientation.Horizontal,
             Spacing = 6,
             VerticalAlignment = VerticalAlignment.Center,
-            Children = { layoutStatus, save, reset },
+            Children = { save, reset },
         };
     }
 
@@ -775,6 +775,7 @@ internal sealed class WorkbenchDockHost
                 },
                 documentSwitcher,
                 focusEditor,
+                layoutStatus,
             },
         };
         AutomationProperties.SetName(actions, "Editor document navigation");

@@ -135,6 +135,7 @@ Start with:
 - [Framework discovery](docs/framework.md)
 - [Accepted architecture](docs/architecture.md)
 - [Runtime configuration](docs/configuration.md)
+- [Settings ownership and delivery](docs/settings.md)
 - [Delivery outline](docs/roadmap.md)
 - [Decision records](docs/decisions/README.md)
 
