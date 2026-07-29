@@ -59,8 +59,11 @@ editable real source documents, switches and focuses them through app-owned
 accessible commands, searches tracked text, saves and restores layout across a
 process restart, and proves corrupt-layout fallback. Its pages, tools, editor region,
 commands, and Dock chrome are exposed without generic actionable template labels. A
-spoken screen-reader pass and the edit-through-commit workflow tail remain required
-before this record can become Accepted.
+production Orca 50.2 pass generated contextual speech for representative editor,
+workspace, layout, and dialog controls. It also announced framework container type
+names between those useful controls. Removing that navigation noise and completing
+the edit-through-commit workflow tail remain required before this record can become
+Accepted.
 The bottom edge now contains distinct Conversation and Run output tools. Run output
 is a typed projection of durable Build/Test/Restore evidence with bounded stdout and
 stderr; Presentation never decodes audit JSON and no unrestricted terminal is
@@ -115,7 +118,8 @@ Presentation; Business Logic and Data Access contracts do not expose them.
 - Verify Fluent-theme token overrides, keyboard/focus behavior, screen-reader names,
   scaling, floating-window ownership, and compact-layout fallback. **Automated checks,
   raw keyboard input, production AT-SPI traversal/actions, and wide/compact hands-on
-  review met; spoken screen-reader validation remains.**
+  review met. Production Orca speech generation is verified for representative
+  controls; framework container type names still pollute traversal.**
 - Verify headless construction plus Linux x64 single-file publishing. **Met.**
 - Demonstrate open/activate/close for real source and diff documents without fake
   defaults and without leaking Dock types across the Presentation boundary. **Met.**

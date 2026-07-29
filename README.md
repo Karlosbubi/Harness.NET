@@ -55,9 +55,10 @@ is implemented as a distinct Dock tool over durable typed Build/Test/Restore evi
 without adding a terminal. The rendered Dock content boundary, minimum-size fallback,
 keyboard restoration, floating ownership, accessible names, and 200% scaling are now
 covered, with real wide/compact review and a repeatable production AT-SPI workflow
-recorded under `docs/acceptance`. Spoken screen-reader and the explicit-goal
-edit/build/test/review/exact-commit workflow tail tracked by ADR 010 and Tasks
-027-033 remain release blockers.
+recorded under `docs/acceptance`. Production Orca generates contextual speech for
+representative controls; framework-container announcement noise and the explicit-goal
+edit/build/test/review/exact-commit workflow tail tracked by ADR 010 and Tasks 027-033
+remain release blockers.
 The Avalonia and TUI Framework surfaces show the resolved engineering rules and
 guidance with locks, provenance, privacy, and validation issues, and edit only the
 private workspace overlay without adding repository metadata.

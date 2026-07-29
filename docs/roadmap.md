@@ -137,12 +137,14 @@ workflow boundaries without replaying uncertain calls.
   backup/export, and recovery acceptance coverage.
 - Complete hands-on Avalonia usability and visual-quality acceptance across the
   production workspace, goal, evidence, and recovery workflows.
-- Complete the ADR 010 workbench acceptance matrix with a spoken screen-reader pass
-  and the edit/build/test/review/exact-commit workflow tail. Production AT-SPI now
-  covers real repository registration/trust, manual goal/plan approval, isolated
+- Complete the ADR 010 workbench acceptance matrix by suppressing framework-container
+  names in screen-reader traversal and finishing the
+  edit/build/test/review/exact-commit workflow tail. Production AT-SPI now covers
+  real repository registration/trust, manual goal/plan approval, isolated
   editable-worktree source, search, multi-document switching/focus, restart, and
-  corrupt-layout fallback. The real central editor, production tool docks, and
-  private validated layout recovery are implemented.
+  corrupt-layout fallback; Orca 50.2 generates contextual speech for representative
+  controls. The real central editor, production tool docks, and private validated
+  layout recovery are implemented.
 - Add other platforms or gRPC only through existing Business Logic contracts when a
   concrete workflow justifies them.
 

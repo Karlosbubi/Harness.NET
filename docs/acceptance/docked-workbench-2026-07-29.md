@@ -52,5 +52,21 @@ Linux session. With isolated XDG directories and a temporary real Git repository
 The verifier restores the session's original accessibility flags, invokes no model,
 and removes its temporary repository and XDG state. It passed on 2026-07-29.
 
-This is a checkpoint, not Task 033 completion. A spoken screen-reader pass and the
-edit/build/test/review/exact-commit workflow tail remain open.
+Orca 50.2 was then attached to the same production host with an isolated application
+profile. Its debug speech-generation trace records contextual utterances including
+“Conversation model, combo box”, “Open editor documents, combo box”, “Save current
+panel layout, button”, “Workspace, page tab”, “Manage workspaces, button”,
+“Repository path, entry”, and “Inspect, button”. This verifies the actual screen-reader
+speech pipeline rather than inferring output from automation properties, but it is
+not represented as a human listening study. No model was invoked and the original
+desktop accessibility settings were restored after the run.
+
+The same traversal exposed a remaining accessibility defect: framework containers
+such as `ScrollContentPresenter`, `StackPanel`, `DockableControl`, and
+`DeferredContentControl` are interleaved with the useful application announcements.
+Those implementation names must be hidden or replaced with meaningful structural
+labels before desktop accessibility acceptance.
+
+This is a checkpoint, not Task 033 completion. Removing the framework-container
+speech noise and completing the edit/build/test/review/exact-commit workflow tail
+remain open.
