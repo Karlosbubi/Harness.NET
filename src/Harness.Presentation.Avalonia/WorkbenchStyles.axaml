@@ -37,6 +37,17 @@
   <Style Selector="Button.icon:pointerover">
     <Setter Property="Background" Value="{DynamicResource Harness.Hover}" />
   </Style>
+  <Style Selector="Button.tree-file">
+    <Setter Property="MinHeight" Value="24" />
+    <Setter Property="Padding" Value="4,2" />
+    <Setter Property="CornerRadius" Value="3" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="HorizontalContentAlignment" Value="Left" />
+  </Style>
+  <Style Selector="Button.tree-file:pointerover">
+    <Setter Property="Background" Value="{DynamicResource Harness.Hover}" />
+  </Style>
   <Style Selector="TextBox.workspace-input">
     <Setter Property="MinHeight" Value="36" />
     <Setter Property="Padding" Value="10,7" />
@@ -50,6 +61,13 @@
     <Setter Property="BorderThickness" Value="1" />
     <Setter Property="BorderBrush" Value="{DynamicResource Harness.Border}" />
     <Setter Property="Background" Value="{DynamicResource Harness.Panel}" />
+  </Style>
+  <Style Selector="Border.message-card">
+    <Setter Property="Background" Value="{DynamicResource Harness.Panel}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Harness.Border}" />
+  </Style>
+  <Style Selector="Border.message-card.user">
+    <Setter Property="Background" Value="{DynamicResource Harness.AccentSoft}" />
   </Style>
   <Style Selector="TextBlock.eyebrow">
     <Setter Property="FontSize" Value="11" />

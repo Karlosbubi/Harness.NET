@@ -40,10 +40,10 @@ The desktop's primary Open workspace actions launch the platform-native folder p
 then show real tracked .NET solutions and projects before registration. Manual path
 entry remains available when a desktop picker is unavailable; choosing a folder does
 not grant repository trust.
-For a trusted active workspace, Avalonia exposes real bounded tracked-text search,
-file reading in a syntax-aware editor, Git status and diff inspection, and parsed
-.NET solution/project metadata. It does not display a fabricated file tree, terminal,
-problem count, build result, or goal progress.
+For a trusted active workspace, Avalonia exposes a real bounded Git-tracked file tree,
+tracked-text search, file reading in a syntax-aware editor, Git status and diff
+inspection, and parsed .NET solution/project metadata. It does not display a
+fabricated terminal, problem count, build result, or goal progress.
 The modal inspector has been replaced by the first Dock-based workbench: source and
 diff content open in a central document region while real workspace/search, Git,
 goal context, and conversation controls occupy tool regions. Panel movement, hiding,

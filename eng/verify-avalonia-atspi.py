@@ -246,7 +246,8 @@ def stop(process: subprocess.Popen[bytes]) -> None:
 def verify_initial_accessibility(application: AtSpiApplication) -> None:
     application.wait_for_name("Files", "page tab")
     application.invoke("Files", "page tab")
-    application.wait_for_name("Workspace-relative file path", "entry")
+    application.wait_for_name("Filter repository file tree", "entry")
+    application.wait_for_name("Repository file tree", "tree")
     application.wait_for_name("Search tracked workspace text", "entry")
     application.wait_for_name("Files panel controls", "title bar")
     application.invoke("Workspace", "page tab")
@@ -407,8 +408,8 @@ def verify_documents_and_search(
 ) -> None:
     application.invoke("Files", "page tab")
     for path in ("Program.cs", "Representative.csproj"):
-        application.set_text("Workspace-relative file path", path)
-        application.invoke("Open workspace-relative file")
+        application.wait_for_name(path, "push button")
+        application.invoke(path)
         application.wait_for_name(f"Editable source editor for {path}", "panel")
 
     if not application.text("Open editor documents", "combo box").startswith(

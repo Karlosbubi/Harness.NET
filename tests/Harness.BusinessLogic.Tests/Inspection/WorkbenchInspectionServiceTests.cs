@@ -13,22 +13,27 @@ public sealed class WorkbenchInspectionServiceTests
     public async Task Search_and_git_share_the_approved_goal_worktree_context()
     {
         TextSearcher searcher = new();
+        FileCatalogReader files = new();
         GitInspector git = new();
         WorkbenchInspectionService service = CreateService(
             CreateGoal("Approved"),
             CreateWorktree(),
             CreateWorkspace(isTrusted: true),
+            files,
             searcher,
             git);
         WorkbenchWorkspaceRequest request = new(new("workspace-id"), new("goal-id"));
 
+        WorkbenchFileCatalogResult catalog = await service.ListFilesAsync(request);
         WorkbenchTextSearchResult search = await service.SearchTextAsync(request, "needle");
         WorkbenchGitInspectionResult inspection = await service.InspectGitAsync(request);
 
+        Assert.Equal("/state/worktrees/goal-id", files.Root);
         Assert.Equal("/state/worktrees/goal-id", searcher.Root);
         Assert.Equal(searcher.Root, git.Root);
         Assert.Equal(WorkbenchWorkspaceScope.ApprovedGoalWorktree, search.Context.Scope);
         Assert.Equal(search.Context, inspection.Context);
+        Assert.Equal(search.Context, catalog.Context);
         Assert.Equal("harness/goal-test", inspection.Context.Branch?.Value);
         Assert.Equal("src/App.cs", Assert.Single(search.Search.Matches).Path);
         Assert.Equal("src/App.cs", Assert.Single(inspection.Git.Changes).Path);
@@ -38,11 +43,13 @@ public sealed class WorkbenchInspectionServiceTests
     public async Task Unapproved_goal_falls_back_to_an_honest_original_workspace_context()
     {
         TextSearcher searcher = new();
+        FileCatalogReader files = new();
         GitInspector git = new();
         WorkbenchInspectionService service = CreateService(
             CreateGoal("AwaitingPlanApproval"),
             worktree: null,
             CreateWorkspace(isTrusted: true),
+            files,
             searcher,
             git);
 
@@ -59,22 +66,28 @@ public sealed class WorkbenchInspectionServiceTests
     public async Task Revoked_trust_rejects_inspection_before_data_access()
     {
         TextSearcher searcher = new();
+        FileCatalogReader files = new();
         GitInspector git = new();
         WorkbenchInspectionService service = CreateService(
             CreateGoal("Approved"),
             CreateWorktree(),
             CreateWorkspace(isTrusted: false),
+            files,
             searcher,
             git);
 
+        WorkbenchFileCatalogResult catalog = await service.ListFilesAsync(
+            new(new("workspace-id"), new("goal-id")));
         WorkbenchTextSearchResult search = await service.SearchTextAsync(
             new(new("workspace-id"), new("goal-id")),
             "needle");
         WorkbenchGitInspectionResult inspection = await service.InspectGitAsync(
             new(new("workspace-id"), new("goal-id")));
 
+        Assert.Equal("workspace_not_trusted", catalog.Catalog.ErrorCode);
         Assert.Equal("workspace_not_trusted", search.Search.ErrorCode);
         Assert.Equal("workspace_not_trusted", inspection.Git.ErrorCode);
+        Assert.Null(files.Root);
         Assert.Null(searcher.Root);
         Assert.Null(git.Root);
     }
@@ -83,13 +96,32 @@ public sealed class WorkbenchInspectionServiceTests
         StoredGoal goal,
         StoredGoalWorktree? worktree,
         RegisteredWorkspace workspace,
+        FileCatalogReader files,
         TextSearcher searcher,
         GitInspector git) => new(
         new WorkbenchWorkspaceContextResolver(
             new GoalStore(goal, worktree),
             new WorkspaceStore(workspace)),
+        files,
         searcher,
         git);
+
+    private sealed class FileCatalogReader : IWorkspaceFileCatalogReader
+    {
+        internal string? Root { get; private set; }
+
+        public ValueTask<WorkspaceFileCatalog> ReadAsync(
+            string workspaceRoot,
+            CancellationToken cancellationToken = default)
+        {
+            Root = workspaceRoot;
+            return ValueTask.FromResult(new WorkspaceFileCatalog(
+                [new("src/App.cs")],
+                IsTruncated: false,
+                ErrorCode: null,
+                Error: null));
+        }
+    }
 
     private static StoredGoal CreateGoal(string state) => new(
         "goal-id", "workspace-id", "Safe edit", "Edit source", 2, null, state,

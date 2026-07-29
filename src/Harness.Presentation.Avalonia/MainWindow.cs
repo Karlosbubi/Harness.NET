@@ -112,7 +112,11 @@ internal sealed class MainWindow : Window
         subscriptions.Add(store.States.Subscribe(state =>
             Dispatcher.UIThread.Post(() => Render(state))));
         subscriptions.Add(themeController.Snapshots.Subscribe(_ =>
-            Dispatcher.UIThread.Post(ApplyTheme)));
+            Dispatcher.UIThread.Post(() =>
+            {
+                ApplyTheme();
+                RenderActivities(store.Current.Dashboard);
+            })));
         Opened += OnOpened;
         Closing += OnClosing;
         Closed += (_, _) => subscriptions.Dispose();
@@ -502,9 +506,7 @@ internal sealed class MainWindow : Window
                     ? $"{dashboard.Workspace.Name}\n{dashboard.Workspace.Branch}\n{dashboard.Workspace.Trust}"
                     : "No workspace open\nChoose a Git-backed .NET repository to begin.";
                 manageWorkspaces.Content = hasWorkspace ? "Switch workspace…" : "Open workspace…";
-                activities.ItemsSource = dashboard.Activities
-                    .Select(CreateMessageCard)
-                    .ToArray();
+                RenderActivities(dashboard);
                 ToolTip.SetTip(modelPicker, ProviderText(dashboard.Provider));
                 RenderGoalInspector(state.Goals);
                 string[] models = dashboard.Provider.Models.Select(model => model.Id).ToArray();
@@ -518,7 +520,6 @@ internal sealed class MainWindow : Window
                     ? StatusSeverity.Error
                     : state.IsStreaming ? StatusSeverity.Information : StatusSeverity.Success;
                 budget.Text = dashboard.Budget;
-                Dispatcher.UIThread.Post(conversationScroll.ScrollToEnd);
             }
             else
             {
@@ -571,6 +572,14 @@ internal sealed class MainWindow : Window
         status.RefreshTheme();
     }
 
+    private void RenderActivities(DashboardSnapshot? dashboard)
+    {
+        activities.ItemsSource = dashboard?.Activities
+            .Select(CreateMessageCard)
+            .ToArray() ?? [];
+        Dispatcher.UIThread.Post(conversationScroll.ScrollToEnd);
+    }
+
     private Control CreateMessageCard(ActivityItem item)
     {
         bool isUser = string.Equals(item.Actor, "You", StringComparison.Ordinal);
@@ -594,16 +603,21 @@ internal sealed class MainWindow : Window
         Grid.SetColumn(messageStatus, 1);
         metadata.Children.Add(messageStatus);
         StackPanel body = new() { Children = { metadata, content } };
-        return new Border
+        Border card = new()
         {
             Child = body,
             Padding = new Thickness(13, 10),
             Margin = isUser ? new Thickness(52, 0, 4, 10) : new Thickness(4, 0, 52, 10),
             CornerRadius = new CornerRadius(9),
-            Background = Brush(isUser ? UiThemeColorToken.AccentSoft : UiThemeColorToken.Panel),
-            BorderBrush = Brush(UiThemeColorToken.Border),
             BorderThickness = new Thickness(1),
         };
+        card.Classes.Add("message-card");
+        if (isUser)
+        {
+            card.Classes.Add("user");
+        }
+
+        return card;
     }
 
     private void RenderGoalInspector(GoalManagementState goals)

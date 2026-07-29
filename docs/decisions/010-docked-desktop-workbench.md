@@ -91,7 +91,8 @@ The default layout is:
 
 - a central `DocumentDock` containing real workspace file, Git diff, plan, and
   evidence documents;
-- workspace navigation and tracked-text search tools at the start edge;
+- workspace navigation plus a bounded tracked-file tree, local file filtering, and
+  tracked-text search tools at the start edge;
 - goal/activity and source-control tools at the end edge;
 - conversation and durable run output tools at the bottom edge.
 
@@ -109,6 +110,12 @@ read-only. Dirty indicators represent actual unsaved content. Closing, switching
 resetting layout, changing workspace, or exiting with a dirty document requires an
 explicit save/discard/cancel decision; external changes require explicit reload,
 overwrite/recreate, or keep-editing conflict resolution.
+
+The Files tool obtains its tree through a typed Business Logic projection over a
+bounded Git-index reader. It uses the same resolved source context as documents,
+search, and Git, lists only existing confined tracked paths, and never becomes an
+unrestricted filesystem browser. Selecting a file opens it through the existing
+document boundary; directory hierarchy and filtering remain Presentation state.
 
 Persist only a versioned, validated desktop-layout description in Harness.NET's
 private XDG state. Never write layout metadata into a user repository. Reject or

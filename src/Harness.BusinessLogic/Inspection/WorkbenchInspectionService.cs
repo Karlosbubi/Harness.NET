@@ -1,3 +1,4 @@
+using Harness.BusinessLogic.Documents;
 using Harness.BusinessLogic.Workspaces;
 using Harness.DataAccess.Inspection;
 
@@ -5,9 +6,40 @@ namespace Harness.BusinessLogic.Inspection;
 
 internal sealed class WorkbenchInspectionService(
     IWorkbenchWorkspaceContextResolver contextResolver,
+    IWorkspaceFileCatalogReader fileCatalogReader,
     IWorkspaceTextSearcher textSearcher,
     IWorkspaceGitInspector gitInspector) : IWorkbenchInspectionService
 {
+    public async ValueTask<WorkbenchFileCatalogResult> ListFilesAsync(
+        WorkbenchWorkspaceRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        WorkbenchWorkspaceResolution resolution = await contextResolver.ResolveAsync(
+            request,
+            cancellationToken);
+        if (resolution.Error is not null || resolution.RootPath is null)
+        {
+            return new(
+                resolution.Context,
+                new(
+                    [],
+                    IsTruncated: false,
+                    resolution.ErrorCode ?? "workspace_unavailable",
+                    resolution.Error ?? "The workspace context is unavailable."));
+        }
+
+        WorkspaceFileCatalog catalog = await fileCatalogReader.ReadAsync(
+            resolution.RootPath,
+            cancellationToken);
+        return new(
+            resolution.Context,
+            new(
+                catalog.Files.Select(file => new WorkbenchDocumentPath(file.Value)).ToArray(),
+                catalog.IsTruncated,
+                catalog.ErrorCode,
+                catalog.Error));
+    }
+
     public async ValueTask<WorkbenchTextSearchResult> SearchTextAsync(
         WorkbenchWorkspaceRequest request,
         string query,

@@ -4,6 +4,10 @@ namespace Harness.BusinessLogic.Inspection;
 
 public interface IWorkbenchInspectionService
 {
+    ValueTask<WorkbenchFileCatalogResult> ListFilesAsync(
+        WorkbenchWorkspaceRequest request,
+        CancellationToken cancellationToken = default);
+
     ValueTask<WorkbenchTextSearchResult> SearchTextAsync(
         WorkbenchWorkspaceRequest request,
         string query,

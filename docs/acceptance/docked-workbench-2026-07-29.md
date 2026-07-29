@@ -36,13 +36,22 @@ nor execution authority. The KDE/Wayland native chooser and the redesigned manag
 were rendered and inspected on 2026-07-29 with isolated XDG state; no repository or
 model call was created by that visual check.
 
+The Files follow-up removes manual relative-path entry. A conventional hierarchical
+tree now presents existing Git-tracked paths from the resolved original repository or
+approved goal worktree, with local filtering, refresh, keyboard selection, and the
+existing content search retained below it. Conversation cards use dynamic theme
+resources, preventing the unreadable combination of a retained light card background
+and newly selected dark-theme text.
+
 ## Deterministic evidence
 
 `Harness.Presentation.Avalonia.Tests` verifies that a real opened AvaloniaEdit source
 editor belongs to the rendered window visual tree, not merely a Dock context object.
 It also replaces the live layout with the safe default and verifies that the active
 overview, workspace, conversation, and goal-context controls remain in that rendered
-tree. The same suite verifies compact tool restoration through Ctrl+Shift+E,
+tree. It also verifies tracked paths become a directory-first file tree, filtering
+preserves hierarchy, and message-card backgrounds follow effective theme-resource
+changes. The same suite verifies compact tool restoration through Ctrl+Shift+E,
 Ctrl+Shift+G, Ctrl+J, and F6; focusable targets; explicit automation names; floating
 window ownership; layout recovery; and a 200% framebuffer whose pixel dimensions
 double without changing logical layout.

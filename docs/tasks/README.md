@@ -69,7 +69,7 @@ but the end-user workflow is not complete.
 | ID | Status | User capability | Current gap | Done when |
 |---|---|---|---|---|
 | 034 | Done | Open a workspace through a familiar first-run journey | 027 | The primary shell and centered empty state open Avalonia's native single-folder picker, retain a manual-path fallback, scan the selected Git repository through the existing typed boundary, and present discovered solutions/projects before registration or trust. The workspace manager separates existing workspaces from adding one, and headless plus production AT-SPI checks cover the route. |
-| 035 | In progress | Make every frequent desktop journey feel deliberate and efficient | The first-run hierarchy, workspace manager, goal pane, compact layout controls, and semantic component styling are improved. Goal/framework/operations management remains form-dense, and repository navigation still depends on path entry or search instead of a discoverable tracked-file tree. | Workspace, files, goals, plans, evidence, provider settings, framework, recovery, and editing flows have coherent progressive disclosure, keyboard paths, useful empty/loading/error states, and recorded wide/compact hands-on review without hiding consequential approval detail. |
+| 035 | In progress | Make every frequent desktop journey feel deliberate and efficient | The first-run hierarchy, workspace manager, goal pane, compact layout controls, semantic component styling, conversation contrast, and repository file navigation are improved. Goal/framework/operations management remains form-dense. | Workspace, files, goals, plans, evidence, provider settings, framework, recovery, and editing flows have coherent progressive disclosure, keyboard paths, useful empty/loading/error states, and recorded wide/compact hands-on review without hiding consequential approval detail. |
 
 ### v1.0 release gate
 
@@ -327,3 +327,10 @@ configured or paid provider.
   to appear in the window visual tree. Deterministic checks cover compact keyboard
   restoration, explicit automation names, floating-window ownership, and 200%
   rendering; the recorded wide/compact review is linked from ADR 010.
+- Task 035 replaces manual relative-path entry in Files with a bounded Git-tracked
+  tree over the same typed original-workspace or approved-worktree context used by
+  source, search, and Git. The tree filters locally, refreshes without accepting stale
+  context results, opens files through the existing document boundary, and retains
+  content search below the tree. Conversation cards now bind their panel/accent
+  backgrounds dynamically so an effective light/dark theme change cannot combine an
+  old card background with new foreground colors.

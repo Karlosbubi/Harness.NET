@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
+using Avalonia.Controls.Templates;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -67,7 +68,8 @@ internal sealed class WorkbenchDockHost
     };
     private readonly TextBlock overviewDetails = new() { TextWrapping = TextWrapping.Wrap };
     private readonly Button overviewAction = new() { Content = "Open workspace" };
-    private readonly TextBox path = new();
+    private readonly TextBox fileFilter = new();
+    private readonly TreeView fileTree = new();
     private readonly TextBox query = new();
     private readonly ListBox searchResults = new();
     private readonly TextBlock fileStatus = new() { TextWrapping = TextWrapping.Wrap };
@@ -87,6 +89,12 @@ internal sealed class WorkbenchDockHost
     private string? runOutputFingerprint;
     private bool busy;
     private bool runOutputBusy;
+    private bool fileTreeBusy;
+    private int fileTreeContextVersion;
+    private IReadOnlyList<WorkbenchDocumentPath> trackedFiles = [];
+    private string? fileTreeError;
+    private string? fileTreeContext;
+    private bool fileTreeTruncated;
     private bool suppressDocumentActivation;
     private bool renderingDocumentSwitcher;
     private bool resolvingDocumentTransition;
@@ -278,6 +286,8 @@ internal sealed class WorkbenchDockHost
     internal bool IsCompactViewport { get; private set; }
     internal Control? LastRequestedFocusTarget { get; private set; }
     internal int SourceDocumentCount => sourceDocuments.Count;
+    internal TreeView FileTree => fileTree;
+    internal TextBox FileFilter => fileFilter;
     internal TextEditor? ActiveSourceEditor => activeDocument?.Id is { } id &&
                                                sourceDocuments.TryGetValue(id, out SourceDocumentSession? session)
         ? session.Editor
@@ -382,6 +392,7 @@ internal sealed class WorkbenchDockHost
         Update(state());
         if (ActiveWorkspace() is { IsTrusted: true })
         {
+            await RefreshFilesAsync();
             await RefreshGitAsync();
         }
     }
@@ -409,14 +420,25 @@ internal sealed class WorkbenchDockHost
         WorkspaceView? active = snapshot.Workspaces.Registered.FirstOrDefault(item => item.IsActive);
         if (!string.Equals(workspaceId, active?.Id, StringComparison.Ordinal))
         {
+            fileTreeContextVersion++;
             workspaceId = active?.Id;
             Dispatcher.UIThread.Post(async () =>
                 await CloseAllSourceDocumentsAsync(WorkbenchDocumentTransition.Close));
             searchResults.ItemsSource = Array.Empty<SearchChoice>();
+            searchResults.IsVisible = false;
+            trackedFiles = [];
+            fileTreeError = null;
+            fileTreeContext = null;
+            fileTreeTruncated = false;
+            RenderFileTree();
             changes.ItemsSource = Array.Empty<ChangeChoice>();
             fileStatus.Text = string.Empty;
             gitStatus.Text = string.Empty;
             gitSummary.Text = active is null ? "No workspace selected." : "Refresh Git state.";
+            if (active is { IsTrusted: true })
+            {
+                Dispatcher.UIThread.Post(async () => await RefreshFilesAsync());
+            }
         }
 
         GoalView? selectedGoal = snapshot.Goals.SelectedGoal;
@@ -426,8 +448,10 @@ internal sealed class WorkbenchDockHost
             : null;
         if (!string.Equals(selectedGoalId, nextGoalId, StringComparison.Ordinal))
         {
+            fileTreeContextVersion++;
             selectedGoalId = nextGoalId;
             searchResults.ItemsSource = Array.Empty<SearchChoice>();
+            searchResults.IsVisible = false;
             changes.ItemsSource = Array.Empty<ChangeChoice>();
             fileStatus.Text = nextGoalId is null
                 ? "Source context: original workspace."
@@ -438,7 +462,11 @@ internal sealed class WorkbenchDockHost
                 : "Refreshing Git state for the current source context…";
             if (active is { IsTrusted: true })
             {
-                Dispatcher.UIThread.Post(async () => await RefreshGitAsync());
+                Dispatcher.UIThread.Post(async () =>
+                {
+                    await RefreshFilesAsync();
+                    await RefreshGitAsync();
+                });
             }
         }
 
@@ -893,33 +921,67 @@ internal sealed class WorkbenchDockHost
     {
         Grid grid = new()
         {
-            RowDefinitions = new("Auto,Auto,*,Auto"),
-            Margin = new Thickness(10),
-            RowSpacing = 8,
+            RowDefinitions = new("Auto,*,Auto,Auto,Auto"),
+            Margin = new Thickness(8),
+            RowSpacing = 6,
         };
-        Grid pathRow = new() { ColumnDefinitions = new("*,Auto"), ColumnSpacing = 6 };
-        path.PlaceholderText = "Relative file path";
-        AutomationProperties.SetName(path, "Workspace-relative file path");
-        Button open = new() { Content = "Open" };
-        AutomationProperties.SetName(open, "Open workspace-relative file");
-        open.Click += async (_, _) => await OpenFileAsync(path.Text ?? string.Empty);
-        path.KeyDown += async (_, args) =>
+        Grid filterRow = new() { ColumnDefinitions = new("*,Auto"), ColumnSpacing = 4 };
+        fileFilter.PlaceholderText = "Filter repository files";
+        fileFilter.Classes.Add("workspace-input");
+        AutomationProperties.SetName(fileFilter, "Filter repository file tree");
+        fileFilter.TextChanged += (_, _) => RenderFileTree();
+        AccessibleIconButton refresh = new()
         {
-            if (args.Key is Key.Enter)
-            {
-                args.Handled = true;
-                await OpenFileAsync(path.Text ?? string.Empty);
-            }
+            Content = "↻",
+            AccessibleName = "Refresh repository file tree",
         };
-        pathRow.Children.Add(path);
-        Grid.SetColumn(open, 1);
-        pathRow.Children.Add(open);
-        grid.Children.Add(pathRow);
+        refresh.Classes.Add("icon");
+        refresh.Click += async (_, _) => await RefreshFilesAsync();
+        filterRow.Children.Add(fileFilter);
+        Grid.SetColumn(refresh, 1);
+        filterRow.Children.Add(refresh);
+        grid.Children.Add(filterRow);
+
+        fileTree.ItemTemplate = new FuncTreeDataTemplate<FileTreeNode>(
+            (node, _) =>
+            {
+                if (node.Path is { } filePath)
+                {
+                    Button file = new()
+                    {
+                        Content = node.Name,
+                        HorizontalAlignment = HorizontalAlignment.Stretch,
+                        HorizontalContentAlignment = HorizontalAlignment.Left,
+                    };
+                    file.Classes.Add("tree-file");
+                    AutomationProperties.SetName(file, filePath.Value);
+                    file.Click += async (_, _) => await OpenFileAsync(filePath.Value);
+                    return file;
+                }
+
+                TextBlock label = new()
+                {
+                    Text = node.Name,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+                return label;
+            },
+            node => node.Children);
+        AutomationProperties.SetName(fileTree, "Repository file tree");
+        Grid.SetRow(fileTree, 1);
+        grid.Children.Add(fileTree);
 
         Grid searchRow = new() { ColumnDefinitions = new("*,Auto"), ColumnSpacing = 6 };
-        query.PlaceholderText = "Search tracked text";
+        query.PlaceholderText = "Search file contents";
+        query.Classes.Add("workspace-input");
         AutomationProperties.SetName(query, "Search tracked workspace text");
-        Button search = new() { Content = "Search" };
+        AccessibleIconButton search = new()
+        {
+            Content = "⌕",
+            AccessibleName = "Search tracked workspace text",
+        };
+        search.Classes.Add("icon");
         AutomationProperties.SetName(search, "Search tracked workspace text");
         search.Click += async (_, _) => await SearchAsync();
         query.KeyDown += async (_, args) =>
@@ -933,23 +995,133 @@ internal sealed class WorkbenchDockHost
         searchRow.Children.Add(query);
         Grid.SetColumn(search, 1);
         searchRow.Children.Add(search);
-        Grid.SetRow(searchRow, 1);
+        Grid.SetRow(searchRow, 2);
         grid.Children.Add(searchRow);
 
         AutomationProperties.SetName(searchResults, "Tracked-text search results");
+        searchResults.MaxHeight = 180;
+        searchResults.IsVisible = false;
         searchResults.DoubleTapped += async (_, _) =>
         {
             if (searchResults.SelectedItem is SearchChoice choice)
             {
-                path.Text = choice.Match.Path;
                 await OpenFileAsync(choice.Match.Path, choice.GoalId);
             }
         };
-        Grid.SetRow(searchResults, 2);
+        Grid.SetRow(searchResults, 3);
         grid.Children.Add(searchResults);
-        Grid.SetRow(fileStatus, 3);
+        fileStatus.Classes.Add("muted");
+        Grid.SetRow(fileStatus, 4);
         grid.Children.Add(fileStatus);
         return grid;
+    }
+
+    internal async ValueTask RefreshFilesAsync()
+    {
+        WorkspaceView? active = ActiveWorkspace();
+        if (fileTreeBusy)
+        {
+            return;
+        }
+
+        if (active is null || !active.IsTrusted)
+        {
+            trackedFiles = [];
+            fileTreeError = active is null
+                ? "Select a workspace to browse its files."
+                : "Trust the workspace to browse its files.";
+            fileTreeTruncated = false;
+            fileTreeContext = null;
+            RenderFileTree();
+            return;
+        }
+
+        int contextVersion = fileTreeContextVersion;
+        fileTreeBusy = true;
+        fileTreeError = null;
+        fileStatus.Text = "Loading repository files…";
+        try
+        {
+            WorkbenchFileCatalogResult result = await inspectionService.ListFilesAsync(
+                WorkbenchRequest(active),
+                cancellationToken);
+            if (contextVersion != fileTreeContextVersion)
+            {
+                return;
+            }
+
+            trackedFiles = result.Catalog.Files;
+            fileTreeTruncated = result.Catalog.IsTruncated;
+            fileTreeError = result.Catalog.Error;
+            fileTreeContext = result.Context.Description;
+            RenderFileTree();
+        }
+        catch (OperationCanceledException)
+        {
+            if (contextVersion == fileTreeContextVersion)
+            {
+                fileTreeError = "Repository file loading was cancelled.";
+                RenderFileTree();
+            }
+        }
+        catch (Exception exception)
+        {
+            if (contextVersion == fileTreeContextVersion)
+            {
+                fileTreeError = exception.Message;
+                RenderFileTree();
+            }
+        }
+        finally
+        {
+            fileTreeBusy = false;
+            if (contextVersion != fileTreeContextVersion)
+            {
+                Dispatcher.UIThread.Post(async () => await RefreshFilesAsync());
+            }
+        }
+    }
+
+    private void RenderFileTree()
+    {
+        string filter = fileFilter.Text?.Trim() ?? string.Empty;
+        IReadOnlyList<WorkbenchDocumentPath> visible = filter.Length == 0
+            ? trackedFiles
+            : trackedFiles
+                .Where(file => file.Value.Contains(filter, StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+        fileTree.ItemsSource = BuildFileTree(visible);
+        fileStatus.Text = fileTreeError ?? (trackedFiles.Count == 0
+            ? "No tracked files are available in the current source context."
+            : filter.Length == 0
+                ? $"{trackedFiles.Count:N0} tracked files" +
+                  (fileTreeTruncated ? " · list truncated" : string.Empty) +
+                  (string.IsNullOrWhiteSpace(fileTreeContext) ? string.Empty : $" · {fileTreeContext}")
+                : $"{visible.Count:N0} of {trackedFiles.Count:N0} tracked files");
+    }
+
+    private static IReadOnlyList<FileTreeNode> BuildFileTree(
+        IReadOnlyList<WorkbenchDocumentPath> paths)
+    {
+        FileTreeBuilder root = new(string.Empty);
+        foreach (WorkbenchDocumentPath path in paths)
+        {
+            string[] segments = path.Value.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            if (segments.Length == 0)
+            {
+                continue;
+            }
+
+            FileTreeBuilder parent = root;
+            foreach (string directory in segments[..^1])
+            {
+                parent = parent.Directory(directory);
+            }
+
+            parent.Files.Add(new(segments[^1], path, []));
+        }
+
+        return root.ToNodes();
     }
 
     private Control BuildSourceControlTool()
@@ -981,7 +1153,6 @@ internal sealed class WorkbenchDockHost
         {
             if (changes.SelectedItem is ChangeChoice choice)
             {
-                path.Text = choice.Change.Path;
                 await OpenFileAsync(choice.Change.Path, choice.GoalId);
             }
         };
@@ -1203,6 +1374,7 @@ internal sealed class WorkbenchDockHost
             searchResults.ItemsSource = result.Matches
                 .Select(match => new SearchChoice(match, inspected.Context.GoalId))
                 .ToArray();
+            searchResults.IsVisible = result.Matches.Count > 0;
             fileStatus.Text = result.Error ??
                               $"{inspected.Context.Description} · {result.Matches.Count} match(es) " +
                               $"in {result.FilesScanned} file(s)" +
@@ -2029,6 +2201,41 @@ internal sealed class WorkbenchDockHost
     private sealed record SearchChoice(WorkspaceTextMatchView Match, GoalId? GoalId)
     {
         public override string ToString() => $"{Match.Path}:{Match.LineNumber}  {Match.Text}";
+    }
+
+    internal sealed record FileTreeNode(
+        string Name,
+        WorkbenchDocumentPath? Path,
+        IReadOnlyList<FileTreeNode> Children);
+
+    private sealed class FileTreeBuilder(string name)
+    {
+        private readonly Dictionary<string, FileTreeBuilder> directories =
+            new(StringComparer.Ordinal);
+
+        internal List<FileTreeNode> Files { get; } = [];
+        internal string Name { get; } = name;
+
+        internal FileTreeBuilder Directory(string directory)
+        {
+            if (!directories.TryGetValue(directory, out FileTreeBuilder? child))
+            {
+                child = new(directory);
+                directories.Add(directory, child);
+            }
+
+            return child;
+        }
+
+        internal IReadOnlyList<FileTreeNode> ToNodes() =>
+            directories.Values
+                .OrderBy(directory => directory.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(directory => new FileTreeNode(
+                    directory.Name,
+                    Path: null,
+                    directory.ToNodes()))
+                .Concat(Files.OrderBy(file => file.Name, StringComparer.OrdinalIgnoreCase))
+                .ToArray();
     }
 
     private sealed record ChangeChoice(WorkspaceGitFileChangeView Change, GoalId? GoalId)

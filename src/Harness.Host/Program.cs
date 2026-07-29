@@ -87,6 +87,7 @@ builder.Services.AddSingleton<IWorkspaceFileEditor, AtomicWorkspaceFileEditor>()
 builder.Services.AddSingleton<IDotNetToolRunner, DotNetToolRunner>();
 builder.Services.AddSingleton<IWorkspaceMutationService, WorkspaceMutationService>();
 builder.Services.AddSingleton<IWorkspaceFileReader, WorkspaceFileReader>();
+builder.Services.AddSingleton<IWorkspaceFileCatalogReader, GitWorkspaceFileCatalogReader>();
 builder.Services.AddSingleton<IWorkspaceTextSearcher, GitWorkspaceTextSearcher>();
 builder.Services.AddSingleton<IWorkspaceGitInspector, LibGitWorkspaceGitInspector>();
 builder.Services.AddSingleton<IWorkspaceDotNetInspector, WorkspaceDotNetInspector>();

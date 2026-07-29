@@ -60,6 +60,50 @@ public sealed class PresentationControlTests
     }
 
     [Fact]
+    public async Task Message_card_background_tracks_effective_theme_resources()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            Application application = Assert.IsType<PresentationTestApplication>(Application.Current);
+            application.Resources[HarnessThemeResources.Key(UiThemeColorToken.Panel)] =
+                new SolidColorBrush(Colors.White);
+            application.Resources[HarnessThemeResources.Key(UiThemeColorToken.AccentSoft)] =
+                new SolidColorBrush(Colors.LightCyan);
+            application.Resources[HarnessThemeResources.Key(UiThemeColorToken.Border)] =
+                new SolidColorBrush(Colors.Gray);
+            Border assistant = new();
+            assistant.Classes.Add("message-card");
+            Border user = new();
+            user.Classes.Add("message-card");
+            user.Classes.Add("user");
+            Window window = new()
+            {
+                Content = new StackPanel { Children = { assistant, user } },
+            };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal(Colors.White, Assert.IsType<SolidColorBrush>(assistant.Background).Color);
+            Assert.Equal(Colors.LightCyan, Assert.IsType<SolidColorBrush>(user.Background).Color);
+
+            application.Resources[HarnessThemeResources.Key(UiThemeColorToken.Panel)] =
+                new SolidColorBrush(Color.Parse("#1B1B22"));
+            application.Resources[HarnessThemeResources.Key(UiThemeColorToken.AccentSoft)] =
+                new SolidColorBrush(Color.Parse("#173E43"));
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.Equal(
+                Color.Parse("#1B1B22"),
+                Assert.IsType<SolidColorBrush>(assistant.Background).Color);
+            Assert.Equal(
+                Color.Parse("#173E43"),
+                Assert.IsType<SolidColorBrush>(user.Background).Color);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
     public async Task Code_editor_loads_with_required_style_and_real_text()
     {
         using HeadlessUnitTestSession session =
@@ -193,6 +237,46 @@ public sealed class PresentationControlTests
             Assert.Equal("namespace Example;", editor.Text);
             Assert.True(editor.IsReadOnly);
             Assert.NotNull(workbench.Control.Template);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Files_tool_builds_and_filters_a_repository_tree()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            AvaloniaShellState shell = TrustedShell();
+            WorkbenchDockHost workbench = CreateWorkbench(shell, new());
+            Window window = new() { Width = 1280, Height = 800, Content = workbench.Control };
+            window.Show();
+
+            workbench.RefreshFilesAsync().AsTask().GetAwaiter().GetResult();
+            WorkbenchDockHost.FileTreeNode[] roots = Assert
+                .IsAssignableFrom<IEnumerable<WorkbenchDockHost.FileTreeNode>>(
+                    workbench.FileTree.ItemsSource)
+                .ToArray();
+
+            Assert.Equal(["src", "README.md"], roots.Select(node => node.Name));
+            WorkbenchDockHost.FileTreeNode source = roots[0];
+            Assert.Null(source.Path);
+            Assert.Equal(
+                ["App.cs", "Feature.cs"],
+                source.Children.Select(node => node.Name));
+            Assert.Equal("src/App.cs", source.Children[0].Path?.Value);
+
+            workbench.FileFilter.Text = "feature";
+            Dispatcher.UIThread.RunJobs();
+            roots = Assert
+                .IsAssignableFrom<IEnumerable<WorkbenchDockHost.FileTreeNode>>(
+                    workbench.FileTree.ItemsSource)
+                .ToArray();
+            source = Assert.Single(roots);
+            Assert.Equal("src", source.Name);
+            Assert.Equal("Feature.cs", Assert.Single(source.Children).Name);
+            Assert.Equal("Repository file tree", AutomationProperties.GetName(workbench.FileTree));
             window.Close();
         }, CancellationToken.None);
     }
@@ -1173,6 +1257,20 @@ public sealed class PresentationControlTests
     {
         internal List<WorkbenchWorkspaceRequest> Requests { get; } = [];
         internal string Diff { get; set; } = "first diff";
+
+        public ValueTask<WorkbenchFileCatalogResult> ListFilesAsync(
+            WorkbenchWorkspaceRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            Requests.Add(request);
+            return ValueTask.FromResult(new WorkbenchFileCatalogResult(
+                Context(request),
+                new(
+                    [new("src/App.cs"), new("src/Feature.cs"), new("README.md")],
+                    IsTruncated: false,
+                    ErrorCode: null,
+                    Error: null)));
+        }
 
         public ValueTask<WorkbenchTextSearchResult> SearchTextAsync(
             WorkbenchWorkspaceRequest request,
