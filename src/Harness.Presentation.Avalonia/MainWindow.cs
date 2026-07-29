@@ -118,7 +118,7 @@ internal sealed class MainWindow : Window
             Dispatcher.UIThread.Post(() =>
             {
                 ApplyTheme();
-                RenderActivities(store.Current.Dashboard);
+                RenderActivities(store.Current);
             })));
         Opened += OnOpened;
         Closing += OnClosing;
@@ -674,7 +674,7 @@ internal sealed class MainWindow : Window
                     ? $"{dashboard.Workspace.Name} · {dashboard.Workspace.Branch}"
                     : "No workspace open";
                 manageWorkspaces.Content = hasWorkspace ? "Switch workspace…" : "Open workspace…";
-                RenderActivities(dashboard);
+                RenderActivities(state);
                 ToolTip.SetTip(modelPicker, ProviderText(dashboard.Provider));
                 RenderGoalInspector(state.Goals);
                 string[] models = dashboard.Provider.Models.Select(model => model.Id).ToArray();
@@ -728,12 +728,83 @@ internal sealed class MainWindow : Window
         status.RefreshTheme();
     }
 
-    private void RenderActivities(DashboardSnapshot? dashboard)
+    private void RenderActivities(AvaloniaShellState state)
     {
-        activities.ItemsSource = dashboard?.Activities
+        List<Control> timeline = state.Dashboard?.Activities
             .Select(CreateMessageCard)
-            .ToArray() ?? [];
+            .ToList() ?? [];
+        IReadOnlyList<ConversationWorkflowCard> workflow =
+            ConversationWorkflowProjector.Project(state.Goals, state.Error);
+        if (workflow.Count > 0)
+        {
+            timeline.Add(new TextBlock
+            {
+                Text = "GOAL TIMELINE",
+                Classes = { "eyebrow" },
+                Margin = new Thickness(6, 8, 6, 6),
+            });
+            timeline.AddRange(workflow.Select(CreateWorkflowCard));
+        }
+        activities.ItemsSource = timeline;
         Dispatcher.UIThread.Post(conversationScroll.ScrollToEnd);
+    }
+
+    private Control CreateWorkflowCard(ConversationWorkflowCard item)
+    {
+        Border stateBadge = new()
+        {
+            Classes = { "workflow-state" },
+            Child = new TextBlock { Text = item.State.ToString().ToUpperInvariant() },
+        };
+        stateBadge.Classes.Add(item.State switch
+        {
+            ConversationWorkflowCardState.Approved or ConversationWorkflowCardState.Completed or
+                ConversationWorkflowCardState.Recovered => "success",
+            ConversationWorkflowCardState.Denied or ConversationWorkflowCardState.Failed or
+                ConversationWorkflowCardState.Cancelled or ConversationWorkflowCardState.Stale => "attention",
+            _ => "neutral",
+        });
+        Grid heading = new() { ColumnDefinitions = new("*,Auto"), ColumnSpacing = 8 };
+        heading.Children.Add(new TextBlock
+        {
+            Text = item.Title,
+            FontWeight = FontWeight.SemiBold,
+            TextWrapping = TextWrapping.Wrap,
+        });
+        Grid.SetColumn(stateBadge, 1);
+        heading.Children.Add(stateBadge);
+        StackPanel content = new()
+        {
+            Spacing = 6,
+            Children =
+            {
+                heading,
+                new TextBlock { Text = item.Summary, TextWrapping = TextWrapping.Wrap },
+            },
+        };
+        if (item.Details is { Length: > 0 } details && details != item.Summary)
+        {
+            content.Children.Add(new TextBlock
+            {
+                Text = details,
+                Classes = { "muted" },
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                MaxHeight = 86,
+            });
+        }
+
+        Border card = new()
+        {
+            Classes = { "workflow-card" },
+            Child = content,
+            Margin = new Thickness(4, 0, 28, 9),
+        };
+        AutomationProperties.SetName(
+            card,
+            $"{item.Kind}: {item.Title}, {item.State}");
+        AutomationProperties.SetAccessibilityView(card, AccessibilityView.Content);
+        return card;
     }
 
     private Control CreateMessageCard(ActivityItem item)

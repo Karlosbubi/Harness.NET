@@ -30,6 +30,46 @@ namespace Harness.Presentation.Avalonia.Tests;
 public sealed class PresentationControlTests
 {
     [Fact]
+    public void Workflow_cards_project_durable_and_degraded_states_without_commands()
+    {
+        AvaloniaShellState shell = ApprovedGoalShell();
+        GoalView goal = shell.Goals.SelectedGoal!;
+        PlanView plan = new(
+            new("plan-1"),
+            goal.Id,
+            new(2),
+            "1. Make the bounded change\n2. Verify it",
+            PlanState.Denied,
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow);
+
+        IReadOnlyList<ConversationWorkflowCard> cards = ConversationWorkflowProjector.Project(
+            shell.Goals with { CurrentPlan = plan },
+            "Provider unavailable");
+
+        Assert.Equal(ConversationWorkflowCardState.Approved, cards[0].State);
+        Assert.Contains(cards, item =>
+            item.Kind is ConversationWorkflowCardKind.Plan &&
+            item.State is ConversationWorkflowCardState.Denied);
+        Assert.Contains(cards, item => item.State is ConversationWorkflowCardState.Failed);
+        Assert.Equal(
+            [
+                ConversationWorkflowCardState.Loading,
+                ConversationWorkflowCardState.Unavailable,
+                ConversationWorkflowCardState.Stale,
+                ConversationWorkflowCardState.Pending,
+                ConversationWorkflowCardState.Active,
+                ConversationWorkflowCardState.Approved,
+                ConversationWorkflowCardState.Denied,
+                ConversationWorkflowCardState.Failed,
+                ConversationWorkflowCardState.Cancelled,
+                ConversationWorkflowCardState.Recovered,
+                ConversationWorkflowCardState.Completed,
+            ],
+            Enum.GetValues<ConversationWorkflowCardState>());
+    }
+
+    [Fact]
     public void Settings_search_matches_stable_categories_and_related_terms()
     {
         Assert.Equal(7, SettingsCatalog.All.Count);

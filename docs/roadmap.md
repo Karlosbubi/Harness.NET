@@ -162,6 +162,10 @@ of Stage 3 below.
   Appearance owns persisted theme selection; Models & roles owns typed, validated,
   schema-19 role/provider/model/output defaults; unavailable categories are explicit;
   and remote authority remains goal-bound. `docs/settings.md` records ownership.
+  The next increment is also present: durable goal, plan, run, task, evidence,
+  capability/Restore, and exact-commit records now project into immutable read-only
+  conversation cards with explicit normal and degraded states. Commands have not yet
+  moved, so this projection does not alter authority.
 - Build the ADR 012 in-process Roslyn service behind replaceable semantic contracts.
   Begin with its SDK/MSBuild/self-contained-publish compatibility checkpoint.
   Versioned live buffers then surface syntax, compiler, and configured analyzer

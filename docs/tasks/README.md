@@ -99,6 +99,11 @@ merely to complete the final visual design at once.
    Restore, commit, and handoff records into immutable conversation
    card state. Render chronological loading, unavailable, stale, denied, failed,
    cancelled, recovered, and completed states without adding commands yet.
+   The immutable projection and read-only Avalonia timeline are delivered for selected
+   goals, plans, checkpoints, tasks, evidence, capability/Restore approvals, commit
+   preview/approval, loading/unavailable/error states, and the full degraded-state
+   vocabulary. Authority-bearing buttons remain in their existing surfaces for the
+   next slice.
 3. **Goal creation and continuation:** let the composer create or select a goal and
    continue its Lead/Implementer/Reviewer workflow with configured defaults. Put
    optional per-goal role routes, output ceilings, review cycles, privacy route, and

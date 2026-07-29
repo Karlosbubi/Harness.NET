@@ -70,6 +70,36 @@
   <Style Selector="Border.message-card.user">
     <Setter Property="Background" Value="{DynamicResource Harness.AccentSoft}" />
   </Style>
+  <Style Selector="Border.workflow-card">
+    <Setter Property="Padding" Value="13,10" />
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Harness.Border}" />
+    <Setter Property="Background" Value="{DynamicResource Harness.Raised}" />
+  </Style>
+  <Style Selector="Border.workflow-state">
+    <Setter Property="Padding" Value="6,2" />
+    <Setter Property="CornerRadius" Value="5" />
+    <Setter Property="Background" Value="{DynamicResource Harness.Panel}" />
+  </Style>
+  <Style Selector="Border.workflow-state > TextBlock">
+    <Setter Property="FontSize" Value="9" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{DynamicResource Harness.TextMuted}" />
+  </Style>
+  <Style Selector="Border.workflow-state.success">
+    <Setter Property="Background" Value="{DynamicResource Harness.AccentSoft}" />
+  </Style>
+  <Style Selector="Border.workflow-state.success > TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource Harness.AccentStrong}" />
+  </Style>
+  <Style Selector="Border.workflow-state.attention">
+    <Setter Property="BorderBrush" Value="{DynamicResource Harness.Warning}" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+  <Style Selector="Border.workflow-state.attention > TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource Harness.Warning}" />
+  </Style>
   <Style Selector="TextBlock.eyebrow">
     <Setter Property="FontSize" Value="11" />
     <Setter Property="FontWeight" Value="SemiBold" />
