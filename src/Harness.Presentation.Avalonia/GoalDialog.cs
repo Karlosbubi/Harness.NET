@@ -319,7 +319,8 @@ internal sealed class GoalDialog : Window
             OutputLimitsDialog dialog = new(
                 "Start Lead planning",
                 ["Lead maximum output tokens"],
-                disclosure);
+                disclosure,
+                [DefaultOutputMaximum(AgentRole.Lead)]);
             await dialog.ShowDialog(this);
             if (dialog.Result is { Length: 1 } limits)
             {
@@ -343,7 +344,11 @@ internal sealed class GoalDialog : Window
             OutputLimitsDialog dialog = new(
                 "Continue production run",
                 ["Implementer maximum output tokens", "Reviewer maximum output tokens"],
-                disclosure);
+                disclosure,
+                [
+                    DefaultOutputMaximum(AgentRole.Implementer),
+                    DefaultOutputMaximum(AgentRole.Reviewer),
+                ]);
             await dialog.ShowDialog(this);
             if (dialog.Result is { Length: 2 } limits)
             {
@@ -356,6 +361,11 @@ internal sealed class GoalDialog : Window
         };
         cancelRun.Click += (_, _) => store.CancelGoalWorkflow();
     }
+
+    private int DefaultOutputMaximum(AgentRole role) =>
+        store.Current.Settings.AgentDefaults?.Roles
+            .FirstOrDefault(item => item.Role == role)
+            ?.MaximumOutputTokens.Value ?? 2048;
 
     private void Render(AvaloniaShellState state)
     {
@@ -894,14 +904,21 @@ internal sealed class OutputLimitsDialog : Window
     internal OutputLimitsDialog(
         string title,
         IReadOnlyList<string> labels,
-        string disclosure)
+        string disclosure,
+        IReadOnlyList<int>? initialValues = null)
     {
         Title = title;
         Width = 720;
         Height = 470 + (labels.Count * 60);
         MinHeight = 460;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
-        fields = labels.Select(_ => new TextBox { Text = "2048" }).ToArray();
+        fields = labels.Select((_, index) => new TextBox
+        {
+            Text = (initialValues is not null && index < initialValues.Count
+                    ? initialValues[index]
+                    : 2048)
+                .ToString(CultureInfo.InvariantCulture),
+        }).ToArray();
         StackPanel panel = new() { Margin = new Thickness(20), Spacing = 8 };
         panel.Children.Add(new TextBlock
         {

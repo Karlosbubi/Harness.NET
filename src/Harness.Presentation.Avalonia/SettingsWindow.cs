@@ -7,6 +7,7 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Harness.BusinessLogic.Agents;
 using Harness.BusinessLogic.Appearance;
 
 namespace Harness.Presentation.Avalonia;
@@ -43,7 +44,7 @@ internal static class SettingsCatalog
         new(SettingsCategoryId.Appearance, "Appearance & accessibility", "Theme and visual preferences",
             ["color", "theme", "contrast", "accessibility"], IsAvailable: true),
         new(SettingsCategoryId.ModelsAndRoles, "Models & roles", "Default routes for agent roles",
-            ["model", "provider", "lead", "implementer", "reviewer", "output"], IsAvailable: false),
+            ["model", "provider", "lead", "implementer", "reviewer", "output"], IsAvailable: true),
         new(SettingsCategoryId.PrivacyAndLimits, "Privacy & limits", "Routing and ordinary default limits",
             ["remote", "local", "privacy", "budget", "tokens", "cost"], IsAvailable: false),
         new(SettingsCategoryId.StorageAndRecovery, "Storage & recovery", "Private state, backups, and restore",
@@ -82,6 +83,7 @@ internal sealed class SettingsWindow : Window
     private readonly ListBox categories = new();
     private readonly ContentControl page = new();
     private AppearanceSnapshot? appearance;
+    private ApplicationSettingsState settingsState = ApplicationSettingsState.Initial;
     private bool suppressThemeSelection;
 
     internal SettingsWindow(
@@ -99,7 +101,7 @@ internal sealed class SettingsWindow : Window
         Classes.Add("settings");
         Content = BuildContent();
         subscription = store.States.Subscribe(state =>
-            Dispatcher.UIThread.Post(() => Render(state.Appearance)));
+            Dispatcher.UIThread.Post(() => Render(state.Appearance, state.Settings)));
         Opened += (_, _) => search.Focus();
         Closed += (_, _) => subscription.Dispose();
         KeyDown += (_, args) =>
@@ -202,10 +204,14 @@ internal sealed class SettingsWindow : Window
         }
     }
 
-    private void Render(AppearanceSnapshot? snapshot)
+    private void Render(
+        AppearanceSnapshot? snapshot,
+        ApplicationSettingsState applicationSettings)
     {
         appearance = snapshot;
-        if ((categories.SelectedItem as SettingsCategory)?.Id is SettingsCategoryId.Appearance)
+        settingsState = applicationSettings;
+        if ((categories.SelectedItem as SettingsCategory)?.Id is
+            SettingsCategoryId.Appearance or SettingsCategoryId.ModelsAndRoles)
         {
             RenderSelectedPage();
         }
@@ -222,9 +228,12 @@ internal sealed class SettingsWindow : Window
             return;
         }
 
-        page.Content = category.Id is SettingsCategoryId.Appearance
-            ? AppearancePage()
-            : PlannedPage(category);
+        page.Content = category.Id switch
+        {
+            SettingsCategoryId.Appearance => AppearancePage(),
+            SettingsCategoryId.ModelsAndRoles => ModelsAndRolesPage(),
+            _ => PlannedPage(category),
+        };
     }
 
     private Control AppearancePage()
@@ -281,6 +290,170 @@ internal sealed class SettingsWindow : Window
             });
     }
 
+    private Control ModelsAndRolesPage()
+    {
+        AgentDefaultsSnapshot? snapshot = settingsState.AgentDefaults;
+        Button discover = new()
+        {
+            Content = snapshot?.Models.Count > 0 ? "Refresh available models" : "Discover available models",
+            IsEnabled = !settingsState.IsBusy,
+        };
+        discover.Classes.Add("command");
+        AutomationProperties.SetName(discover, "Discover available agent models");
+        discover.Click += async (_, _) => await store.DiscoverAgentDefaultsAsync(cancellationToken);
+
+        StackPanel roles = new() { Spacing = 12 };
+        if (snapshot is null)
+        {
+            roles.Children.Add(new TextBlock
+            {
+                Text = "Loading agent defaults…",
+                Classes = { "muted" },
+            });
+        }
+        else
+        {
+            foreach (AgentRoleDefault roleDefault in snapshot.Roles.OrderBy(item => item.Role))
+            {
+                roles.Children.Add(RoleDefaultCard(roleDefault, snapshot.Models));
+            }
+        }
+
+        string issues = snapshot?.Issues.Count > 0
+            ? string.Join("\n", snapshot.Issues.Select(issue =>
+                $"{issue.Provider.Value}: {issue.Message}"))
+            : string.Empty;
+        return Page(
+            "Models & roles",
+            "Choose ordinary routing and output defaults. A goal can disclose an override when needed.",
+            new StackPanel
+            {
+                Spacing = 14,
+                Children =
+                {
+                    new Border
+                    {
+                        Classes = { "card", "attention" },
+                        Child = new TextBlock
+                        {
+                            Text = "A remote default is routing preference only. It never authorizes remote spending; each goal still needs its own positive cap and explicit model selection.",
+                            TextWrapping = TextWrapping.Wrap,
+                        },
+                    },
+                    discover,
+                    roles,
+                    new TextBlock
+                    {
+                        Text = settingsState.Status ?? issues,
+                        TextWrapping = TextWrapping.Wrap,
+                        Classes = { "muted" },
+                    },
+                },
+            });
+    }
+
+    private Control RoleDefaultCard(
+        AgentRoleDefault roleDefault,
+        IReadOnlyList<GoalModelCandidate> candidates)
+    {
+        ModelChoice[] choices = candidates.Select(candidate => new ModelChoice(candidate)).ToArray();
+        ModelChoice? selected = choices.FirstOrDefault(item =>
+            item.Candidate.Provider == roleDefault.Provider &&
+            item.Candidate.Model == roleDefault.Model);
+        ComboBox model = new()
+        {
+            ItemsSource = choices,
+            SelectedItem = selected,
+            MinWidth = 260,
+            IsEnabled = !settingsState.IsBusy && choices.Length > 0,
+            IsVisible = choices.Length > 0,
+        };
+        AutomationProperties.SetName(model, $"{roleDefault.Role} default model");
+        NumericUpDown maximum = new()
+        {
+            Minimum = 1,
+            Maximum = 8192,
+            Increment = 256,
+            Value = roleDefault.MaximumOutputTokens.Value,
+            MinWidth = 150,
+            IsEnabled = !settingsState.IsBusy && choices.Length > 0,
+            IsVisible = choices.Length > 0,
+        };
+        AutomationProperties.SetName(maximum, $"{roleDefault.Role} maximum output tokens");
+        Button save = new()
+        {
+            Content = "Save default",
+            IsEnabled = !settingsState.IsBusy && selected is not null,
+            IsVisible = choices.Length > 0,
+        };
+        save.Classes.Add("command");
+        AutomationProperties.SetName(save, $"Save {roleDefault.Role} agent defaults");
+        model.SelectionChanged += (_, _) => save.IsEnabled =
+            !settingsState.IsBusy && model.SelectedItem is ModelChoice;
+        save.Click += async (_, _) =>
+        {
+            if (model.SelectedItem is ModelChoice choice && maximum.Value is { } value)
+            {
+                await store.UpdateAgentDefaultAsync(
+                    roleDefault.Role,
+                    choice.Candidate,
+                    decimal.ToInt32(value),
+                    cancellationToken);
+            }
+        };
+
+        Border unavailable = new()
+        {
+            Classes = { "editor-access" },
+            IsVisible = choices.Length == 0,
+            Child = new TextBlock
+            {
+                Text = "Discover available models to edit this route and token limit.",
+                TextWrapping = TextWrapping.Wrap,
+            },
+        };
+        Grid fields = new()
+        {
+            RowDefinitions = new("Auto,Auto"),
+            ColumnDefinitions = new("*,Auto"),
+            RowSpacing = 8,
+            ColumnSpacing = 10,
+            Children = { model, unavailable },
+        };
+        Grid.SetColumnSpan(model, 2);
+        Grid.SetColumnSpan(unavailable, 2);
+        Grid.SetRow(maximum, 1);
+        fields.Children.Add(maximum);
+        Grid.SetRow(save, 1);
+        Grid.SetColumn(save, 1);
+        fields.Children.Add(save);
+        return new Border
+        {
+            Classes = { "card", "row" },
+            Child = new StackPanel
+            {
+                Spacing = 8,
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = roleDefault.Role.ToString(),
+                        FontWeight = FontWeight.SemiBold,
+                    },
+                    new TextBlock
+                    {
+                        Text = $"Effective: {roleDefault.Access} · {roleDefault.Provider.Value}/{roleDefault.Model.Value} · {roleDefault.MaximumOutputTokens.Value} tokens" +
+                               (roleDefault.IsPersisted ? " · Saved" : " · Host fallback"),
+                        Classes = { "muted" },
+                        FontSize = 11,
+                        TextWrapping = TextWrapping.Wrap,
+                    },
+                    fields,
+                },
+            },
+        };
+    }
+
     private static Control PlannedPage(SettingsCategory category) => Page(
         category.Name,
         category.Summary,
@@ -330,5 +503,11 @@ internal sealed class SettingsWindow : Window
     private sealed record ThemeChoice(string Id, string Name)
     {
         public override string ToString() => Name;
+    }
+
+    private sealed record ModelChoice(GoalModelCandidate Candidate)
+    {
+        public override string ToString() =>
+            $"{Candidate.Provider.Value} / {Candidate.Model.Value} ({Candidate.Access})";
     }
 }

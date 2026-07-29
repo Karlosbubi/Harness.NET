@@ -18,8 +18,14 @@ remote spend was used.
   theme** from the production process before capture.
 - The search vocabulary is covered by a deterministic presentation test, including
   category names and related terms such as `contrast`, `reviewer`, and `backup`.
+- Searching for `reviewer` selects Models & roles. Before explicit discovery, each
+  role truthfully shows its effective host fallback and explains how to unlock edits;
+  it does not render an empty enabled selector. The page states that a remote default
+  cannot authorize spend.
 
 ![Searchable Settings with the delivered Appearance page](settings-foundation-2026-07-29.png)
+
+![Typed model and role defaults before provider discovery](settings-model-defaults-2026-07-29.png)
 
 ## Repeatable evidence
 

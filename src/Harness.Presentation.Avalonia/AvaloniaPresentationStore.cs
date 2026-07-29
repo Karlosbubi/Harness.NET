@@ -22,6 +22,7 @@ internal sealed class AvaloniaPresentationStore(
     IWorkspaceService workspaceService,
     IGoalService goalService,
     IGoalModelService goalModelService,
+    IAgentDefaultsService agentDefaultsService,
     IRemoteCostService remoteCostService,
     IGoalWorkflowService goalWorkflowService,
     ISemanticIndexService semanticIndexService,
@@ -46,12 +47,14 @@ internal sealed class AvaloniaPresentationStore(
         {
             DashboardSnapshot dashboard = await dashboardService.RefreshProviderAsync(cancellationToken);
             AppearanceSnapshot appearance = await appearanceService.GetAsync(cancellationToken);
+            AgentDefaultsSnapshot agentDefaults = await agentDefaultsService.GetAsync(cancellationToken);
             IReadOnlyList<WorkspaceView> workspaces = await workspaceService.ListAsync(cancellationToken);
             IReadOnlyList<GoalView> goals = await LoadGoalsAsync(workspaces, cancellationToken);
             Publish(Current with
             {
                 Dashboard = dashboard,
                 Appearance = appearance,
+                Settings = Current.Settings with { AgentDefaults = agentDefaults },
                 Workspaces = Current.Workspaces with { Registered = workspaces },
                 Goals = Current.Goals with { Items = goals },
                 IsLoading = false,
@@ -145,6 +148,99 @@ internal sealed class AvaloniaPresentationStore(
             Appearance = result.Snapshot,
             Error = result.Error,
         });
+    }
+
+    internal async ValueTask DiscoverAgentDefaultsAsync(CancellationToken cancellationToken)
+    {
+        Publish(Current with
+        {
+            Settings = Current.Settings with { IsBusy = true, Status = "Discovering chat models…" },
+            Error = null,
+        });
+        try
+        {
+            AgentDefaultsSnapshot snapshot = await agentDefaultsService
+                .DiscoverAvailableAsync(cancellationToken);
+            Publish(Current with
+            {
+                Settings = Current.Settings with
+                {
+                    AgentDefaults = snapshot,
+                    IsBusy = false,
+                    Status = snapshot.Issues.Count == 0
+                        ? $"Discovered {snapshot.Models.Count} chat model(s)."
+                        : $"Discovered {snapshot.Models.Count} chat model(s) with " +
+                          $"{snapshot.Issues.Count} provider issue(s).",
+                },
+            });
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            logger.LogError(exception, "Agent default model discovery failed");
+            Publish(Current with
+            {
+                Settings = Current.Settings with { IsBusy = false, Status = exception.Message },
+                Error = exception.Message,
+            });
+        }
+    }
+
+    internal async ValueTask UpdateAgentDefaultAsync(
+        AgentRole role,
+        GoalModelCandidate candidate,
+        int maximumOutputTokens,
+        CancellationToken cancellationToken)
+    {
+        Publish(Current with
+        {
+            Settings = Current.Settings with { IsBusy = true, Status = $"Saving {role} defaults…" },
+            Error = null,
+        });
+        try
+        {
+            AgentRoleDefaultUpdateResult result = await agentDefaultsService.UpdateAsync(new(
+                role,
+                candidate.Provider,
+                candidate.Model,
+                new(maximumOutputTokens)), cancellationToken);
+            if (result.Value is null)
+            {
+                Publish(Current with
+                {
+                    Settings = Current.Settings with { IsBusy = false, Status = result.Error },
+                    Error = result.Error,
+                });
+                return;
+            }
+
+            AgentDefaultsSnapshot current = Current.Settings.AgentDefaults ?? new([], [], []);
+            AgentDefaultsSnapshot updated = current with
+            {
+                Roles = current.Roles
+                    .Where(item => item.Role != role)
+                    .Append(result.Value)
+                    .OrderBy(item => item.Role)
+                    .ToArray(),
+            };
+            Publish(Current with
+            {
+                Settings = Current.Settings with
+                {
+                    AgentDefaults = updated,
+                    IsBusy = false,
+                    Status = $"Saved {role} defaults.",
+                },
+            });
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            logger.LogError(exception, "Agent default update failed for {Role}", role);
+            Publish(Current with
+            {
+                Settings = Current.Settings with { IsBusy = false, Status = exception.Message },
+                Error = exception.Message,
+            });
+        }
     }
 
     internal void SetRepositoryPath(string value) =>

@@ -43,7 +43,29 @@ public sealed class PresentationControlTests
             SettingsCategoryId.StorageAndRecovery,
             Assert.Single(SettingsCatalog.Filter("backup")).Id);
         Assert.Empty(SettingsCatalog.Filter("not-a-real-setting"));
-        Assert.Single(SettingsCatalog.All, category => category.IsAvailable);
+        Assert.Equal(2, SettingsCatalog.All.Count(category => category.IsAvailable));
+    }
+
+    [Fact]
+    public async Task Workflow_limit_override_starts_from_saved_role_defaults()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            OutputLimitsDialog dialog = new(
+                "Continue production run",
+                ["Implementer maximum output tokens", "Reviewer maximum output tokens"],
+                "Disclosure",
+                [4096, 1024]);
+
+            Assert.Equal(
+                ["4096", "1024"],
+                dialog.GetLogicalDescendants().OfType<TextBox>()
+                    .Select(item => item.Text ?? string.Empty)
+                    .ToArray());
+            dialog.Close();
+        }, CancellationToken.None);
     }
 
     [Fact]

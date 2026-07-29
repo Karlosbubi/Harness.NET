@@ -1,34 +1,45 @@
 using Harness.BusinessLogic.Goals;
+using Harness.DataAccess.Agents;
 using Harness.DataAccess.Goals;
 using Harness.DataAccess.Models;
 using Harness.DataAccess.Workspaces;
 
 namespace Harness.BusinessLogic.Agents;
 
-internal sealed class GoalModelService : IGoalModelService, IGoalModelRouteResolver
+internal sealed class GoalModelService :
+    IGoalModelService,
+    IGoalModelRouteResolver,
+    IAgentDefaultsService
 {
+    private const int MaximumOutputTokens = 8192;
     private readonly IGoalStore goalStore;
     private readonly IWorkspaceStore workspaceStore;
     private readonly IGoalModelSelectionStore selectionStore;
+    private readonly IAgentRoleDefaultStore defaultStore;
     private readonly IReadOnlyDictionary<string, GoalModelProviderRegistration> providers;
     private readonly IReadOnlyDictionary<AgentRole, ModelProviderName> defaultRoutes;
+    private readonly AgentDefaultsOptions defaultOptions;
     private readonly TimeProvider timeProvider;
 
     internal GoalModelService(
         IGoalStore goalStore,
         IWorkspaceStore workspaceStore,
         IGoalModelSelectionStore selectionStore,
+        IAgentRoleDefaultStore defaultStore,
         IReadOnlyList<GoalModelProviderRegistration> providers,
         IReadOnlyDictionary<AgentRole, ModelProviderName> defaultRoutes,
+        AgentDefaultsOptions defaultOptions,
         TimeProvider timeProvider)
     {
         this.goalStore = goalStore;
         this.workspaceStore = workspaceStore;
         this.selectionStore = selectionStore;
+        this.defaultStore = defaultStore;
         this.providers = providers.ToDictionary(
             registration => registration.Name.Value,
             StringComparer.OrdinalIgnoreCase);
         this.defaultRoutes = defaultRoutes;
+        this.defaultOptions = defaultOptions;
         this.timeProvider = timeProvider;
 
         AgentRole[] missingRoles = Enum.GetValues<AgentRole>()
@@ -69,32 +80,12 @@ internal sealed class GoalModelService : IGoalModelService, IGoalModelRouteResol
                 "Model discovery requires a goal in the active workspace.");
         }
 
-        List<GoalModelCandidate> models = [];
-        List<GoalModelProviderIssue> issues = [];
-        foreach (GoalModelProviderRegistration provider in providers.Values
-                     .OrderBy(item => item.Access)
-                     .ThenBy(item => item.Name.Value, StringComparer.OrdinalIgnoreCase))
-        {
-            ModelCatalog catalog = await provider.Provider.GetModelsAsync(cancellationToken);
-            models.AddRange(catalog.Models
-                .Where(model => model.Purposes?.Contains(ModelPurpose.Chat) is true)
-                .Select(model => Map(provider, model)));
-            if (catalog.Error is not null)
-            {
-                issues.Add(new(
-                    provider.Name,
-                    catalog.Error.Code,
-                    catalog.Error.Message,
-                    catalog.Error.IsTransient));
-            }
-        }
+        (IReadOnlyList<GoalModelCandidate> models, IReadOnlyList<GoalModelProviderIssue> issues) =
+            await DiscoverModelsAsync(cancellationToken);
 
         return new(
             goalId,
-            models.OrderBy(model => model.Access)
-                .ThenBy(model => model.Provider.Value, StringComparer.OrdinalIgnoreCase)
-                .ThenBy(model => model.Model.Value, StringComparer.Ordinal)
-                .ToArray(),
+            models,
             issues,
             ErrorCode: null,
             Error: null);
@@ -112,6 +103,8 @@ internal sealed class GoalModelService : IGoalModelService, IGoalModelRouteResol
         IReadOnlyDictionary<AgentRole, StoredGoalModelSelection> stored =
             (await selectionStore.ListAsync(goalId.Value, cancellationToken))
             .ToDictionary(selection => ParseRole(selection.Role));
+        IReadOnlyDictionary<AgentRole, AgentRoleDefault> defaults =
+            await DefaultsAsync(cancellationToken);
         return Enum.GetValues<AgentRole>().Select(role =>
         {
             if (stored.TryGetValue(role, out StoredGoalModelSelection? selected))
@@ -127,13 +120,13 @@ internal sealed class GoalModelService : IGoalModelService, IGoalModelRouteResol
                     selected.SelectedAt);
             }
 
-            GoalModelProviderRegistration defaultProvider = Provider(defaultRoutes[role].Value);
+            AgentRoleDefault effectiveDefault = defaults[role];
             return new(
                 goalId,
                 role,
-                defaultProvider.Name,
-                defaultProvider.DefaultModel,
-                defaultProvider.Access,
+                effectiveDefault.Provider,
+                effectiveDefault.Model,
+                effectiveDefault.Access,
                 IsExplicit: false,
                 SelectedAt: null);
         }).ToArray();
@@ -232,8 +225,9 @@ internal sealed class GoalModelService : IGoalModelService, IGoalModelRouteResol
         AgentModel model;
         if (selected is null)
         {
-            provider = Provider(defaultRoutes[role].Value);
-            model = provider.DefaultModel;
+            AgentRoleDefault effectiveDefault = await DefaultAsync(role, cancellationToken);
+            provider = Provider(effectiveDefault.Provider.Value);
+            model = effectiveDefault.Model;
             if (provider.Access is ModelAccess.Remote)
             {
                 return RouteFailure(
@@ -260,6 +254,77 @@ internal sealed class GoalModelService : IGoalModelService, IGoalModelRouteResol
             Error: null);
     }
 
+    public async ValueTask<AgentDefaultsSnapshot> GetAsync(
+        CancellationToken cancellationToken = default) =>
+        new((await DefaultsAsync(cancellationToken)).Values
+                .OrderBy(item => item.Role)
+                .ToArray(),
+            Models: [],
+            Issues: []);
+
+    public async ValueTask<AgentDefaultsSnapshot> DiscoverAvailableAsync(
+        CancellationToken cancellationToken = default)
+    {
+        (IReadOnlyList<GoalModelCandidate> models, IReadOnlyList<GoalModelProviderIssue> issues) =
+            await DiscoverModelsAsync(cancellationToken);
+        return new(
+            (await DefaultsAsync(cancellationToken)).Values
+                .OrderBy(item => item.Role)
+                .ToArray(),
+            models,
+            issues);
+    }
+
+    public async ValueTask<AgentRoleDefaultUpdateResult> UpdateAsync(
+        AgentRoleDefaultUpdate request,
+        CancellationToken cancellationToken = default)
+    {
+        if (request is null ||
+            !Enum.IsDefined(request.Role) ||
+            request.Provider is null ||
+            string.IsNullOrWhiteSpace(request.Provider.Value) ||
+            request.Model is null ||
+            string.IsNullOrWhiteSpace(request.Model.Value) ||
+            request.MaximumOutputTokens is null ||
+            request.MaximumOutputTokens.Value is < 1 or > MaximumOutputTokens)
+        {
+            return DefaultFailure(
+                "invalid_agent_default",
+                $"A role, provider, model, and output maximum of 1-{MaximumOutputTokens} are required.");
+        }
+
+        if (!providers.TryGetValue(request.Provider.Value, out GoalModelProviderRegistration? provider))
+        {
+            return DefaultFailure(
+                "provider_missing",
+                $"Provider '{request.Provider.Value}' is not configured.");
+        }
+
+        ModelCatalog catalog = await provider.Provider.GetModelsAsync(cancellationToken);
+        if (catalog.Error is not null)
+        {
+            return DefaultFailure(catalog.Error.Code, catalog.Error.Message);
+        }
+
+        ModelDescriptor? model = catalog.Models.FirstOrDefault(candidate =>
+            candidate.Purposes?.Contains(ModelPurpose.Chat) is true &&
+            candidate.Id.Equals(request.Model.Value, StringComparison.Ordinal));
+        if (model is null)
+        {
+            return DefaultFailure(
+                "model_unavailable",
+                $"Chat model '{request.Model.Value}' is unavailable from '{provider.Name.Value}'.");
+        }
+
+        StoredAgentRoleDefault stored = await defaultStore.SaveAsync(new(
+            MapRole(request.Role),
+            new(provider.Name.Value),
+            new(model.Id),
+            new(request.MaximumOutputTokens.Value),
+            timeProvider.GetUtcNow()), cancellationToken);
+        return new(MapDefault(stored), ErrorCode: null, Error: null);
+    }
+
     private async ValueTask<StoredGoal?> GetActiveGoalAsync(
         GoalId goalId,
         CancellationToken cancellationToken)
@@ -281,10 +346,104 @@ internal sealed class GoalModelService : IGoalModelService, IGoalModelRouteResol
             ? provider
             : throw new InvalidDataException($"Stored model provider '{name}' is not configured.");
 
+    private async ValueTask<AgentRoleDefault> DefaultAsync(
+        AgentRole role,
+        CancellationToken cancellationToken) =>
+        (await DefaultsAsync(cancellationToken))[role];
+
+    private async ValueTask<IReadOnlyDictionary<AgentRole, AgentRoleDefault>> DefaultsAsync(
+        CancellationToken cancellationToken)
+    {
+        IReadOnlyDictionary<AgentRole, StoredAgentRoleDefault> stored =
+            (await defaultStore.ListAsync(cancellationToken))
+            .ToDictionary(item => MapRole(item.Role));
+        return Enum.GetValues<AgentRole>().ToDictionary(role => role, role =>
+        {
+            if (stored.TryGetValue(role, out StoredAgentRoleDefault? value) &&
+                providers.ContainsKey(value.Provider.Value))
+            {
+                return MapDefault(value);
+            }
+
+            GoalModelProviderRegistration provider = Provider(defaultRoutes[role].Value);
+            return new(
+                role,
+                provider.Name,
+                provider.DefaultModel,
+                provider.Access,
+                defaultOptions.FallbackMaximumOutputTokens,
+                IsPersisted: false,
+                UpdatedAt: null);
+        });
+    }
+
+    private AgentRoleDefault MapDefault(StoredAgentRoleDefault value)
+    {
+        AgentRole role = MapRole(value.Role);
+        GoalModelProviderRegistration provider = Provider(value.Provider.Value);
+        return new(
+            role,
+            provider.Name,
+            new(value.Model.Value),
+            provider.Access,
+            new(value.MaximumOutputTokens.Value),
+            IsPersisted: true,
+            value.UpdatedAt);
+    }
+
+    private async ValueTask<(
+        IReadOnlyList<GoalModelCandidate> Models,
+        IReadOnlyList<GoalModelProviderIssue> Issues)> DiscoverModelsAsync(
+        CancellationToken cancellationToken)
+    {
+        List<GoalModelCandidate> models = [];
+        List<GoalModelProviderIssue> issues = [];
+        foreach (GoalModelProviderRegistration provider in providers.Values
+                     .OrderBy(item => item.Access)
+                     .ThenBy(item => item.Name.Value, StringComparer.OrdinalIgnoreCase))
+        {
+            ModelCatalog catalog = await provider.Provider.GetModelsAsync(cancellationToken);
+            models.AddRange(catalog.Models
+                .Where(model => model.Purposes?.Contains(ModelPurpose.Chat) is true)
+                .Select(model => Map(provider, model)));
+            if (catalog.Error is not null)
+            {
+                issues.Add(new(
+                    provider.Name,
+                    catalog.Error.Code,
+                    catalog.Error.Message,
+                    catalog.Error.IsTransient));
+            }
+        }
+
+        return (
+            models.OrderBy(model => model.Access)
+                .ThenBy(model => model.Provider.Value, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(model => model.Model.Value, StringComparer.Ordinal)
+                .ToArray(),
+            issues);
+    }
+
     private static AgentRole ParseRole(string value) =>
         Enum.TryParse(value, ignoreCase: false, out AgentRole parsed) && Enum.IsDefined(parsed)
             ? parsed
             : throw new InvalidDataException($"Stored agent role '{value}' is invalid.");
+
+    private static AgentDefaultRole MapRole(AgentRole role) => role switch
+    {
+        AgentRole.Lead => AgentDefaultRole.Lead,
+        AgentRole.Implementer => AgentDefaultRole.Implementer,
+        AgentRole.Reviewer => AgentDefaultRole.Reviewer,
+        _ => throw new ArgumentOutOfRangeException(nameof(role)),
+    };
+
+    private static AgentRole MapRole(AgentDefaultRole role) => role switch
+    {
+        AgentDefaultRole.Lead => AgentRole.Lead,
+        AgentDefaultRole.Implementer => AgentRole.Implementer,
+        AgentDefaultRole.Reviewer => AgentRole.Reviewer,
+        _ => throw new InvalidDataException($"Stored agent role '{role}' is invalid."),
+    };
 
     private static GoalModelCandidate Map(
         GoalModelProviderRegistration provider,
@@ -299,6 +458,9 @@ internal sealed class GoalModelService : IGoalModelService, IGoalModelRouteResol
         model.Pricing is null ? null : new(model.Pricing.UsdPerRequest));
 
     private static GoalModelSelectionResult Failure(string code, string error) =>
+        new(null, code, error);
+
+    private static AgentRoleDefaultUpdateResult DefaultFailure(string code, string error) =>
         new(null, code, error);
 
     private static GoalModelRouteResult RouteFailure(string code, string error) =>

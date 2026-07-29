@@ -28,6 +28,7 @@ public sealed class AvaloniaPresentationStoreTests
         new WorkspaceService(),
         new GoalService(),
         new GoalModelService(),
+        new AgentDefaultsService(),
         new RemoteCostService(),
         new GoalWorkflowService(),
         new SemanticIndexService(),
@@ -57,6 +58,7 @@ public sealed class AvaloniaPresentationStoreTests
             new WorkspaceService(),
             new GoalService(),
             new GoalModelService(),
+            new AgentDefaultsService(),
             new RemoteCostService(),
             new GoalWorkflowService(),
             new SemanticIndexService(),
@@ -87,6 +89,7 @@ public sealed class AvaloniaPresentationStoreTests
             new WorkspaceService(),
             new GoalService(),
             new GoalModelService(),
+            new AgentDefaultsService(),
             new RemoteCostService(),
             new GoalWorkflowService(),
             new SemanticIndexService(),
@@ -104,6 +107,43 @@ public sealed class AvaloniaPresentationStoreTests
     }
 
     [Fact]
+    public async Task Discovers_and_persists_agent_defaults_through_typed_boundary()
+    {
+        AgentDefaultsService defaults = new();
+        using AvaloniaPresentationStore store = new(
+            new DashboardService(),
+            new AppearanceService(),
+            new WorkspaceService(),
+            new GoalService(),
+            new GoalModelService(),
+            defaults,
+            new RemoteCostService(),
+            new GoalWorkflowService(),
+            new SemanticIndexService(),
+            new GoalAcceptanceService(),
+            new ApplicationOperationsService(),
+            new CapabilityApprovalService(),
+            new FrameworkService(),
+            NullLogger<AvaloniaPresentationStore>.Instance);
+        await store.LoadAsync(CancellationToken.None);
+
+        await store.DiscoverAgentDefaultsAsync(CancellationToken.None);
+        GoalModelCandidate candidate = Assert.Single(
+            store.Current.Settings.AgentDefaults!.Models);
+        await store.UpdateAgentDefaultAsync(
+            AgentRole.Reviewer,
+            candidate,
+            4096,
+            CancellationToken.None);
+
+        AgentRoleDefault reviewer = store.Current.Settings.AgentDefaults!.Roles
+            .Single(item => item.Role is AgentRole.Reviewer);
+        Assert.True(reviewer.IsPersisted);
+        Assert.Equal(4096, reviewer.MaximumOutputTokens.Value);
+        Assert.Equal("Saved Reviewer defaults.", store.Current.Settings.Status);
+    }
+
+    [Fact]
     public async Task Registers_selects_and_explicitly_trusts_workspace()
     {
         WorkspaceService workspaces = new();
@@ -113,6 +153,7 @@ public sealed class AvaloniaPresentationStoreTests
             workspaces,
             new GoalService(),
             new GoalModelService(),
+            new AgentDefaultsService(),
             new RemoteCostService(),
             new GoalWorkflowService(),
             new SemanticIndexService(),
@@ -145,6 +186,7 @@ public sealed class AvaloniaPresentationStoreTests
             workspaces,
             new GoalService(),
             new GoalModelService(),
+            new AgentDefaultsService(),
             new RemoteCostService(),
             new GoalWorkflowService(),
             new SemanticIndexService(),
@@ -183,6 +225,7 @@ public sealed class AvaloniaPresentationStoreTests
             workspaces,
             goals,
             new GoalModelService(),
+            new AgentDefaultsService(),
             new RemoteCostService(),
             new GoalWorkflowService(),
             new SemanticIndexService(),
@@ -233,6 +276,7 @@ public sealed class AvaloniaPresentationStoreTests
             workspaces,
             goals,
             models,
+            new AgentDefaultsService(),
             new RemoteCostService(),
             workflow,
             new SemanticIndexService(),
@@ -295,6 +339,7 @@ public sealed class AvaloniaPresentationStoreTests
             workspaces,
             goals,
             new GoalModelService(),
+            new AgentDefaultsService(),
             new RemoteCostService(),
             new GoalWorkflowService(),
             semantic,
@@ -349,6 +394,7 @@ public sealed class AvaloniaPresentationStoreTests
             workspaces,
             goals,
             new GoalModelService(),
+            new AgentDefaultsService(),
             new RemoteCostService(),
             workflow,
             new SemanticIndexService(),
@@ -410,6 +456,7 @@ public sealed class AvaloniaPresentationStoreTests
             workspaces,
             new GoalService(),
             new GoalModelService(),
+            new AgentDefaultsService(),
             new RemoteCostService(),
             new GoalWorkflowService(),
             new SemanticIndexService(),
@@ -452,6 +499,7 @@ public sealed class AvaloniaPresentationStoreTests
             new WorkspaceService(),
             new GoalService(),
             new GoalModelService(),
+            new AgentDefaultsService(),
             new RemoteCostService(),
             new GoalWorkflowService(),
             new SemanticIndexService(),
@@ -483,6 +531,7 @@ public sealed class AvaloniaPresentationStoreTests
             workspaces,
             goals,
             new GoalModelService(),
+            new AgentDefaultsService(),
             new RemoteCostService(),
             new GoalWorkflowService(),
             new SemanticIndexService(),
@@ -871,6 +920,55 @@ public sealed class AvaloniaPresentationStoreTests
                     SelectedAt: null));
             }
         }
+    }
+
+    private sealed class AgentDefaultsService : IAgentDefaultsService
+    {
+        private static readonly GoalModelCandidate Local = new(
+            new("ollama"),
+            new("gemma4"),
+            ModelAccess.Local,
+            [],
+            null,
+            null,
+            null,
+            null);
+        private readonly Dictionary<AgentRole, AgentRoleDefault> values =
+            Enum.GetValues<AgentRole>().ToDictionary(role => role, role => new AgentRoleDefault(
+                role,
+                Local.Provider,
+                Local.Model,
+                Local.Access,
+                new(2048),
+                IsPersisted: false,
+                UpdatedAt: null));
+
+        public ValueTask<AgentDefaultsSnapshot> GetAsync(
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(Snapshot(models: []));
+
+        public ValueTask<AgentDefaultsSnapshot> DiscoverAvailableAsync(
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(Snapshot([Local]));
+
+        public ValueTask<AgentRoleDefaultUpdateResult> UpdateAsync(
+            AgentRoleDefaultUpdate request,
+            CancellationToken cancellationToken = default)
+        {
+            AgentRoleDefault value = new(
+                request.Role,
+                request.Provider,
+                request.Model,
+                Local.Access,
+                request.MaximumOutputTokens,
+                IsPersisted: true,
+                DateTimeOffset.UtcNow);
+            values[request.Role] = value;
+            return ValueTask.FromResult(new AgentRoleDefaultUpdateResult(value, null, null));
+        }
+
+        private AgentDefaultsSnapshot Snapshot(IReadOnlyList<GoalModelCandidate> models) =>
+            new(values.Values.OrderBy(item => item.Role).ToArray(), models, []);
     }
 
     private sealed class RemoteCostService : IRemoteCostService

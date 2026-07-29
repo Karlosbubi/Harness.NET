@@ -116,6 +116,10 @@ def main() -> int:
             application.wait_for_name("Preferred color theme")
             resize(980, 700)
             screenshot(arguments.output / "settings-foundation-2026-07-29.png")
+            application.set_text("Search settings", "reviewer")
+            application.wait_for_name("Discover available agent models", "push button")
+            time.sleep(1.5)
+            screenshot(arguments.output / "settings-model-defaults-2026-07-29.png")
     finally:
         if process is not None:
             atspi.stop(process)

@@ -16,6 +16,7 @@ namespace Harness.Presentation.Avalonia;
 internal sealed record AvaloniaShellState(
     DashboardSnapshot? Dashboard,
     AppearanceSnapshot? Appearance,
+    ApplicationSettingsState Settings,
     WorkspaceManagementState Workspaces,
     FrameworkManagementState Framework,
     GoalManagementState Goals,
@@ -28,6 +29,7 @@ internal sealed record AvaloniaShellState(
     internal static AvaloniaShellState Initial { get; } = new(
         null,
         null,
+        ApplicationSettingsState.Initial,
         WorkspaceManagementState.Initial,
         FrameworkManagementState.Initial,
         GoalManagementState.Initial,
@@ -36,6 +38,17 @@ internal sealed record AvaloniaShellState(
         IsStreaming: false,
         string.Empty,
         null);
+}
+
+internal sealed record ApplicationSettingsState(
+    AgentDefaultsSnapshot? AgentDefaults,
+    bool IsBusy,
+    string? Status)
+{
+    internal static ApplicationSettingsState Initial { get; } = new(
+        AgentDefaults: null,
+        IsBusy: false,
+        Status: null);
 }
 
 internal sealed record FrameworkManagementState(

@@ -158,10 +158,10 @@ of Stage 3 below.
   handoff; role/model/output defaults move to searchable Settings and goal-specific
   overrides use progressive disclosure. Durable plan, remote-spend, Restore,
   destructive, budget, and exact-commit authority remains explicit. (Task 040)
-  The first foundation increment is complete: Settings has all settled searchable
-  categories, Appearance now owns persisted theme selection, unavailable categories
-  are explicit, and `docs/settings.md` records current ownership and the next typed
-  default boundary.
+  The Settings foundation is complete: all settled categories are searchable;
+  Appearance owns persisted theme selection; Models & roles owns typed, validated,
+  schema-19 role/provider/model/output defaults; unavailable categories are explicit;
+  and remote authority remains goal-bound. `docs/settings.md` records ownership.
 - Build the ADR 012 in-process Roslyn service behind replaceable semantic contracts.
   Begin with its SDK/MSBuild/self-contained-publish compatibility checkpoint.
   Versioned live buffers then surface syntax, compiler, and configured analyzer

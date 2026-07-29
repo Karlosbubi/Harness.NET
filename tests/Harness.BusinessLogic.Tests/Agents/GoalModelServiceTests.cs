@@ -1,5 +1,6 @@
 using Harness.BusinessLogic.Agents;
 using Harness.BusinessLogic.Goals;
+using Harness.DataAccess.Agents;
 using Harness.DataAccess.Goals;
 using Harness.DataAccess.Models;
 using Harness.DataAccess.Workspaces;
@@ -109,15 +110,80 @@ public sealed class GoalModelServiceTests
         Assert.Equal("model_unavailable", result.ErrorCode);
     }
 
+    [Fact]
+    public async Task Persists_typed_role_defaults_without_granting_remote_goal_authority()
+    {
+        MemoryDefaultStore defaults = new();
+        GoalModelService service = CreateService(
+            Goal(remoteBudget: 2_000_000),
+            new CatalogProvider([Model("local", ModelPurpose.Chat)]),
+            new CatalogProvider([Model("remote", ModelPurpose.Chat)]),
+            defaults: defaults);
+
+        AgentRoleDefaultUpdateResult updated = await service.UpdateAsync(new(
+            AgentRole.Lead,
+            new("OpenRouter"),
+            new("remote"),
+            new(4096)));
+        AgentDefaultsSnapshot snapshot = await service.GetAsync();
+        GoalModelRouteResult route = await service.ResolveAsync(new("goal-1"), AgentRole.Lead);
+
+        Assert.Equal(4096, updated.Value?.MaximumOutputTokens.Value);
+        Assert.True(snapshot.Roles.Single(item => item.Role is AgentRole.Lead).IsPersisted);
+        Assert.Equal("remote", snapshot.Roles.Single(item => item.Role is AgentRole.Lead).Model.Value);
+        Assert.Equal("remote_model_not_selected", route.ErrorCode?.Value);
+    }
+
+    [Fact]
+    public async Task Default_discovery_does_not_require_a_goal_or_workspace()
+    {
+        GoalModelService service = CreateService(
+            Goal(remoteBudget: null),
+            new CatalogProvider([Model("local", ModelPurpose.Chat)]),
+            new CatalogProvider([Model("remote", ModelPurpose.Chat)]));
+
+        AgentDefaultsSnapshot snapshot = await service.DiscoverAvailableAsync();
+
+        Assert.Equal(3, snapshot.Roles.Count);
+        Assert.Equal(2, snapshot.Models.Count);
+        Assert.All(snapshot.Roles, item => Assert.Equal(2048, item.MaximumOutputTokens.Value));
+    }
+
+    [Fact]
+    public async Task Missing_persisted_provider_falls_back_without_breaking_startup()
+    {
+        MemoryDefaultStore defaults = new();
+        await defaults.SaveAsync(new(
+            AgentDefaultRole.Lead,
+            new("removed-provider"),
+            new("removed-model"),
+            new(4096),
+            DateTimeOffset.UtcNow));
+        GoalModelService service = CreateService(
+            Goal(remoteBudget: null),
+            new CatalogProvider([Model("local", ModelPurpose.Chat)]),
+            new CatalogProvider([]),
+            defaults: defaults);
+
+        AgentRoleDefault lead = (await service.GetAsync()).Roles
+            .Single(item => item.Role is AgentRole.Lead);
+
+        Assert.Equal("Ollama", lead.Provider.Value);
+        Assert.False(lead.IsPersisted);
+        Assert.Equal(2048, lead.MaximumOutputTokens.Value);
+    }
+
     private static GoalModelService CreateService(
         StoredGoal goal,
         IModelProvider local,
         IModelProvider remote,
         MemorySelectionStore? selections = null,
-        string defaultLeadProvider = "Ollama") => new(
+        string defaultLeadProvider = "Ollama",
+        MemoryDefaultStore? defaults = null) => new(
         new StubGoalStore(goal),
         new StubWorkspaceStore(Workspace()),
         selections ?? new(),
+        defaults ?? new(),
         [
             new(new("Ollama"), ModelAccess.Local, new("local"), local),
             new(new("OpenRouter"), ModelAccess.Remote, new("remote"), remote),
@@ -128,6 +194,7 @@ public sealed class GoalModelServiceTests
             [AgentRole.Implementer] = new("Ollama"),
             [AgentRole.Reviewer] = new("Ollama"),
         },
+        new(new(2048)),
         TimeProvider.System);
 
     private static ModelDescriptor Model(string id, ModelPurpose purpose) => new(
@@ -199,6 +266,23 @@ public sealed class GoalModelServiceTests
             CancellationToken cancellationToken = default) =>
             ValueTask.FromResult<IReadOnlyList<StoredGoalModelSelection>>(
                 items.Values.Where(item => item.GoalId == goalId).ToArray());
+    }
+
+    private sealed class MemoryDefaultStore : IAgentRoleDefaultStore
+    {
+        private readonly Dictionary<AgentDefaultRole, StoredAgentRoleDefault> items = [];
+
+        public ValueTask<IReadOnlyList<StoredAgentRoleDefault>> ListAsync(
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<IReadOnlyList<StoredAgentRoleDefault>>(items.Values.ToArray());
+
+        public ValueTask<StoredAgentRoleDefault> SaveAsync(
+            StoredAgentRoleDefault value,
+            CancellationToken cancellationToken = default)
+        {
+            items[value.Role] = value;
+            return ValueTask.FromResult(value);
+        }
     }
 
     private sealed class StubGoalStore(StoredGoal goal) : IGoalStore

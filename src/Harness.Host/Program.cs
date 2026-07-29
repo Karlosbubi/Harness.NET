@@ -15,6 +15,7 @@ using Harness.BusinessLogic.Operations;
 using Harness.BusinessLogic.Retrieval;
 using Harness.BusinessLogic.Workspaces;
 using Harness.BusinessLogic.Workflows;
+using Harness.DataAccess.Agents;
 using Harness.DataAccess.Approvals;
 using Harness.DataAccess.Appearance;
 using Harness.DataAccess.Configuration;
@@ -74,6 +75,7 @@ builder.Services.AddSingleton<IWorkspaceStore, SqliteWorkspaceStore>();
 builder.Services.AddSingleton<IWorkspaceService, WorkspaceService>();
 builder.Services.AddSingleton<IGoalStore, SqliteGoalStore>();
 builder.Services.AddSingleton<IGoalModelSelectionStore, SqliteGoalModelSelectionStore>();
+builder.Services.AddSingleton<IAgentRoleDefaultStore, SqliteAgentRoleDefaultStore>();
 builder.Services.AddSingleton<IRemoteCostStore, SqliteRemoteCostStore>();
 builder.Services.AddSingleton<IRemoteCostService, RemoteCostService>();
 builder.Services.AddSingleton<ICapabilityApprovalStore, SqliteCapabilityApprovalStore>();
@@ -150,13 +152,17 @@ builder.Services.AddSingleton<GoalModelService>(services =>
         services.GetRequiredService<IGoalStore>(),
         services.GetRequiredService<IWorkspaceStore>(),
         services.GetRequiredService<IGoalModelSelectionStore>(),
+        services.GetRequiredService<IAgentRoleDefaultStore>(),
         providers,
         routes,
+        new(new(2048)),
         services.GetRequiredService<TimeProvider>());
 });
 builder.Services.AddSingleton<IGoalModelService>(services =>
     services.GetRequiredService<GoalModelService>());
 builder.Services.AddSingleton<IGoalModelRouteResolver>(services =>
+    services.GetRequiredService<GoalModelService>());
+builder.Services.AddSingleton<IAgentDefaultsService>(services =>
     services.GetRequiredService<GoalModelService>());
 builder.Services.AddSingleton<IAgentRoleRunner>(services => new AgentRoleRunner(
     services.GetRequiredService<IGoalModelRouteResolver>(),
