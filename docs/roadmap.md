@@ -128,40 +128,87 @@ approved restore, build/test evidence, independent review state, exact-diff appr
 and branch commit. Restart/reconciliation tests inject interruption at durable
 workflow boundaries without replaying uncertain calls.
 
-## Stage 3: Hardening and expansion
+## Stage 3: Path to productive daily use (active)
 
-- Add opt-in Ollama behavioral evaluations and regression datasets.
-- Exercise large repositories, index rebuilds, dirty bases, conflicts, cancellations,
-  model outages, budget exhaustion, and corrupted/interrupted state.
-- Harden the self-contained Linux x64 package with clean-install, upgrade,
-  backup/export, and recovery acceptance coverage.
+The Stage 2 scripted acceptance gate (`eng/verify-v1-release.sh` and
+`eng/verify-v1-desktop-release.sh`) proves one representative, scripted repository
+workflow end to end: registration/trust, plan approval, isolated edit/build/test,
+independent review, and exact commit, surviving an injected interruption. That gate
+passing is necessary but not sufficient. As of 2026-07-29, Harness.NET is not yet
+something its author can use productively for real day-to-day .NET development.
+`1.0.0` marks a verified walking-skeleton-to-full-workflow milestone, not a
+productivity milestone. Stage 3 is the active work of closing that gap and is
+tracked as concrete tasks in `docs/tasks/README.md`.
+
+### Current focus: match a professional IDE baseline
+
+Before any further unique feature, the daily editing and reviewing surfaces must
+feel like a competent general-purpose IDE (the bar is JetBrains Rider/Air- or
+Zed-class), not a prototype text box wired to a raw diff string. This is the
+present priority, ahead of the rest of Stage 3 below.
+
+- Reduce the form density of Framework rule management and Operations, fix source
+  viewing/editing, and add a real diff viewer: the effective framework view is
+  currently one long formatted text dump (rules, full guidance-document bodies,
+  and issues all inline with no filtering); the Operations backup destination
+  requires typing an absolute path by hand instead of a native save picker; and
+  Git diff is a single raw unified-diff string with no syntax-aware decoration.
+  Add both an inline decorated view (for reviewing model-made changes in place)
+  and a side-by-side comparison view (for evaluating working-tree/branch git
+  state). The goal-approval dialog chain is tracked separately as Task 040.
+  (Task 035)
+- Consolidate the goal lifecycle's dialog chain: creating and progressing one goal
+  currently steps through up to 14 separate modal windows (new goal, model
+  routing, remote-model authorization, output limits, plan approval, restore
+  approval/request/decision, commit approval/confirmation, semantic context,
+  semantic rebuild confirmation), almost all defined in one 1967-line file.
+  Genuine human-authority checkpoints — plan, restore, and commit approval — stay
+  distinct and undiminished; informational/config steps are consolidated into
+  fewer, clearer surfaces. (Task 040)
+- Validate every edit, model-authored or hand-typed, with real Roslyn/LSP
+  diagnostics instead of discovering a syntax or type error only at Build time.
+  (Task 042)
+- Add intellisense on top of that foundation: completion, hover/quick-info, and
+  go-to-definition for the loaded solution/project. (Task 043)
+
+### Workflow friction
+
+- Let a user move between more than one trusted workspace without re-registration
+  overhead; only one workspace is active at a time today. (Task 036)
+
+### Missing core capability
+
+- Prove the workflow on large, real, messy repositories: dirty bases, mid-goal
+  conflicts, index rebuilds under load, provider outages, budget exhaustion, and
+  corrupted/interrupted state, not only the single scripted representative-repo
+  gate. (Task 037)
+- Add an in-app restore-from-backup flow: Operations can only create a backup
+  today; recovery into a fresh install is proven solely by
+  `eng/verify-v1-release.sh`, not available to a user without the script.
+  (Task 041)
+- Make the handoff after an approved commit explicit: the app deliberately does not
+  push, open a PR, or merge, but it also does not yet tell the user what to do next
+  with the accepted goal branch. (Task 039)
 - Continue hands-on Avalonia usability and visual-quality regression review across
   future production workspace, goal, evidence, and recovery changes.
-- Keep the accepted ADR 010 workbench matrix under regression coverage. Production
-  AT-SPI covers
-  real repository registration/trust, manual goal/plan approval, isolated
-  editable-worktree source, search, multi-document switching/focus, restart, and
-  corrupt-layout fallback; its isolated Orca 50.2 mode generates contextual speech
-  without framework implementation type-name announcements. A deterministic-loopback
-  production workflow also proves Lead planning, typed edit/build/test, independent
-  review, process restart, and exact branch commit through the real UI. The central
-  editor, production tool docks, and private validated layout recovery are implemented.
+- Keep the accepted ADR 010 workbench matrix under regression coverage as new
+  panels and documents are added. Production AT-SPI covers real repository
+  registration/trust, manual goal/plan approval, isolated editable-worktree source,
+  search, multi-document switching/focus, restart, and corrupt-layout fallback; its
+  isolated Orca 50.2 mode generates contextual speech without framework
+  implementation type-name announcements. A deterministic-loopback production
+  workflow also proves Lead planning, typed edit/build/test, independent review,
+  process restart, and exact branch commit through the real UI.
 - Add other platforms or gRPC only through existing Business Logic contracts when a
   concrete workflow justifies them.
 
-The Linux x64 packaging and complete graphical desktop gates pass for `1.0.0`. The
-remaining Stage 3 items are
-post-v1 expansion and regression work. Avalonia now covers conversation, appearance,
-trusted workspaces, durable goal creation, and the complete versioned plan-decision
-boundary. Role routing, cost disclosure, bounded production runs, cancellation, and
-durable task/activity/evidence inspection are also available. Semantic status,
-confirmed/cancellable rebuild, bounded preview search, source evidence, usage, and
-attributed cost now have desktop parity. Exact commit approval does too, including
-exact preview, a separate durable decision, denial, and resumable approved state.
-Deliberately confirmed application-state backup and exact correlation-bound Restore
-approval management now have desktop parity as well. Effective framework inspection
-and private workspace-overlay editing are likewise available in Avalonia without
-writing product metadata into user repositories.
+Deferred within Stage 3: opt-in Ollama behavioral evaluation and regression
+datasets for planning, tool-selection, and review quality (Task 038) are parked
+below every item above until 035, 036, 037, and 039-043 close.
+
+Stage 3 exits when a user can run real, non-scripted development work through the
+app, across multiple sessions and repositories, without the friction or gaps above
+— not when another scripted gate passes.
 
 ## Deferred until justified
 

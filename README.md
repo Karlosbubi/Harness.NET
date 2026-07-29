@@ -7,9 +7,21 @@ repository.
 
 ## Current status
 
-The current build is the `1.0.0` Linux x64 release. Framework discovery, the
-production service slices, and the default docked desktop workflow are implemented.
-The application has
+The current build is the `1.0.0` Linux x64 release: a scripted acceptance gate
+proves one complete, representative repository workflow end to end. That gate
+passing does not yet mean the application is productive for real day-to-day .NET
+development — see `docs/roadmap.md` Stage 3 and `docs/tasks/README.md` tasks
+035-037 and 039-043 for the concrete gaps (a wall-of-text Framework view, manual
+backup-path entry, no syntax-aware diff viewer, no editor validation or
+intellisense, a 14-dialog goal-approval chain, single-workspace-at-a-time,
+unproven large/messy-repository behavior, no post-commit handoff guidance, and no
+in-app restore) still being closed. Tasks 035, 040, 042, and 043 are the current
+priority: match a professional IDE baseline (JetBrains-/Zed-class) before further
+unique features. Task 038 (agent-quality feedback loop) is deferred until the
+rest close.
+
+Framework discovery, the production service slices, and the default docked desktop
+workflow are implemented. The application has
 compile-time layer enforcement, XDG paths, Secret Service access, SQLite migrations,
 redacted local logs, optional OTLP, adaptive Avalonia and Terminal.Gui shells, and an
 Ollama provider adapter. The OpenRouter adapter adds dynamic chat/embedding discovery,

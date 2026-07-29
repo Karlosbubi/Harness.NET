@@ -69,19 +69,34 @@ but the end-user workflow is not complete.
 | ID | Status | User capability | Current gap | Done when |
 |---|---|---|---|---|
 | 034 | Done | Open a workspace through a familiar first-run journey | 027 | The primary shell and centered empty state open Avalonia's native single-folder picker, retain a manual-path fallback, scan the selected Git repository through the existing typed boundary, and present discovered solutions/projects before registration or trust. The workspace manager separates existing workspaces from adding one, and headless plus production AT-SPI checks cover the route. |
-| 035 | In progress | Make every frequent desktop journey feel deliberate and efficient | The first-run hierarchy, workspace manager, goal pane, compact layout controls, semantic component styling, conversation contrast, and repository file navigation are improved. Goal/framework/operations management remains form-dense. | Workspace, files, goals, plans, evidence, provider settings, framework, recovery, and editing flows have coherent progressive disclosure, keyboard paths, useful empty/loading/error states, and recorded wide/compact hands-on review without hiding consequential approval detail. |
+| 035 | In progress | Make the workbench's daily surfaces feel like a professional IDE, not a prototype | 016, 026, 029, 032 | The Framework effective view is one long formatted text dump (rules, full guidance-document bodies, and issues all inline with no filtering); the Operations backup destination requires typing an absolute path by hand instead of a native save picker; and Git diff is a single raw unified-diff string dumped into a plain editor with no syntax-aware decoration or comparison mode. The goal-approval dialog chain is tracked separately as Task 040. | Framework's effective view lets a user scan or filter locked rules and issues without reading a full text dump. Operations offers a native save-file picker for the backup destination, consistent with the workspace folder picker in Task 034. Source and edit views read like a competent editor. A diff viewer offers both an inline decorated view (added/removed/changed lines, for reviewing model-made changes in place) and a side-by-side comparison view (for evaluating working-tree/branch git state), reachable from the same documents already in the workbench. |
+| 036 | Planned | Work across more than one trusted repository | 015 | Only one workspace can be active at a time; switching real projects requires re-registration/re-selection overhead. | A user can maintain multiple trusted workspaces and move between them without losing goal/context state, with clear active-workspace indication throughout Avalonia and the TUI. |
+| 037 | Planned | Trust the app on real, messy repositories | 013-033 | Large-repository scale, dirty bases, mid-goal conflicts, index rebuilds under load, provider outages, budget exhaustion, and corrupted/interrupted state are exercised only through the single scripted representative-repo gate. | Large real repositories, dirty working trees, merge conflicts mid-goal, provider outages, budget exhaustion, and corrupted/interrupted state are exercised and demonstrably recoverable, not just the scripted gate scenario. |
+| 038 | Deferred | See whether agent output can be trusted | 021 | No opt-in behavioral evaluation or regression data exists yet, so plan quality, tool-selection quality, and review quality have no measurable baseline over time or across model changes. Parked below Tasks 035-037 and 039-043 per 2026-07-29 prioritization. | Opt-in Ollama behavioral evaluation datasets exist and regressions in planning, tool selection, and review are detectable before they reach a user's repository. |
+| 039 | Planned | Know what to do with an accepted goal branch | 023 | After exact-commit approval the goal branch sits in the repository with no in-app guidance; the user must already know to push, open a PR, or merge outside the app. | The app clearly surfaces the accepted branch's state and the deliberately manual next step (push/PR/merge) without automating merge or PR creation. |
+| 040 | Planned | Progress a goal without a chain of pop-ups | 035 | Creating and progressing one goal steps through up to 14 separate modal windows (new goal, model routing, remote-model authorization, output limits, plan approval, restore approval/request/decision, commit approval/confirmation, semantic context, semantic rebuild confirmation), almost all defined in one 1967-line file. | Genuine human-authority checkpoints (plan, restore, and commit approval) remain distinct, separately confirmed steps; informational/config steps (model routing, output limits, semantic context) are consolidated into fewer, clearer surfaces without hiding any consequential decision. |
+| 041 | Planned | Recover application state without the verifier script | 026 | Operations can only create a backup; restoring one into a fresh install is proven solely by `eng/verify-v1-release.sh` and is not available to a user in either Avalonia or the TUI. | A user can restore a private-state backup into a fresh or existing install from Avalonia/TUI Operations, with the same integrity verification the release gate already performs, gated by an explicit confirmation given the sensitivity of the archive. |
+| 042 | Planned | Validate every edit, model or manual, before it's trusted | 017, 018, 032 | Typed edit tools and AvaloniaEdit tabs accept and save C#/.NET source with only regex-based syntax highlighting; a model-authored or hand-typed edit that doesn't compile, or violates a configured analyzer, is discovered only later at Build time, if at all before review. | Roslyn and/or a Roslyn-backed language server evaluate every edit — a delegated tool call or a manual keystroke — and surface syntax errors, type errors, and configured analyzer diagnostics inline, in the gutter, and in a problems view before the reviewer needs to run Build to find out. |
+| 043 | Planned | Get completions, hover info, and go-to-definition while editing | 042 | The editor has no semantic assistance: no completion list, no hover/quick-info, no go-to-definition or find-references, no signature help. Typing C# in Harness.NET feels like a plain text box, not a .NET editor. | The source editor offers completion suggestions, hover documentation, and at least go-to-definition for the trusted workspace's loaded solution/project, built on the same Roslyn/LSP foundation as Task 042. |
 
 ### v1.0 release gate
 
-All tasks 013-033 must be **Done**. A release candidate must complete a representative
+Tasks 013-033 are all **Done**, and a release candidate completes a representative
 .NET repository change from workspace registration through explicit commit approval,
-survive an injected interruption, and leave both the user repository and private
-Harness.NET state auditable.
+survives an injected interruption, and leaves both the user repository and private
+Harness.NET state auditable. That gate defines version `1.0.0`.
 
-The release version is `1.0.0`. The default Avalonia workflow has passed recorded
-wide/minimum-size review, production accessibility checks, and the complete
-repository workflow gate; service-layer completion alone was not treated as product
-maturity.
+Passing this gate proves the mechanics of the first complete workflow; it does not
+by itself mean the application is productive for real day-to-day use. As of
+2026-07-29 it is not yet: Framework and Operations are still one-shot text
+dumps/manual-path forms, source/diff viewing has no syntax-aware decoration or
+comparison mode, no edit is validated against a compiler or language server, a
+single goal walks through up to 14 separate modal dialogs, only one workspace can
+be active at a time, and the workflow has only been proven against the single
+scripted representative repository rather than large or messy real ones. Tasks
+035-037 and 039-043 track closing that gap; Task 038 is deferred until those
+close. Tasks 035, 040, 042, and 043 are the current top priority: matching a
+professional general-purpose IDE baseline before further unique features.
 
 `eng/verify-v1-release.sh` is the executable gate. Its deterministic suite covers
 provider outages, budget failures, cancellation, interruption reconciliation, and
