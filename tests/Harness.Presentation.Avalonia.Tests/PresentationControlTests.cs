@@ -6,6 +6,7 @@ using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.LogicalTree;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
@@ -521,6 +522,19 @@ public sealed class PresentationControlTests
         }, CancellationToken.None);
     }
 
+    /// <summary>
+    /// The diff document renders decorated rows rather than one raw editor, so its content is
+    /// read back from the rendered text rows.
+    /// </summary>
+    private static string RenderedDiffText(Window window, IDockable diff)
+    {
+        window.UpdateLayout();
+        Control content = Assert.IsAssignableFrom<Control>(diff.Context);
+        return string.Join(
+            '\n',
+            content.GetLogicalDescendants().OfType<TextBlock>().Select(block => block.Text));
+    }
+
     [Fact]
     public async Task Approved_goal_source_and_diff_share_context_and_keep_document_identity()
     {
@@ -546,13 +560,13 @@ public sealed class PresentationControlTests
             IDockable diff = workbench.Documents.ActiveDockable!;
             Assert.Equal("document.git.diff.workspace-1.goal-1", diff.Id);
             Assert.Equal("harness/goal-1 working diff", diff.Title);
-            Assert.Equal("first diff", Assert.IsType<TextEditor>(diff.Context).Text);
+            Assert.Contains("first diff", RenderedDiffText(window, diff), StringComparison.Ordinal);
             Assert.All(inspection.Requests, request => Assert.Equal("goal-1", request.GoalId?.Value));
 
             inspection.Diff = "refreshed diff";
             workbench.OpenDiffAsync().AsTask().GetAwaiter().GetResult();
             Assert.Same(diff, workbench.Documents.ActiveDockable);
-            Assert.Equal("refreshed diff", Assert.IsType<TextEditor>(diff.Context).Text);
+            Assert.Contains("refreshed diff", RenderedDiffText(window, diff), StringComparison.Ordinal);
 
             workbench.Factory.SetActiveDockable(source);
             Assert.Same(sourceEditor, workbench.ActiveSourceEditor);

@@ -56,6 +56,10 @@ For a trusted active workspace, Avalonia exposes a real bounded Git-tracked file
 tracked-text search, file reading in a syntax-aware editor, Git status and diff
 inspection, and parsed .NET solution/project metadata. It does not display a
 fabricated terminal, problem count, build result, or goal progress.
+The bounded working-tree diff opens in a decorated viewer rather than as raw text:
+an inline mode reviews added and removed lines in place with old/new line gutters,
+and a side-by-side mode compares Git state across two aligned columns. Both use the
+contrast-validated diff theme tokens and follow an effective theme change.
 The modal inspector has been replaced by the first Dock-based workbench: source and
 diff content open in a central document region while real workspace/search, Git,
 goal context, and conversation controls occupy tool regions. Panel movement, hiding,

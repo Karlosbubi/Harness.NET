@@ -78,4 +78,95 @@
   <Style Selector="TextBlock.muted">
     <Setter Property="Foreground" Value="{DynamicResource Harness.TextMuted}" />
   </Style>
+
+  <!-- Segmented control: one visible choice out of a small closed set. -->
+  <Style Selector="Border.segmented">
+    <Setter Property="Padding" Value="3" />
+    <Setter Property="CornerRadius" Value="9" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Harness.Border}" />
+    <Setter Property="Background" Value="{DynamicResource Harness.Panel}" />
+  </Style>
+  <Style Selector="ToggleButton.segment">
+    <Setter Property="MinHeight" Value="28" />
+    <Setter Property="Padding" Value="10,3" />
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{DynamicResource Harness.TextMuted}" />
+  </Style>
+  <Style Selector="ToggleButton.segment:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource Harness.Hover}" />
+    <Setter Property="TextElement.Foreground" Value="{DynamicResource Harness.TextPrimary}" />
+  </Style>
+  <Style Selector="ToggleButton.segment:checked /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource Harness.Accent}" />
+    <Setter Property="TextElement.Foreground" Value="{DynamicResource Harness.Window}" />
+  </Style>
+  <Style Selector="ToggleButton.segment:checked">
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+  <Style Selector="ToggleButton.segment:checked:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource Harness.AccentStrong}" />
+    <Setter Property="TextElement.Foreground" Value="{DynamicResource Harness.Window}" />
+  </Style>
+
+  <!-- Diff rows. Colour carries the change kind, so the tokens must stay semantic. -->
+  <Style Selector="Border.diff-toolbar">
+    <Setter Property="Background" Value="{DynamicResource Harness.Panel}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Harness.Border}" />
+    <Setter Property="BorderThickness" Value="0,0,0,1" />
+  </Style>
+  <Style Selector="Border.diff-surface">
+    <Setter Property="Background" Value="{DynamicResource Harness.Editor}" />
+  </Style>
+  <Style Selector="Border.diff-line">
+    <Setter Property="MinHeight" Value="18" />
+  </Style>
+  <Style Selector="Border.diff-line.added">
+    <Setter Property="Background" Value="{DynamicResource Harness.DiffAddBackground}" />
+  </Style>
+  <Style Selector="Border.diff-line.removed">
+    <Setter Property="Background" Value="{DynamicResource Harness.DiffRemoveBackground}" />
+  </Style>
+  <Style Selector="Border.diff-line.file-header">
+    <Setter Property="Background" Value="{DynamicResource Harness.Raised}" />
+  </Style>
+  <Style Selector="Border.diff-line.hunk-header">
+    <Setter Property="Background" Value="{DynamicResource Harness.Panel}" />
+  </Style>
+  <Style Selector="Border.diff-line.absent">
+    <Setter Property="Background" Value="{DynamicResource Harness.Panel}" />
+  </Style>
+  <Style Selector="Border.diff-divider">
+    <Setter Property="Width" Value="1" />
+    <Setter Property="Background" Value="{DynamicResource Harness.Border}" />
+  </Style>
+  <Style Selector="TextBlock.diff-text">
+    <Setter Property="FontFamily" Value="Cascadia Code,JetBrains Mono,Consolas,Menlo,monospace" />
+    <Setter Property="FontSize" Value="12.5" />
+    <Setter Property="Padding" Value="4,1" />
+    <Setter Property="Foreground" Value="{DynamicResource Harness.TextPrimary}" />
+  </Style>
+  <Style Selector="TextBlock.diff-text.added">
+    <Setter Property="Foreground" Value="{DynamicResource Harness.DiffAddText}" />
+  </Style>
+  <Style Selector="TextBlock.diff-text.removed">
+    <Setter Property="Foreground" Value="{DynamicResource Harness.DiffRemoveText}" />
+  </Style>
+  <Style Selector="TextBlock.diff-text.meta">
+    <Setter Property="Foreground" Value="{DynamicResource Harness.TextMuted}" />
+  </Style>
+  <Style Selector="TextBlock.diff-text.header">
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+  <Style Selector="TextBlock.diff-gutter">
+    <Setter Property="FontFamily" Value="Cascadia Code,JetBrains Mono,Consolas,Menlo,monospace" />
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="Width" Value="52" />
+    <Setter Property="Padding" Value="0,0,10,0" />
+    <Setter Property="TextAlignment" Value="Right" />
+    <Setter Property="Foreground" Value="{DynamicResource Harness.TextDim}" />
+  </Style>
 </Styles>

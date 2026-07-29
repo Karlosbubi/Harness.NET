@@ -621,7 +621,7 @@ internal sealed class WorkbenchDockHost
             OpenOrReplaceDocument(
                 DiffDocumentId(inspected.Context),
                 $"{git.Branch} working diff",
-                CreateEditor(git.Diff, "workspace.diff", showLineNumbers: false));
+                CreateDiffView(git.Diff));
             gitStatus.Text = $"Opened the current bounded Git diff · {inspected.Context.Description}.";
         });
     }
@@ -1839,6 +1839,13 @@ internal sealed class WorkbenchDockHost
         documents.AddDocument(created);
         SetActiveDocument(created);
         return created;
+    }
+
+    private static Control CreateDiffView(string diff)
+    {
+        Control view = DiffContentView.Create(diff);
+        AutomationProperties.SetName(view, "Git working-tree diff");
+        return view;
     }
 
     private static Control CreateEditor(string content, string path, bool showLineNumbers)
