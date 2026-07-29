@@ -269,6 +269,10 @@ public sealed class GoalAcceptanceServiceTests
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public ValueTask<IReadOnlyList<StoredGoal>> ListAsync(string workspaceId,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<StoredGoal?> UpdateDraftSettingsAsync(string goalId,
+            DateTimeOffset expectedUpdatedAt, int reviewCycleLimit, long? remoteBudgetMicrousd,
+            DateTimeOffset updatedAt, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
         public ValueTask<StoredPlan?> GetCurrentPlanAsync(string goalId,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public ValueTask<StoredPlanSnapshot> SavePlanAsync(StoredPlan plan,

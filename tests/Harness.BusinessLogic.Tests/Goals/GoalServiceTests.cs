@@ -63,6 +63,50 @@ public sealed class GoalServiceTests
     }
 
     [Fact]
+    public async Task Updates_only_the_exact_trusted_draft_settings_snapshot()
+    {
+        StoredGoal goal = CreateGoal("Draft");
+        FakeGoalStore store = new(goal);
+        GoalService service = CreateService(store, CreateWorkspace(isTrusted: true));
+
+        GoalResult result = await service.UpdateSettingsAsync(new(
+            new(goal.Id),
+            new(5),
+            new(3_500_000),
+            goal.UpdatedAt));
+
+        Assert.Null(result.Error);
+        Assert.Equal(new ReviewCycleLimit(5), result.Goal?.ReviewCycleLimit);
+        Assert.Equal(new MicroUsdAmount(3_500_000), result.Goal?.RemoteBudget);
+
+        GoalResult stale = await service.UpdateSettingsAsync(new(
+            new(goal.Id),
+            new(6),
+            RemoteBudget: null,
+            goal.UpdatedAt));
+
+        Assert.Equal("stale_goal_settings", stale.ErrorCode);
+        Assert.Equal(5, store.Created?.ReviewCycleLimit);
+    }
+
+    [Fact]
+    public async Task Rejects_remote_cap_update_for_untrusted_workspace()
+    {
+        StoredGoal goal = CreateGoal("Draft");
+        FakeGoalStore store = new(goal);
+        GoalService service = CreateService(store, CreateWorkspace(isTrusted: false));
+
+        GoalResult result = await service.UpdateSettingsAsync(new(
+            new(goal.Id),
+            new(3),
+            new(1_000_000),
+            goal.UpdatedAt));
+
+        Assert.Equal("workspace_not_trusted", result.ErrorCode);
+        Assert.Null(store.Created?.RemoteBudgetMicrousd);
+    }
+
+    [Fact]
     public async Task Proposes_a_versioned_plan_and_waits_for_approval()
     {
         StoredGoal goal = CreateGoal("Draft");
@@ -244,6 +288,29 @@ public sealed class GoalServiceTests
             CancellationToken cancellationToken = default) =>
             ValueTask.FromResult<IReadOnlyList<StoredGoal>>(
                 Created?.WorkspaceId == workspaceId ? [Created] : []);
+
+        public ValueTask<StoredGoal?> UpdateDraftSettingsAsync(
+            string goalId,
+            DateTimeOffset expectedUpdatedAt,
+            int reviewCycleLimit,
+            long? remoteBudgetMicrousd,
+            DateTimeOffset updatedAt,
+            CancellationToken cancellationToken = default)
+        {
+            if (Created is null || Created.Id != goalId || Created.State != "Draft" ||
+                Created.UpdatedAt != expectedUpdatedAt)
+            {
+                return ValueTask.FromResult<StoredGoal?>(null);
+            }
+
+            Created = Created with
+            {
+                ReviewCycleLimit = reviewCycleLimit,
+                RemoteBudgetMicrousd = remoteBudgetMicrousd,
+                UpdatedAt = updatedAt,
+            };
+            return ValueTask.FromResult<StoredGoal?>(Created);
+        }
 
         public ValueTask<StoredPlan?> GetCurrentPlanAsync(
             string goalId,

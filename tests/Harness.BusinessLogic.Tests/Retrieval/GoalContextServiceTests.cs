@@ -83,6 +83,10 @@ public sealed class GoalContextServiceTests
             string workspaceId,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
+        public ValueTask<GoalResult> UpdateSettingsAsync(
+            GoalSettingsUpdateRequest request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
         public ValueTask<PlanView?> GetCurrentPlanAsync(
             GoalId goalId,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();

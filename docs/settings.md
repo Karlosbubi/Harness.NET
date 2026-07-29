@@ -12,7 +12,7 @@ remote spending or another consequential operation.
 | Editor | Buffer/editor behavior; future Roslyn features | Presentation for transient buffers; ADR 012 will add typed code-intelligence contracts | Planned |
 | Appearance & accessibility | Preferred theme and installed user themes | SQLite appearance preference and XDG theme sources through `IAppearanceService` | Delivered; selection is persisted and applies immediately |
 | Models & roles | Provider definitions, default role routes, and output maxima | Host XML supplies fallbacks; schema 19 stores typed application defaults through `IAgentDefaultsService`; per-goal overrides remain in the goal-model selection store | Delivered; model discovery and validated updates do not grant remote authority |
-| Privacy & limits | Goal review cycles, remote cap, and per-run output maxima | Immutable goal/workflow Business Logic contracts and SQLite goal state | Planned; ordinary defaults may move here, but goal-bound spend approval remains separate |
+| Privacy & limits | Goal review cycles, remote cap, and per-run output maxima | Immutable goal/workflow Business Logic contracts and SQLite goal state | Partially delivered; draft goal cards progressively reveal typed review-cycle and explicit remote-cap overrides, while ordinary application defaults remain planned |
 | Storage & recovery | SQLite private state, layout file, backup operation, and future restore | XDG application paths and typed operations/layout services | Planned |
 | Advanced | OTLP endpoint, semantic-index module configuration, diagnostics | Host configuration and owning Business Logic/Data Access modules | Planned |
 
@@ -47,3 +47,10 @@ production continuation, cancellation, correlation-bound Restore decisions, and
 exact-diff commit decisions are delivered with their bounded-call, one-use, and exact
 fingerprint confirmations. Spend, other destructive operations, and budget-extension
 remain explicit goal-bound actions for the next increment.
+
+Draft goal cards expose a focused progressive settings surface for review cycles,
+per-goal role/model routes, and an exact remote USD cap. Saving the cap is itself the
+visible goal-bound authorization: the active workspace must be trusted, stale writes
+fail, it is disabled by default, and neither the cap nor review cycles can change once
+planning starts. Run-specific output ceilings remain explicit in the bounded-call
+sheet rather than becoming ambient authority.

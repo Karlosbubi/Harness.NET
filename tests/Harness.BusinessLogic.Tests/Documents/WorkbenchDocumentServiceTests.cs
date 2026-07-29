@@ -284,6 +284,11 @@ public sealed class WorkbenchDocumentServiceTests
             string workspaceId,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
+        public ValueTask<StoredGoal?> UpdateDraftSettingsAsync(
+            string goalId, DateTimeOffset expectedUpdatedAt, int reviewCycleLimit,
+            long? remoteBudgetMicrousd, DateTimeOffset updatedAt,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
         public ValueTask<StoredPlan?> GetCurrentPlanAsync(
             string goalId,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();

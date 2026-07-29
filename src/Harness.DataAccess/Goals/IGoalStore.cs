@@ -16,6 +16,14 @@ public interface IGoalStore
         string workspaceId,
         CancellationToken cancellationToken = default);
 
+    ValueTask<StoredGoal?> UpdateDraftSettingsAsync(
+        string goalId,
+        DateTimeOffset expectedUpdatedAt,
+        int reviewCycleLimit,
+        long? remoteBudgetMicrousd,
+        DateTimeOffset updatedAt,
+        CancellationToken cancellationToken = default);
+
     ValueTask<StoredPlan?> GetCurrentPlanAsync(
         string goalId,
         CancellationToken cancellationToken = default);

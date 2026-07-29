@@ -426,6 +426,10 @@ public sealed class GoalWorkflowServiceTests
             string workspaceId,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
+        public ValueTask<GoalResult> UpdateSettingsAsync(
+            GoalSettingsUpdateRequest request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
         public ValueTask<PlanResult> DecidePlanAsync(
             PlanDecisionRequest request,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();

@@ -58,6 +58,48 @@ internal sealed class GoalService(
         .Select(goal => goal.ToView())
         .ToArray();
 
+    public async ValueTask<GoalResult> UpdateSettingsAsync(
+        GoalSettingsUpdateRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (request.GoalId is null || string.IsNullOrWhiteSpace(request.GoalId.Value) ||
+            request.ReviewCycleLimit is null || request.ReviewCycleLimit.Value is < 1 or > 20 ||
+            request.RemoteBudget?.Value is <= 0)
+        {
+            return new(null, "invalid_goal_settings",
+                "Review cycles must be 1-20 and a remote cap, when present, must be positive.");
+        }
+
+        StoredGoal? goal = await goalStore.GetAsync(request.GoalId.Value, cancellationToken);
+        if (goal is null)
+        {
+            return new(null, "goal_missing", "The goal does not exist.");
+        }
+
+        RegisteredWorkspace? workspace = await workspaceStore.GetActiveAsync(cancellationToken);
+        if (workspace is null || !workspace.Id.Equals(goal.WorkspaceId, StringComparison.Ordinal))
+        {
+            return new(null, "workspace_not_active", "The goal workspace must be active.");
+        }
+
+        if (!workspace.IsTrusted)
+        {
+            return new(null, "workspace_not_trusted", "Trust the workspace before authorizing a remote cap.");
+        }
+
+        StoredGoal? updated = await goalStore.UpdateDraftSettingsAsync(
+            goal.Id,
+            request.ExpectedUpdatedAt,
+            request.ReviewCycleLimit.Value,
+            request.RemoteBudget?.Value,
+            DateTimeOffset.UtcNow,
+            cancellationToken);
+        return updated is null
+            ? new(null, "stale_goal_settings",
+                "The draft changed or planning started before these settings were saved.")
+            : new(updated.ToView(), ErrorCode: null, Error: null);
+    }
+
     public async ValueTask<PlanView?> GetCurrentPlanAsync(
         GoalId goalId,
         CancellationToken cancellationToken = default) =>

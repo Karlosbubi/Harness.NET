@@ -908,6 +908,9 @@ internal sealed class MainWindow : Window
 
         switch (action)
         {
+            case ConversationWorkflowActionKind.ConfigureGoal:
+                await new GoalSettingsDialog(store, goal, cancellationToken).ShowDialog(this);
+                break;
             case ConversationWorkflowActionKind.StartPlanning:
                 await StartPlanningAsync(goal);
                 break;

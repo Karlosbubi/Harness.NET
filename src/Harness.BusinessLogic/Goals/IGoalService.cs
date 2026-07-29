@@ -14,6 +14,10 @@ public interface IGoalService
         string workspaceId,
         CancellationToken cancellationToken = default);
 
+    ValueTask<GoalResult> UpdateSettingsAsync(
+        GoalSettingsUpdateRequest request,
+        CancellationToken cancellationToken = default);
+
     ValueTask<PlanView?> GetCurrentPlanAsync(
         GoalId goalId,
         CancellationToken cancellationToken = default);

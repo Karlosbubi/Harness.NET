@@ -43,6 +43,7 @@ internal sealed record ConversationWorkflowCard(
 
 internal enum ConversationWorkflowActionKind
 {
+    ConfigureGoal,
     StartPlanning,
     ApprovePlan,
     RequestPlanChanges,
@@ -71,6 +72,11 @@ internal static class ConversationWorkflowActionProjector
         if (goal is null)
         {
             return [];
+        }
+
+        if (card.Kind is ConversationWorkflowCardKind.Goal && goal.State is GoalState.Draft)
+        {
+            return [new(ConversationWorkflowActionKind.ConfigureGoal, "Goal settings", false)];
         }
 
         if (card.Kind is ConversationWorkflowCardKind.Plan)

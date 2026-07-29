@@ -121,6 +121,25 @@ public sealed class AvaloniaPresentationStoreTests
         Assert.Equal(goal.Id, store.Current.Goals.SelectedGoalId);
         Assert.Equal(string.Empty, store.Current.ComposerText);
         Assert.Null(dashboard.LastInstruction);
+
+        ConversationWorkflowCard goalCard = Assert.Single(
+            ConversationWorkflowProjector.Project(store.Current.Goals),
+            card => card.Kind is ConversationWorkflowCardKind.Goal);
+        Assert.Equal(
+            ConversationWorkflowActionKind.ConfigureGoal,
+            Assert.Single(ConversationWorkflowActionProjector.Project(
+                goalCard,
+                store.Current.Goals)).Kind);
+
+        await store.UpdateGoalSettingsAsync(new(
+            goal.Id,
+            new(5),
+            new MicroUsdAmount(2_000_000),
+            goal.UpdatedAt), CancellationToken.None);
+
+        Assert.Equal(new ReviewCycleLimit(5), store.Current.Goals.SelectedGoal?.ReviewCycleLimit);
+        Assert.Equal(new MicroUsdAmount(2_000_000), store.Current.Goals.SelectedGoal?.RemoteBudget);
+        Assert.Null(dashboard.LastInstruction);
     }
 
     [Fact]
@@ -872,6 +891,26 @@ public sealed class AvaloniaPresentationStoreTests
             string workspaceId,
             CancellationToken cancellationToken = default) =>
             ValueTask.FromResult<IReadOnlyList<GoalView>>(goal is null ? [] : [goal]);
+
+        public ValueTask<GoalResult> UpdateSettingsAsync(
+            GoalSettingsUpdateRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            if (goal is null || goal.Id != request.GoalId || goal.State is not GoalState.Draft ||
+                goal.UpdatedAt != request.ExpectedUpdatedAt)
+            {
+                return ValueTask.FromResult(new GoalResult(
+                    null, "stale_goal_settings", "The draft changed."));
+            }
+
+            goal = goal with
+            {
+                ReviewCycleLimit = request.ReviewCycleLimit,
+                RemoteBudget = request.RemoteBudget,
+                UpdatedAt = goal.UpdatedAt.AddSeconds(1),
+            };
+            return ValueTask.FromResult(new GoalResult(goal, null, null));
+        }
 
         public ValueTask<PlanView?> GetCurrentPlanAsync(
             GoalId goalId,

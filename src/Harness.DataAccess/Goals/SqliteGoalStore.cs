@@ -63,6 +63,38 @@ internal sealed class SqliteGoalStore(IApplicationPaths applicationPaths) : IGoa
         return rows.Select(row => row.ToRecord()).ToArray();
     }
 
+    public async ValueTask<StoredGoal?> UpdateDraftSettingsAsync(
+        string goalId,
+        DateTimeOffset expectedUpdatedAt,
+        int reviewCycleLimit,
+        long? remoteBudgetMicrousd,
+        DateTimeOffset updatedAt,
+        CancellationToken cancellationToken = default)
+    {
+        await using SqliteConnection connection = await OpenAsync(cancellationToken);
+        GoalRow? row = await connection.QuerySingleOrDefaultAsync<GoalRow>(new CommandDefinition("""
+            UPDATE goals
+            SET review_cycle_limit = @reviewCycleLimit,
+                remote_budget_microusd = @remoteBudgetMicrousd,
+                updated_at = @updatedAt
+            WHERE id = @goalId
+              AND state = 'Draft'
+              AND updated_at = @expectedUpdatedAt
+            RETURNING id, workspace_id AS WorkspaceId, title, objective,
+                      review_cycle_limit AS ReviewCycleLimit,
+                      remote_budget_microusd AS RemoteBudgetMicrousd,
+                      state, created_at AS CreatedAt, updated_at AS UpdatedAt;
+            """, new
+        {
+            goalId,
+            expectedUpdatedAt = Format(expectedUpdatedAt),
+            reviewCycleLimit,
+            remoteBudgetMicrousd,
+            updatedAt = Format(updatedAt),
+        }, cancellationToken: cancellationToken));
+        return row?.ToRecord();
+    }
+
     public async ValueTask<StoredPlan?> GetCurrentPlanAsync(
         string goalId,
         CancellationToken cancellationToken = default)

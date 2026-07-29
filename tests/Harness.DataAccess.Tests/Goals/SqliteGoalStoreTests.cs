@@ -49,6 +49,34 @@ public sealed class SqliteGoalStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task Updates_only_an_exact_draft_settings_snapshot()
+    {
+        StubApplicationPaths paths = new(CreatePaths());
+        await new SqliteDatabaseInitializer(paths).InitializeAsync();
+        string workspaceRoot = Path.Combine(root, "repository");
+        string entryPoint = Path.Combine(workspaceRoot, "Repository.slnx");
+        RegisteredWorkspace workspace = await new SqliteWorkspaceStore(paths).SaveAsync(
+            new(workspaceRoot, "repository", "main", false, [entryPoint], Error: null),
+            entryPoint);
+        SqliteGoalStore store = new(paths);
+        DateTimeOffset createdAt = DateTimeOffset.Parse("2026-07-29T10:00:00Z");
+        StoredGoal goal = await store.CreateAsync(new(
+            "goal-id", workspace.Id, "Goal", "Objective", 3, null, "Draft",
+            createdAt, createdAt));
+        DateTimeOffset updatedAt = createdAt.AddMinutes(1);
+
+        StoredGoal? updated = await store.UpdateDraftSettingsAsync(
+            goal.Id, goal.UpdatedAt, 5, 2_000_000, updatedAt);
+        StoredGoal? stale = await store.UpdateDraftSettingsAsync(
+            goal.Id, goal.UpdatedAt, 6, null, updatedAt.AddMinutes(1));
+
+        Assert.Equal(5, updated?.ReviewCycleLimit);
+        Assert.Equal(2_000_000, updated?.RemoteBudgetMicrousd);
+        Assert.Equal(updatedAt, updated?.UpdatedAt);
+        Assert.Null(stale);
+    }
+
+    [Fact]
     public async Task Saves_plan_revisions_and_decisions_atomically()
     {
         StubApplicationPaths paths = new(CreatePaths());

@@ -171,8 +171,11 @@ of Stage 3 below.
   production continuation, and cancellation actions sit on their matching cards and
   retain bounded-call disclosures and focused confirmation. Correlation-bound Restore
   approve/deny and exact-diff request/approve/deny/resume also run from their matching
-  cards while preserving one-use and stale-fingerprint checks. Remaining remote
-  authorization, budget, and other destructive decisions are the next migration.
+  cards while preserving one-use and stale-fingerprint checks. Budget extensions and
+  other destructive decisions remain for later card migrations.
+  Draft goal cards now also reveal progressive limits/routes on demand: an exact
+  remote USD cap is a typed, trust-required, goal-bound authorization that is disabled
+  by default and becomes immutable once planning begins; stale draft snapshots fail.
 - Build the ADR 012 in-process Roslyn service behind replaceable semantic contracts.
   Begin with its SDK/MSBuild/self-contained-publish compatibility checkpoint.
   Versioned live buffers then surface syntax, compiler, and configured analyzer

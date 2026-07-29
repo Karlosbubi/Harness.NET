@@ -532,6 +532,26 @@ internal sealed class AvaloniaPresentationStore(
                 cancellationToken);
         }, "Goal creation");
 
+    internal async ValueTask UpdateGoalSettingsAsync(
+        GoalSettingsUpdateRequest request,
+        CancellationToken cancellationToken) =>
+        await RunGoalCommandAsync(async () =>
+        {
+            GoalResult result = await goalService.UpdateSettingsAsync(request, cancellationToken);
+            if (result.Goal is null)
+            {
+                PublishGoalStatus(result.Error ?? "Goal settings update failed.");
+                return;
+            }
+
+            await ReloadGoalsAsync(
+                result.Goal.Id,
+                result.Goal.RemoteBudget is null
+                    ? "Saved private goal limits with remote spending disabled."
+                    : $"Saved explicit remote cap of ${GoalPresentationFormatter.ToUsd(result.Goal.RemoteBudget.Value)}.",
+                cancellationToken);
+        }, "Goal settings update");
+
     internal async ValueTask ProposePlanAsync(
         GoalId goalId,
         string content,
