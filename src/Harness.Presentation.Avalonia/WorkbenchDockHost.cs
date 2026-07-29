@@ -417,6 +417,11 @@ internal sealed class WorkbenchDockHost
 
     internal void Update(AvaloniaShellState snapshot)
     {
+        foreach (SourceDocumentSession session in sourceDocuments.Values)
+        {
+            CodeEditorView.ApplyTheme(session.Editor);
+        }
+
         WorkspaceView? active = snapshot.Workspaces.Registered.FirstOrDefault(item => item.IsActive);
         if (!string.Equals(workspaceId, active?.Id, StringComparison.Ordinal))
         {
@@ -1427,52 +1432,13 @@ internal sealed class WorkbenchDockHost
         string id,
         WorkbenchDocumentView view)
     {
-        TextEditor editor = CodeEditorView.Create(
-            view.Content.Value,
-            isReadOnly: view.Access is not WorkbenchDocumentAccess.Editable,
-            wordWrap: false,
-            showLineNumbers: true,
-            path: view.Path.Value);
+        SourceEditorSurface surface = SourceEditorSurface.Create(view);
+        TextEditor editor = surface.Editor;
         AutomationProperties.SetName(
             editor,
             view.Access is WorkbenchDocumentAccess.Editable
                 ? $"Editable source editor for {view.Path.Value}"
                 : $"Read-only source editor for {view.Path.Value}");
-
-        TextBlock status = new()
-        {
-            Text = view.AccessDescription,
-            TextWrapping = TextWrapping.Wrap,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        AutomationProperties.SetName(status, $"Editing status for {view.Path.Value}");
-        Button save = new() { Content = "Save", IsEnabled = false };
-        Button reload = new() { Content = "Reload" };
-        Button close = new() { Content = "Close" };
-        AutomationProperties.SetName(save, $"Save {view.Path.Value}");
-        AutomationProperties.SetName(reload, $"Reload {view.Path.Value}");
-        AutomationProperties.SetName(close, $"Close {view.Path.Value}");
-
-        Grid toolbar = new()
-        {
-            ColumnDefinitions = new("*,Auto,Auto,Auto"),
-            ColumnSpacing = 6,
-            Margin = new Thickness(8, 5),
-            Children = { status },
-        };
-        Grid.SetColumn(save, 1);
-        toolbar.Children.Add(save);
-        Grid.SetColumn(reload, 2);
-        toolbar.Children.Add(reload);
-        Grid.SetColumn(close, 3);
-        toolbar.Children.Add(close);
-        Grid content = new()
-        {
-            RowDefinitions = new("Auto,*"),
-            Children = { toolbar },
-        };
-        Grid.SetRow(editor, 1);
-        content.Children.Add(editor);
 
         SourceDockDocument document = new()
         {
@@ -1482,14 +1448,10 @@ internal sealed class WorkbenchDockHost
             CanClose = true,
             CanFloat = true,
         };
-        WorkbenchDockContent.Attach(document, content);
+        WorkbenchDockContent.Attach(document, surface.Control);
         SourceDocumentSession session = new(
             document,
-            editor,
-            status,
-            save,
-            reload,
-            close,
+            surface,
             view);
         document.CloseRequested = () => OnSourceDocumentCloseRequested(session);
         editor.TextChanged += (_, _) => session.SynchronizeDirtyState();
@@ -1506,9 +1468,9 @@ internal sealed class WorkbenchDockHost
                 await RequestSourceDocumentCloseAsync(session);
             }
         };
-        save.Click += async (_, _) => await SaveSourceDocumentAsync(session);
-        reload.Click += async (_, _) => await ReloadSourceDocumentAsync(session, confirmDiscard: true);
-        close.Click += async (_, _) => await RequestSourceDocumentCloseAsync(session);
+        surface.Save.Click += async (_, _) => await SaveSourceDocumentAsync(session);
+        surface.Reload.Click += async (_, _) => await ReloadSourceDocumentAsync(session, confirmDiscard: true);
+        surface.Close.Click += async (_, _) => await RequestSourceDocumentCloseAsync(session);
         sourceDocuments.Add(id, session);
         session.SynchronizeDirtyState();
         return session;

@@ -142,34 +142,33 @@ tracked as concrete tasks in `docs/tasks/README.md`.
 
 ### Current focus: match a professional IDE baseline
 
-Before any further unique feature, the daily editing and reviewing surfaces must
-feel like a competent general-purpose IDE (the bar is JetBrains Rider/Air- or
-Zed-class), not a prototype text box wired to a raw diff string. This is the
-present priority, ahead of the rest of Stage 3 below.
+Before any further unique feature, the daily editing, Git, and agent-collaboration
+loop must meet the interaction quality of a professional IDE. JetBrains Rider/Air,
+Cursor, and Zed are quality references rather than feature-parity or visual-copy
+targets. Harness.NET retains its own design and differentiates through deep .NET
+integration and personal tailoring. This is the present priority, ahead of the rest
+of Stage 3 below.
 
-- Reduce the form density of Framework rule management and Operations, fix source
-  viewing/editing, and add a real diff viewer: the effective framework view is
-  currently one long formatted text dump (rules, full guidance-document bodies,
-  and issues all inline with no filtering); the Operations backup destination
-  requires typing an absolute path by hand instead of a native save picker; and
-  Git diff is a single raw unified-diff string with no syntax-aware decoration.
-  Add both an inline decorated view (for reviewing model-made changes in place)
-  and a side-by-side comparison view (for evaluating working-tree/branch git
-  state). The goal-approval dialog chain is tracked separately as Task 040.
-  (Task 035)
-- Consolidate the goal lifecycle's dialog chain: creating and progressing one goal
-  currently steps through up to 14 separate modal windows (new goal, model
-  routing, remote-model authorization, output limits, plan approval, restore
-  approval/request/decision, commit approval/confirmation, semantic context,
-  semantic rebuild confirmation), almost all defined in one 1967-line file.
-  Genuine human-authority checkpoints — plan, restore, and commit approval — stay
-  distinct and undiminished; informational/config steps are consolidated into
-  fewer, clearer surfaces. (Task 040)
-- Validate every edit, model-authored or hand-typed, with real Roslyn/LSP
-  diagnostics instead of discovering a syntax or type error only at Build time.
-  (Task 042)
-- Add intellisense on top of that foundation: completion, hover/quick-info, and
-  go-to-definition for the loaded solution/project. (Task 043)
+- Completed: Task 035's source/editor visual pass and wide/compact production
+  acceptance. The bounded file tree, command palette/quick open, scannable Framework
+  inspector, native backup picker, IDE headerbar, inline/side-by-side decorated diff,
+  and theme-aware source editor now have recorded real-host evidence.
+- Replace the goal dialog chain with the ADR 013 chat-first workflow. Typed inline
+  cards carry plans, progress, evidence, validation, consequential decisions, and
+  handoff; role/model/output defaults move to searchable Settings and goal-specific
+  overrides use progressive disclosure. Durable plan, remote-spend, Restore,
+  destructive, budget, and exact-commit authority remains explicit. (Task 040)
+- Build the ADR 012 in-process Roslyn service behind replaceable semantic contracts.
+  Begin with its SDK/MSBuild/self-contained-publish compatibility checkpoint.
+  Versioned live buffers then surface syntax, compiler, and configured analyzer
+  diagnostics inline and in Problems. Model-authored candidate changes fail closed
+  when they introduce compiler errors and retain warning/analyzer evidence. (Task 042)
+- Add completion, quick info, signature help, go-to-definition, and find-references
+  over the exact active trusted source context, with stale-result rejection and
+  measured warm interaction latency. (Task 043)
+- Add preview-first semantic rename over a Roslyn-resolved symbol and atomic multi-file
+  baselines. The editor and agents share the same typed operation; text-search rename
+  is not an accepted agent behavior. (Task 044)
 
 ### Workflow friction
 
@@ -199,12 +198,14 @@ present priority, ahead of the rest of Stage 3 below.
   implementation type-name announcements. A deterministic-loopback production
   workflow also proves Lead planning, typed edit/build/test, independent review,
   process restart, and exact branch commit through the real UI.
-- Add other platforms or gRPC only through existing Business Logic contracts when a
-  concrete workflow justifies them.
+- Keep Linux as the product gate while isolating native windows/pickers/accessibility
+  in focused Presentation capabilities and XDG/filesystem/keyring/process behavior in
+  focused Data Access capabilities. Add another platform or gRPC only when a concrete
+  workflow justifies its implementations.
 
 Deferred within Stage 3: opt-in Ollama behavioral evaluation and regression
 datasets for planning, tool-selection, and review quality (Task 038) are parked
-below every item above until 035, 036, 037, and 039-043 close.
+below every item above until 035, 036, 037, and 039-044 close.
 
 Stage 3 exits when a user can run real, non-scripted development work through the
 app, across multiple sessions and repositories, without the friction or gaps above

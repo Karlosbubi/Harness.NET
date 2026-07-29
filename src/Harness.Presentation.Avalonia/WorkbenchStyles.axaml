@@ -1,5 +1,6 @@
 <Styles xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:avaloniaEdit="clr-namespace:AvaloniaEdit;assembly=AvaloniaEdit">
   <Style Selector="Button.command">
     <Setter Property="MinHeight" Value="34" />
     <Setter Property="Padding" Value="14,6" />
@@ -148,6 +149,75 @@
   </Style>
   <Style Selector="TextBlock.attention">
     <Setter Property="Foreground" Value="{DynamicResource Harness.Warning}" />
+  </Style>
+
+  <!-- Source documents: compact IDE chrome around the real AvaloniaEdit surface. -->
+  <Style Selector="Border.editor-toolbar">
+    <Setter Property="Padding" Value="10,6" />
+    <Setter Property="Background" Value="{DynamicResource Harness.Panel}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Harness.Border}" />
+    <Setter Property="BorderThickness" Value="0,0,0,1" />
+  </Style>
+  <Style Selector="TextBlock.editor-context">
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="Foreground" Value="{DynamicResource Harness.TextMuted}" />
+    <Setter Property="Margin" Value="8,0" />
+  </Style>
+  <Style Selector="Border.editor-access">
+    <Setter Property="Padding" Value="7,2" />
+    <Setter Property="CornerRadius" Value="5" />
+    <Setter Property="Background" Value="{DynamicResource Harness.Raised}" />
+  </Style>
+  <Style Selector="Border.editor-access > TextBlock">
+    <Setter Property="FontSize" Value="10" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{DynamicResource Harness.TextMuted}" />
+  </Style>
+  <Style Selector="Border.editor-access.editable">
+    <Setter Property="Background" Value="{DynamicResource Harness.AccentSoft}" />
+  </Style>
+  <Style Selector="Border.editor-access.editable > TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource Harness.AccentStrong}" />
+  </Style>
+  <Style Selector="Border.editor-access.truncated">
+    <Setter Property="Background" Value="{DynamicResource Harness.Raised}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Harness.Warning}" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+  <Style Selector="Border.editor-access.truncated > TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource Harness.Warning}" />
+  </Style>
+  <Style Selector="Button.editor-action">
+    <Setter Property="MinHeight" Value="28" />
+    <Setter Property="Padding" Value="9,3" />
+    <Setter Property="CornerRadius" Value="5" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{DynamicResource Harness.TextMuted}" />
+  </Style>
+  <Style Selector="Button.editor-action:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource Harness.Hover}" />
+    <Setter Property="TextElement.Foreground" Value="{DynamicResource Harness.TextPrimary}" />
+  </Style>
+  <Style Selector="Button.editor-action:disabled">
+    <Setter Property="Opacity" Value="0.45" />
+  </Style>
+  <Style Selector="avaloniaEdit|TextEditor.source-editor">
+    <Setter Property="Background" Value="{DynamicResource Harness.Editor}" />
+    <Setter Property="Foreground" Value="{DynamicResource Harness.TextPrimary}" />
+  </Style>
+  <Style Selector="Border.editor-status-surface">
+    <Setter Property="Background" Value="{DynamicResource Harness.Panel}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Harness.Border}" />
+    <Setter Property="BorderThickness" Value="0,1,0,0" />
+  </Style>
+  <Style Selector="Grid.editor-statusbar">
+    <Setter Property="MinHeight" Value="26" />
+    <Setter Property="Margin" Value="10,0" />
+  </Style>
+  <Style Selector="Grid.editor-statusbar TextBlock">
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="Foreground" Value="{DynamicResource Harness.TextMuted}" />
   </Style>
 
   <!-- Application identity mark in the header bar. -->

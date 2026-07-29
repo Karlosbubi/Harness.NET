@@ -118,6 +118,9 @@ public sealed class PresentationControlTests
             Assert.Equal("diff --git a/App.cs b/App.cs", editor.Text);
             Assert.True(editor.IsReadOnly);
             Assert.True(editor.ShowLineNumbers);
+            Assert.True(editor.Options.HighlightCurrentLine);
+            Assert.True(editor.Options.EnableRectangularSelection);
+            Assert.True(editor.Options.AllowScrollBelowDocument);
             Assert.NotNull(editor.Template);
             window.Close();
         }, CancellationToken.None);
@@ -237,6 +240,13 @@ public sealed class PresentationControlTests
             Assert.Contains(editor, window.GetVisualDescendants().OfType<TextEditor>());
             Assert.Equal("namespace Example;", editor.Text);
             Assert.True(editor.IsReadOnly);
+            string sourceChrome = string.Join('\n', documentContent.GetLogicalDescendants()
+                .OfType<TextBlock>()
+                .Select(item => item.Text));
+            Assert.Contains("src › App.cs", sourceChrome, StringComparison.Ordinal);
+            Assert.Contains("Original workspace", sourceChrome, StringComparison.Ordinal);
+            Assert.Contains("READ ONLY", sourceChrome, StringComparison.Ordinal);
+            Assert.Contains("Ln 1, Col 1 · UTF-8 · No line break", sourceChrome, StringComparison.Ordinal);
             Assert.NotNull(workbench.Control.Template);
             window.Close();
         }, CancellationToken.None);
@@ -313,6 +323,20 @@ public sealed class PresentationControlTests
             Assert.All(documentActions, item => Assert.False(
                 string.IsNullOrWhiteSpace(AutomationProperties.GetName(item))));
             Assert.True(documentActions[0].IsEnabled);
+            string sourceChrome = string.Join('\n', sourceContent.GetLogicalDescendants()
+                .OfType<TextBlock>()
+                .Select(item => item.Text));
+            Assert.Contains("src › App.cs", sourceChrome, StringComparison.Ordinal);
+            Assert.Contains("harness/goal-1", sourceChrome, StringComparison.Ordinal);
+            Assert.Contains("EDITABLE", sourceChrome, StringComparison.Ordinal);
+            editor.Text = "one\ntwo";
+            editor.CaretOffset = editor.Text.Length;
+            Dispatcher.UIThread.RunJobs();
+            sourceChrome = string.Join('\n', sourceContent.GetLogicalDescendants()
+                .OfType<TextBlock>()
+                .Select(item => item.Text));
+            Assert.Contains("Ln 2, Col 4 · UTF-8 · LF", sourceChrome, StringComparison.Ordinal);
+            editor.Text = "namespace Changed;";
             editor.RaiseEvent(new KeyEventArgs
             {
                 RoutedEvent = InputElement.KeyDownEvent,

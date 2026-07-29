@@ -1,0 +1,202 @@
+using Avalonia;
+using Avalonia.Automation;
+using Avalonia.Controls;
+using Avalonia.Layout;
+using Avalonia.Media;
+using AvaloniaEdit;
+using Harness.BusinessLogic.Documents;
+
+namespace Harness.Presentation.Avalonia;
+
+/// <summary>
+/// Owns the transient visual chrome around one real source editor. Document mutation,
+/// access, and conflict policy remain in Business Logic and <see cref="SourceDocumentSession"/>.
+/// </summary>
+internal sealed class SourceEditorSurface
+{
+    private readonly TextBlock path = new()
+    {
+        FontFamily = new FontFamily("Cascadia Code,JetBrains Mono,Consolas,Menlo,monospace"),
+        FontSize = 12,
+        TextTrimming = TextTrimming.CharacterEllipsis,
+        VerticalAlignment = VerticalAlignment.Center,
+    };
+    private readonly TextBlock context = new() { VerticalAlignment = VerticalAlignment.Center };
+    private readonly TextBlock access = new() { VerticalAlignment = VerticalAlignment.Center };
+    private readonly Border accessBadge = new();
+    private readonly TextBlock metrics = new()
+    {
+        VerticalAlignment = VerticalAlignment.Center,
+        TextAlignment = TextAlignment.Right,
+    };
+
+    private SourceEditorSurface(
+        Control control,
+        TextEditor editor,
+        TextBlock status,
+        Button save,
+        Button reload,
+        Button close)
+    {
+        Control = control;
+        Editor = editor;
+        Status = status;
+        Save = save;
+        Reload = reload;
+        Close = close;
+    }
+
+    internal Control Control { get; }
+    internal TextEditor Editor { get; }
+    internal TextBlock Status { get; }
+    internal Button Save { get; }
+    internal Button Reload { get; }
+    internal Button Close { get; }
+
+    internal static SourceEditorSurface Create(WorkbenchDocumentView view)
+    {
+        TextEditor editor = CodeEditorView.Create(
+            view.Content.Value,
+            isReadOnly: view.Access is not WorkbenchDocumentAccess.Editable,
+            wordWrap: false,
+            showLineNumbers: true,
+            path: view.Path.Value);
+        editor.Classes.Add("source-editor");
+        TextBlock status = new()
+        {
+            Text = view.AccessDescription,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        Button save = Action("Save", $"Save {view.Path.Value}", "Save · Ctrl+S");
+        save.IsEnabled = false;
+        Button reload = Action("Reload", $"Reload {view.Path.Value}", "Reload from worktree");
+        Button close = Action("Close", $"Close {view.Path.Value}", "Close · Ctrl+W");
+
+        SourceEditorSurface surface = new(
+            BuildRoot(editor, status),
+            editor,
+            status,
+            save,
+            reload,
+            close);
+        surface.accessBadge.Child = surface.access;
+        surface.accessBadge.Classes.Add("editor-access");
+        surface.BuildHeader(save, reload, close);
+        surface.UpdateView(view);
+        surface.UpdateMetrics();
+        editor.TextArea.Caret.PositionChanged += (_, _) => surface.UpdateMetrics();
+        editor.TextChanged += (_, _) => surface.UpdateMetrics();
+        return surface;
+    }
+
+    internal void UpdateView(WorkbenchDocumentView view)
+    {
+        path.Text = view.Path.Value.Replace("/", " › ", StringComparison.Ordinal);
+        context.Text = view.Branch is null ? "Original workspace" : view.Branch.Value;
+        access.Text = view.IsTruncated
+            ? "TRUNCATED"
+            : view.Access is WorkbenchDocumentAccess.Editable ? "EDITABLE" : "READ ONLY";
+        accessBadge.Classes.Remove("editable");
+        accessBadge.Classes.Remove("read-only");
+        accessBadge.Classes.Remove("truncated");
+        accessBadge.Classes.Add(view.IsTruncated
+            ? "truncated"
+            : view.Access is WorkbenchDocumentAccess.Editable ? "editable" : "read-only");
+        AutomationProperties.SetName(path, $"Repository path {view.Path.Value}");
+        AutomationProperties.SetName(Status, $"Editing status for {view.Path.Value}");
+        AutomationProperties.SetName(metrics, $"Caret and format for {view.Path.Value}");
+        AutomationProperties.SetName(
+            accessBadge,
+            view.IsTruncated
+                ? $"Truncated read-only source {view.Path.Value}"
+                : view.Access is WorkbenchDocumentAccess.Editable
+                    ? $"Editable approved goal source {view.Path.Value}"
+                    : $"Read-only original workspace source {view.Path.Value}");
+        UpdateMetrics();
+    }
+
+    internal void UpdateMetrics()
+    {
+        int selected = Editor.SelectionLength;
+        string selection = selected == 0 ? string.Empty : $" · {selected:N0} selected";
+        metrics.Text = $"Ln {Editor.TextArea.Caret.Line:N0}, Col {Editor.TextArea.Caret.Column:N0}" +
+                       selection + $" · UTF-8 · {LineEndings(Editor.Text)}";
+    }
+
+    private static Button Action(string content, string name, string tip)
+    {
+        Button button = new() { Content = content };
+        button.Classes.Add("editor-action");
+        AutomationProperties.SetName(button, name);
+        ToolTip.SetTip(button, tip);
+        return button;
+    }
+
+    private static Grid BuildRoot(TextEditor editor, TextBlock status)
+    {
+        Grid root = new() { RowDefinitions = new("Auto,*,Auto") };
+        Grid.SetRow(editor, 1);
+        root.Children.Add(editor);
+
+        Grid footer = new()
+        {
+            ColumnDefinitions = new("*,Auto"),
+            ColumnSpacing = 12,
+            Children = { status },
+        };
+        footer.Classes.Add("editor-statusbar");
+        Border footerBorder = new() { Child = footer };
+        footerBorder.Classes.Add("editor-status-surface");
+        Grid.SetRow(footerBorder, 2);
+        root.Children.Add(footerBorder);
+        return root;
+    }
+
+    private void BuildHeader(Button save, Button reload, Button close)
+    {
+        Grid header = new()
+        {
+            ColumnDefinitions = new("*,Auto,Auto,Auto,Auto,Auto"),
+            ColumnSpacing = 6,
+            Children = { path },
+        };
+        context.Classes.Add("editor-context");
+        Grid.SetColumn(context, 1);
+        header.Children.Add(context);
+        Grid.SetColumn(accessBadge, 2);
+        header.Children.Add(accessBadge);
+        Grid.SetColumn(save, 3);
+        header.Children.Add(save);
+        Grid.SetColumn(reload, 4);
+        header.Children.Add(reload);
+        Grid.SetColumn(close, 5);
+        header.Children.Add(close);
+        Border headerBorder = new() { Child = header };
+        headerBorder.Classes.Add("editor-toolbar");
+        Grid root = (Grid)Control;
+        root.Children.Insert(0, headerBorder);
+
+        Grid footer = (Grid)((Border)root.Children[^1]).Child!;
+        Grid.SetColumn(metrics, 1);
+        footer.Children.Add(metrics);
+    }
+
+    private static string LineEndings(string text)
+    {
+        bool crlf = text.Contains("\r\n", StringComparison.Ordinal);
+        bool lf = text.Replace("\r\n", string.Empty, StringComparison.Ordinal)
+            .Contains('\n');
+        if (crlf && lf)
+        {
+            return "Mixed endings";
+        }
+
+        if (crlf)
+        {
+            return "CRLF";
+        }
+
+        return lf ? "LF" : "No line break";
+    }
+}

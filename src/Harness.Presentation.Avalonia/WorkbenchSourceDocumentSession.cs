@@ -20,28 +20,21 @@ internal sealed class SourceDocumentSession : IDisposable
 
     internal SourceDocumentSession(
         SourceDockDocument document,
-        TextEditor editor,
-        TextBlock status,
-        Button save,
-        Button reload,
-        Button close,
+        SourceEditorSurface surface,
         WorkbenchDocumentView view)
     {
         Document = document;
-        Editor = editor;
-        Status = status;
-        Save = save;
-        Reload = reload;
-        Close = close;
+        Surface = surface;
         View = view;
     }
 
     internal SourceDockDocument Document { get; }
-    internal TextEditor Editor { get; }
-    internal TextBlock Status { get; }
-    internal Button Save { get; }
-    internal Button Reload { get; }
-    internal Button Close { get; }
+    internal SourceEditorSurface Surface { get; }
+    internal TextEditor Editor => Surface.Editor;
+    internal TextBlock Status => Surface.Status;
+    internal Button Save => Surface.Save;
+    internal Button Reload => Surface.Reload;
+    internal Button Close => Surface.Close;
     internal WorkbenchDocumentView View { get; private set; }
     internal bool IsDirty { get; private set; }
     internal bool AllowClose { get; set; }
@@ -57,6 +50,7 @@ internal sealed class SourceDocumentSession : IDisposable
         IsDirty = View.Access is WorkbenchDocumentAccess.Editable &&
                   !string.Equals(Editor.Text, View.Content.Value, StringComparison.Ordinal);
         Document.IsModified = IsDirty;
+        Surface.UpdateMetrics();
         Save.IsEnabled = !isBusy && IsDirty &&
                          View.Access is WorkbenchDocumentAccess.Editable;
         if (IsDirty)
@@ -93,6 +87,7 @@ internal sealed class SourceDocumentSession : IDisposable
             View = view;
             Editor.Text = view.Content.Value;
             Editor.IsReadOnly = view.Access is not WorkbenchDocumentAccess.Editable;
+            Surface.UpdateView(view);
             AutomationProperties.SetName(
                 Editor,
                 view.Access is WorkbenchDocumentAccess.Editable

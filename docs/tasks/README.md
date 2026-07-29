@@ -40,44 +40,125 @@ The walking skeleton proves technology choices. The following slices are require
 before Harness.NET is a usable v1.0 product. **Partial** means supporting code exists
 but the end-user workflow is not complete.
 
-| ID | Status | User capability | Current gap | Done when |
-|---|---|---|---|---|
-| 013 | Done | Hold a durable local-model conversation | Successful live inference still depends on the configured server being reachable. | TUI instructions stream through Business Logic to Ollama, persist, reload after restart, and show actionable provider failures. |
-| 014 | Done | Configure and verify model providers | - | Configuration validates endpoints, discovers capabilities, selects models per role, and reports health without exposing secrets. |
-| 015 | Done | Register and trust a .NET workspace | - | A user can add a Git repository, select a solution/project, explicitly trust it, reopen it, and see dirty/base state. |
-| 016 | Done | Load the user's engineering framework | - | Global, repository, and private framework layers load with precedence, locks, validation, and an inspectable effective view. |
-| 017 | Done | Let agents inspect safely | - | Typed, path-confined read/search/status/diff/project/build-information tools run only in a trusted workspace and return bounded records. |
-| 018 | Done | Let agents implement and verify | - | Approved runs can use typed edit/build/test tools with cancellation, output limits, correlation, and separate restore/network approval. |
-| 019 | Done | Isolate work with Git | - | Each approved goal uses a validated branch/worktree, preserves dirty user state, and never merges/rebases automatically. |
-| 020 | Done | Create goals and approve plans | - | Goals, caps, plans, revisions, approvals, and denials persist and every consequential transition is validated. |
-| 021 | Done | Coordinate lead, implementer, and reviewer agents | - | Role prompts and tool scopes are wrapped behind Business Logic interfaces and a lead can delegate bounded tasks. |
-| 022 | Done | Resume interrupted work safely | - | Runs checkpoint at safe boundaries, resume completed steps, and mark uncertain calls without automatic replay. |
-| 023 | Done | Review evidence and accept results | - | Diff, tests, tool evidence, review findings, cycle caps, and explicit commit approval work end to end. |
-| 024 | Done | Retrieve relevant repository context | - | Eligible Git-tracked text is chunked, partitioned by embedding configuration, rebuilt, searched, and filtered by policy. |
-| 025 | Done | Use remote models under a cost cap | - | Remote use requires approval, streams through the provider boundary, and enforces estimated plus reconciled per-goal caps. |
-| 026 | Done | Operate and distribute v1.0 reliably | - | A self-contained Linux x64 release passes clean-install, migration, outage, cancellation, recovery, and representative-repository acceptance tests. |
-| 027 | Done | Deliver the default desktop as a complete product surface | 013-026 | The conversation-first shell and modal inspector are replaced by a rendered Dock workbench with safe source editing, adaptive minimum-size chrome, typed bounded output, and honest empty states. Repeatable production-host AT-SPI runs register and trust real repositories, create goals through both manual and Lead-generated plans, provision isolated worktrees, edit/build/test/review, approve an exact commit, switch real documents, restore after restart, and reject corrupt layout state. Production Orca generates contextual control speech without framework implementation names. No visible surface uses mock or filler UI. |
-| 028 | Done | Validate the Dock dependency and package boundary | 027 | Stable Dock 12.0.0.2 Avalonia packages are pinned at the Presentation boundary. Real tool/document content is proven in the rendered visual tree, Fluent construction and 200% rendering pass, compact keyboard access and floating ownership are covered, Linux x64 lifecycle verification succeeds, and the production host passes repeatable AT-SPI action and isolated Orca speech-generation checkpoints without framework type-name announcements. |
-| 029 | Done | Build the central document workbench | 028 | Workspace overview, bounded source, Git diff, current plan, and durable evidence documents use production state or honest empty states. Business Logic resolves one explicit original/approved-worktree context for source, search, Git, and diff; headless checks prove source/diff open, refresh, activation, close, identity retention, and cached switching across 18 documents from six representative projects. |
-| 030 | Done | Deliver dockable production tool panels | 029 | Real workspace/search, source-control, goal context, conversation, and typed durable run-output controls occupy separate movable, hideable, floatable tool regions with save/reset actions and restart restoration. Build/Test/Restore output exposes real state, correlation, timing, exit, cancellation, truncation, stdout, and stderr or an honest empty/error/running state; no terminal or fabricated diagnostics are present. Product-wide keyboard, accessibility, and compact-layout acceptance remains Task 033. |
-| 031 | Done | Persist and recover the desktop layout | 030 | A versioned, bounded, integrity-checked layout persists atomically in private XDG state; only known production panes survive, transient documents are omitted, duplicate/unknown state falls back safely, floating bounds are clamped, reset is immediate, and backup v2/offline recovery retain verified layout state without repository metadata. |
-| 032 | Done | Add safe source editing semantics | 029 | Original-workspace and truncated files remain honestly read-only; an active approved goal opens its isolated worktree with an exact content baseline. Editable AvaloniaEdit tabs expose real dirty state, keyboard and visible save/reload/close actions, durable compare-and-swap saves, explicit reload/overwrite conflict recovery, and save/discard/cancel decisions for tab switches, closes, layout reset, workspace change, and application exit. |
-| 033 | Done | Pass docked-workbench product acceptance | 030-032 | Real wide and minimum-size Linux empty states are recorded; rendered center-editor attachment, raw-input compact keyboard restoration, explicit application and Dock-chrome automation names, floating ownership, and 200% scaling pass. Repeatable production AT-SPI and isolated Orca workflows prove repository registration/trust, plan approval, editable-worktree documents, search, restart/layout recovery, contextual speech without framework names, and the complete Lead/Implementer/Reviewer exact-commit path. The latter injects a process restart and asserts real typed edit/build/test evidence, original-repository isolation, exact branch commit, and SQLite audit state. |
+| ID | Status | User capability | Depends on | Current gap | Done when |
+|---|---|---|---|---|---|
+| 013 | Done | Hold a durable local-model conversation | - | Successful live inference still depends on the configured server being reachable. | TUI instructions stream through Business Logic to Ollama, persist, reload after restart, and show actionable provider failures. |
+| 014 | Done | Configure and verify model providers | - | - | Configuration validates endpoints, discovers capabilities, selects models per role, and reports health without exposing secrets. |
+| 015 | Done | Register and trust a .NET workspace | - | - | A user can add a Git repository, select a solution/project, explicitly trust it, reopen it, and see dirty/base state. |
+| 016 | Done | Load the user's engineering framework | - | - | Global, repository, and private framework layers load with precedence, locks, validation, and an inspectable effective view. |
+| 017 | Done | Let agents inspect safely | - | - | Typed, path-confined read/search/status/diff/project/build-information tools run only in a trusted workspace and return bounded records. |
+| 018 | Done | Let agents implement and verify | - | - | Approved runs can use typed edit/build/test tools with cancellation, output limits, correlation, and separate restore/network approval. |
+| 019 | Done | Isolate work with Git | - | - | Each approved goal uses a validated branch/worktree, preserves dirty user state, and never merges/rebases automatically. |
+| 020 | Done | Create goals and approve plans | - | - | Goals, caps, plans, revisions, approvals, and denials persist and every consequential transition is validated. |
+| 021 | Done | Coordinate lead, implementer, and reviewer agents | - | - | Role prompts and tool scopes are wrapped behind Business Logic interfaces and a lead can delegate bounded tasks. |
+| 022 | Done | Resume interrupted work safely | - | - | Runs checkpoint at safe boundaries, resume completed steps, and mark uncertain calls without automatic replay. |
+| 023 | Done | Review evidence and accept results | - | - | Diff, tests, tool evidence, review findings, cycle caps, and explicit commit approval work end to end. |
+| 024 | Done | Retrieve relevant repository context | - | - | Eligible Git-tracked text is chunked, partitioned by embedding configuration, rebuilt, searched, and filtered by policy. |
+| 025 | Done | Use remote models under a cost cap | - | - | Remote use requires approval, streams through the provider boundary, and enforces estimated plus reconciled per-goal caps. |
+| 026 | Done | Operate and distribute v1.0 reliably | - | - | A self-contained Linux x64 release passes clean-install, migration, outage, cancellation, recovery, and representative-repository acceptance tests. |
+| 027 | Done | Deliver the default desktop as a complete product surface | 013-026 | - | The conversation-first shell and modal inspector are replaced by a rendered Dock workbench with safe source editing, adaptive minimum-size chrome, typed bounded output, and honest empty states. Repeatable production-host AT-SPI runs register and trust real repositories, create goals through both manual and Lead-generated plans, provision isolated worktrees, edit/build/test/review, approve an exact commit, switch real documents, restore after restart, and reject corrupt layout state. Production Orca generates contextual control speech without framework implementation names. No visible surface uses mock or filler UI. |
+| 028 | Done | Validate the Dock dependency and package boundary | 027 | - | Stable Dock 12.0.0.2 Avalonia packages are pinned at the Presentation boundary. Real tool/document content is proven in the rendered visual tree, Fluent construction and 200% rendering pass, compact keyboard access and floating ownership are covered, Linux x64 lifecycle verification succeeds, and the production host passes repeatable AT-SPI action and isolated Orca speech-generation checkpoints without framework type-name announcements. |
+| 029 | Done | Build the central document workbench | 028 | - | Workspace overview, bounded source, Git diff, current plan, and durable evidence documents use production state or honest empty states. Business Logic resolves one explicit original/approved-worktree context for source, search, Git, and diff; headless checks prove source/diff open, refresh, activation, close, identity retention, and cached switching across 18 documents from six representative projects. |
+| 030 | Done | Deliver dockable production tool panels | 029 | - | Real workspace/search, source-control, goal context, conversation, and typed durable run-output controls occupy separate movable, hideable, floatable tool regions with save/reset actions and restart restoration. Build/Test/Restore output exposes real state, correlation, timing, exit, cancellation, truncation, stdout, and stderr or an honest empty/error/running state; no terminal or fabricated diagnostics are present. Product-wide keyboard, accessibility, and compact-layout acceptance remains Task 033. |
+| 031 | Done | Persist and recover the desktop layout | 030 | - | A versioned, bounded, integrity-checked layout persists atomically in private XDG state; only known production panes survive, transient documents are omitted, duplicate/unknown state falls back safely, floating bounds are clamped, reset is immediate, and backup v2/offline recovery retain verified layout state without repository metadata. |
+| 032 | Done | Add safe source editing semantics | 029 | - | Original-workspace and truncated files remain honestly read-only; an active approved goal opens its isolated worktree with an exact content baseline. Editable AvaloniaEdit tabs expose real dirty state, keyboard and visible save/reload/close actions, durable compare-and-swap saves, explicit reload/overwrite conflict recovery, and save/discard/cancel decisions for tab switches, closes, layout reset, workspace change, and application exit. |
+| 033 | Done | Pass docked-workbench product acceptance | 030-032 | - | Real wide and minimum-size Linux empty states are recorded; rendered center-editor attachment, raw-input compact keyboard restoration, explicit application and Dock-chrome automation names, floating ownership, and 200% scaling pass. Repeatable production AT-SPI and isolated Orca workflows prove repository registration/trust, plan approval, editable-worktree documents, search, restart/layout recovery, contextual speech without framework names, and the complete Lead/Implementer/Reviewer exact-commit path. The latter injects a process restart and asserts real typed edit/build/test evidence, original-repository isolation, exact branch commit, and SQLite audit state. |
 
 ## Post-1.0 usability follow-through
 
-| ID | Status | User capability | Current gap | Done when |
-|---|---|---|---|---|
-| 034 | Done | Open a workspace through a familiar first-run journey | 027 | The primary shell and centered empty state open Avalonia's native single-folder picker, retain a manual-path fallback, scan the selected Git repository through the existing typed boundary, and present discovered solutions/projects before registration or trust. The workspace manager separates existing workspaces from adding one, and headless plus production AT-SPI checks cover the route. |
-| 035 | In progress | Make the workbench's daily surfaces feel like a professional IDE, not a prototype | 016, 026, 029, 032 | The decorated diff viewer, the scannable framework inspector, the backup save dialog, and the IDE headerbar are implemented. Source and edit views still need the review pass, and hands-on wide/compact review is not yet recorded. The goal-approval dialog chain is tracked separately as Task 040. | Framework's effective view lets a user scan or filter locked rules and issues without reading a full text dump. Operations offers a native save-file picker for the backup destination, consistent with the workspace folder picker in Task 034. Source and edit views read like a competent editor. A diff viewer offers both an inline decorated view (added/removed/changed lines, for reviewing model-made changes in place) and a side-by-side comparison view (for evaluating working-tree/branch git state), reachable from the same documents already in the workbench. |
+| ID | Status | User capability | Depends on | Current gap | Done when |
+|---|---|---|---|---|---|
+| 034 | Done | Open a workspace through a familiar first-run journey | 027 | - | The primary shell and centered empty state open Avalonia's native single-folder picker, retain a manual-path fallback, scan the selected Git repository through the existing typed boundary, and present discovered solutions/projects before registration or trust. The workspace manager separates existing workspaces from adding one, and headless plus production AT-SPI checks cover the route. |
+| 035 | Done | Make the workbench's daily surfaces feel like a professional IDE, not a prototype | 016, 026, 029, 032 | - | Framework rules/issues are scannable and filterable; Operations uses a native backup picker; Files is a bounded hierarchy with quick open; the header exposes command search; and Git diff has contrast-validated inline and side-by-side views. Source documents add theme-aware legible syntax colors, breadcrumb/branch/access chrome, compact save/reload/close actions, current-line and selection behavior, and caret/UTF-8/line-ending status without weakening exact-baseline saves. Real wide/compact approved-goal captures and production AT-SPI evidence are recorded in `docs/acceptance/source-editor-2026-07-29.md`. |
 | 036 | Planned | Work across more than one trusted repository | 015 | Only one workspace can be active at a time; switching real projects requires re-registration/re-selection overhead. | A user can maintain multiple trusted workspaces and move between them without losing goal/context state, with clear active-workspace indication throughout Avalonia and the TUI. |
 | 037 | Planned | Trust the app on real, messy repositories | 013-033 | Large-repository scale, dirty bases, mid-goal conflicts, index rebuilds under load, provider outages, budget exhaustion, and corrupted/interrupted state are exercised only through the single scripted representative-repo gate. | Large real repositories, dirty working trees, merge conflicts mid-goal, provider outages, budget exhaustion, and corrupted/interrupted state are exercised and demonstrably recoverable, not just the scripted gate scenario. |
-| 038 | Deferred | See whether agent output can be trusted | 021 | No opt-in behavioral evaluation or regression data exists yet, so plan quality, tool-selection quality, and review quality have no measurable baseline over time or across model changes. Parked below Tasks 035-037 and 039-043 per 2026-07-29 prioritization. | Opt-in Ollama behavioral evaluation datasets exist and regressions in planning, tool selection, and review are detectable before they reach a user's repository. |
+| 038 | Deferred | See whether agent output can be trusted | 021 | No opt-in behavioral evaluation or regression data exists yet, so plan quality, tool-selection quality, and review quality have no measurable baseline over time or across model changes. Parked below Tasks 035-037 and 039-044 per 2026-07-29 prioritization. | Opt-in Ollama behavioral evaluation datasets exist and regressions in planning, tool selection, and review are detectable before they reach a user's repository. |
 | 039 | Planned | Know what to do with an accepted goal branch | 023 | After exact-commit approval the goal branch sits in the repository with no in-app guidance; the user must already know to push, open a PR, or merge outside the app. | The app clearly surfaces the accepted branch's state and the deliberately manual next step (push/PR/merge) without automating merge or PR creation. |
-| 040 | Planned | Progress a goal without a chain of pop-ups | 035 | Creating and progressing one goal steps through up to 14 separate modal windows (new goal, model routing, remote-model authorization, output limits, plan approval, restore approval/request/decision, commit approval/confirmation, semantic context, semantic rebuild confirmation), almost all defined in one 1967-line file. | Genuine human-authority checkpoints (plan, restore, and commit approval) remain distinct, separately confirmed steps; informational/config steps (model routing, output limits, semantic context) are consolidated into fewer, clearer surfaces without hiding any consequential decision. |
+| 040 | Planned | Collaborate through chat instead of a chain of pop-ups | 035 | Creating and progressing one goal steps through up to 14 modal windows, while role/model defaults and operational controls dominate the journey. Almost all of it is defined in one 1967-line file. | Conversation is the primary goal surface; typed inline cards expose plans, cost/capability decisions, progress, validation, evidence, Restore, commit, and handoff. Plan, spending, Restore, destructive, budget-extension, and exact-commit authority remain explicit typed actions. Ordinary role/model/output defaults move to one searchable Settings surface, goal overrides use progressive disclosure, and obsolete dialog paths are removed. |
 | 041 | Planned | Recover application state without the verifier script | 026 | Operations can only create a backup; restoring one into a fresh install is proven solely by `eng/verify-v1-release.sh` and is not available to a user in either Avalonia or the TUI. | A user can restore a private-state backup into a fresh or existing install from Avalonia/TUI Operations, with the same integrity verification the release gate already performs, gated by an explicit confirmation given the sensitivity of the archive. |
-| 042 | Planned | Validate every edit, model or manual, before it's trusted | 017, 018, 032 | Typed edit tools and AvaloniaEdit tabs accept and save C#/.NET source with only regex-based syntax highlighting; a model-authored or hand-typed edit that doesn't compile, or violates a configured analyzer, is discovered only later at Build time, if at all before review. | Roslyn and/or a Roslyn-backed language server evaluate every edit — a delegated tool call or a manual keystroke — and surface syntax errors, type errors, and configured analyzer diagnostics inline, in the gutter, and in a problems view before the reviewer needs to run Build to find out. |
-| 043 | Planned | Get completions, hover info, and go-to-definition while editing | 042 | The editor has no semantic assistance: no completion list, no hover/quick-info, no go-to-definition or find-references, no signature help. Typing C# in Harness.NET feels like a plain text box, not a .NET editor. | The source editor offers completion suggestions, hover documentation, and at least go-to-definition for the trusted workspace's loaded solution/project, built on the same Roslyn/LSP foundation as Task 042. |
+| 042 | Planned | Validate every edit, model or manual, before it is trusted | 017, 018, 032 | Typed edit tools and AvaloniaEdit tabs have no compiler workspace; invalid changes are discovered only at Build time. | An in-process Roslyn implementation behind implementation-neutral Data Access and Business Logic contracts loads only trusted source contexts without implicit restore. Versioned live buffers show syntax/compiler/analyzer diagnostics inline and in a Problems tool. Every model-authored candidate is compared with baseline diagnostics, is rejected before disk when it introduces a compiler Error, records warnings/findings as evidence, applies through an atomic baseline-protected boundary, and is verified again after apply. |
+| 043 | Planned | Get semantic assistance while editing | 042 | The editor has no completion, quick info, signature help, definition/reference navigation, or semantic symbol awareness. | Warm, cancellable completion, quick info, signature help, go-to-definition, and find-references operate on the exact active Roslyn source context; stale responses are discarded, keyboard and pointer interactions are accessible, and detailed targets plus degraded states follow ADR 012. |
+| 044 | Planned | Use deterministic Roslyn transformations for deterministic work | 042 | Humans and agents can only request textual edits, so a rename can miss references, alter unrelated text, or cross a delegated path grant. | Semantic rename resolves a symbol through Roslyn, previews every affected file and conflict with exact baselines and a fingerprint, enforces goal/task path grants, applies all files atomically or none, and records post-apply diagnostics and diff evidence. The editor and agent tool use the same typed operation; no model-authored text-search rename path exists. |
+
+### Prepared delivery slices for Tasks 040 and 042-044
+
+These slices are the implementation order. Each ends with its narrow tests, a build,
+and synchronized documentation; a later slice must not be pulled into an earlier one
+merely to complete the final visual design at once.
+
+#### Task 040: chat-first workflow and Settings
+
+1. **Settings foundation:** inventory current global, workspace, and goal values;
+   expose typed read/update contracts for ordinary defaults; add a searchable Settings
+   shell for General, Editor, Appearance and accessibility, Models and roles, Privacy
+   and limits, Storage and recovery, and Advanced. Preserve goal-bound spending
+   authorization as a separate decision rather than migrating it into a default.
+2. **Read-only workflow cards:** project existing plan, run, task, review, evidence,
+   Restore, commit, and handoff records into immutable conversation
+   card state. Render chronological loading, unavailable, stale, denied, failed,
+   cancelled, recovered, and completed states without adding commands yet.
+3. **Goal creation and continuation:** let the composer create or select a goal and
+   continue its Lead/Implementer/Reviewer workflow with configured defaults. Put
+   optional per-goal role routes, output ceilings, review cycles, privacy route, and
+   remote cap behind one progressive-disclosure surface.
+4. **Inline authority actions:** bind explicit typed approve/deny/cancel commands to
+   the matching plan, remote authorization, Restore, budget, destructive-operation,
+   and exact-commit cards. Preserve any policy-required second confirmation as one
+   focused sheet and prove stale fingerprints cannot execute.
+5. **Retire modal orchestration:** remove superseded Goal dialog paths, move remaining
+   detailed plan/diff/evidence views into documents or tools, resize the default Dock
+   layout so conversation is usable, and record keyboard-only plus wide/compact
+   hands-on acceptance. Refactor `GoalDialog` only along these delivered seams.
+
+#### Task 042: Roslyn workspace and validation
+
+1. **Compatibility checkpoint:** pin one coherent Roslyn Workspaces/Features and
+   MSBuild-locator package set; resolve the selected workspace's installed SDK before
+   MSBuild types load; reconcile the existing construction-only Microsoft.Build use;
+   and prove `.slnx`/`.sln`/`.csproj`, missing-SDK, Headless, and self-contained Linux
+   publish behavior. Amend ADR 012 before choosing an out-of-process fallback.
+2. **Semantic contracts and deterministic fake:** add source-context, session,
+   document-version, diagnostic, status, and validation records plus Data Access and
+   Business Logic interfaces. Prove trust, path, cancellation, and stale-version
+   policy without Roslyn or Avalonia.
+3. **Roslyn/MSBuild implementation:** load the selected entry point for the trusted
+   original workspace or approved goal worktree in Data Access; never restore; expose
+   load progress and actionable SDK/assets/reference/analyzer failures; dispose or
+   invalidate state on context changes. Update trust copy for project evaluation and
+   analyzer/source-generator execution.
+4. **Live diagnostics:** synchronize immutable editor buffers with debounce and
+   cancellation; render version-matched diagnostics in AvaloniaEdit and a dockable
+   Problems tool whose rows navigate to the exact document range. Record cold-load,
+   warm-update, memory, and cancellation measurements.
+5. **Agent mutation preflight:** classify every candidate as compiler-validated or
+   explicitly NotApplicable; validate applicable changes in memory, compare
+   baseline/retained/resolved/introduced diagnostics, reject new compiler Errors,
+   persist bounded warning/analyzer evidence, apply accepted edits with exact
+   baselines, and verify the applied state before completing the tool result.
+
+#### Task 043: interactive semantic assistance
+
+1. Add warm cancellable completion with keyboard selection, commit characters,
+   accessible item text, and stale-result rejection.
+2. Add quick info and signature help with bounded documentation rendering and correct
+   placement at the active versioned caret.
+3. Add go-to-definition and find-references across the resolved source context,
+   opening real documents and reporting generated/metadata/unavailable destinations
+   honestly.
+4. Run the representative small/large-workspace latency and memory checks from ADR
+   012 and complete a hands-on editing pass.
+
+#### Task 044: deterministic transformations
+
+1. Extend the mutation boundary with an atomic multi-file compare-and-swap operation,
+   including rollback, cancellation, normalized path grants, and durable evidence.
+2. Add Roslyn rename resolution and a bounded preview containing symbol identity,
+   conflicts, affected paths, baseline hashes, diagnostic delta, and a fingerprint.
+3. Add fingerprinted apply and post-apply verification, then expose the same closed
+   rename operation to the editor and the Implementer role.
+4. Prove overloads, partial types, generated/uneditable references, linked files,
+   conflicting names, stale buffers, out-of-grant paths, rollback, and large rename
+   sets without invoking a model.
 
 ### v1.0 release gate
 
@@ -88,15 +169,14 @@ Harness.NET state auditable. That gate defines version `1.0.0`.
 
 Passing this gate proves the mechanics of the first complete workflow; it does not
 by itself mean the application is productive for real day-to-day use. As of
-2026-07-29 it is not yet: Framework and Operations are still one-shot text
-dumps/manual-path forms, source/diff viewing has no syntax-aware decoration or
-comparison mode, no edit is validated against a compiler or language server, a
-single goal walks through up to 14 separate modal dialogs, only one workspace can
-be active at a time, and the workflow has only been proven against the single
-scripted representative repository rather than large or messy real ones. Tasks
-035-037 and 039-043 track closing that gap; Task 038 is deferred until those
-close. Tasks 035, 040, 042, and 043 are the current top priority: matching a
-professional general-purpose IDE baseline before further unique features.
+2026-07-29 it is not yet: no edit is validated against a compiler workspace, the editor has no semantic
+assistance or deterministic refactorings, a single goal still walks through up to 14
+modal dialogs, only one workspace can be active at a time, and the workflow has only
+been proven against the single scripted representative repository rather than large
+or messy real ones. Tasks 035-037 and 039-044 track closing that gap; Task 038 is
+deferred until those close. Tasks 040 and 042-044 are the current top priority:
+matching a professional editing, Git, and agent-collaboration baseline before further
+unique features.
 
 `eng/verify-v1-release.sh` is the executable gate. Its deterministic suite covers
 provider outages, budget failures, cancellation, interruption reconciliation, and
@@ -386,3 +466,11 @@ configured or paid provider.
   active workspace and branch instead of a static tagline, and bordered clusters
   that group each label with the control it names. Accessibility names are
   unchanged and the production AT-SPI workflow still passes.
+- Task 035 completes the source/editor pass with a focused `SourceEditorSurface`
+  seam instead of extending the Dock host further. It presents the real relative
+  path, source context, access state, actions, caret, selection, encoding, and line
+  endings around the existing exact-baseline editor. C# lexical colours are remapped
+  through semantic Harness theme tokens and refreshed with effective theme changes.
+  `eng/capture-source-editor.py` records real approved-goal wide and compact states;
+  the review and limitations are documented in
+  `docs/acceptance/source-editor-2026-07-29.md`.
