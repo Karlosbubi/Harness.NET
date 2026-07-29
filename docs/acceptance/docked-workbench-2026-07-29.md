@@ -76,5 +76,35 @@ The verifier passed on 2026-07-29 without speaking `Grid`, `StackPanel`, `Border
 content-presenter, `DockableControl`, deferred-content, or visual-layer type names.
 Meaningful application regions such as “Editor document navigation, panel” remain.
 
-This is a checkpoint, not Task 033 completion. The production
-edit/build/test/review/exact-commit workflow tail remains open.
+## Complete production workflow
+
+`./eng/verify-avalonia-workflow.py` configures the production host to use a
+deterministic loopback server through the real Ollama HTTP boundary. The server is
+owned by the verifier, has no credential or external route, and returns bounded Lead,
+Implementer, and Reviewer responses plus typed tool calls. It is test infrastructure,
+not a mock or filler mode in the application.
+
+Through the real Avalonia UI and AT-SPI actions, the verifier:
+
+- registers, selects, and trusts a temporary real .NET Git repository;
+- starts Lead planning, whose real `inspect_dotnet` tool call precedes a persisted
+  bounded delegation;
+- terminates the production process at `AwaitingPlanApproval`, verifies that durable
+  boundary in SQLite, restarts, and approves the plan and isolated worktree;
+- has Implementer apply one exact-baseline `Program.cs` edit and produce successful
+  durable Build and Test evidence through the typed tools;
+- has Reviewer inspect the real Git diff and list durable tool evidence before
+  returning an accepted structured decision;
+- records a pending exact-diff request in the UI, separately confirms it, and creates
+  the local commit on the isolated goal branch.
+
+The passing verifier asserts that the original repository content and one-commit
+`main` history are unchanged; the isolated branch is clean with exactly one additional
+commit and a `Harness-Diff-SHA256` trailer. It also queries the private application
+database and requires the exact nine-checkpoint workflow from `Started` through
+`Accepted`, succeeded FileEdit/Build/Test records, and a committed one-file approval
+with a commit SHA. The production provider/tool sequence is asserted exactly, so a
+text-only model response cannot satisfy the gate.
+
+Task 033 acceptance is complete. This checkpoint verifies generated Orca speech and
+AT-SPI operation; it does not claim to be a human screen-reader listening study.

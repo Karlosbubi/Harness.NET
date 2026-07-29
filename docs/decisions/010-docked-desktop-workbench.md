@@ -1,6 +1,6 @@
 # ADR 010: Docked desktop workbench and real editor documents
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-07-28
 - Extends: [ADR 009](009-avalonia-presentation-toolkit.md)
 
@@ -64,14 +64,16 @@ workspace, layout, and dialog controls. Because Avalonia 12.1's AT-SPI bridge ex
 raw peers without applying their control/content classification, Presentation now
 makes only peers classified as neither control nor content anonymous and
 role-neutral while retaining their descendants. The repeatable Orca verifier rejects
-framework type-name speech and passes. Completing the edit-through-commit workflow
-tail remains required before this record can become Accepted.
+framework type-name speech and passes. A separate production-host verifier now drives
+the complete Lead/Implementer/Reviewer and exact-commit workflow through the real UI,
+provider, typed tools, restart boundary, Git worktree, and SQLite audit state without
+external inference.
 The bottom edge now contains distinct Conversation and Run output tools. Run output
 is a typed projection of durable Build/Test/Restore evidence with bounded stdout and
 stderr; Presentation never decodes audit JSON and no unrestricted terminal is
 introduced.
 
-## Proposed decision
+## Decision
 
 Use Dock as the preferred docking engine, subject to a narrow compatibility and
 publish spike. Do not build a Harness-specific drag/drop docking engine unless that
@@ -129,14 +131,14 @@ Presentation; Business Logic and Data Access contracts do not expose them.
   workspace and choose content caching deliberately. **Met by the headless
   compatibility checkpoint and the production AT-SPI multi-document workflow.**
 - Complete a representative production edit/build/test/review/exact-commit workflow.
-  **Open.**
+  **Met through the deterministic loopback Ollama protocol, real typed tools, an
+  injected process restart, independent review, exact UI approval, and repository plus
+  SQLite outcome assertions.**
 
 ## Consequences
 
 - The modal workspace inspector has been removed. Its real file/search/Git behavior
-  and approved-worktree editing now live in the workbench; remaining interaction and
-  acceptance gaps stay tracked explicitly rather than being represented by
-  placeholder panels.
+  and approved-worktree editing now live in the workbench without placeholder panels.
 - Dock dependencies remain confined to `Harness.Presentation.Avalonia`; the reusable
   `Harness.UI.Avalonia` toolkit stays application- and docking-engine-neutral.
 - Layout persistence is private application state with the closed, validated schema

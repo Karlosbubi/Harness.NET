@@ -26,5 +26,5 @@ link superseding records in both directions.
 | [007](007-semantic-contract-types.md) | Accepted | Semantic contract types |
 | [008](008-application-state-backup.md) | Accepted | Application-state backup and upgrade recovery |
 | [009](009-avalonia-presentation-toolkit.md) | Accepted | Avalonia presentation toolkit and desktop adapter |
-| [010](010-docked-desktop-workbench.md) | Proposed | Docked desktop workbench and real editor documents |
+| [010](010-docked-desktop-workbench.md) | Accepted | Docked desktop workbench and real editor documents |
 | [011](011-private-workbench-layout-state.md) | Accepted | Private workbench layout state and recovery |

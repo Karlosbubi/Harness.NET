@@ -7,9 +7,9 @@ repository.
 
 ## Current status
 
-The current build is a `0.1.0-dev.1` development preview, not an alpha or release
-candidate. Framework discovery and the production service slices are substantially
-implemented. The application has
+The current build is the `1.0.0` Linux x64 release. Framework discovery, the
+production service slices, and the default docked desktop workflow are implemented.
+The application has
 compile-time layer enforcement, XDG paths, Secret Service access, SQLite migrations,
 redacted local logs, optional OTLP, adaptive Avalonia and Terminal.Gui shells, and an
 Ollama provider adapter. The OpenRouter adapter adds dynamic chat/embedding discovery,
@@ -57,8 +57,9 @@ keyboard restoration, floating ownership, accessible names, and 200% scaling are
 covered, with real wide/compact review and a repeatable production AT-SPI workflow
 recorded under `docs/acceptance`. Production Orca generates contextual speech for
 representative controls without announcing visual framework implementation types.
-The explicit-goal edit/build/test/review/exact-commit workflow tail tracked by ADR
-010 and Tasks 027 and 033 remains a release blocker.
+The production desktop acceptance path also completes an explicit-goal
+edit/build/test/review/exact-commit workflow through a deterministic loopback model
+server, including restart recovery and exact repository/audit verification.
 The Avalonia and TUI Framework surfaces show the resolved engineering rules and
 guidance with locks, provenance, privacy, and validation issues, and edit only the
 private workspace overlay without adding repository metadata.
@@ -143,7 +144,7 @@ routing, conversation defaults, and optional OTLP export are defined in the ship
 
 ## Linux x64 publish
 
-Publish the self-contained development preview with:
+Publish the self-contained release with:
 
 ```bash
 dotnet publish src/Harness.Host/Harness.Host.csproj \
@@ -184,6 +185,20 @@ announcements with:
 
 ```bash
 ./eng/verify-avalonia-atspi.py --with-orca
+```
+
+Run the production edit/build/test/review/exact-commit workflow through the real
+Avalonia UI and provider/tool boundaries without external inference with:
+
+```bash
+./eng/verify-avalonia-workflow.py
+```
+
+The complete Linux desktop 1.0 gate combines the deterministic/package gate, Orca
+speech verification, and the production workflow verifier:
+
+```bash
+./eng/verify-v1-desktop-release.sh
 ```
 
 `--wait-for-shutdown` is a non-interactive operational mode used by lifecycle

@@ -56,13 +56,13 @@ but the end-user workflow is not complete.
 | 024 | Done | Retrieve relevant repository context | - | Eligible Git-tracked text is chunked, partitioned by embedding configuration, rebuilt, searched, and filtered by policy. |
 | 025 | Done | Use remote models under a cost cap | - | Remote use requires approval, streams through the provider boundary, and enforces estimated plus reconciled per-goal caps. |
 | 026 | Done | Operate and distribute v1.0 reliably | - | A self-contained Linux x64 release passes clean-install, migration, outage, cancellation, recovery, and representative-repository acceptance tests. |
-| 027 | In progress | Deliver the default desktop as a complete product surface | 013-026 | The conversation-first shell and modal inspector are replaced by a rendered Dock workbench with safe source editing, adaptive minimum-size chrome, typed bounded output, and honest empty states. A repeatable production-host AT-SPI run registers and trusts a real repository, creates a goal, enters and approves a manual plan, provisions its isolated worktree, opens its editable source, searches and switches real documents, restores after restart, and rejects corrupt layout state. Production Orca generates contextual control speech without framework implementation names. The verified edit/build/test/review/commit tail remains a release blocker. No visible surface may use mock or filler UI. |
+| 027 | Done | Deliver the default desktop as a complete product surface | 013-026 | The conversation-first shell and modal inspector are replaced by a rendered Dock workbench with safe source editing, adaptive minimum-size chrome, typed bounded output, and honest empty states. Repeatable production-host AT-SPI runs register and trust real repositories, create goals through both manual and Lead-generated plans, provision isolated worktrees, edit/build/test/review, approve an exact commit, switch real documents, restore after restart, and reject corrupt layout state. Production Orca generates contextual control speech without framework implementation names. No visible surface uses mock or filler UI. |
 | 028 | Done | Validate the Dock dependency and package boundary | 027 | Stable Dock 12.0.0.2 Avalonia packages are pinned at the Presentation boundary. Real tool/document content is proven in the rendered visual tree, Fluent construction and 200% rendering pass, compact keyboard access and floating ownership are covered, Linux x64 lifecycle verification succeeds, and the production host passes repeatable AT-SPI action and isolated Orca speech-generation checkpoints without framework type-name announcements. |
 | 029 | Done | Build the central document workbench | 028 | Workspace overview, bounded source, Git diff, current plan, and durable evidence documents use production state or honest empty states. Business Logic resolves one explicit original/approved-worktree context for source, search, Git, and diff; headless checks prove source/diff open, refresh, activation, close, identity retention, and cached switching across 18 documents from six representative projects. |
 | 030 | Done | Deliver dockable production tool panels | 029 | Real workspace/search, source-control, goal context, conversation, and typed durable run-output controls occupy separate movable, hideable, floatable tool regions with save/reset actions and restart restoration. Build/Test/Restore output exposes real state, correlation, timing, exit, cancellation, truncation, stdout, and stderr or an honest empty/error/running state; no terminal or fabricated diagnostics are present. Product-wide keyboard, accessibility, and compact-layout acceptance remains Task 033. |
 | 031 | Done | Persist and recover the desktop layout | 030 | A versioned, bounded, integrity-checked layout persists atomically in private XDG state; only known production panes survive, transient documents are omitted, duplicate/unknown state falls back safely, floating bounds are clamped, reset is immediate, and backup v2/offline recovery retain verified layout state without repository metadata. |
 | 032 | Done | Add safe source editing semantics | 029 | Original-workspace and truncated files remain honestly read-only; an active approved goal opens its isolated worktree with an exact content baseline. Editable AvaloniaEdit tabs expose real dirty state, keyboard and visible save/reload/close actions, durable compare-and-swap saves, explicit reload/overwrite conflict recovery, and save/discard/cancel decisions for tab switches, closes, layout reset, workspace change, and application exit. |
-| 033 | In progress | Pass docked-workbench product acceptance | 030-032 | Real wide and minimum-size Linux empty states are recorded; rendered center-editor attachment, raw-input compact keyboard restoration, explicit application and Dock-chrome automation names, floating ownership, and 200% scaling pass. A repeatable production AT-SPI workflow proves real repository registration/trust, manual goal/plan approval, isolated editable-worktree source, accessible multi-document switching and focus, search, layout restart restoration, and corrupt-layout fallback. Its isolated Orca 50.2 mode generates contextual speech for representative controls and rejects framework type-name announcements. The edit-through-commit workflow tail remains open. |
+| 033 | Done | Pass docked-workbench product acceptance | 030-032 | Real wide and minimum-size Linux empty states are recorded; rendered center-editor attachment, raw-input compact keyboard restoration, explicit application and Dock-chrome automation names, floating ownership, and 200% scaling pass. Repeatable production AT-SPI and isolated Orca workflows prove repository registration/trust, plan approval, editable-worktree documents, search, restart/layout recovery, contextual speech without framework names, and the complete Lead/Implementer/Reviewer exact-commit path. The latter injects a process restart and asserts real typed edit/build/test evidence, original-repository isolation, exact branch commit, and SQLite audit state. |
 
 ### v1.0 release gate
 
@@ -71,9 +71,10 @@ All tasks 013-033 must be **Done**. A release candidate must complete a represen
 survive an injected interruption, and leave both the user repository and private
 Harness.NET state auditable.
 
-The current development-preview version is `0.1.0-dev.1`. Completing the service
-backlog does not by itself establish desktop product maturity; the default Avalonia
-workflow must also pass hands-on usability and visual-quality acceptance.
+The release version is `1.0.0`. The default Avalonia workflow has passed recorded
+wide/minimum-size review, production accessibility checks, and the complete
+repository workflow gate; service-layer completion alone was not treated as product
+maturity.
 
 `eng/verify-v1-release.sh` is the executable gate. Its deterministic suite covers
 provider outages, budget failures, cancellation, interruption reconciliation, and
@@ -82,6 +83,11 @@ startup without an installed runtime, SIGTERM, portable backup, recovery into a
 fresh XDG root, automatic pre-migration backup, schema 16-to-17 upgrade, and retained
 audit content. The verifier never loads repository `.env` credentials or calls a
 model provider.
+
+`eng/verify-v1-desktop-release.sh` is the complete Linux desktop gate. It adds the
+production AT-SPI/Orca workflow and the deterministic-loopback Avalonia
+edit/build/test/review/exact-commit verifier. Neither graphical verifier invokes a
+configured or paid provider.
 
 ## Task 001 acceptance
 

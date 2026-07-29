@@ -912,10 +912,12 @@ internal sealed class OutputLimitsDialog : Window
         panel.Children.Add(new TextBlock { Text = disclosure, TextWrapping = TextWrapping.Wrap });
         foreach ((string label, TextBox field) in labels.Zip(fields))
         {
+            AutomationProperties.SetName(field, label);
             panel.Children.Add(new TextBlock { Text = label });
             panel.Children.Add(field);
         }
 
+        AutomationProperties.SetName(validation, $"{title} validation");
         panel.Children.Add(validation);
         Button cancel = new() { Content = "Cancel" };
         cancel.Click += (_, _) => Close();
@@ -1317,6 +1319,11 @@ internal sealed class CommitApprovalDialog : Window
 
     private Control BuildContent()
     {
+        AutomationProperties.SetName(fingerprint, "Exact commit fingerprint");
+        AutomationProperties.SetName(message, "Commit message");
+        AutomationProperties.SetName(authorName, "Commit author name");
+        AutomationProperties.SetName(authorEmail, "Commit author email");
+        AutomationProperties.SetName(status, "Commit operation status");
         requestFields.Children.Add(new TextBlock { Text = "Commit message" });
         requestFields.Children.Add(message);
         requestFields.Children.Add(new TextBlock { Text = "Author name" });

@@ -135,20 +135,21 @@ workflow boundaries without replaying uncertain calls.
   model outages, budget exhaustion, and corrupted/interrupted state.
 - Harden the self-contained Linux x64 package with clean-install, upgrade,
   backup/export, and recovery acceptance coverage.
-- Complete hands-on Avalonia usability and visual-quality acceptance across the
-  production workspace, goal, evidence, and recovery workflows.
-- Complete the ADR 010 workbench acceptance matrix by finishing the
-  edit/build/test/review/exact-commit workflow tail. Production AT-SPI now covers
+- Continue hands-on Avalonia usability and visual-quality regression review across
+  future production workspace, goal, evidence, and recovery changes.
+- Keep the accepted ADR 010 workbench matrix under regression coverage. Production
+  AT-SPI covers
   real repository registration/trust, manual goal/plan approval, isolated
   editable-worktree source, search, multi-document switching/focus, restart, and
   corrupt-layout fallback; its isolated Orca 50.2 mode generates contextual speech
-  without framework implementation type-name announcements. The real central editor,
-  production tool docks, and private validated layout recovery are implemented.
+  without framework implementation type-name announcements. A deterministic-loopback
+  production workflow also proves Lead planning, typed edit/build/test, independent
+  review, process restart, and exact branch commit through the real UI. The central
+  editor, production tool docks, and private validated layout recovery are implemented.
 - Add other platforms or gRPC only through existing Business Logic contracts when a
   concrete workflow justifies them.
 
-The Linux x64 packaging gate is implemented for the `0.1.0-dev.1` development
-preview. The
+The Linux x64 packaging and complete graphical desktop gates pass for `1.0.0`. The
 remaining Stage 3 items are
 post-v1 expansion and regression work. Avalonia now covers conversation, appearance,
 trusted workspaces, durable goal creation, and the complete versioned plan-decision
