@@ -53,7 +53,18 @@ The verifier restores the session's original accessibility flags, invokes no mod
 and removes its temporary repository and XDG state. It passed on 2026-07-29.
 
 Orca 50.2 was then attached to the same production host with an isolated application
-profile. Its debug speech-generation trace records contextual utterances including
+profile. Its debug speech-generation trace initially recorded framework containers
+between the useful application announcements. Avalonia 12.1's Linux AT-SPI bridge
+exports raw peers without applying their control/content classification and falls
+back to CLR class names for unnamed peers. Harness.NET now makes only those peers
+that Avalonia itself classifies as neither control nor content anonymous and
+role-neutral, retaining their semantic descendants.
+
+`./eng/verify-avalonia-atspi.py --with-orca` makes the speech checkpoint repeatable.
+It refuses to replace an existing Orca process, isolates Orca's profile, restores
+the original AT-SPI and desktop accessibility settings, and rejects speech containing
+known Avalonia or Dock implementation type names. Its passing trace records contextual
+utterances including
 “Conversation model, combo box”, “Open editor documents, combo box”, “Save current
 panel layout, button”, “Workspace, page tab”, “Manage workspaces, button”,
 “Repository path, entry”, and “Inspect, button”. This verifies the actual screen-reader
@@ -61,12 +72,9 @@ speech pipeline rather than inferring output from automation properties, but it 
 not represented as a human listening study. No model was invoked and the original
 desktop accessibility settings were restored after the run.
 
-The same traversal exposed a remaining accessibility defect: framework containers
-such as `ScrollContentPresenter`, `StackPanel`, `DockableControl`, and
-`DeferredContentControl` are interleaved with the useful application announcements.
-Those implementation names must be hidden or replaced with meaningful structural
-labels before desktop accessibility acceptance.
+The verifier passed on 2026-07-29 without speaking `Grid`, `StackPanel`, `Border`,
+content-presenter, `DockableControl`, deferred-content, or visual-layer type names.
+Meaningful application regions such as “Editor document navigation, panel” remain.
 
-This is a checkpoint, not Task 033 completion. Removing the framework-container
-speech noise and completing the edit/build/test/review/exact-commit workflow tail
-remain open.
+This is a checkpoint, not Task 033 completion. The production
+edit/build/test/review/exact-commit workflow tail remains open.

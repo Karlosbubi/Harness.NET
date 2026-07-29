@@ -24,6 +24,7 @@ internal sealed class HarnessApplication(
 
     public override void Initialize()
     {
+        AccessibilityTreeSemantics.Register();
         Styles.Add(new FluentTheme());
         Styles.Add(new DockFluentTheme());
         Styles.Add(new StyleInclude(new Uri("avares://Harness.Presentation.Avalonia/"))

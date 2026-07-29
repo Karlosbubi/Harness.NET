@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Avalonia;
 using Avalonia.Automation;
+using Avalonia.Automation.Peers;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Input;
@@ -765,6 +766,48 @@ public sealed class PresentationControlTests
             Assert.All(splitters, item => Assert.Equal(
                 "Resize adjacent workbench panels",
                 AutomationProperties.GetName(item)));
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Accessibility_tree_neutralizes_only_visual_implementation_containers()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            WorkbenchDockHost workbench = CreateWorkbench(ApprovedGoalShell(), new());
+            Window window = new() { Content = workbench.Control };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            Control[] implementationContainers = window.GetVisualDescendants()
+                .OfType<Control>()
+                .Where(item => string.IsNullOrWhiteSpace(AutomationProperties.GetName(item)))
+                .Where(item =>
+                {
+                    AutomationPeer peer = ControlAutomationPeer.CreatePeerForElement(item);
+                    return !peer.IsControlElement() && !peer.IsContentElement();
+                })
+                .ToArray();
+            Assert.NotEmpty(implementationContainers);
+            Button semanticButton = Assert.Single(
+                Assert.IsType<StackPanel>(workbench.LayoutActions).Children.OfType<Button>(),
+                item => AutomationProperties.GetName(item) == "Save current panel layout");
+
+            AccessibilityTreeSemantics.Apply(window);
+
+            Assert.All(implementationContainers, item =>
+            {
+                Assert.Equal(string.Empty, AutomationProperties.GetClassNameOverride(item));
+                Assert.Equal(
+                    AutomationControlType.Custom,
+                    AutomationProperties.GetControlTypeOverride(item));
+            });
+            Assert.Equal("Save current panel layout", AutomationProperties.GetName(semanticButton));
+            Assert.Null(AutomationProperties.GetClassNameOverride(semanticButton));
+            Assert.Null(AutomationProperties.GetControlTypeOverride(semanticButton));
             window.Close();
         }, CancellationToken.None);
     }

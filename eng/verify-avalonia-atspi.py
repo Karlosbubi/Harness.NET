@@ -9,9 +9,12 @@ conversation message or invokes a model.
 
 from __future__ import annotations
 
+import argparse
 import logging
 import os
 from pathlib import Path
+import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -26,6 +29,7 @@ except ImportError as error:
 
 ACCESSIBLE = "org.a11y.atspi.Accessible"
 ACTION = "org.a11y.atspi.Action"
+COMPONENT = "org.a11y.atspi.Component"
 EDITABLE_TEXT = "org.a11y.atspi.EditableText"
 PROPERTIES = "org.freedesktop.DBus.Properties"
 TEXT = "org.a11y.atspi.Text"
@@ -141,6 +145,15 @@ class AtSpiApplication:
         if not bool(action.DoAction(0)):
             raise AssertionError(f"AT-SPI action failed for {role} containing {text!r}")
 
+    def focus(self, name: str, role: str) -> None:
+        node = self.find(name, role)
+        component = dbus.Interface(
+            self.bus.get_object(self.destination, node.path), COMPONENT
+        )
+        if not bool(component.GrabFocus()):
+            raise AssertionError(f"AT-SPI could not focus {role} {name!r}")
+        time.sleep(0.5)
+
     def set_text(self, name: str, value: str) -> None:
         node = self.find(name, "entry")
         if EDITABLE_TEXT not in node.interfaces:
@@ -253,6 +266,81 @@ def verify_initial_accessibility(application: AtSpiApplication) -> None:
         raise AssertionError(f"generic Dock actions remain exposed: {generic_actions}")
 
 
+def exercise_orca_speech(application: AtSpiApplication) -> None:
+    application.focus("Conversation model", "combo box")
+    application.focus("Open editor documents", "combo box")
+    application.focus("Save current panel layout", "push button")
+    application.focus("Workspace", "page tab")
+    application.invoke("Workspace", "page tab")
+    application.wait_for_name("Manage workspaces", "push button")
+    application.focus("Manage workspaces", "push button")
+    application.invoke("Manage workspaces")
+    application.wait_for_name("Manage workspaces", "frame")
+    application.focus("Repository path", "entry")
+    application.focus("Inspect", "push button")
+    application.focus("Close", "push button")
+    application.invoke("Close")
+    time.sleep(1)
+
+
+def verify_orca_speech(debug_log: Path) -> None:
+    speech_lines = [
+        line for line in debug_log.read_text(encoding="utf-8").splitlines()
+        if "SPEECH OUTPUT:" in line
+    ]
+    utterances = [
+        match.group(1)
+        for line in speech_lines
+        if (match := re.search(r"SPEECH OUTPUT: '([^']*)'", line)) is not None
+    ]
+    expected = [
+        "Conversation model",
+        "Open editor documents",
+        "Save current panel layout",
+        "Workspace",
+        "Manage workspaces",
+        "Repository path",
+        "Inspect",
+        "Close",
+    ]
+    missing = [utterance for utterance in expected if utterance not in utterances]
+    if missing:
+        raise AssertionError(f"Orca did not generate expected speech: {missing}")
+
+    implementation_names = [
+        "Grid",
+        "StackPanel",
+        "Border",
+        "ContentPresenter",
+        "ScrollContentPresenter",
+        "DockableControl",
+        "DeferredContentControl",
+        "DeferredContentPresenter",
+        "VisualLayerManager",
+    ]
+    leaked = [
+        name for name in implementation_names
+        if any(item == name or item.startswith(f"{name} ") for item in utterances)
+    ]
+    if leaked:
+        raise AssertionError(f"Orca spoke framework implementation names: {leaked}")
+
+
+def read_gsettings(schema: str, key: str) -> str:
+    return subprocess.check_output(
+        ["gsettings", "get", schema, key], text=True
+    ).strip()
+
+
+def restore_gsettings(schema: str, key: str, value: str) -> None:
+    subprocess.run(
+        ["gsettings", "set", schema, key, value],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
 def register_workspace(application: AtSpiApplication, repository: Path) -> None:
     application.invoke("Workspace", "page tab")
     application.wait_for_name("Manage workspaces", "push button")
@@ -353,8 +441,24 @@ def verify_documents_and_search(
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--with-orca",
+        action="store_true",
+        help="also verify generated screen-reader speech with an isolated Orca process",
+    )
+    arguments = parser.parse_args()
     if sys.platform != "linux" or not os.environ.get("DISPLAY"):
         raise SystemExit("the Avalonia AT-SPI verifier requires a graphical Linux session")
+    if arguments.with_orca and shutil.which("orca") is None:
+        raise SystemExit("--with-orca requires Orca on PATH")
+    if arguments.with_orca and subprocess.run(
+        ["pgrep", "-x", "orca"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    ).returncode == 0:
+        raise SystemExit("--with-orca will not replace an existing Orca process")
 
     repository_root = Path(__file__).resolve().parent.parent
     executable = repository_root / "src/Harness.Host/bin/Debug/net10.0/Harness.Host"
@@ -378,6 +482,13 @@ def main() -> int:
     original_screen_reader = bool(
         status_properties.Get("org.a11y.Status", "ScreenReaderEnabled")
     )
+    gsettings_values: dict[tuple[str, str], str] = {}
+    if arguments.with_orca:
+        for setting in (
+            ("org.gnome.desktop.a11y.applications", "screen-reader-enabled"),
+            ("org.gnome.desktop.interface", "toolkit-accessibility"),
+        ):
+            gsettings_values[setting] = read_gsettings(*setting)
     status_properties.Set("org.a11y.Status", "IsEnabled", dbus.Boolean(True))
     status_properties.Set(
         "org.a11y.Status", "ScreenReaderEnabled", dbus.Boolean(True)
@@ -388,6 +499,7 @@ def main() -> int:
     accessibility_bus = dbus.bus.BusConnection(accessibility_address)
 
     process: subprocess.Popen[bytes] | None = None
+    orca_process: subprocess.Popen[bytes] | None = None
     try:
         with tempfile.TemporaryDirectory(prefix="harness-atspi-") as temporary:
             root = Path(temporary)
@@ -423,11 +535,24 @@ def main() -> int:
                     "XDG_CONFIG_HOME": str(root / "config"),
                     "XDG_DATA_HOME": str(root / "data"),
                     "XDG_STATE_HOME": str(root / "state"),
+                    "XDG_CACHE_HOME": str(root / "cache"),
                 }
             )
 
+            orca_debug = root / "orca-debug.log"
+            if arguments.with_orca:
+                orca_process = subprocess.Popen(
+                    ["orca", "--debug-file", str(orca_debug)],
+                    env=environment,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                time.sleep(1)
+
             process, application = launch(executable, environment, accessibility_bus)
             verify_initial_accessibility(application)
+            if arguments.with_orca:
+                exercise_orca_speech(application)
             register_workspace(application, repository)
             create_and_approve_goal(application)
             verify_documents_and_search(application, repository)
@@ -456,17 +581,26 @@ def main() -> int:
             verify_initial_accessibility(application)
             stop(process)
             process = None
+            if orca_process is not None:
+                stop(orca_process)
+                orca_process = None
+                verify_orca_speech(orca_debug)
     finally:
         if process is not None:
             stop(process)
+        if orca_process is not None:
+            stop(orca_process)
         status_properties.Set(
             "org.a11y.Status", "ScreenReaderEnabled", dbus.Boolean(original_screen_reader)
         )
         status_properties.Set(
             "org.a11y.Status", "IsEnabled", dbus.Boolean(original_enabled)
         )
+        for setting, value in gsettings_values.items():
+            restore_gsettings(*setting, value)
 
-    print("Avalonia production AT-SPI verification passed")
+    suffix = " with Orca speech" if arguments.with_orca else ""
+    print(f"Avalonia production AT-SPI verification passed{suffix}")
     return 0
 
 
