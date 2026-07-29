@@ -570,33 +570,22 @@ public sealed class PresentationControlTests
             Assert.All(bottom.VisibleDockables!, item =>
                 Assert.False(Assert.IsAssignableFrom<Control>(item.Context).IsVisible));
 
-            workbench.Control.RaiseEvent(new KeyEventArgs
-            {
-                RoutedEvent = InputElement.KeyDownEvent,
-                Key = Key.G,
-                KeyModifiers = KeyModifiers.Control | KeyModifiers.Shift,
-            });
+            Assert.True(workbench.Control.Focus());
+            window.KeyPressQwerty(
+                PhysicalKey.G,
+                RawInputModifiers.Control | RawInputModifiers.Shift);
             Assert.True(right.IsExpanded);
             Assert.Equal(WorkbenchDockIds.GitTool, right.ActiveDockable?.Id);
             Assert.All(right.VisibleDockables!, item =>
                 Assert.True(Assert.IsAssignableFrom<Control>(item.Context).IsVisible));
 
-            workbench.Control.RaiseEvent(new KeyEventArgs
-            {
-                RoutedEvent = InputElement.KeyDownEvent,
-                Key = Key.J,
-                KeyModifiers = KeyModifiers.Control,
-            });
+            window.KeyPressQwerty(PhysicalKey.J, RawInputModifiers.Control);
             Assert.True(bottom.IsExpanded);
             Assert.Equal(WorkbenchDockIds.RunOutputTool, bottom.ActiveDockable?.Id);
             Assert.All(bottom.VisibleDockables!, item =>
                 Assert.True(Assert.IsAssignableFrom<Control>(item.Context).IsVisible));
 
-            workbench.Control.RaiseEvent(new KeyEventArgs
-            {
-                RoutedEvent = InputElement.KeyDownEvent,
-                Key = Key.F6,
-            });
+            window.KeyPressQwerty(PhysicalKey.F6, RawInputModifiers.None);
             Dispatcher.UIThread.RunJobs();
             Assert.True(left.IsExpanded);
             Assert.Equal(WorkbenchDockIds.FilesTool, left.ActiveDockable?.Id);
@@ -688,6 +677,7 @@ public sealed class PresentationControlTests
             Window window = new() { Content = workbench.Control };
             window.Show();
             workbench.OpenFileAsync("src/App.cs").AsTask().GetAwaiter().GetResult();
+            Dispatcher.UIThread.RunJobs();
 
             Control[] contexts =
             [
@@ -711,6 +701,40 @@ public sealed class PresentationControlTests
             Assert.All(interactive, item => Assert.False(
                 string.IsNullOrWhiteSpace(AutomationProperties.GetName(item)),
                 $"{item.GetType().Name} has no explicit accessible name."));
+
+            Button[] chromeButtons = window.GetVisualDescendants()
+                .OfType<Button>()
+                .Where(item => item.Name is "PART_MenuButton" or
+                                           "PART_PinButton" or
+                                           "PART_MaximizeRestoreButton" or
+                                           "PART_CloseButton")
+                .ToArray();
+            Assert.NotEmpty(chromeButtons);
+            Assert.All(chromeButtons, item => Assert.DoesNotContain(
+                "Viewbox",
+                AutomationProperties.GetName(item) ?? string.Empty,
+                StringComparison.Ordinal));
+            Assert.All(chromeButtons, item => Assert.False(
+                string.IsNullOrWhiteSpace(AutomationProperties.GetName(item)),
+                $"Dock chrome button {item.Name} has no accessible name."));
+
+            ToolChromeControl[] chrome = window.GetVisualDescendants()
+                .OfType<ToolChromeControl>()
+                .ToArray();
+            Assert.NotEmpty(chrome);
+            Assert.All(chrome, item => Assert.EndsWith(
+                " panel controls",
+                AutomationProperties.GetName(item),
+                StringComparison.Ordinal));
+
+            Control[] splitters = window.GetVisualDescendants()
+                .OfType<Control>()
+                .Where(item => item.GetType().Name == "ProportionalStackPanelSplitter")
+                .ToArray();
+            Assert.NotEmpty(splitters);
+            Assert.All(splitters, item => Assert.Equal(
+                "Resize adjacent workbench panels",
+                AutomationProperties.GetName(item)));
             window.Close();
         }, CancellationToken.None);
     }

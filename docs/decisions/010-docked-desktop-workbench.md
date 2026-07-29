@@ -52,7 +52,10 @@ cover keyboard shortcuts and focus targets, floating-window ownership, compact
 sizing, explicit automation names, and 200% rendered-frame scaling. A 2026-07-29
 hands-on Linux review records real wide and minimum-size empty states in
 [`docs/acceptance/docked-workbench-2026-07-29.md`](../acceptance/docked-workbench-2026-07-29.md).
-A hands-on screen-reader pass and the complete Task 033 workflow matrix remain
+The production host has also been traversed and operated through the Linux AT-SPI
+accessibility bus: its real pages, tools, editor region, commands, and Dock chrome
+are exposed, and page selection plus workspace management respond to accessibility
+actions. A spoken screen-reader pass and the complete Task 033 workflow matrix remain
 required before this record can become Accepted.
 The bottom edge now contains distinct Conversation and Run output tools. Run output
 is a typed projection of durable Build/Test/Restore evidence with bounded stdout and
@@ -106,8 +109,9 @@ Presentation; Business Logic and Data Access contracts do not expose them.
 
 - Pin a mutually compatible stable package set for Avalonia 12.1 and .NET 10. **Met.**
 - Verify Fluent-theme token overrides, keyboard/focus behavior, screen-reader names,
-  scaling, floating-window ownership, and compact-layout fallback. **Automated checks
-  and wide/compact hands-on review met; hands-on screen-reader validation remains.**
+  scaling, floating-window ownership, and compact-layout fallback. **Automated checks,
+  raw keyboard input, production AT-SPI traversal/actions, and wide/compact hands-on
+  review met; spoken screen-reader validation remains.**
 - Verify headless construction plus Linux x64 single-file publishing. **Met.**
 - Demonstrate open/activate/close for real source and diff documents without fake
   defaults and without leaking Dock types across the Presentation boundary. **Met.**

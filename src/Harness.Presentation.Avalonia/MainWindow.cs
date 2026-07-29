@@ -285,6 +285,7 @@ internal sealed class MainWindow : Window
 
     private Control BuildUtility()
     {
+        AutomationProperties.SetName(evidence, "Selected goal evidence");
         StackPanel panel = new()
         {
             Margin = new(14),

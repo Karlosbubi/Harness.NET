@@ -26,6 +26,16 @@ Ctrl+Shift+G, Ctrl+J, and F6; focusable targets; explicit automation names; floa
 window ownership; layout recovery; and a 200% framebuffer whose pixel dimensions
 double without changing logical layout.
 
+## Assistive-technology checkpoint
+
+The production `Harness.Host --ui=avalonia` process was inspected through the Linux
+AT-SPI bus, rather than through a headless control-tree surrogate. The accessible
+tree exposed the real Files/search, source editor region, Conversation, Run output,
+Goal context, Git, header, layout, provider, and workspace controls. Dock menu, pin,
+maximize/restore, close, title chrome, and proportional splitters have contextual
+names instead of template type names. AT-SPI actions successfully selected the
+Workspace page and opened the real workspace-management dialog.
+
 This is a checkpoint, not Task 033 completion. A hands-on screen-reader pass and the
 complete representative restart, corrupted-layout, and multi-document workflow
 matrix remain open.

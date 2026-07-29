@@ -245,10 +245,12 @@ internal sealed class WorkbenchDockHost
         {
             Factory = factory,
             Layout = root,
+            Focusable = true,
         };
         AutomationProperties.SetName(Control, "Docked workspace workbench");
         Control.KeyDown += OnWorkbenchKeyDown;
         Control.SizeChanged += (_, _) => ApplyViewport(Control.Bounds.Width, Control.Bounds.Height);
+        Control.LayoutUpdated += (_, _) => ApplyDockAutomationNames();
         LayoutActions = BuildLayoutActions();
     }
 
@@ -1667,6 +1669,84 @@ internal sealed class WorkbenchDockHost
             {
                 content.IsVisible = visible;
             }
+        }
+    }
+
+    private void ApplyDockAutomationNames()
+    {
+        foreach (ToolChromeControl chrome in Control.GetVisualDescendants()
+                     .OfType<ToolChromeControl>())
+        {
+            if (chrome.DataContext is IToolDock dock)
+            {
+                SetAutomationName(chrome, $"{DockTitle(dock)} panel controls");
+            }
+        }
+
+        foreach (ToolControl toolControl in Control.GetVisualDescendants().OfType<ToolControl>())
+        {
+            if (toolControl.DataContext is IToolDock dock)
+            {
+                SetAutomationName(toolControl, $"{DockTitle(dock)} panel");
+            }
+        }
+
+        foreach (ItemsControl itemsControl in Control.GetVisualDescendants()
+                     .OfType<ItemsControl>()
+                     .Where(item => item.DataContext is IProportionalDock))
+        {
+            SetAutomationName(itemsControl, "Workbench panel layout");
+        }
+
+        foreach (Button button in Control.GetVisualDescendants().OfType<Button>())
+        {
+            string? name = button.Name switch
+            {
+                "PART_MenuButton" => $"Panel actions for {DockTitle(button)}",
+                "PART_PinButton" => $"Auto-hide or dock {DockTitle(button)}",
+                "PART_MaximizeRestoreButton" => $"Maximize or restore {DockTitle(button)}",
+                "PART_CloseButton" => $"Close {DockTitle(button)}",
+                _ => null,
+            };
+            if (name is not null)
+            {
+                SetAutomationName(button, name);
+            }
+        }
+
+        foreach (Control splitter in Control.GetVisualDescendants()
+                     .OfType<Control>()
+                     .Where(item => item.GetType().Name == "ProportionalStackPanelSplitter"))
+        {
+            SetAutomationName(splitter, "Resize adjacent workbench panels");
+        }
+    }
+
+    private static string DockTitle(Control control)
+    {
+        IDockable? dockable = control.GetVisualAncestors()
+            .OfType<Control>()
+            .Select(item => item.DataContext)
+            .OfType<IDockable>()
+            .FirstOrDefault();
+        return dockable switch
+        {
+            IToolDock toolDock => DockTitle(toolDock),
+            { Title: { Length: > 0 } } => dockable.Title,
+            _ => "workbench panel",
+        };
+    }
+
+    private static string DockTitle(IToolDock dock) =>
+        string.IsNullOrWhiteSpace(dock.ActiveDockable?.Title)
+            ? "workbench"
+            : dock.ActiveDockable.Title;
+
+    private static void SetAutomationName(Control control, string name)
+    {
+        if (!string.Equals(AutomationProperties.GetName(control), name, StringComparison.Ordinal))
+        {
+            AutomationProperties.SetName(control, name);
         }
     }
 
