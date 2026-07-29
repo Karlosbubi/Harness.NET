@@ -6,16 +6,35 @@ workspace, goal, conversation, evidence, or diagnostic content.
 
 ## Hands-on visual review
 
-- Wide, 2040×1275 rendered pixels: real Files, Goal context, Conversation, and Run
+- Wide, 2084×1358 captured window pixels: real Workspace/Files, Goal context,
+  Conversation, and Run
   output Dock regions surround the center document region; the honest no-workspace
   state is readable and all header commands remain visible.
-- Minimum window, 1275×956 rendered pixels on the scaled desktop: side and bottom
+- Minimum window, 1319×1040 captured window pixels on the scaled desktop: side and bottom
   production content collapses behind its Dock chrome, leaving the center document
   readable; compact header labels are removed while every command remains reachable.
 
 ![Wide honest empty state](workbench-wide-empty.png)
 
 ![Minimum-size honest empty state](workbench-compact-empty.png)
+
+## Workspace-onboarding UX follow-up
+
+A subsequent hands-on pass replaced the passive no-workspace message with a centered
+onboarding card and primary **Open workspace** actions in both the header and editor.
+The initial left tool now opens on Workspace rather than an unusable empty Files list;
+the right tool contains goal context and evidence instead of duplicating provider and
+appearance summaries already represented by the header and status bar. Persistent
+layout actions use compact icon controls with full accessible names and tooltips.
+
+The workspace window now separates registered repositories from opening a new one.
+Its primary route launches Avalonia's real platform single-folder picker, starts in a
+well-known local folder, converts only a locally accessible selection, and immediately
+scans through the production workspace-inspection boundary. Manual path entry remains
+available when the platform cannot pick folders. Selection alone grants neither trust
+nor execution authority. The KDE/Wayland native chooser and the redesigned manager
+were rendered and inspected on 2026-07-29 with isolated XDG state; no repository or
+model call was created by that visual check.
 
 ## Deterministic evidence
 
@@ -67,7 +86,8 @@ known Avalonia or Dock implementation type names. Its passing trace records cont
 utterances including
 “Conversation model, combo box”, “Open editor documents, combo box”, “Save current
 panel layout, button”, “Workspace, page tab”, “Manage workspaces, button”,
-“Repository path, entry”, and “Inspect, button”. This verifies the actual screen-reader
+“Repository path, entry”, “Browse for repository folder, button”, and “Inspect,
+button”. This verifies the actual screen-reader
 speech pipeline rather than inferring output from automation properties, but it is
 not represented as a human listening study. No model was invoked and the original
 desktop accessibility settings were restored after the run.

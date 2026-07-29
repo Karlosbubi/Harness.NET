@@ -64,6 +64,13 @@ but the end-user workflow is not complete.
 | 032 | Done | Add safe source editing semantics | 029 | Original-workspace and truncated files remain honestly read-only; an active approved goal opens its isolated worktree with an exact content baseline. Editable AvaloniaEdit tabs expose real dirty state, keyboard and visible save/reload/close actions, durable compare-and-swap saves, explicit reload/overwrite conflict recovery, and save/discard/cancel decisions for tab switches, closes, layout reset, workspace change, and application exit. |
 | 033 | Done | Pass docked-workbench product acceptance | 030-032 | Real wide and minimum-size Linux empty states are recorded; rendered center-editor attachment, raw-input compact keyboard restoration, explicit application and Dock-chrome automation names, floating ownership, and 200% scaling pass. Repeatable production AT-SPI and isolated Orca workflows prove repository registration/trust, plan approval, editable-worktree documents, search, restart/layout recovery, contextual speech without framework names, and the complete Lead/Implementer/Reviewer exact-commit path. The latter injects a process restart and asserts real typed edit/build/test evidence, original-repository isolation, exact branch commit, and SQLite audit state. |
 
+## Post-1.0 usability follow-through
+
+| ID | Status | User capability | Current gap | Done when |
+|---|---|---|---|---|
+| 034 | Done | Open a workspace through a familiar first-run journey | 027 | The primary shell and centered empty state open Avalonia's native single-folder picker, retain a manual-path fallback, scan the selected Git repository through the existing typed boundary, and present discovered solutions/projects before registration or trust. The workspace manager separates existing workspaces from adding one, and headless plus production AT-SPI checks cover the route. |
+| 035 | In progress | Make every frequent desktop journey feel deliberate and efficient | The first-run hierarchy, workspace manager, goal pane, compact layout controls, and semantic component styling are improved. Goal/framework/operations management remains form-dense, and repository navigation still depends on path entry or search instead of a discoverable tracked-file tree. | Workspace, files, goals, plans, evidence, provider settings, framework, recovery, and editing flows have coherent progressive disclosure, keyboard paths, useful empty/loading/error states, and recorded wide/compact hands-on review without hiding consequential approval detail. |
+
 ### v1.0 release gate
 
 All tasks 013-033 must be **Done**. A release candidate must complete a representative

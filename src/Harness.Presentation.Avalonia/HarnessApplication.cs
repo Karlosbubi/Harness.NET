@@ -29,6 +29,10 @@ internal sealed class HarnessApplication(
         Styles.Add(new DockFluentTheme());
         Styles.Add(new StyleInclude(new Uri("avares://Harness.Presentation.Avalonia/"))
         {
+            Source = new Uri("avares://Harness.Presentation.Avalonia/WorkbenchStyles.axaml"),
+        });
+        Styles.Add(new StyleInclude(new Uri("avares://Harness.Presentation.Avalonia/"))
+        {
             Source = new Uri("avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml"),
         });
     }

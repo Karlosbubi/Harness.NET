@@ -1,4 +1,6 @@
 using System.Runtime.CompilerServices;
+using Avalonia.Controls;
+using Avalonia.Headless;
 using Harness.BusinessLogic.Acceptance;
 using Harness.BusinessLogic.Agents;
 using Harness.BusinessLogic.Approvals;
@@ -16,6 +18,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Harness.Presentation.Avalonia.Tests;
 
+[Collection("Avalonia UI")]
 public sealed class AvaloniaPresentationStoreTests
 {
     [Theory]
@@ -114,6 +117,43 @@ public sealed class AvaloniaPresentationStoreTests
         Assert.True(Assert.Single(store.Current.Workspaces.Registered).IsTrusted);
         Assert.Equal(registered.Id, workspaces.SelectedId);
         Assert.Contains("Trusted", store.Current.Workspaces.Status, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Workspace_folder_selection_populates_the_path_and_scans_entry_points()
+    {
+        WorkspaceService workspaces = new();
+        using AvaloniaPresentationStore store = new(
+            new DashboardService(),
+            new AppearanceService(),
+            workspaces,
+            new GoalService(),
+            new GoalModelService(),
+            new RemoteCostService(),
+            new GoalWorkflowService(),
+            new SemanticIndexService(),
+            new GoalAcceptanceService(),
+            new ApplicationOperationsService(),
+            new CapabilityApprovalService(),
+            new FrameworkService(),
+            NullLogger<AvaloniaPresentationStore>.Instance);
+        await store.LoadAsync(CancellationToken.None);
+        FolderPicker picker = new("/work/repository");
+
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            WorkspaceDialog dialog = new(store, CancellationToken.None, picker);
+            dialog.Show();
+            dialog.BrowseRepositoryAsync().GetAwaiter().GetResult();
+
+            Assert.Same(dialog, picker.Owner);
+            Assert.Equal("/work/repository", store.Current.Workspaces.RepositoryPath);
+            Assert.Single(store.Current.Workspaces.EntryPoints);
+            Assert.Contains("Found 1", store.Current.Workspaces.Status, StringComparison.Ordinal);
+            dialog.Close();
+        }, CancellationToken.None);
     }
 
     [Fact]
@@ -1110,5 +1150,19 @@ public sealed class AvaloniaPresentationStoreTests
                 approvals.Where(item => item.GoalId == goalId).ToArray(),
                 null,
                 null));
+    }
+
+    private sealed class FolderPicker(string folder) : IWorkspaceFolderPicker
+    {
+        internal TopLevel? Owner { get; private set; }
+
+        public ValueTask<WorkspaceFolderPickerResult> PickAsync(
+            TopLevel owner,
+            WorkspaceFolderPath? currentFolder,
+            CancellationToken cancellationToken = default)
+        {
+            Owner = owner;
+            return ValueTask.FromResult(new WorkspaceFolderPickerResult(new(folder), null));
+        }
     }
 }

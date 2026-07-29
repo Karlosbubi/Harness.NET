@@ -150,7 +150,18 @@ internal sealed class AvaloniaPresentationStore(
     internal void SetRepositoryPath(string value) =>
         Publish(Current with
         {
-            Workspaces = Current.Workspaces with { RepositoryPath = value },
+            Workspaces = Current.Workspaces with
+            {
+                RepositoryPath = value,
+                EntryPoints = [],
+                Status = null,
+            },
+        });
+
+    internal void SetWorkspaceStatus(string value) =>
+        Publish(Current with
+        {
+            Workspaces = Current.Workspaces with { Status = value },
         });
 
     internal async ValueTask RefreshWorkspacesAsync(CancellationToken cancellationToken)

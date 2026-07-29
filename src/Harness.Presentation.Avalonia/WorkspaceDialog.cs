@@ -14,6 +14,8 @@ internal sealed class WorkspaceDialog : Window
 {
     private readonly AvaloniaPresentationStore store;
     private readonly CancellationToken cancellationToken;
+    private readonly IWorkspaceFolderPicker folderPicker;
+    private readonly bool browseOnOpen;
     private readonly IDisposable subscription;
     private readonly ListBox registered = new();
     private readonly TextBox repositoryPath = new();
@@ -21,49 +23,92 @@ internal sealed class WorkspaceDialog : Window
     private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap };
     private readonly Button useSelected = new() { Content = "Use selected" };
     private readonly Button trust = new() { Content = "Trust…" };
-    private readonly Button inspect = new() { Content = "Inspect" };
-    private readonly Button register = new() { Content = "Register" };
+    private readonly Button browse = new() { Content = "Browse…" };
+    private readonly Button inspect = new() { Content = "Scan" };
+    private readonly Button register = new() { Content = "Add workspace" };
     private bool rendering;
 
     internal WorkspaceDialog(
         AvaloniaPresentationStore store,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IWorkspaceFolderPicker? folderPicker = null,
+        bool browseOnOpen = false)
     {
         this.store = store;
         this.cancellationToken = cancellationToken;
+        this.folderPicker = folderPicker ?? new AvaloniaWorkspaceFolderPicker();
+        this.browseOnOpen = browseOnOpen;
         Title = "Manage workspaces";
-        Width = 760;
-        Height = 620;
-        MinWidth = 620;
-        MinHeight = 500;
+        Width = 900;
+        Height = 640;
+        MinWidth = 720;
+        MinHeight = 520;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Content = BuildContent();
         WireInteractions();
         subscription = store.States.Subscribe(state =>
             Dispatcher.UIThread.Post(() => Render(state.Workspaces)));
         Closed += (_, _) => subscription.Dispose();
-        Opened += async (_, _) => await store.RefreshWorkspacesAsync(cancellationToken);
+        Opened += async (_, _) =>
+        {
+            await store.RefreshWorkspacesAsync(cancellationToken);
+            if (this.browseOnOpen)
+            {
+                await BrowseRepositoryAsync();
+            }
+        };
     }
 
     private Control BuildContent()
     {
         Grid root = new()
         {
-            RowDefinitions = new("Auto,180,Auto,Auto,150,Auto,*,Auto"),
-            Margin = new(20),
-            RowSpacing = 10,
+            RowDefinitions = new("Auto,*,Auto"),
+            Margin = new(24),
+            RowSpacing = 20,
         };
-        root.Children.Add(new TextBlock
+        StackPanel heading = new()
         {
-            Text = "Registered workspaces",
-            FontSize = 16,
-            FontWeight = FontWeight.SemiBold,
-        });
+            Spacing = 4,
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = "Workspaces",
+                    FontSize = 24,
+                    FontWeight = FontWeight.SemiBold,
+                },
+                new TextBlock
+                {
+                    Text = "Open a Git-backed .NET repository or switch between repositories you already added.",
+                    TextWrapping = TextWrapping.Wrap,
+                    Classes = { "muted" },
+                },
+            },
+        };
+        root.Children.Add(heading);
 
+        Grid body = new()
+        {
+            ColumnDefinitions = new("0.85*,1.15*"),
+            ColumnSpacing = 18,
+        };
+        Grid.SetRow(body, 1);
+        root.Children.Add(body);
+
+        Grid existing = new()
+        {
+            RowDefinitions = new("Auto,*,Auto"),
+            RowSpacing = 12,
+        };
+        existing.Children.Add(new TextBlock
+        {
+            Text = "YOUR WORKSPACES",
+            Classes = { "eyebrow" },
+        });
         AutomationProperties.SetName(registered, "Registered workspaces");
         Grid.SetRow(registered, 1);
-        root.Children.Add(registered);
-
+        existing.Children.Add(registered);
         StackPanel registeredActions = new()
         {
             Orientation = Orientation.Horizontal,
@@ -71,36 +116,88 @@ internal sealed class WorkspaceDialog : Window
             Children = { useSelected, trust },
         };
         Grid.SetRow(registeredActions, 2);
-        root.Children.Add(registeredActions);
+        existing.Children.Add(registeredActions);
+        body.Children.Add(new Border
+        {
+            Classes = { "card" },
+            Child = existing,
+        });
+
+        Grid add = new()
+        {
+            RowDefinitions = new("Auto,Auto,Auto,Auto,*,Auto,Auto"),
+            RowSpacing = 10,
+        };
+        add.Children.Add(new TextBlock
+        {
+            Text = "OPEN A REPOSITORY",
+            Classes = { "eyebrow" },
+        });
+        TextBlock explanation = new()
+        {
+            Text = "Choose the repository folder. Harness.NET will inspect Git-tracked solutions and projects before anything is registered.",
+            TextWrapping = TextWrapping.Wrap,
+            Classes = { "muted" },
+        };
+        Grid.SetRow(explanation, 1);
+        add.Children.Add(explanation);
 
         Grid pathRow = new()
         {
-            ColumnDefinitions = new("*,Auto"),
+            ColumnDefinitions = new("*,Auto,Auto"),
             ColumnSpacing = 8,
         };
-        repositoryPath.PlaceholderText = "/path/to/git/repository";
+        repositoryPath.PlaceholderText = "Repository folder";
+        repositoryPath.Classes.Add("workspace-input");
         AutomationProperties.SetName(repositoryPath, "Repository path");
         pathRow.Children.Add(repositoryPath);
-        Grid.SetColumn(inspect, 1);
+        Grid.SetColumn(browse, 1);
+        pathRow.Children.Add(browse);
+        Grid.SetColumn(inspect, 2);
         pathRow.Children.Add(inspect);
-        Grid.SetRow(pathRow, 3);
-        root.Children.Add(pathRow);
+        Grid.SetRow(pathRow, 2);
+        add.Children.Add(pathRow);
+
+        TextBlock entryHeading = new()
+        {
+            Text = "Choose a solution or project",
+            FontWeight = FontWeight.SemiBold,
+        };
+        Grid.SetRow(entryHeading, 3);
+        add.Children.Add(entryHeading);
 
         AutomationProperties.SetName(entryPoints, "Tracked .NET entry points");
         Grid.SetRow(entryPoints, 4);
-        root.Children.Add(entryPoints);
+        add.Children.Add(entryPoints);
 
         Grid.SetRow(register, 5);
         register.HorizontalAlignment = HorizontalAlignment.Left;
-        root.Children.Add(register);
+        add.Children.Add(register);
 
         Grid.SetRow(status, 6);
-        root.Children.Add(status);
+        AutomationProperties.SetName(status, "Workspace operation status");
+        add.Children.Add(status);
+        Border addCard = new()
+        {
+            Classes = { "card" },
+            Child = add,
+        };
+        Grid.SetColumn(addCard, 1);
+        body.Children.Add(addCard);
 
         Button close = new() { Content = "Close", HorizontalAlignment = HorizontalAlignment.Right };
         close.Click += (_, _) => Close();
-        Grid.SetRow(close, 7);
+        Grid.SetRow(close, 2);
         root.Children.Add(close);
+
+        foreach (Button button in new[] { useSelected, trust, browse, inspect, close })
+        {
+            button.Classes.Add("command");
+        }
+        register.Classes.Add("primary");
+        AutomationProperties.SetName(browse, "Browse for repository folder");
+        AutomationProperties.SetName(inspect, "Inspect");
+        AutomationProperties.SetName(register, "Register");
         return root;
     }
 
@@ -122,6 +219,7 @@ internal sealed class WorkspaceDialog : Window
             }
         };
         inspect.Click += async (_, _) => await store.InspectWorkspaceAsync(cancellationToken);
+        browse.Click += async (_, _) => await BrowseRepositoryAsync();
         registered.SelectionChanged += (_, _) =>
         {
             if (registered.SelectedItem is WorkspaceChoice choice)
@@ -194,6 +292,7 @@ internal sealed class WorkspaceDialog : Window
                 ? "Revoke trust"
                 : "Trust…";
             inspect.IsEnabled = !state.IsBusy;
+            browse.IsEnabled = !state.IsBusy;
             register.IsEnabled = !state.IsBusy && entries.Length > 0;
             status.Text = state.IsBusy ? "Working…" : state.Status ?? string.Empty;
         }
@@ -201,6 +300,28 @@ internal sealed class WorkspaceDialog : Window
         {
             rendering = false;
         }
+    }
+
+    internal async Task BrowseRepositoryAsync()
+    {
+        string current = store.Current.Workspaces.RepositoryPath.Trim();
+        WorkspaceFolderPickerResult result = await folderPicker.PickAsync(
+            this,
+            current.Length == 0 ? null : new(current),
+            cancellationToken);
+        if (result.Error is not null)
+        {
+            store.SetWorkspaceStatus(result.Error);
+            return;
+        }
+
+        if (result.Folder is null)
+        {
+            return;
+        }
+
+        store.SetRepositoryPath(result.Folder.Value);
+        await store.InspectWorkspaceAsync(cancellationToken);
     }
 
     private async Task<bool> ConfirmTrustAsync(WorkspaceView workspace)

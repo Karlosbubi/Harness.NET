@@ -33,26 +33,26 @@ internal sealed class MainWindow : Window
     private readonly StatusIndicator status = new();
     private readonly TextBlock budget = new();
     private readonly TextBlock workspace = new() { TextWrapping = TextWrapping.Wrap };
-    private readonly TextBlock providerDetails = new();
-    private readonly TextBlock themeIssues = new();
     private readonly TextBlock goalContext = new() { TextWrapping = TextWrapping.Wrap };
     private readonly ItemsControl evidence = new();
     private readonly ComboBox modelPicker = new();
     private readonly ComboBox themePicker = new();
     private readonly Button send = new() { Content = "Send" };
     private readonly Button cancel = new() { Content = "Cancel" };
-    private readonly Button manageWorkspaces = new() { Content = "Manage workspaces" };
-    private readonly Button manageFramework = new() { Content = "Engineering framework" };
-    private readonly Button manageGoals = new() { Content = "Goals and plans" };
-    private readonly Button operations = new() { Content = "Application operations" };
+    private readonly Button openWorkspace = new() { Content = "Open workspace" };
+    private readonly Button manageWorkspaces = new() { Content = "Workspaces…" };
+    private readonly Button manageFramework = new() { Content = "Framework" };
+    private readonly Button manageGoals = new() { Content = "Goals" };
+    private readonly Button goalAction = new() { Content = "Create or select a goal" };
+    private readonly Button operations = new() { Content = "Operations" };
     private readonly AccessibleIconButton refreshProvider = new()
     {
-        Content = "Refresh",
+        Content = "↻",
         AccessibleName = "Refresh provider models",
     };
     private readonly AccessibleIconButton reloadThemes = new()
     {
-        Content = "Reload",
+        Content = "↻",
         AccessibleName = "Reload user themes",
     };
     private readonly Border header = new();
@@ -62,12 +62,12 @@ internal sealed class MainWindow : Window
     private readonly Border footer = new();
     private readonly TextBlock brandDetail = new()
     {
-        Text = "Local-first agent workspace",
+        Text = "Agent workspace for .NET",
         FontSize = 11,
     };
     private readonly TextBlock modelLabel = new()
     {
-        Text = "Model",
+        Text = "Chat",
         VerticalAlignment = VerticalAlignment.Center,
     };
     private readonly TextBlock themeLabel = new()
@@ -137,11 +137,13 @@ internal sealed class MainWindow : Window
             navigation,
             primary,
             utility,
-            cancellationToken);
+            cancellationToken,
+            ShowWorkspaceDialogAsync);
         Border documentActions = new()
         {
             Child = workbench.DocumentActions,
-            Padding = new(10, 5),
+            Padding = new(12, 6),
+            BorderThickness = new(0, 0, 0, 1),
         };
         Grid workbenchRegion = new()
         {
@@ -168,9 +170,9 @@ internal sealed class MainWindow : Window
     {
         Grid grid = new()
         {
-            ColumnDefinitions = new("Auto,*"),
-            Margin = new(14, 8),
-            ColumnSpacing = 16,
+            ColumnDefinitions = new("Auto,Auto,*"),
+            Margin = new(18, 10),
+            ColumnSpacing = 20,
         };
         StackPanel title = new()
         {
@@ -182,6 +184,12 @@ internal sealed class MainWindow : Window
             },
         };
         grid.Children.Add(title);
+
+        openWorkspace.Classes.Add("primary");
+        openWorkspace.VerticalAlignment = VerticalAlignment.Center;
+        AutomationProperties.SetName(openWorkspace, "Open workspace folder");
+        Grid.SetColumn(openWorkspace, 1);
+        grid.Children.Add(openWorkspace);
 
         StackPanel actions = new()
         {
@@ -207,12 +215,16 @@ internal sealed class MainWindow : Window
             VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
         };
         AutomationProperties.SetName(actionScroller, "Workbench commands");
-        Grid.SetColumn(actionScroller, 1);
+        Grid.SetColumn(actionScroller, 2);
         grid.Children.Add(actionScroller);
         AutomationProperties.SetName(modelPicker, "Conversation model");
         AutomationProperties.SetName(themePicker, "Color theme");
         modelPicker.MinWidth = 120;
         themePicker.MinWidth = 100;
+        modelPicker.Classes.Add("toolbar-input");
+        themePicker.Classes.Add("toolbar-input");
+        refreshProvider.Classes.Add("icon");
+        reloadThemes.Classes.Add("icon");
         return grid;
     }
 
@@ -220,6 +232,7 @@ internal sealed class MainWindow : Window
     {
         bool compact = width > 0 && width < 1024;
         brandDetail.IsVisible = !compact;
+        openWorkspace.IsVisible = !compact;
         modelLabel.IsVisible = !compact;
         themeLabel.IsVisible = !compact;
     }
@@ -228,21 +241,33 @@ internal sealed class MainWindow : Window
     {
         StackPanel panel = new()
         {
-            Margin = new(14),
-            Spacing = 12,
+            Margin = new(16),
+            Spacing = 10,
             Children =
             {
                 new TextBlock { Text = "WORKSPACE", FontSize = 11, FontWeight = FontWeight.Bold },
                 workspace,
                 manageWorkspaces,
                 new Separator(),
-                new TextBlock { Text = "AVAILABLE", FontSize = 11, FontWeight = FontWeight.Bold },
-                new TextBlock { Text = "● Conversation", TextWrapping = TextWrapping.Wrap },
-                manageFramework,
+                new TextBlock { Text = "COLLABORATE", FontSize = 11, FontWeight = FontWeight.Bold },
+                new TextBlock { Text = "●  Conversation", TextWrapping = TextWrapping.Wrap },
                 manageGoals,
+                manageFramework,
+                new Separator(),
+                new TextBlock { Text = "APPLICATION", FontSize = 11, FontWeight = FontWeight.Bold },
                 operations,
             },
         };
+        foreach (Button button in new[] { manageWorkspaces, manageGoals, manageFramework, operations })
+        {
+            button.Classes.Add("command");
+            button.HorizontalAlignment = HorizontalAlignment.Stretch;
+            button.HorizontalContentAlignment = HorizontalAlignment.Left;
+        }
+        AutomationProperties.SetName(manageWorkspaces, "Manage workspaces");
+        AutomationProperties.SetName(manageGoals, "Goals and plans");
+        AutomationProperties.SetName(manageFramework, "Engineering framework");
+        AutomationProperties.SetName(operations, "Application operations");
         AutomationProperties.SetName(panel, "Workspace navigation");
         return panel;
     }
@@ -284,10 +309,12 @@ internal sealed class MainWindow : Window
         composerArea.Children.Add(composer);
         Grid.SetColumn(send, 1);
         send.VerticalAlignment = VerticalAlignment.Bottom;
+        send.Classes.Add("primary");
         AutomationProperties.SetName(send, "Send message");
         composerArea.Children.Add(send);
         Grid.SetColumn(cancel, 2);
         cancel.VerticalAlignment = VerticalAlignment.Bottom;
+        cancel.Classes.Add("command");
         AutomationProperties.SetName(cancel, "Cancel current response");
         composerArea.Children.Add(cancel);
         Grid.SetRow(composerArea, 2);
@@ -300,22 +327,21 @@ internal sealed class MainWindow : Window
         AutomationProperties.SetName(evidence, "Selected goal evidence");
         StackPanel panel = new()
         {
-            Margin = new(14),
+            Margin = new(16),
             Spacing = 12,
             Children =
             {
-                new TextBlock { Text = "PROVIDER", FontSize = 11, FontWeight = FontWeight.Bold },
-                providerDetails,
-                new Separator(),
-                new TextBlock { Text = "APPEARANCE", FontSize = 11, FontWeight = FontWeight.Bold },
-                themeIssues,
-                new Separator(),
-                new TextBlock { Text = "GOAL CONTEXT", FontSize = 11, FontWeight = FontWeight.Bold },
+                new TextBlock { Text = "CURRENT GOAL", Classes = { "eyebrow" } },
                 goalContext,
+                goalAction,
+                new Separator(),
+                new TextBlock { Text = "RECENT EVIDENCE", Classes = { "eyebrow" } },
                 evidence,
             },
         };
-        AutomationProperties.SetName(panel, "Provider, context, and evidence details");
+        goalAction.Classes.Add("command");
+        AutomationProperties.SetName(goalAction, "Create or select a goal");
+        AutomationProperties.SetName(panel, "Goal context and evidence details");
         return new ScrollViewer { Content = panel };
     }
 
@@ -374,12 +400,14 @@ internal sealed class MainWindow : Window
             async (_, _) => await store.RefreshProviderAsync(cancellationToken);
         reloadThemes.Click +=
             async (_, _) => await store.RefreshThemesAsync(cancellationToken);
-        manageWorkspaces.Click += async (_, _) =>
+        openWorkspace.Click += async (_, _) => await ShowWorkspaceDialogAsync(true);
+        manageWorkspaces.Click += async (_, _) => await ShowWorkspaceDialogAsync(false);
+        manageGoals.Click += async (_, _) =>
         {
-            WorkspaceDialog dialog = new(store, cancellationToken);
+            GoalDialog dialog = new(store, cancellationToken);
             await dialog.ShowDialog(this);
         };
-        manageGoals.Click += async (_, _) =>
+        goalAction.Click += async (_, _) =>
         {
             GoalDialog dialog = new(store, cancellationToken);
             await dialog.ShowDialog(this);
@@ -411,7 +439,23 @@ internal sealed class MainWindow : Window
             await workbench.RestoreLayoutAsync();
             await workbench.RefreshAsync();
         }
-        composer.Focus();
+        if (store.Current.Workspaces.Registered.Any(item => item.IsActive))
+        {
+            composer.Focus();
+        }
+        else
+        {
+            openWorkspace.Focus();
+        }
+    }
+
+    private async Task ShowWorkspaceDialogAsync(bool browseImmediately)
+    {
+        WorkspaceDialog dialog = new(
+            store,
+            cancellationToken,
+            browseOnOpen: browseImmediately);
+        await dialog.ShowDialog(this);
     }
 
     private async void OnClosing(object? sender, WindowClosingEventArgs eventArgs)
@@ -446,18 +490,22 @@ internal sealed class MainWindow : Window
                                     state.Workspaces.Registered.Any(item => item.IsActive);
             manageFramework.IsEnabled = !state.IsLoading &&
                                         state.Workspaces.Registered.Any(item => item.IsActive);
+            goalAction.IsEnabled = manageGoals.IsEnabled;
+            goalAction.Content = manageGoals.IsEnabled
+                ? "Create or select a goal"
+                : "Open a workspace first";
             DashboardSnapshot? dashboard = state.Dashboard;
             if (dashboard is not null)
             {
                 bool hasWorkspace = state.Workspaces.Registered.Any(item => item.IsActive);
                 workspace.Text = hasWorkspace
                     ? $"{dashboard.Workspace.Name}\n{dashboard.Workspace.Branch}\n{dashboard.Workspace.Trust}"
-                    : "No workspace selected\nRegister a repository to enable goals, " +
-                      "framework rules, and typed tools.";
+                    : "No workspace open\nChoose a Git-backed .NET repository to begin.";
+                manageWorkspaces.Content = hasWorkspace ? "Switch workspace…" : "Open workspace…";
                 activities.ItemsSource = dashboard.Activities
                     .Select(CreateMessageCard)
                     .ToArray();
-                providerDetails.Text = ProviderText(dashboard.Provider);
+                ToolTip.SetTip(modelPicker, ProviderText(dashboard.Provider));
                 RenderGoalInspector(state.Goals);
                 string[] models = dashboard.Provider.Models.Select(model => model.Id).ToArray();
                 modelPicker.ItemsSource = models;
@@ -490,10 +538,12 @@ internal sealed class MainWindow : Window
                 themePicker.ItemsSource = choices;
                 themePicker.SelectedItem = choices.FirstOrDefault(choice =>
                     choice.Id == appearance.PreferredThemeId.Value);
-                themeIssues.Text = appearance.Issues.Count == 0
-                    ? "All themes valid"
-                    : string.Join("\n", appearance.Issues.Select(issue =>
-                        $"⚠ {issue.SourceName}: {issue.Message}"));
+                ToolTip.SetTip(
+                    themePicker,
+                    appearance.Issues.Count == 0
+                        ? "All installed themes are valid."
+                        : string.Join("\n", appearance.Issues.Select(issue =>
+                            $"⚠ {issue.SourceName}: {issue.Message}")));
             }
             workbench?.Update(state);
         }
@@ -508,10 +558,14 @@ internal sealed class MainWindow : Window
     private void ApplyTheme()
     {
         header.Background = Brush(UiThemeColorToken.Header);
+        header.BorderBrush = Brush(UiThemeColorToken.Border);
+        header.BorderThickness = new Thickness(0, 0, 0, 1);
         navigation.Background = Brush(UiThemeColorToken.Panel);
         primary.Background = Brush(UiThemeColorToken.Editor);
         utility.Background = Brush(UiThemeColorToken.Panel);
         footer.Background = Brush(UiThemeColorToken.Header);
+        footer.BorderBrush = Brush(UiThemeColorToken.Border);
+        footer.BorderThickness = new Thickness(0, 1, 0, 0);
         Background = Brush(UiThemeColorToken.Window);
         Foreground = Brush(UiThemeColorToken.TextPrimary);
         status.RefreshTheme();

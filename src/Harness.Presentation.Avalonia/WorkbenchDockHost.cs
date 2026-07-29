@@ -34,6 +34,7 @@ internal sealed class WorkbenchDockHost
     private readonly IWorkbenchLayoutService layoutService;
     private readonly IWorkbenchDocumentPrompt documentPrompt;
     private readonly Func<AvaloniaShellState> state;
+    private readonly Func<bool, Task> manageWorkspace;
     private readonly CancellationToken cancellationToken;
     private readonly Factory factory = new();
     private readonly WorkbenchDockLayoutCodec layoutCodec;
@@ -65,6 +66,7 @@ internal sealed class WorkbenchDockHost
         TextWrapping = TextWrapping.Wrap,
     };
     private readonly TextBlock overviewDetails = new() { TextWrapping = TextWrapping.Wrap };
+    private readonly Button overviewAction = new() { Content = "Open workspace" };
     private readonly TextBox path = new();
     private readonly TextBox query = new();
     private readonly ListBox searchResults = new();
@@ -108,7 +110,8 @@ internal sealed class WorkbenchDockHost
         Control navigation,
         Control conversation,
         Control goalContext,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<bool, Task>? manageWorkspace = null)
     {
         this.runOutputService = runOutputService;
         this.inspectionService = inspectionService;
@@ -116,6 +119,7 @@ internal sealed class WorkbenchDockHost
         this.layoutService = layoutService;
         this.documentPrompt = documentPrompt;
         this.state = state;
+        this.manageWorkspace = manageWorkspace ?? (_ => Task.CompletedTask);
         this.cancellationToken = cancellationToken;
         factory.HideToolsOnClose = true;
         layoutCodec = new(factory);
@@ -213,7 +217,7 @@ internal sealed class WorkbenchDockHost
         bottom!.WithProportion(0.32);
         root = rootDock ?? throw new InvalidOperationException("Dock did not create the workbench root.");
         left.VisibleDockables = factory.CreateList<IDockable>(navigationTool!, filesTool!);
-        left.ActiveDockable = filesTool;
+        left.ActiveDockable = navigationTool;
         right.VisibleDockables = factory.CreateList<IDockable>(contextTool!, gitTool!);
         right.ActiveDockable = contextTool;
         bottom.VisibleDockables = factory.CreateList<IDockable>(conversationTool!, runOutputTool!);
@@ -266,6 +270,7 @@ internal sealed class WorkbenchDockHost
     internal Control LayoutActions { get; }
     internal Control DocumentActions { get; }
     internal ComboBox DocumentSwitcher => documentSwitcher;
+    internal Button OverviewAction => overviewAction;
     internal IDocumentDock Documents => documents;
     internal IRootDock Root => root;
     internal IFactory Factory => factory;
@@ -299,12 +304,14 @@ internal sealed class WorkbenchDockHost
         if (stored.State is WorkbenchLayoutLoadState.Missing)
         {
             layoutStatus.Text = "Default layout";
+            layoutStatus.IsVisible = false;
             return;
         }
 
         if (stored.Layout is null)
         {
             layoutStatus.Text = $"Saved layout rejected · {stored.Error ?? "invalid private state"}";
+            layoutStatus.IsVisible = true;
             return;
         }
 
@@ -315,11 +322,13 @@ internal sealed class WorkbenchDockHost
         if (restored.Layout is null || restored.Documents is null || restored.Overview is null)
         {
             layoutStatus.Text = $"Saved layout rejected · {restored.Error ?? "invalid Dock graph"}";
+            layoutStatus.IsVisible = true;
             return;
         }
 
         ApplyLayout(restored.Layout, restored.Documents, restored.Overview);
         layoutStatus.Text = "Layout restored";
+        layoutStatus.IsVisible = true;
     }
 
     internal async ValueTask SaveLayoutAsync(
@@ -329,6 +338,7 @@ internal sealed class WorkbenchDockHost
         if (captured.Payload is null)
         {
             layoutStatus.Text = $"Layout not saved · {captured.Error ?? "invalid Dock graph"}";
+            layoutStatus.IsVisible = true;
             return;
         }
 
@@ -338,6 +348,7 @@ internal sealed class WorkbenchDockHost
         layoutStatus.Text = result.Succeeded
             ? "Layout saved"
             : $"Layout not saved · {result.Error ?? "private state unavailable"}";
+        layoutStatus.IsVisible = true;
     }
 
     internal async ValueTask ResetLayoutAsync()
@@ -363,6 +374,7 @@ internal sealed class WorkbenchDockHost
         layoutStatus.Text = reset.Succeeded
             ? "Default layout restored"
             : $"Default active; stored layout not removed · {reset.Error}";
+        layoutStatus.IsVisible = true;
     }
 
     internal async ValueTask RefreshAsync()
@@ -441,8 +453,11 @@ internal sealed class WorkbenchDockHost
 
         if (active is null)
         {
-            overviewHeading.Text = "No workspace selected";
-            overviewDetails.Text = "Register and trust a Git-backed .NET repository to open real files, diffs, plans, and evidence.";
+            overviewHeading.Text = "Open a repository to get started";
+            overviewDetails.Text = "Choose a Git-backed .NET repository. Harness.NET will discover its solutions and projects before asking you to trust it.";
+            overviewAction.Content = "Open workspace";
+            overviewAction.Classes.Remove("command");
+            overviewAction.Classes.Add("primary");
             return;
         }
 
@@ -453,6 +468,9 @@ internal sealed class WorkbenchDockHost
                                (active.IsTrusted
                                    ? "Use Files or Git to open source and diff documents in this editor."
                                    : "Trust this workspace before reading repository content.");
+        overviewAction.Content = "Workspace settings";
+        overviewAction.Classes.Remove("primary");
+        overviewAction.Classes.Add("command");
     }
 
     internal ValueTask OpenFileAsync(string relativePath) =>
@@ -627,14 +645,19 @@ internal sealed class WorkbenchDockHost
 
     private Control BuildLayoutActions()
     {
-        Button save = new() { Content = "Save layout" };
+        Button save = new() { Content = "↓" };
         AutomationProperties.SetName(save, "Save current panel layout");
+        ToolTip.SetTip(save, "Save panel layout");
+        save.Classes.Add("icon");
         save.Click += async (_, _) => await SaveLayoutAsync(cancellationToken);
-        Button reset = new() { Content = "Reset layout" };
+        Button reset = new() { Content = "↺" };
         AutomationProperties.SetName(reset, "Reset panels to the default layout");
+        ToolTip.SetTip(reset, "Reset panel layout");
+        reset.Classes.Add("icon");
         reset.Click += async (_, _) => await ResetLayoutAsync();
         AutomationProperties.SetName(layoutStatus, "Workbench layout status");
         layoutStatus.Text = "Default layout";
+        layoutStatus.IsVisible = false;
         return new StackPanel
         {
             Orientation = AvaloniaOrientation.Horizontal,
@@ -1119,17 +1142,37 @@ internal sealed class WorkbenchDockHost
         return string.Join(Environment.NewLine, lines);
     }
 
-    private Control BuildOverviewDocument() => new ScrollViewer
+    private Control BuildOverviewDocument()
     {
-        Content = new StackPanel
+        overviewAction.Classes.Add("primary");
+        overviewAction.HorizontalAlignment = HorizontalAlignment.Left;
+        AutomationProperties.SetName(overviewAction, "Open or manage workspace");
+        overviewAction.Click += async (_, _) => await manageWorkspace(ActiveWorkspace() is null);
+        return new Grid
         {
-            Margin = new Thickness(30),
-            MaxWidth = 720,
-            Spacing = 14,
-            HorizontalAlignment = HorizontalAlignment.Left,
-            Children = { overviewHeading, overviewDetails },
-        },
-    };
+            Children =
+            {
+                new Border
+                {
+                    MaxWidth = 720,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Classes = { "card" },
+                    Child = new StackPanel
+                    {
+                        Spacing = 14,
+                        Children =
+                        {
+                            new TextBlock { Text = "HARNESS.NET WORKSPACE", Classes = { "eyebrow" } },
+                            overviewHeading,
+                            overviewDetails,
+                            overviewAction,
+                        },
+                    },
+                },
+            },
+        };
+    }
 
     private async ValueTask SearchAsync()
     {

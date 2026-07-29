@@ -34,6 +34,12 @@ Extend Avalonia's controls and Fluent theme with semantic Harness resources. Per
 a semantic selected-theme identifier and load bounded declarative color-token XML
 from XDG configuration. Never load user AXAML, code, external resources, or fonts.
 
+Use Avalonia's platform storage provider for desktop file and folder selection. The
+Presentation adapter may translate a platform-selected local folder into the existing
+workspace-inspection request, but storage-provider types and picker lifecycle remain
+inside Presentation. Keep an editable path fallback for desktops without a folder
+picker and never treat selection as repository trust or execution approval.
+
 The initial `AdaptiveWorkspace` and modal inspection surfaces are bootstrap
 infrastructure, not the final desktop information architecture. The v1 desktop
 requires a central multi-document editor workbench and movable tool panels as
@@ -45,6 +51,8 @@ specified by ADR 010.
 - Theme and accessibility behavior is reusable by future Harness desktop surfaces.
 - The toolkit requires its own public-API and architecture tests.
 - Missing or invalid user themes fall back safely without losing the preferred ID.
+- Native picker availability is a Presentation capability; repository inspection,
+  registration, and trust still cross the existing typed Business Logic boundary.
 - The TUI remains supported but is no longer the default interactive adapter.
 
 ## Alternatives considered

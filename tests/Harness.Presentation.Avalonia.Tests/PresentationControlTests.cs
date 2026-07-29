@@ -25,6 +25,7 @@ using Harness.UI.Avalonia;
 
 namespace Harness.Presentation.Avalonia.Tests;
 
+[Collection("Avalonia UI")]
 public sealed class PresentationControlTests
 {
     [Fact]
@@ -73,6 +74,39 @@ public sealed class PresentationControlTests
             Assert.True(editor.IsReadOnly);
             Assert.True(editor.ShowLineNumbers);
             Assert.NotNull(editor.Template);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Empty_workbench_offers_a_direct_workspace_folder_action()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            bool requested = false;
+            bool browseImmediately = false;
+            WorkbenchDockHost workbench = CreateWorkbench(
+                AvaloniaShellState.Initial with { IsLoading = false },
+                new(),
+                manageWorkspace: browse =>
+                {
+                    requested = true;
+                    browseImmediately = browse;
+                    return Task.CompletedTask;
+                });
+            Window window = new() { Width = 1280, Height = 800, Content = workbench.Control };
+            window.Show();
+            workbench.Update(AvaloniaShellState.Initial with { IsLoading = false });
+
+            Button action = workbench.OverviewAction;
+            Assert.Equal("Open workspace", action.Content);
+            Assert.Contains("primary", action.Classes);
+            action.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+
+            Assert.True(requested);
+            Assert.True(browseImmediately);
             window.Close();
         }, CancellationToken.None);
     }
@@ -984,7 +1018,8 @@ public sealed class PresentationControlTests
         DocumentService? documents = null,
         DocumentPrompt? prompt = null,
         InspectionService? inspection = null,
-        RunOutputService? runOutput = null) => new(
+        RunOutputService? runOutput = null,
+        Func<bool, Task>? manageWorkspace = null) => new(
         runOutput ?? new RunOutputService(),
         inspection ?? new InspectionService(),
         documents ?? new DocumentService(),
@@ -994,7 +1029,8 @@ public sealed class PresentationControlTests
         new TextBlock { Text = "Workspace" },
         new TextBlock { Text = "Conversation" },
         new TextBlock { Text = "Goal context" },
-        CancellationToken.None);
+        CancellationToken.None,
+        manageWorkspace);
 
     private static AvaloniaShellState TrustedShell()
     {

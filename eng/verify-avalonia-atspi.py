@@ -244,13 +244,16 @@ def stop(process: subprocess.Popen[bytes]) -> None:
 
 
 def verify_initial_accessibility(application: AtSpiApplication) -> None:
+    application.wait_for_name("Files", "page tab")
+    application.invoke("Files", "page tab")
+    application.wait_for_name("Workspace-relative file path", "entry")
+    application.wait_for_name("Search tracked workspace text", "entry")
+    application.wait_for_name("Files panel controls", "title bar")
+    application.invoke("Workspace", "page tab")
     expected = [
         ("Docked workspace workbench", "panel"),
         ("Open editor documents", "combo box"),
-        ("Workspace-relative file path", "entry"),
-        ("Search tracked workspace text", "entry"),
         ("Selected goal evidence", "list"),
-        ("Files panel controls", "title bar"),
         ("Conversation panel controls", "title bar"),
         ("Goal context panel controls", "title bar"),
         ("Resize adjacent workbench panels", "push button"),
@@ -277,6 +280,7 @@ def exercise_orca_speech(application: AtSpiApplication) -> None:
     application.invoke("Manage workspaces")
     application.wait_for_name("Manage workspaces", "frame")
     application.focus("Repository path", "entry")
+    application.focus("Browse for repository folder", "push button")
     application.focus("Inspect", "push button")
     application.focus("Close", "push button")
     application.invoke("Close")
@@ -300,6 +304,7 @@ def verify_orca_speech(debug_log: Path) -> None:
         "Workspace",
         "Manage workspaces",
         "Repository path",
+        "Browse for repository folder",
         "Inspect",
         "Close",
     ]

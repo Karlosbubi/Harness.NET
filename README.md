@@ -36,6 +36,10 @@ Git-backed .NET workspace in both Avalonia and the TUI; the TUI Workspace menu
 remains available in narrow layouts. Avalonia refreshes the conversation workspace
 context immediately after selection, registration, or trust changes and requires a
 separate confirmation before granting trust.
+The desktop's primary Open workspace actions launch the platform-native folder picker,
+then show real tracked .NET solutions and projects before registration. Manual path
+entry remains available when a desktop picker is unavailable; choosing a folder does
+not grant repository trust.
 For a trusted active workspace, Avalonia exposes real bounded tracked-text search,
 file reading in a syntax-aware editor, Git status and diff inspection, and parsed
 .NET solution/project metadata. It does not display a fabricated file tree, terminal,
