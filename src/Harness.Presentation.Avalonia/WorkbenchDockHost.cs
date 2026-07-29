@@ -661,6 +661,9 @@ internal sealed class WorkbenchDockHost
             }
         };
         UpdateDocumentSwitcher();
+        Button focusEditor = new() { Content = "Focus editor" };
+        AutomationProperties.SetName(focusEditor, "Focus the active editor document");
+        focusEditor.Click += (_, _) => FocusActiveEditor();
         StackPanel actions = new()
         {
             Orientation = AvaloniaOrientation.Horizontal,
@@ -674,6 +677,7 @@ internal sealed class WorkbenchDockHost
                     VerticalAlignment = VerticalAlignment.Center,
                 },
                 documentSwitcher,
+                focusEditor,
             },
         };
         AutomationProperties.SetName(actions, "Editor document navigation");
@@ -696,6 +700,25 @@ internal sealed class WorkbenchDockHost
         finally
         {
             renderingDocumentSwitcher = false;
+        }
+    }
+
+    private void FocusActiveEditor()
+    {
+        OwnerWindow()?.Activate();
+        if (ActiveSourceEditor is { } editor)
+        {
+            LastRequestedFocusTarget = editor;
+            if (!editor.Focus())
+            {
+                Dispatcher.UIThread.Post(() => editor.Focus());
+            }
+            return;
+        }
+
+        if (activeDocument is { } document)
+        {
+            FocusContext(document);
         }
     }
 

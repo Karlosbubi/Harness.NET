@@ -95,6 +95,8 @@ internal sealed class GoalDialog : Window
         };
         goals.MinHeight = 420;
         AutomationProperties.SetName(goals, "Workspace goals");
+        AutomationProperties.SetName(goalDetails, "Selected goal details");
+        AutomationProperties.SetName(status, "Goal operation status");
         root.Children.Add(left);
 
         Grid details = new()
@@ -468,6 +470,11 @@ internal sealed class NewGoalDialog : Window
 
     private Control BuildContent()
     {
+        AutomationProperties.SetName(title, "Goal title");
+        AutomationProperties.SetName(objective, "Goal objective");
+        AutomationProperties.SetName(reviewLimit, "Review-cycle limit");
+        AutomationProperties.SetName(remoteBudget, "Remote budget in USD");
+        AutomationProperties.SetName(validation, "New goal validation");
         StackPanel panel = new() { Margin = new Thickness(20), Spacing = 8 };
         panel.Children.Add(new TextBlock { Text = "Title" });
         panel.Children.Add(title);
@@ -574,6 +581,8 @@ internal sealed class TextEntryDialog : Window
         Width = 720;
         Height = 520;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        AutomationProperties.SetName(editor, label);
+        AutomationProperties.SetName(validation, $"{title} validation");
         Button cancel = new() { Content = "Cancel" };
         cancel.Click += (_, _) => Close();
         Button save = new() { Content = action };
@@ -627,6 +636,9 @@ internal sealed class PlanApprovalDialog : Window
             wordWrap: true,
             showLineNumbers: false);
         planContent.MinHeight = 260;
+        AutomationProperties.SetName(
+            planContent,
+            $"Plan revision {plan.Revision.Value} content");
         Button cancel = new() { Content = "Cancel" };
         cancel.Click += (_, _) => Close(false);
         Button approve = new() { Content = "Approve and create worktree" };

@@ -53,12 +53,14 @@ sizing, explicit automation names, and 200% rendered-frame scaling. A 2026-07-29
 hands-on Linux review records real wide and minimum-size empty states in
 [`docs/acceptance/docked-workbench-2026-07-29.md`](../acceptance/docked-workbench-2026-07-29.md).
 The production host is also exercised through the Linux AT-SPI accessibility bus.
-The repeatable verifier registers and trusts a temporary real repository, searches
-tracked text, opens two real source documents, switches them through an app-owned
-accessible document selector, saves and restores layout across a process restart,
-and proves corrupt-layout fallback. Its pages, tools, editor region, commands, and
-Dock chrome are exposed without generic actionable template labels. A spoken
-screen-reader pass remains required before this record can become Accepted.
+The repeatable verifier registers and trusts a temporary real repository, creates a
+goal, enters and approves a manual plan, provisions its isolated worktree, opens two
+editable real source documents, switches and focuses them through app-owned
+accessible commands, searches tracked text, saves and restores layout across a
+process restart, and proves corrupt-layout fallback. Its pages, tools, editor region,
+commands, and Dock chrome are exposed without generic actionable template labels. A
+spoken screen-reader pass and the edit-through-commit workflow tail remain required
+before this record can become Accepted.
 The bottom edge now contains distinct Conversation and Run output tools. Run output
 is a typed projection of durable Build/Test/Restore evidence with bounded stdout and
 stderr; Presentation never decodes audit JSON and no unrestricted terminal is

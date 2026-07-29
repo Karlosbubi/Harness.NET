@@ -4,6 +4,7 @@ using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
@@ -141,6 +142,13 @@ public sealed class PresentationControlTests
             documentSwitcher.SelectedIndex = 1;
             Dispatcher.UIThread.RunJobs();
             Assert.Equal("App.cs", workbench.Documents.ActiveDockable?.Title);
+            Button focusEditor = Assert.Single(
+                Assert.IsType<StackPanel>(workbench.DocumentActions).Children.OfType<Button>());
+            Assert.Equal(
+                "Focus the active editor document",
+                AutomationProperties.GetName(focusEditor));
+            focusEditor.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.Same(workbench.ActiveSourceEditor, workbench.LastRequestedFocusTarget);
             Assert.Equal(6, DurableTools(workbench.Root).Count);
             Control documentContent = Assert.IsAssignableFrom<Control>(
                 workbench.Documents.ActiveDockable?.Context);

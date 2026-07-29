@@ -84,6 +84,17 @@ class AtSpiApplication:
             raise AssertionError(f"AT-SPI did not expose{qualifier} {name!r}")
         return matches[-1]
 
+    def find_containing(self, text: str, role: str | None = None) -> AccessibleNode:
+        matches = [
+            node
+            for node in self.nodes()
+            if text in node.name and (role is None or node.role == role)
+        ]
+        if not matches:
+            qualifier = f" {role}" if role else ""
+            raise AssertionError(f"AT-SPI did not expose{qualifier} containing {text!r}")
+        return matches[-1]
+
     def wait_for(self, predicate: Callable[[list[AccessibleNode]], bool], message: str) -> None:
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
@@ -111,12 +122,24 @@ class AtSpiApplication:
         )
 
     def invoke(self, name: str, role: str = "push button") -> None:
-        node = self.find(name, role)
+        self.invoke_node(self.find(name, role))
+
+    def invoke_node(self, node: AccessibleNode) -> None:
         if ACTION not in node.interfaces:
-            raise AssertionError(f"{role} {name!r} does not expose an AT-SPI action")
+            raise AssertionError(
+                f"{node.role} {node.name!r} does not expose an AT-SPI action"
+            )
         action = dbus.Interface(self.bus.get_object(self.destination, node.path), ACTION)
         if not bool(action.DoAction(0)):
-            raise AssertionError(f"AT-SPI action failed for {role} {name!r}")
+            raise AssertionError(f"AT-SPI action failed for {node.role} {node.name!r}")
+
+    def invoke_containing(self, text: str, role: str) -> None:
+        node = self.find_containing(text, role)
+        if ACTION not in node.interfaces:
+            raise AssertionError(f"{role} containing {text!r} has no AT-SPI action")
+        action = dbus.Interface(self.bus.get_object(self.destination, node.path), ACTION)
+        if not bool(action.DoAction(0)):
+            raise AssertionError(f"AT-SPI action failed for {role} containing {text!r}")
 
     def set_text(self, name: str, value: str) -> None:
         node = self.find(name, "entry")
@@ -248,22 +271,81 @@ def register_workspace(application: AtSpiApplication, repository: Path) -> None:
     application.wait_for_name_containing("Trust: Trusted", "label")
 
 
-def verify_documents_and_search(application: AtSpiApplication) -> None:
+def create_and_approve_goal(application: AtSpiApplication) -> None:
+    application.invoke("Workspace", "page tab")
+    application.wait_for_name("Goals and plans", "push button")
+    application.invoke("Goals and plans")
+    application.wait_for_name("Goals and plans", "frame")
+    application.invoke("New goal")
+    application.wait_for_name("New goal", "frame")
+    application.set_text("Goal title", "AT-SPI representative change")
+    application.set_text(
+        "Goal objective",
+        "Add one real source change and preserve deterministic verification.",
+    )
+    application.set_text("Review-cycle limit", "2")
+    application.invoke("Create goal")
+    application.wait_for_name_containing("AT-SPI representative change — Draft", "list item")
+
+    application.invoke("Propose plan")
+    application.wait_for_name("Propose plan", "frame")
+    application.set_text(
+        "Plan content",
+        "1. Update Program.cs in the isolated goal worktree.\n"
+        "2. Build and test before requesting exact commit approval.",
+    )
+    application.invoke("Save plan")
+    application.wait_for_name_containing(
+        "AT-SPI representative change — AwaitingPlanApproval", "list item"
+    )
+
+    application.invoke("Approve plan…")
+    application.wait_for_name("Approve plan and capabilities", "frame")
+    application.invoke("Approve and create worktree")
+    application.wait_for_name_containing(
+        "AT-SPI representative change — Approved", "list item"
+    )
+    application.wait_for_name_containing("State: Approved", "label")
+    application.invoke("Close")
+
+
+def verify_documents_and_search(
+    application: AtSpiApplication, repository: Path
+) -> None:
     application.invoke("Files", "page tab")
     for path in ("Program.cs", "Representative.csproj"):
         application.set_text("Workspace-relative file path", path)
         application.invoke("Open workspace-relative file")
-        application.wait_for_name(f"Read-only source editor for {path}", "panel")
+        application.wait_for_name(f"Editable source editor for {path}", "panel")
 
-    if application.text("Open editor documents", "combo box") != "Representative.csproj · master":
+    if not application.text("Open editor documents", "combo box").startswith(
+        "Representative.csproj · "
+    ):
         raise AssertionError("the accessible document switcher did not track the active document")
 
     application.invoke("Open editor documents", "combo box")
-    application.wait_for_name("Program.cs · master", "list item")
-    application.invoke("Program.cs · master", "list item")
-    application.wait_for_name("Read-only source editor for Program.cs", "panel")
-    if application.text("Open editor documents", "combo box") != "Program.cs · master":
+    application.wait_for_name_containing("Program.cs · ", "list item")
+    application.invoke_containing("Program.cs · ", "list item")
+    application.wait_for_name("Editable source editor for Program.cs", "panel")
+    if not application.text("Open editor documents", "combo box").startswith("Program.cs · "):
         raise AssertionError("AT-SPI could not switch between real source documents")
+
+    application.wait_for_name("Save Program.cs", "push button")
+    application.invoke("Focus the active editor document")
+    worktree_lines = subprocess.check_output(
+        ["git", "-C", str(repository), "worktree", "list", "--porcelain"],
+        text=True,
+    ).splitlines()
+    worktrees = [
+        Path(line.removeprefix("worktree "))
+        for line in worktree_lines
+        if line.startswith("worktree ")
+    ]
+    goal_worktrees = [path for path in worktrees if path.resolve() != repository.resolve()]
+    if len(goal_worktrees) != 1:
+        raise AssertionError(f"expected one isolated goal worktree, found {goal_worktrees}")
+    if not (goal_worktrees[0] / "Program.cs").is_file():
+        raise AssertionError("the approved goal worktree does not contain Program.cs")
 
     application.set_text("Search tracked workspace text", "Hello")
     application.invoke("Search tracked workspace text")
@@ -347,7 +429,8 @@ def main() -> int:
             process, application = launch(executable, environment, accessibility_bus)
             verify_initial_accessibility(application)
             register_workspace(application, repository)
-            verify_documents_and_search(application)
+            create_and_approve_goal(application)
+            verify_documents_and_search(application, repository)
             application.invoke("Save current panel layout")
             application.wait_for_name("Layout saved", "label")
             stop(process)

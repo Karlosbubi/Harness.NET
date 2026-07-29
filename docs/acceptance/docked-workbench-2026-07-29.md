@@ -41,8 +41,10 @@ Linux session. With isolated XDG directories and a temporary real Git repository
 
 - registers, selects, and explicitly trusts the repository through the production
   workspace dialogs;
-- opens `Program.cs` and the project file, switches back through the accessible
-  editor-document selector, and searches real Git-tracked text;
+- creates a local-only goal, enters a manual plan, approves the plan and capabilities,
+  and proves the isolated goal worktree contains editable source;
+- opens `Program.cs` and the project file from that worktree, switches and focuses
+  them through accessible editor commands, and searches real Git-tracked text;
 - saves private layout, restarts the production process, and observes restoration;
 - replaces the private layout with an integrity failure, restarts again, and proves
   the safe default workbench remains accessible.
@@ -50,5 +52,5 @@ Linux session. With isolated XDG directories and a temporary real Git repository
 The verifier restores the session's original accessibility flags, invokes no model,
 and removes its temporary repository and XDG state. It passed on 2026-07-29.
 
-This is a checkpoint, not Task 033 completion. A spoken screen-reader pass remains
-open.
+This is a checkpoint, not Task 033 completion. A spoken screen-reader pass and the
+edit/build/test/review/exact-commit workflow tail remain open.
