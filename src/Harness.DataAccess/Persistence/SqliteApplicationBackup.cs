@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Harness.DataAccess.Configuration;
+using Harness.DataAccess.Layouts;
 using Microsoft.Data.Sqlite;
 
 namespace Harness.DataAccess.Persistence;
@@ -10,7 +11,7 @@ internal sealed class SqliteApplicationBackup(
     IApplicationPaths applicationPaths,
     TimeProvider timeProvider) : IApplicationBackup
 {
-    private const string FormatVersion = "harness-backup-v1";
+    private const string FormatVersion = "harness-backup-v2";
 
     public async ValueTask<ApplicationBackupResult> CreateAsync(
         ApplicationBackupRequest request,
@@ -59,16 +60,47 @@ internal sealed class SqliteApplicationBackup(
 
             long databaseBytes = new FileInfo(snapshotPath).Length;
             string databaseSha256 = await HashAsync(snapshotPath, cancellationToken);
+            WorkbenchLayoutStoreReadResult layout = await new FileWorkbenchLayoutStore(
+                    applicationPaths)
+                .ReadAsync(cancellationToken);
+            if (layout.Failure is not null)
+            {
+                return Failure(
+                    ApplicationBackupFailure.ArchiveCreationFailed,
+                    $"Workbench layout validation failed: {layout.Error}");
+            }
+
+            string? layoutPath = layout.Layout is null
+                ? null
+                : applicationPaths.Current.WorkbenchLayoutPath;
+            long? layoutBytes = layoutPath is null ? null : new FileInfo(layoutPath).Length;
+            string? layoutSha256 = layoutPath is null
+                ? null
+                : await HashAsync(layoutPath, cancellationToken);
             BackupManifest manifest = new(
                 FormatVersion,
                 schemaVersion,
                 createdAt,
                 databaseBytes,
-                databaseSha256);
+                databaseSha256,
+                layoutPath is null
+                    ? null
+                    : new(
+                        "workbench-layout.json",
+                        layoutBytes!.Value,
+                        layoutSha256!));
             using (ZipArchive archive = ZipFile.Open(archivePath, ZipArchiveMode.Create))
             {
                 archive.CreateEntryFromFile(snapshotPath, "harness.db",
                     CompressionLevel.Optimal);
+                if (layoutPath is not null)
+                {
+                    archive.CreateEntryFromFile(
+                        layoutPath,
+                        "workbench-layout.json",
+                        CompressionLevel.Optimal);
+                }
+
                 ZipArchiveEntry manifestEntry = archive.CreateEntry(
                     "manifest.json", CompressionLevel.Optimal);
                 await using Stream stream = manifestEntry.Open();
@@ -90,6 +122,8 @@ internal sealed class SqliteApplicationBackup(
                 new(archiveSha256),
                 new(databaseSha256),
                 new(databaseBytes),
+                layoutSha256 is null ? null : new(layoutSha256),
+                layoutBytes is null ? null : new(layoutBytes.Value),
                 new(schemaVersion),
                 createdAt,
                 Failure: null,
@@ -186,6 +220,8 @@ internal sealed class SqliteApplicationBackup(
         ArchiveSha256: null,
         DatabaseSha256: null,
         DatabaseBytes: null,
+        WorkbenchLayoutSha256: null,
+        WorkbenchLayoutBytes: null,
         SchemaVersion: null,
         CreatedAt: null,
         failure,
@@ -196,5 +232,11 @@ internal sealed class SqliteApplicationBackup(
         int SchemaVersion,
         DateTimeOffset CreatedAt,
         long DatabaseBytes,
-        string DatabaseSha256);
+        string DatabaseSha256,
+        BackupFileManifest? WorkbenchLayout);
+
+    private sealed record BackupFileManifest(
+        string Entry,
+        long Bytes,
+        string Sha256);
 }

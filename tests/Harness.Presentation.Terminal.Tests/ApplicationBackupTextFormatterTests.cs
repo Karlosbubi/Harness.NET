@@ -12,6 +12,8 @@ public sealed class ApplicationBackupTextFormatterTests
             new(new string('a', 64)),
             new(new string('b', 64)),
             new(1234),
+            new(new string('c', 64)),
+            new(456),
             new(17),
             DateTimeOffset.Parse("2026-07-29T12:00:00Z"));
 

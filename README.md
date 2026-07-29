@@ -42,9 +42,11 @@ file reading in a syntax-aware editor, Git status and diff inspection, and parse
 problem count, build result, or goal progress.
 The modal inspector has been replaced by the first Dock-based workbench: source and
 diff content open in a central document region while real workspace/search, Git,
-goal context, and conversation controls occupy tool regions. Layout persistence,
-safe source editing, full panel manipulation, adaptive/accessibility validation, and
-recorded visual acceptance tracked by ADR 010 and Tasks 028-033 remain release
+goal context, and conversation controls occupy tool regions. Panel movement, hiding,
+floating, explicit save/reset, restart restoration, corrupt-state fallback, and
+private backup/recovery are implemented without persisting transient editor content.
+Safe source editing, bounded run-output separation, adaptive/accessibility validation,
+and recorded visual acceptance tracked by ADR 010 and Tasks 028-033 remain release
 blockers.
 The Avalonia and TUI Framework surfaces show the resolved engineering rules and
 guidance with locks, provenance, privacy, and validation issues, and edit only the
@@ -168,9 +170,11 @@ absolute, new `.zip` destination:
 ```
 
 Treat the archive as sensitive: it contains persisted prompts, approvals, evidence,
-costs, and semantic state. For recovery, stop Harness.NET, verify `manifest.json`,
-extract `harness.db` into a fresh XDG data root, and start the current binary so its
-additive migrations can run. See [ADR 008](docs/decisions/008-application-state-backup.md).
+costs, semantic state, and optionally private workbench layout. For recovery, stop
+Harness.NET, verify `manifest.json`, extract `harness.db` into a fresh XDG data root
+and any recorded `workbench-layout.json` into the corresponding fresh XDG state root,
+then start the current binary so additive migrations and independent layout
+validation can run. See [ADR 008](docs/decisions/008-application-state-backup.md).
 
 The wide TUI model panel can refresh the Ollama catalog, display capabilities, and
 persist the selected conversation model. Live provider verification can be repeated

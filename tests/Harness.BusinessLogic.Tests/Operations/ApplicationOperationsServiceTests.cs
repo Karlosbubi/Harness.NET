@@ -15,6 +15,8 @@ public sealed class ApplicationOperationsServiceTests
             new(new string('a', 64)),
             new(new string('b', 64)),
             new(123),
+            new(new string('c', 64)),
+            new(456),
             new(17),
             now,
             Failure: null,
@@ -28,6 +30,7 @@ public sealed class ApplicationOperationsServiceTests
         Assert.Equal("/tmp/export.zip", result.Backup?.Archive.Value);
         Assert.Equal(17, result.Backup?.SchemaVersion.Value);
         Assert.Equal(new string('a', 64), result.Backup?.ArchiveSha256.Value);
+        Assert.Equal(new string('c', 64), result.Backup?.WorkbenchLayoutSha256?.Value);
     }
 
     private sealed class StubBackup(StoredBackupResult result) : IApplicationBackup

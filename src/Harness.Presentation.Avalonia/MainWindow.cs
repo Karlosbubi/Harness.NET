@@ -9,6 +9,7 @@ using Avalonia.Threading;
 using Harness.BusinessLogic.Appearance;
 using Harness.BusinessLogic.Dashboard;
 using Harness.BusinessLogic.Inspection;
+using Harness.BusinessLogic.Layouts;
 using Harness.UI.Avalonia;
 
 namespace Harness.Presentation.Avalonia;
@@ -18,6 +19,7 @@ internal sealed class MainWindow : Window
     private readonly AvaloniaPresentationStore store;
     private readonly HarnessThemeController themeController;
     private readonly IWorkspaceInspectionService inspectionService;
+    private readonly IWorkbenchLayoutService layoutService;
     private readonly CancellationToken cancellationToken;
     private readonly CompositeDisposable subscriptions = new();
     private readonly ItemsControl activities = new();
@@ -56,16 +58,19 @@ internal sealed class MainWindow : Window
     private WorkbenchDockHost? workbench;
     private bool suppressSelection;
     private bool loaded;
+    private bool closingAfterLayoutSave;
 
     internal MainWindow(
         AvaloniaPresentationStore store,
         HarnessThemeController themeController,
         IWorkspaceInspectionService inspectionService,
+        IWorkbenchLayoutService layoutService,
         CancellationToken cancellationToken)
     {
         this.store = store;
         this.themeController = themeController;
         this.inspectionService = inspectionService;
+        this.layoutService = layoutService;
         this.cancellationToken = cancellationToken;
         Title = "Harness.NET";
         Width = 1280;
@@ -80,6 +85,7 @@ internal sealed class MainWindow : Window
         subscriptions.Add(themeController.Snapshots.Subscribe(_ =>
             Dispatcher.UIThread.Post(ApplyTheme)));
         Opened += OnOpened;
+        Closing += OnClosing;
         Closed += (_, _) => subscriptions.Dispose();
     }
 
@@ -89,15 +95,12 @@ internal sealed class MainWindow : Window
         {
             RowDefinitions = new("56,*,28"),
         };
-        header.Child = BuildHeader();
-        Grid.SetRow(header, 0);
-        root.Children.Add(header);
-
         navigation.Child = BuildNavigation();
         primary.Child = BuildPrimary();
         utility.Child = BuildUtility();
         workbench = new(
             inspectionService,
+            layoutService,
             () => store.Current,
             navigation,
             primary,
@@ -105,6 +108,10 @@ internal sealed class MainWindow : Window
             cancellationToken);
         Grid.SetRow(workbench.Control, 1);
         root.Children.Add(workbench.Control);
+
+        header.Child = BuildHeader();
+        Grid.SetRow(header, 0);
+        root.Children.Add(header);
 
         footer.Child = BuildFooter();
         Grid.SetRow(footer, 2);
@@ -133,7 +140,7 @@ internal sealed class MainWindow : Window
 
         TextBlock center = new()
         {
-            Text = "Conversation",
+            Text = "Workbench",
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
             FontWeight = FontWeight.SemiBold,
@@ -154,6 +161,7 @@ internal sealed class MainWindow : Window
                 new TextBlock { Text = "Theme", VerticalAlignment = VerticalAlignment.Center },
                 themePicker,
                 reloadThemes,
+                workbench?.LayoutActions ?? new TextBlock(),
             },
         };
         Grid.SetColumn(actions, 2);
@@ -346,9 +354,23 @@ internal sealed class MainWindow : Window
         await store.LoadAsync(cancellationToken);
         if (workbench is not null)
         {
+            await workbench.RestoreLayoutAsync();
             await workbench.RefreshAsync();
         }
         composer.Focus();
+    }
+
+    private async void OnClosing(object? sender, WindowClosingEventArgs eventArgs)
+    {
+        if (closingAfterLayoutSave || workbench is null)
+        {
+            return;
+        }
+
+        eventArgs.Cancel = true;
+        await workbench.SaveLayoutAsync(CancellationToken.None);
+        closingAfterLayoutSave = true;
+        Close();
     }
 
     private void Render(AvaloniaShellState state)

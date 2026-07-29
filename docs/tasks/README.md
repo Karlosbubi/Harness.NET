@@ -56,11 +56,11 @@ but the end-user workflow is not complete.
 | 024 | Done | Retrieve relevant repository context | - | Eligible Git-tracked text is chunked, partitioned by embedding configuration, rebuilt, searched, and filtered by policy. |
 | 025 | Done | Use remote models under a cost cap | - | Remote use requires approval, streams through the provider boundary, and enforces estimated plus reconciled per-goal caps. |
 | 026 | Done | Operate and distribute v1.0 reliably | - | A self-contained Linux x64 release passes clean-install, migration, outage, cancellation, recovery, and representative-repository acceptance tests. |
-| 027 | In progress | Deliver the default desktop as a complete product surface | 013-026 | The conversation-first shell and modal inspector are replaced by the first real docked workbench, but editing, layout recovery, accessibility, adaptive layouts, and hands-on acceptance remain release blockers. Every visible surface must remain backed by production state, and obvious workspace and goal workflows require no mock or filler UI. |
+| 027 | In progress | Deliver the default desktop as a complete product surface | 013-026 | The conversation-first shell and modal inspector are replaced by the first real docked workbench, but editing, accessibility, adaptive layouts, and hands-on acceptance remain release blockers. Every visible surface must remain backed by production state, and obvious workspace and goal workflows require no mock or filler UI. |
 | 028 | Partial | Validate the Dock dependency and package boundary | 027 | Stable Dock 12.0.0.2 packages are pinned at the Presentation boundary, the Fluent theme loads, headless construction/file activation passes, and the Linux x64 lifecycle verifier succeeds. Keyboard/focus, floating ownership, compact behavior, and the remaining ADR 010 acceptance evidence are outstanding. |
 | 029 | Partial | Build the central document workbench | 028 | A real workspace overview and bounded source files open as center tabs; Git diff, current plan, and durable evidence entry points use production state and honest empty states. Close/activate coverage and complete multi-document acceptance remain outstanding. |
-| 030 | Partial | Deliver dockable production tool panels | 029 | Real workspace/search, source-control, goal context, and durable conversation controls now occupy Dock tool regions. User-driven move/hide/float/restore/reset, bounded run-output separation, accessibility, and compact-layout behavior remain outstanding. |
-| 031 | Planned | Persist and recover the desktop layout | 030 | A versioned validated layout persists only in private XDG state, safely repairs unknown/duplicate/off-screen panes, survives backup/recovery, and never adds repository metadata. |
+| 030 | Partial | Deliver dockable production tool panels | 029 | Real workspace/search, source-control, goal context, and durable conversation controls occupy movable, hideable, floatable tool regions with save/reset actions and restart restoration. Bounded run-output separation, keyboard/accessibility acceptance, and compact-layout behavior remain outstanding. |
+| 031 | Done | Persist and recover the desktop layout | 030 | A versioned, bounded, integrity-checked layout persists atomically in private XDG state; only known production panes survive, transient documents are omitted, duplicate/unknown state falls back safely, floating bounds are clamped, reset is immediate, and backup v2/offline recovery retain verified layout state without repository metadata. |
 | 032 | Planned | Add safe source editing semantics | 029 | Editing is enabled only for an active approved goal worktree; save uses typed compare-and-swap mutation, dirty state is real, conflicts are actionable, and close/switch requires save, discard, or cancel. |
 | 033 | Planned | Pass docked-workbench product acceptance | 030-032 | Representative wide, compact, HiDPI, keyboard-only, screen-reader, restart, corrupted-layout, and multi-document workflows pass automated checks and recorded hands-on visual review using production data or honest empty states. |
 
@@ -274,3 +274,9 @@ model provider.
   retained audit data, and a real isolated repository workflow through exact commit
   approval, while deterministic provider/cost tests exercise outages and fail-closed
   spending without using configured credentials.
+- Task 031 persists a closed, versioned Dock-layout description atomically under
+  private XDG state. Headless tests prove moved, hidden, floated, and resized panel
+  restoration; transient-document omission; unknown/duplicate graph rejection;
+  invalid-proportion normalization; off-screen bound clamping; and immediate reset.
+  Backup v2 tests and the Linux x64 lifecycle verifier prove optional layout hash
+  evidence and offline recovery without adding repository metadata.

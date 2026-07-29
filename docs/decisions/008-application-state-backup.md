@@ -17,13 +17,19 @@ ownership and recovery boundaries and must not be silently copied into an export
 ## Decision
 
 Use a versioned, non-overwriting ZIP archive for deliberate Harness.NET application-
-state backup and export. The archive contains:
+state backup and export. Format `harness-backup-v2` contains:
 
 - one consistent SQLite snapshot created through SQLite's backup API;
 - a UTF-8 JSON manifest with format version, schema version, creation time, database
   byte count, and SHA-256;
+- the bounded, integrity-checked private workbench-layout envelope when one exists,
+  with its archive entry, byte count, and SHA-256 recorded in the manifest;
 - no Secret Service values, environment credentials, logs, caches, goal worktrees,
   or user-repository content.
+
+Version-1 archives containing only SQLite and the manifest remain recoverable through
+the documented offline process. A corrupt saved layout prevents a version-2 archive
+from being published rather than silently producing incomplete recovery state.
 
 Validate the snapshot with `PRAGMA integrity_check` before publishing the archive.
 Write to a temporary sibling and atomically rename it to the user-selected destination;
@@ -36,14 +42,18 @@ recovery point cannot be created. Clean-install initialization does not create a
 empty backup.
 
 Recovery is an offline operation: extract and hash-verify the database into a fresh
-XDG data root while Harness.NET is stopped, then start the current binary so additive
-migrations run normally. Release acceptance automates this recovery path. An online
+XDG data root and the optional layout into a fresh XDG state root while Harness.NET
+is stopped, then start the current binary so additive migrations run normally and
+Presentation independently validates machine-specific layout state. Release
+acceptance automates this recovery path. An online
 restore command is intentionally excluded because replacing an active database would
 weaken process and approval safety.
 
 ## Consequences
 
 - Every real schema upgrade has a local recovery point before mutation.
+- Deliberate recovery retains a valid desktop layout without treating monitor bounds
+  or Dock structure as trusted input.
 - Deliberate exports are portable and independently verifiable but contain sensitive
   model and workflow content; Presentation must warn the user before creation.
 - Repository branches/worktrees and provider credentials retain their existing owners

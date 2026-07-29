@@ -11,6 +11,7 @@ using Dock.Model.Controls;
 using Dock.Model.Core;
 using Dock.Model.Mvvm;
 using Harness.BusinessLogic.Inspection;
+using Harness.BusinessLogic.Layouts;
 using Harness.BusinessLogic.Workspaces;
 using Harness.UI.Avalonia;
 using DockAlignment = Dock.Model.Core.Alignment;
@@ -21,17 +22,23 @@ namespace Harness.Presentation.Avalonia;
 
 internal sealed class WorkbenchDockHost
 {
-    private const string OverviewDocumentId = "document.workspace.overview";
-    private const string DiffDocumentId = "document.git.diff";
-    private const string PlanDocumentId = "document.goal.plan";
-    private const string EvidenceDocumentId = "document.goal.evidence";
-
     private readonly IWorkspaceInspectionService inspectionService;
+    private readonly IWorkbenchLayoutService layoutService;
     private readonly Func<AvaloniaShellState> state;
     private readonly CancellationToken cancellationToken;
     private readonly Factory factory = new();
-    private readonly IDocumentDock documents;
-    private readonly IDockable overviewDocument;
+    private readonly WorkbenchDockLayoutCodec layoutCodec;
+    private readonly Dictionary<string, Control> durableContexts = new(StringComparer.Ordinal);
+    private readonly TextBlock layoutStatus = new()
+    {
+        MaxWidth = 180,
+        TextTrimming = TextTrimming.CharacterEllipsis,
+        VerticalAlignment = VerticalAlignment.Center,
+    };
+    private IDocumentDock documents = null!;
+    private IDockable overviewDocument = null!;
+    private IRootDock root = null!;
+    private string defaultLayoutPayload = string.Empty;
     private readonly TextBlock overviewHeading = new()
     {
         FontSize = 22,
@@ -51,6 +58,7 @@ internal sealed class WorkbenchDockHost
 
     internal WorkbenchDockHost(
         IWorkspaceInspectionService inspectionService,
+        IWorkbenchLayoutService layoutService,
         Func<AvaloniaShellState> state,
         Control navigation,
         Control conversation,
@@ -58,74 +66,78 @@ internal sealed class WorkbenchDockHost
         CancellationToken cancellationToken)
     {
         this.inspectionService = inspectionService;
+        this.layoutService = layoutService;
         this.state = state;
         this.cancellationToken = cancellationToken;
+        factory.HideToolsOnClose = true;
+        layoutCodec = new(factory);
 
         Control files = BuildFilesTool();
         Control sourceControl = BuildSourceControlTool();
         Control context = BuildContextTool(goalContext);
         Control overviewContent = BuildOverviewDocument();
+        durableContexts.Add(WorkbenchDockIds.NavigationTool, navigation);
+        durableContexts.Add(WorkbenchDockIds.FilesTool, files);
+        durableContexts.Add(WorkbenchDockIds.ContextTool, context);
+        durableContexts.Add(WorkbenchDockIds.GitTool, sourceControl);
+        durableContexts.Add(WorkbenchDockIds.ConversationTool, conversation);
+        durableContexts.Add(WorkbenchDockIds.OverviewDocument, overviewContent);
 
         factory
             .Tool(out ITool? navigationTool, item => item
-                .WithId("tool.navigation")
+                .WithId(WorkbenchDockIds.NavigationTool)
                 .WithTitle("Workspace")
-                .WithCanClose(false)
+                .WithCanClose(true)
                 .WithContext(navigation))
             .Tool(out ITool? filesTool, item => item
-                .WithId("tool.files")
+                .WithId(WorkbenchDockIds.FilesTool)
                 .WithTitle("Files")
-                .WithCanClose(false)
+                .WithCanClose(true)
                 .WithContext(files))
             .Tool(out ITool? contextTool, item => item
-                .WithId("tool.context")
+                .WithId(WorkbenchDockIds.ContextTool)
                 .WithTitle("Goal context")
-                .WithCanClose(false)
+                .WithCanClose(true)
                 .WithContext(context))
             .Tool(out ITool? gitTool, item => item
-                .WithId("tool.git")
+                .WithId(WorkbenchDockIds.GitTool)
                 .WithTitle("Git")
-                .WithCanClose(false)
+                .WithCanClose(true)
                 .WithContext(sourceControl))
             .Tool(out ITool? conversationTool, item => item
-                .WithId("tool.conversation")
+                .WithId(WorkbenchDockIds.ConversationTool)
                 .WithTitle("Conversation")
-                .WithCanClose(false)
+                .WithCanClose(true)
                 .WithContext(conversation))
             .Document(out IDocument? overview, item => item
-                .WithId(OverviewDocumentId)
+                .WithId(WorkbenchDockIds.OverviewDocument)
                 .WithTitle("Workspace overview")
                 .WithCanClose(false)
                 .WithCanFloat(false)
                 .WithContext(overviewContent))
             .DocumentDock(out IDocumentDock? documentDock, dock => dock
-                .WithId("dock.documents")
+                .WithId(WorkbenchDockIds.Documents)
                 .WithTitle("Editor")
                 .WithIsCollapsable(false)
                 .WithCanCloseLastDockable(false)
                 .WithCanCreateDocument(false))
             .ToolDock(out IToolDock left, DockAlignment.Left, dock => dock
-                .WithId("dock.left")
-                .AppendTool(navigationTool!)
-                .AppendTool(filesTool!)
-                .WithActiveDockable(filesTool))
+                .WithId(WorkbenchDockIds.Left))
             .ToolDock(out IToolDock right, DockAlignment.Right, dock => dock
-                .WithId("dock.right")
-                .AppendTool(contextTool!)
-                .AppendTool(gitTool!)
-                .WithActiveDockable(contextTool))
+                .WithId(WorkbenchDockIds.Right))
             .ToolDock(out IToolDock bottom, DockAlignment.Bottom, dock => dock
-                .WithId("dock.bottom")
-                .AppendTool(conversationTool!)
-                .WithActiveDockable(conversationTool))
+                .WithId(WorkbenchDockIds.Bottom))
             .ProportionalDockSplitter(out IProportionalDockSplitter leftSplitter)
             .ProportionalDockSplitter(out IProportionalDockSplitter rightSplitter)
             .ProportionalDockSplitter(out IProportionalDockSplitter bottomSplitter)
             .ProportionalDock(out IProportionalDock center, DockOrientation.Vertical, dock => dock
+                .WithId(WorkbenchDockIds.Center)
                 .Add(documentDock!, bottomSplitter!, bottom!))
             .ProportionalDock(out IProportionalDock workbench, DockOrientation.Horizontal, dock => dock
+                .WithId(WorkbenchDockIds.Workbench)
                 .Add(left!, leftSplitter!, center!, rightSplitter!, right!))
-            .RootDock(out IRootDock root, dock => dock
+            .RootDock(out IRootDock rootDock, dock => dock
+                .WithId(WorkbenchDockIds.Root)
                 .Add(workbench!)
                 .WithDefaultDockable(workbench)
                 .WithActiveDockable(workbench));
@@ -135,8 +147,21 @@ internal sealed class WorkbenchDockHost
         left!.WithProportion(0.19);
         right!.WithProportion(0.22);
         bottom!.WithProportion(0.32);
-        factory.InitLayout(root!);
-        documents.AddDocument(overviewDocument);
+        root = rootDock ?? throw new InvalidOperationException("Dock did not create the workbench root.");
+        left.VisibleDockables = factory.CreateList<IDockable>(navigationTool!, filesTool!);
+        left.ActiveDockable = filesTool;
+        right.VisibleDockables = factory.CreateList<IDockable>(contextTool!, gitTool!);
+        right.ActiveDockable = contextTool;
+        bottom.VisibleDockables = factory.CreateList<IDockable>(conversationTool!);
+        bottom.ActiveDockable = conversationTool;
+        documents.VisibleDockables = factory.CreateList<IDockable>(overviewDocument);
+        documents.ActiveDockable = overviewDocument;
+        EnsureDefaultTools(left, right, bottom, "before Dock initialization");
+        factory.InitLayout(root);
+        EnsureDefaultTools(left, right, bottom, "after Dock initialization");
+        WorkbenchDockLayoutCaptureResult defaultLayout = layoutCodec.Capture(root);
+        defaultLayoutPayload = defaultLayout.Payload ?? throw new InvalidOperationException(
+            $"Dock did not create a valid default layout: {defaultLayout.Error}");
 
         Control = new DockControl
         {
@@ -144,10 +169,81 @@ internal sealed class WorkbenchDockHost
             Layout = root,
         };
         AutomationProperties.SetName(Control, "Docked workspace workbench");
+        LayoutActions = BuildLayoutActions();
     }
 
     internal DockControl Control { get; }
+    internal Control LayoutActions { get; }
     internal IDocumentDock Documents => documents;
+    internal IRootDock Root => root;
+    internal IFactory Factory => factory;
+    internal string? LayoutStatusText => layoutStatus.Text;
+
+    internal async ValueTask RestoreLayoutAsync()
+    {
+        WorkbenchLayoutLoadResult stored = await layoutService.LoadAsync(cancellationToken);
+        if (stored.State is WorkbenchLayoutLoadState.Missing)
+        {
+            layoutStatus.Text = "Default layout";
+            return;
+        }
+
+        if (stored.Layout is null)
+        {
+            layoutStatus.Text = $"Saved layout rejected · {stored.Error ?? "invalid private state"}";
+            return;
+        }
+
+        WorkbenchDockLayoutRestoreResult restored = layoutCodec.Restore(
+            stored.Layout.Value,
+            durableContexts,
+            WorkingArea());
+        if (restored.Layout is null || restored.Documents is null || restored.Overview is null)
+        {
+            layoutStatus.Text = $"Saved layout rejected · {restored.Error ?? "invalid Dock graph"}";
+            return;
+        }
+
+        ApplyLayout(restored.Layout, restored.Documents, restored.Overview);
+        layoutStatus.Text = "Layout restored";
+    }
+
+    internal async ValueTask SaveLayoutAsync(
+        CancellationToken saveCancellationToken = default)
+    {
+        WorkbenchDockLayoutCaptureResult captured = layoutCodec.Capture(root);
+        if (captured.Payload is null)
+        {
+            layoutStatus.Text = $"Layout not saved · {captured.Error ?? "invalid Dock graph"}";
+            return;
+        }
+
+        WorkbenchLayoutWriteResult result = await layoutService.SaveAsync(
+            new(captured.Payload),
+            saveCancellationToken);
+        layoutStatus.Text = result.Succeeded
+            ? "Layout saved"
+            : $"Layout not saved · {result.Error ?? "private state unavailable"}";
+    }
+
+    internal async ValueTask ResetLayoutAsync()
+    {
+        WorkbenchLayoutWriteResult reset = await layoutService.ResetAsync(cancellationToken);
+        WorkbenchDockLayoutRestoreResult restored = layoutCodec.Restore(
+            defaultLayoutPayload,
+            durableContexts,
+            WorkingArea());
+        if (restored.Layout is null || restored.Documents is null || restored.Overview is null)
+        {
+            layoutStatus.Text = $"Layout reset failed · {restored.Error ?? "invalid default layout"}";
+            return;
+        }
+
+        ApplyLayout(restored.Layout, restored.Documents, restored.Overview);
+        layoutStatus.Text = reset.Succeeded
+            ? "Default layout restored"
+            : $"Default active; stored layout not removed · {reset.Error}";
+    }
 
     internal async ValueTask RefreshAsync()
     {
@@ -277,7 +373,7 @@ internal sealed class WorkbenchDockHost
             }
 
             OpenOrReplaceDocument(
-                DiffDocumentId,
+                WorkbenchDockIds.DiffDocument,
                 $"{git.Branch} working diff",
                 CreateEditor(git.Diff, "workspace.diff", showLineNumbers: false));
             gitStatus.Text = "Opened the current bounded Git diff.";
@@ -294,7 +390,7 @@ internal sealed class WorkbenchDockHost
         }
 
         OpenOrReplaceDocument(
-            PlanDocumentId,
+            WorkbenchDockIds.PlanDocument,
             $"Plan · revision {plan.Revision.Value}",
             new ScrollViewer
             {
@@ -324,9 +420,63 @@ internal sealed class WorkbenchDockHost
         }
 
         OpenOrReplaceDocument(
-            EvidenceDocumentId,
+            WorkbenchDockIds.EvidenceDocument,
             "Workflow evidence",
             new ScrollViewer { Content = content, Padding = new Thickness(18) });
+    }
+
+    private Control BuildLayoutActions()
+    {
+        Button save = new() { Content = "Save layout" };
+        AutomationProperties.SetName(save, "Save current panel layout");
+        save.Click += async (_, _) => await SaveLayoutAsync(cancellationToken);
+        Button reset = new() { Content = "Reset layout" };
+        AutomationProperties.SetName(reset, "Reset panels to the default layout");
+        reset.Click += async (_, _) => await ResetLayoutAsync();
+        AutomationProperties.SetName(layoutStatus, "Workbench layout status");
+        layoutStatus.Text = "Default layout";
+        return new StackPanel
+        {
+            Orientation = AvaloniaOrientation.Horizontal,
+            Spacing = 6,
+            VerticalAlignment = VerticalAlignment.Center,
+            Children = { layoutStatus, save, reset },
+        };
+    }
+
+    private static void EnsureDefaultTools(
+        IToolDock left,
+        IToolDock right,
+        IToolDock bottom,
+        string stage)
+    {
+        if (left.VisibleDockables?.Count != 2 || right.VisibleDockables?.Count != 2 ||
+            bottom.VisibleDockables?.Count != 1)
+        {
+            throw new InvalidOperationException($"Dock lost the default tool panels {stage}.");
+        }
+    }
+
+    private void ApplyLayout(
+        IRootDock restored,
+        IDocumentDock restoredDocuments,
+        IDockable restoredOverview)
+    {
+        root.ExitWindows?.Execute(null);
+        root = restored;
+        documents = restoredDocuments;
+        overviewDocument = restoredOverview;
+        factory.InitLayout(root);
+        Control.Layout = root;
+        root.ShowWindows?.Execute(null);
+        ActivateOverview();
+    }
+
+    private PixelRect WorkingArea()
+    {
+        TopLevel? topLevel = TopLevel.GetTopLevel(Control);
+        return topLevel?.Screens?.ScreenFromVisual(Control)?.WorkingArea ??
+               new PixelRect(0, 0, 1920, 1080);
     }
 
     private Control BuildFilesTool()
@@ -524,7 +674,10 @@ internal sealed class WorkbenchDockHost
     private void CloseWorkspaceDocuments()
     {
         foreach (IDockable document in documents.VisibleDockables?
-                     .Where(item => !string.Equals(item.Id, OverviewDocumentId, StringComparison.Ordinal))
+                     .Where(item => !string.Equals(
+                         item.Id,
+                         WorkbenchDockIds.OverviewDocument,
+                         StringComparison.Ordinal))
                      .ToArray() ?? [])
         {
             factory.CloseDockable(document);

@@ -117,6 +117,10 @@ internal sealed class OperationsDialog : Window
         $"Archive SHA-256: {backup.ArchiveSha256.Value}",
         $"Database SHA-256: {backup.DatabaseSha256.Value}",
         $"Database bytes: {backup.DatabaseBytes.Value}",
+        backup.WorkbenchLayoutSha256 is null
+            ? "Workbench layout: not present"
+            : $"Workbench layout: {backup.WorkbenchLayoutBytes?.Value} bytes · " +
+              $"SHA-256 {backup.WorkbenchLayoutSha256.Value}",
         $"Schema version: {backup.SchemaVersion.Value}",
         $"Created: {backup.CreatedAt:O}");
 }

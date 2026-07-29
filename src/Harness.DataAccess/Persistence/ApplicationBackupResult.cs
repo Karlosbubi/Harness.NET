@@ -5,6 +5,8 @@ public sealed record ApplicationBackupResult(
     BackupSha256? ArchiveSha256,
     BackupSha256? DatabaseSha256,
     BackupByteCount? DatabaseBytes,
+    BackupSha256? WorkbenchLayoutSha256,
+    BackupByteCount? WorkbenchLayoutBytes,
     ApplicationSchemaVersion? SchemaVersion,
     DateTimeOffset? CreatedAt,
     ApplicationBackupFailure? Failure,

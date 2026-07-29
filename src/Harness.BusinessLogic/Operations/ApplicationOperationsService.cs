@@ -28,6 +28,12 @@ internal sealed class ApplicationOperationsService(IApplicationBackup backup)
             new(result.ArchiveSha256!.Value),
             new(result.DatabaseSha256!.Value),
             new(result.DatabaseBytes!.Value),
+            result.WorkbenchLayoutSha256 is null
+                ? null
+                : new(result.WorkbenchLayoutSha256.Value),
+            result.WorkbenchLayoutBytes is null
+                ? null
+                : new(result.WorkbenchLayoutBytes.Value),
             new(result.SchemaVersion!.Value),
             result.CreatedAt!.Value), Failure: null, Error: null);
     }

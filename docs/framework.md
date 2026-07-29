@@ -214,9 +214,10 @@ overlay, `AGENTS.md`, or a suitable existing documentation file.
 - Configured credentials never authorize test spending. Paid-provider checks require
   explicit user authorization and use the smallest practical bounded request.
 - Deliberate application-state backup creates a non-overwriting, integrity-checked
-  SQLite archive with schema, size, and hash evidence while excluding credentials,
-  logs, caches, worktrees, and repositories. Pending migrations create the same
-  recovery point automatically and abort if it cannot be verified.
+  version-2 archive with a consistent SQLite snapshot and optional validated private
+  workbench-layout state, each with size and hash evidence, while excluding
+  credentials, logs, caches, worktrees, and repositories. Pending migrations create
+  the same recovery point automatically and abort if it cannot be verified.
 
 ## Environment observation
 

@@ -1053,6 +1053,8 @@ public sealed class AvaloniaPresentationStoreTests
                 new(new string('d', 64)),
                 new(new string('e', 64)),
                 new(4096),
+                null,
+                null,
                 new(18),
                 DateTimeOffset.UtcNow), null, null));
         }

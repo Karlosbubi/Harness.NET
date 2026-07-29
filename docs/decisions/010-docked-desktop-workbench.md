@@ -99,8 +99,8 @@ Presentation; Business Logic and Data Access contracts do not expose them.
   explicitly rather than being represented by placeholder panels.
 - Dock dependencies remain confined to `Harness.Presentation.Avalonia`; the reusable
   `Harness.UI.Avalonia` toolkit stays application- and docking-engine-neutral.
-- Layout persistence is private application state and participates in backup and
-  recovery only after its schema and validation are implemented.
+- Layout persistence is private application state with the closed, validated schema
+  and backup/recovery contract accepted in ADR 011.
 - The desktop release gate gains interaction, accessibility, restoration, and
   visual-acceptance coverage for the workbench.
 

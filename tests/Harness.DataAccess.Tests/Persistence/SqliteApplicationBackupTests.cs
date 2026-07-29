@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using Dapper;
 using Harness.DataAccess.Configuration;
+using Harness.DataAccess.Layouts;
 using Harness.DataAccess.Persistence;
 using Microsoft.Data.Sqlite;
 
@@ -28,6 +29,8 @@ public sealed class SqliteApplicationBackupTests : IDisposable
         }
 
         string destination = Path.Combine(root, "export.zip");
+        Assert.True((await new FileWorkbenchLayoutStore(applicationPaths)
+            .WriteAsync(new("{\"Version\":1}"))).Succeeded);
         SqliteApplicationBackup backup = new(applicationPaths, new FixedTimeProvider());
 
         ApplicationBackupResult result = await backup.CreateAsync(new(new(destination)));
@@ -37,16 +40,24 @@ public sealed class SqliteApplicationBackupTests : IDisposable
         Assert.True(File.Exists(destination));
         Assert.Equal(await HashAsync(destination), result.ArchiveSha256?.Value);
         using ZipArchive archive = ZipFile.OpenRead(destination);
-        Assert.Equal(["harness.db", "manifest.json"],
+        Assert.Equal(["harness.db", "manifest.json", "workbench-layout.json"],
             archive.Entries.Select(entry => entry.FullName).Order().ToArray());
         ZipArchiveEntry manifestEntry = Assert.Single(
             archive.Entries, entry => entry.FullName == "manifest.json");
         using JsonDocument manifest = await JsonDocument.ParseAsync(manifestEntry.Open());
-        Assert.Equal("harness-backup-v1",
+        Assert.Equal("harness-backup-v2",
             manifest.RootElement.GetProperty("Format").GetString());
         Assert.Equal(18, manifest.RootElement.GetProperty("SchemaVersion").GetInt32());
         Assert.Equal(result.DatabaseSha256?.Value,
             manifest.RootElement.GetProperty("DatabaseSha256").GetString());
+        JsonElement layoutManifest = manifest.RootElement.GetProperty("WorkbenchLayout");
+        Assert.Equal("workbench-layout.json", layoutManifest.GetProperty("Entry").GetString());
+        Assert.Equal(result.WorkbenchLayoutSha256?.Value,
+            layoutManifest.GetProperty("Sha256").GetString());
+        ZipArchiveEntry layoutEntry = archive.GetEntry("workbench-layout.json")!;
+        string restoredLayout = Path.Combine(root, "restored-layout.json");
+        layoutEntry.ExtractToFile(restoredLayout);
+        Assert.Equal(result.WorkbenchLayoutSha256?.Value, await HashAsync(restoredLayout));
 
         string restored = Path.Combine(root, "restored.db");
         archive.GetEntry("harness.db")!.ExtractToFile(restored);
@@ -60,6 +71,25 @@ public sealed class SqliteApplicationBackupTests : IDisposable
 
         ApplicationBackupResult duplicate = await backup.CreateAsync(new(new(destination)));
         Assert.Equal(ApplicationBackupFailure.InvalidDestination, duplicate.Failure);
+    }
+
+    [Fact]
+    public async Task Refuses_to_publish_archive_when_private_layout_is_corrupt()
+    {
+        (ApplicationPaths paths, StubApplicationPaths applicationPaths) = Paths();
+        await new SqliteDatabaseInitializer(applicationPaths).InitializeAsync();
+        Directory.CreateDirectory(paths.StateDirectory);
+        await File.WriteAllTextAsync(paths.WorkbenchLayoutPath, "corrupt layout");
+        string destination = Path.Combine(root, "corrupt-export.zip");
+
+        ApplicationBackupResult result = await new SqliteApplicationBackup(
+                applicationPaths,
+                new FixedTimeProvider())
+            .CreateAsync(new(new(destination)));
+
+        Assert.Equal(ApplicationBackupFailure.ArchiveCreationFailed, result.Failure);
+        Assert.Contains("layout", result.Error, StringComparison.OrdinalIgnoreCase);
+        Assert.False(File.Exists(destination));
     }
 
     [Fact]

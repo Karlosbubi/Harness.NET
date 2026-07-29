@@ -68,6 +68,13 @@ database_path="$smoke_root/data/harness.net/harness.db"
 sqlite3 "$database_path" \
   "INSERT INTO conversations (id, title, model, created_at, updated_at) VALUES ('release-proof', 'Release proof', 'none', '2026-07-28T00:00:00Z', '2026-07-28T00:00:00Z');"
 backup_path="$smoke_root/harness-state.zip"
+layout_directory="$smoke_root/state/harness.net"
+layout_payload='{"Version":1}'
+layout_payload_sha=$(printf '%s' "$layout_payload" | sha256sum | cut -d ' ' -f 1)
+mkdir -p "$layout_directory"
+printf '{"Format":"harness-workbench-layout-v1","Version":1,"Payload":"{\\"Version\\":1}","PayloadSha256":"%s"}' \
+  "$layout_payload_sha" >"$layout_directory/workbench-layout.json"
+chmod 600 "$layout_directory/workbench-layout.json"
 env -i \
   PATH="$smoke_root/no-installed-tools" \
   DOTNET_ROOT="$smoke_root/no-installed-dotnet" \
@@ -79,20 +86,30 @@ env -i \
   >"$smoke_root/backup.log" 2>&1
 grep -q "Harness.NET backup created (schema 18" "$smoke_root/backup.log"
 test -f "$backup_path"
-test "$(unzip -Z1 "$backup_path" | sort | tr '\n' ' ')" = "harness.db manifest.json "
+test "$(unzip -Z1 "$backup_path" | sort | tr '\n' ' ')" = \
+  "harness.db manifest.json workbench-layout.json "
 manifest=$(unzip -p "$backup_path" manifest.json)
 expected_database_sha=$(sed -n \
   's/.*"DatabaseSha256":"\([0-9a-f]\{64\}\)".*/\1/p' <<<"$manifest")
+expected_layout_sha=$(sed -n \
+  's/.*"WorkbenchLayout":{[^}]*"Sha256":"\([0-9a-f]\{64\}\)".*/\1/p' <<<"$manifest")
 actual_database_sha=$(unzip -p "$backup_path" harness.db | sha256sum | cut -d ' ' -f 1)
+actual_layout_sha=$(unzip -p "$backup_path" workbench-layout.json | sha256sum | cut -d ' ' -f 1)
 test -n "$expected_database_sha"
+test -n "$expected_layout_sha"
 test "$actual_database_sha" = "$expected_database_sha"
-grep -q '"Format":"harness-backup-v1"' <<<"$manifest"
+test "$actual_layout_sha" = "$expected_layout_sha"
+grep -q '"Format":"harness-backup-v2"' <<<"$manifest"
 grep -q '"SchemaVersion":18' <<<"$manifest"
 
 mkdir -p "$recovery_root/config" "$recovery_root/data/harness.net" \
-  "$recovery_root/state" "$recovery_root/cache"
+  "$recovery_root/state/harness.net" "$recovery_root/cache"
 unzip -p "$backup_path" harness.db >"$recovery_root/data/harness.net/harness.db"
+unzip -p "$backup_path" workbench-layout.json \
+  >"$recovery_root/state/harness.net/workbench-layout.json"
 recovered_database="$recovery_root/data/harness.net/harness.db"
+test "$(sha256sum "$recovery_root/state/harness.net/workbench-layout.json" | cut -d ' ' -f 1)" = \
+  "$expected_layout_sha"
 test "$(sqlite3 "$recovered_database" "PRAGMA integrity_check;")" = "ok"
 test "$(sqlite3 "$recovered_database" \
   "SELECT COUNT(*) FROM conversations WHERE id='release-proof';")" = "1"
