@@ -360,6 +360,10 @@ configured or paid provider.
   colour, and an effective theme change repaints them. `eng/capture-diff-viewer.py`
   records the evidence under `docs/acceptance` from the real production host over a
   real repository working tree.
+- Task 035 replaces hand-typed backup destinations with the platform save dialog,
+  matching the workspace folder picker from Task 034. Manual entry remains for
+  desktops without a picker, and choosing an existing archive reports the
+  no-overwrite constraint immediately instead of at creation time.
 - Task 035 restructures the header bar from loose labelled fields into an IDE
   headerbar: an application mark, a title block whose subtitle reports the real
   active workspace and branch instead of a static tagline, and bordered clusters

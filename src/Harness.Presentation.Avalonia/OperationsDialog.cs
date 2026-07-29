@@ -1,5 +1,6 @@
 using System.Reactive.Linq;
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -12,8 +13,10 @@ internal sealed class OperationsDialog : Window
 {
     private readonly AvaloniaPresentationStore store;
     private readonly CancellationToken cancellationToken;
+    private readonly IBackupFilePicker filePicker;
     private readonly IDisposable subscription;
     private readonly TextBox destination = new();
+    private readonly Button browse = new() { Content = "Choose…" };
     private readonly TextBox result = new()
     {
         IsReadOnly = true,
@@ -26,10 +29,12 @@ internal sealed class OperationsDialog : Window
 
     internal OperationsDialog(
         AvaloniaPresentationStore store,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IBackupFilePicker? filePicker = null)
     {
         this.store = store;
         this.cancellationToken = cancellationToken;
+        this.filePicker = filePicker ?? new AvaloniaBackupFilePicker();
         Title = "Application operations";
         Width = 760;
         Height = 590;
@@ -38,6 +43,7 @@ internal sealed class OperationsDialog : Window
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Content = BuildContent();
         create.Click += async (_, _) => await ConfirmAndCreateAsync();
+        browse.Click += async (_, _) => await ChooseDestinationAsync();
         subscription = store.States.Subscribe(state =>
             Dispatcher.UIThread.Post(() => Render(state.Operations)));
         Closed += (_, _) => subscription.Dispose();
@@ -64,7 +70,7 @@ internal sealed class OperationsDialog : Window
                     Text = "Create a new, non-overwriting ZIP archive at an absolute path.",
                     TextWrapping = TextWrapping.Wrap,
                 },
-                destination,
+                DestinationRow(),
                 new TextBlock
                 {
                     Text = "The archive contains private prompts, workflow evidence, approvals, " +
@@ -84,6 +90,39 @@ internal sealed class OperationsDialog : Window
                 },
             },
         };
+    }
+
+    private Control DestinationRow()
+    {
+        AutomationProperties.SetName(destination, "Backup archive path");
+        AutomationProperties.SetName(browse, "Choose backup archive destination");
+        Grid row = new() { ColumnDefinitions = new("*,Auto"), ColumnSpacing = 8 };
+        row.Children.Add(destination);
+        browse.SetValue(Grid.ColumnProperty, 1);
+        row.Children.Add(browse);
+        return row;
+    }
+
+    private async Task ChooseDestinationAsync()
+    {
+        BackupFilePickerResult result = await filePicker.PickAsync(this, cancellationToken);
+        if (result.Error is { } error)
+        {
+            status.Text = error;
+            return;
+        }
+
+        if (result.File is not { } file)
+        {
+            return;
+        }
+
+        destination.Text = file.Value;
+
+        // The backup service refuses to overwrite, so say that here rather than at creation.
+        status.Text = File.Exists(file.Value)
+            ? "That archive already exists. Choose a destination that does not exist yet."
+            : string.Empty;
     }
 
     private async Task ConfirmAndCreateAsync()

@@ -21,6 +21,22 @@ namespace Harness.Presentation.Avalonia.Tests;
 [Collection("Avalonia UI")]
 public sealed class AvaloniaPresentationStoreTests
 {
+    /// <summary>Builds a store over the deterministic fakes so other suites can drive real dialogs.</summary>
+    internal static AvaloniaPresentationStore CreateStore() => new(
+        new DashboardService(),
+        new AppearanceService(),
+        new WorkspaceService(),
+        new GoalService(),
+        new GoalModelService(),
+        new RemoteCostService(),
+        new GoalWorkflowService(),
+        new SemanticIndexService(),
+        new GoalAcceptanceService(),
+        new ApplicationOperationsService(),
+        new CapabilityApprovalService(),
+        new FrameworkService(),
+        NullLogger<AvaloniaPresentationStore>.Instance);
+
     [Theory]
     [InlineData("I am **Gemma 4** 😊</blockquote>", "I am Gemma 4 😊")]
     [InlineData("# Result\n\n> Useful text", "Result\nUseful text")]
