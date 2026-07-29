@@ -291,7 +291,7 @@ internal sealed class WorkbenchDockLayoutCodec(IFactory factory)
                     $"No production context is registered for pane '{node.Id}'.");
             }
 
-            dockable.Context = context;
+            WorkbenchDockContent.Attach(dockable, context);
             bool overview = node.Id == WorkbenchDockIds.OverviewDocument;
             dockable.CanClose = !overview;
             dockable.CanFloat = !overview;

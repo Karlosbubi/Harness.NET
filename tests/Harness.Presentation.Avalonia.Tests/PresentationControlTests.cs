@@ -1,9 +1,11 @@
 using System.Diagnostics;
+using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Input;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using AvaloniaEdit;
@@ -34,7 +36,7 @@ public sealed class PresentationControlTests
     public async Task Markdown_content_renders_without_raw_provider_markup()
     {
         using HeadlessUnitTestSession session =
-            HeadlessUnitTestSession.StartNew(typeof(PresentationTestApplication));
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
         await session.Dispatch(() =>
         {
             Control content = MarkdownContentView.Create(
@@ -58,7 +60,7 @@ public sealed class PresentationControlTests
     public async Task Code_editor_loads_with_required_style_and_real_text()
     {
         using HeadlessUnitTestSession session =
-            HeadlessUnitTestSession.StartNew(typeof(PresentationTestApplication));
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
         await session.Dispatch(() =>
         {
             TextEditor editor = CodeEditorView.Create("diff --git a/App.cs b/App.cs");
@@ -77,7 +79,7 @@ public sealed class PresentationControlTests
     public async Task Docked_workbench_opens_real_workspace_file_as_center_document()
     {
         using HeadlessUnitTestSession session =
-            HeadlessUnitTestSession.StartNew(typeof(PresentationTestApplication));
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
         await session.Dispatch(() =>
         {
             WorkspaceView workspace = new(
@@ -105,10 +107,13 @@ public sealed class PresentationControlTests
                 new TextBlock { Text = "Conversation" },
                 new TextBlock { Text = "Goal context" },
                 CancellationToken.None);
-            Window window = new() { Content = workbench.Control };
+            Window window = new() { Width = 1280, Height = 800, Content = workbench.Control };
             window.Show();
             workbench.Update(shell);
+            Dispatcher.UIThread.RunJobs();
             workbench.OpenFileAsync("src/App.cs").AsTask().GetAwaiter().GetResult();
+            Dispatcher.UIThread.RunJobs();
+            using Bitmap rendered = Assert.IsAssignableFrom<Bitmap>(window.CaptureRenderedFrame());
 
             Assert.IsType<DockControl>(workbench.Control);
             Assert.Equal(
@@ -119,6 +124,7 @@ public sealed class PresentationControlTests
                 workbench.Documents.ActiveDockable?.Context);
             TextEditor editor = Assert.Single(
                 documentContent.GetVisualDescendants().OfType<TextEditor>());
+            Assert.Contains(editor, window.GetVisualDescendants().OfType<TextEditor>());
             Assert.Equal("namespace Example;", editor.Text);
             Assert.True(editor.IsReadOnly);
             Assert.NotNull(workbench.Control.Template);
@@ -130,7 +136,7 @@ public sealed class PresentationControlTests
     public async Task Approved_goal_document_tracks_real_dirty_state_and_saves_with_its_baseline()
     {
         using HeadlessUnitTestSession session =
-            HeadlessUnitTestSession.StartNew(typeof(PresentationTestApplication));
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
         await session.Dispatch(() =>
         {
             AvaloniaShellState shell = ApprovedGoalShell();
@@ -181,7 +187,7 @@ public sealed class PresentationControlTests
     public async Task Dirty_document_switch_requires_cancel_or_discard_before_activation()
     {
         using HeadlessUnitTestSession session =
-            HeadlessUnitTestSession.StartNew(typeof(PresentationTestApplication));
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
         await session.Dispatch(() =>
         {
             AvaloniaShellState shell = ApprovedGoalShell();
@@ -214,7 +220,7 @@ public sealed class PresentationControlTests
     public async Task Dock_tab_activation_cannot_bypass_dirty_document_decisions()
     {
         using HeadlessUnitTestSession session =
-            HeadlessUnitTestSession.StartNew(typeof(PresentationTestApplication));
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
         await session.Dispatch(() =>
         {
             AvaloniaShellState shell = ApprovedGoalShell();
@@ -248,7 +254,7 @@ public sealed class PresentationControlTests
     public async Task Save_conflict_requires_explicit_overwrite_and_retries_against_the_observed_version()
     {
         using HeadlessUnitTestSession session =
-            HeadlessUnitTestSession.StartNew(typeof(PresentationTestApplication));
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
         await session.Dispatch(() =>
         {
             AvaloniaShellState shell = ApprovedGoalShell();
@@ -298,7 +304,7 @@ public sealed class PresentationControlTests
     public async Task Dirty_close_and_application_exit_honor_save_discard_cancel_decisions()
     {
         using HeadlessUnitTestSession session =
-            HeadlessUnitTestSession.StartNew(typeof(PresentationTestApplication));
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
         await session.Dispatch(() =>
         {
             AvaloniaShellState shell = ApprovedGoalShell();
@@ -339,7 +345,7 @@ public sealed class PresentationControlTests
     public async Task Dock_close_chrome_cannot_remove_a_dirty_document_without_a_decision()
     {
         using HeadlessUnitTestSession session =
-            HeadlessUnitTestSession.StartNew(typeof(PresentationTestApplication));
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
         await session.Dispatch(() =>
         {
             AvaloniaShellState shell = ApprovedGoalShell();
@@ -370,7 +376,7 @@ public sealed class PresentationControlTests
     public async Task Approved_goal_source_and_diff_share_context_and_keep_document_identity()
     {
         using HeadlessUnitTestSession session =
-            HeadlessUnitTestSession.StartNew(typeof(PresentationTestApplication));
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
         await session.Dispatch(() =>
         {
             AvaloniaShellState shell = ApprovedGoalShell();
@@ -415,7 +421,7 @@ public sealed class PresentationControlTests
     public async Task Representative_multi_project_tabs_retain_cached_editors_during_switching()
     {
         using HeadlessUnitTestSession session =
-            HeadlessUnitTestSession.StartNew(typeof(PresentationTestApplication));
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
         await session.Dispatch(() =>
         {
             WorkbenchDockHost workbench = CreateWorkbench(
@@ -468,7 +474,7 @@ public sealed class PresentationControlTests
     public async Task Run_output_tool_renders_only_typed_durable_execution_evidence()
     {
         using HeadlessUnitTestSession session =
-            HeadlessUnitTestSession.StartNew(typeof(PresentationTestApplication));
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
         await session.Dispatch(() =>
         {
             DateTimeOffset now = DateTimeOffset.UtcNow;
@@ -534,10 +540,186 @@ public sealed class PresentationControlTests
     }
 
     [Fact]
+    public async Task Compact_viewport_collapses_tools_and_keyboard_commands_restore_access()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            WorkbenchDockHost workbench = CreateWorkbench(ApprovedGoalShell(), new());
+            Window window = new() { Width = 800, Height = 600, Content = workbench.Control };
+            window.Show();
+            window.Activate();
+            Dispatcher.UIThread.RunJobs();
+            workbench.ApplyViewport(800, 600);
+
+            IToolDock left = Find<IToolDock>(workbench.Root, WorkbenchDockIds.Left);
+            IToolDock right = Find<IToolDock>(workbench.Root, WorkbenchDockIds.Right);
+            IToolDock bottom = Find<IToolDock>(workbench.Root, WorkbenchDockIds.Bottom);
+            Assert.True(workbench.IsCompactViewport);
+            Assert.False(left.IsExpanded);
+            Assert.False(right.IsExpanded);
+            Assert.False(bottom.IsExpanded);
+            Assert.True(left.MaxWidth <= 76);
+            Assert.True(right.MaxWidth <= 76);
+            Assert.True(bottom.MaxHeight <= 84);
+            Assert.All(left.VisibleDockables!, item =>
+                Assert.False(Assert.IsAssignableFrom<Control>(item.Context).IsVisible));
+            Assert.All(right.VisibleDockables!, item =>
+                Assert.False(Assert.IsAssignableFrom<Control>(item.Context).IsVisible));
+            Assert.All(bottom.VisibleDockables!, item =>
+                Assert.False(Assert.IsAssignableFrom<Control>(item.Context).IsVisible));
+
+            workbench.Control.RaiseEvent(new KeyEventArgs
+            {
+                RoutedEvent = InputElement.KeyDownEvent,
+                Key = Key.G,
+                KeyModifiers = KeyModifiers.Control | KeyModifiers.Shift,
+            });
+            Assert.True(right.IsExpanded);
+            Assert.Equal(WorkbenchDockIds.GitTool, right.ActiveDockable?.Id);
+            Assert.All(right.VisibleDockables!, item =>
+                Assert.True(Assert.IsAssignableFrom<Control>(item.Context).IsVisible));
+
+            workbench.Control.RaiseEvent(new KeyEventArgs
+            {
+                RoutedEvent = InputElement.KeyDownEvent,
+                Key = Key.J,
+                KeyModifiers = KeyModifiers.Control,
+            });
+            Assert.True(bottom.IsExpanded);
+            Assert.Equal(WorkbenchDockIds.RunOutputTool, bottom.ActiveDockable?.Id);
+            Assert.All(bottom.VisibleDockables!, item =>
+                Assert.True(Assert.IsAssignableFrom<Control>(item.Context).IsVisible));
+
+            workbench.Control.RaiseEvent(new KeyEventArgs
+            {
+                RoutedEvent = InputElement.KeyDownEvent,
+                Key = Key.F6,
+            });
+            Dispatcher.UIThread.RunJobs();
+            Assert.True(left.IsExpanded);
+            Assert.Equal(WorkbenchDockIds.FilesTool, left.ActiveDockable?.Id);
+            Assert.All(left.VisibleDockables!, item =>
+                Assert.True(Assert.IsAssignableFrom<Control>(item.Context).IsVisible));
+            Assert.True(workbench.LastRequestedFocusTarget?.Focusable);
+
+            workbench.ApplyViewport(1280, 800);
+            Assert.False(workbench.IsCompactViewport);
+            Assert.True(left.IsExpanded);
+            Assert.True(right.IsExpanded);
+            Assert.True(bottom.IsExpanded);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Floating_tools_use_the_originating_dock_window_as_owner()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            WorkbenchDockHost workbench = CreateWorkbench(TrustedShell(), new());
+            Window owner = new() { Content = workbench.Control };
+            owner.Show();
+            IDockable git = Find<IDockable>(workbench.Root, WorkbenchDockIds.GitTool);
+
+            workbench.Factory.FloatDockable(git);
+
+            IDockWindow floating = Assert.Single(workbench.Root.Windows!);
+            Assert.Equal(DockWindowOwnerMode.DockableWindow, floating.OwnerMode);
+            Assert.False(floating.ShowInTaskbar);
+            IToolDock floatingDock = Assert.IsAssignableFrom<IToolDock>(floating.Layout?.ActiveDockable);
+            Assert.Same(git, floatingDock.ActiveDockable);
+            owner.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Workbench_renders_at_two_hundred_percent_without_changing_logical_layout()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            WorkbenchDockHost workbench = CreateWorkbench(ApprovedGoalShell(), new());
+            Window window = new() { Width = 1280, Height = 800, Content = workbench.Control };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            Size logicalSize = window.ClientSize;
+            using Bitmap normal = Assert.IsAssignableFrom<Bitmap>(
+                window.CaptureRenderedFrame());
+
+            window.SetRenderScaling(2.0);
+            Dispatcher.UIThread.RunJobs();
+            using Bitmap highDpi = Assert.IsAssignableFrom<Bitmap>(
+                window.CaptureRenderedFrame());
+
+            Assert.Equal(logicalSize, window.ClientSize);
+            Assert.Equal(normal.PixelSize.Width * 2, highDpi.PixelSize.Width);
+            Assert.Equal(normal.PixelSize.Height * 2, highDpi.PixelSize.Height);
+            Assert.Equal(logicalSize.Width, workbench.Control.Bounds.Width);
+            Assert.Equal(logicalSize.Height, workbench.Control.Bounds.Height);
+            IToolDock left = Find<IToolDock>(workbench.Root, WorkbenchDockIds.Left);
+            IToolDock right = Find<IToolDock>(workbench.Root, WorkbenchDockIds.Right);
+            IToolDock bottom = Find<IToolDock>(workbench.Root, WorkbenchDockIds.Bottom);
+            Assert.True(left.IsExpanded);
+            Assert.True(right.IsExpanded);
+            Assert.True(bottom.IsExpanded);
+            Assert.False(left.IsEmpty);
+            Assert.False(right.IsEmpty);
+            Assert.False(bottom.IsEmpty);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Workbench_actions_and_editors_have_explicit_accessible_names()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            WorkbenchDockHost workbench = CreateWorkbench(
+                ApprovedGoalShell(),
+                new(),
+                new() { Editable = true });
+            Window window = new() { Content = workbench.Control };
+            window.Show();
+            workbench.OpenFileAsync("src/App.cs").AsTask().GetAwaiter().GetResult();
+
+            Control[] contexts =
+            [
+                Assert.IsAssignableFrom<Control>(
+                    Find<IDockable>(workbench.Root, WorkbenchDockIds.FilesTool).Context),
+                Assert.IsAssignableFrom<Control>(
+                    Find<IDockable>(workbench.Root, WorkbenchDockIds.GitTool).Context),
+                Assert.IsAssignableFrom<Control>(
+                    Find<IDockable>(workbench.Root, WorkbenchDockIds.ContextTool).Context),
+                Assert.IsAssignableFrom<Control>(
+                    Find<IDockable>(workbench.Root, WorkbenchDockIds.RunOutputTool).Context),
+                workbench.LayoutActions,
+                Assert.IsAssignableFrom<Control>(workbench.Documents.ActiveDockable?.Context),
+            ];
+            Control[] interactive = contexts
+                .SelectMany(context => context.GetVisualDescendants().OfType<Control>())
+                .Where(item => item is Button or TextBox or ListBox or TextEditor)
+                .ToArray();
+
+            Assert.NotEmpty(interactive);
+            Assert.All(interactive, item => Assert.False(
+                string.IsNullOrWhiteSpace(AutomationProperties.GetName(item)),
+                $"{item.GetType().Name} has no explicit accessible name."));
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
     public async Task Layout_reset_cannot_drop_a_dirty_source_buffer()
     {
         using HeadlessUnitTestSession session =
-            HeadlessUnitTestSession.StartNew(typeof(PresentationTestApplication));
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
         await session.Dispatch(() =>
         {
             AvaloniaShellState shell = ApprovedGoalShell();
@@ -571,7 +753,7 @@ public sealed class PresentationControlTests
     public async Task Workbench_layout_round_trips_moved_hidden_and_floating_production_panels()
     {
         using HeadlessUnitTestSession session =
-            HeadlessUnitTestSession.StartNew(typeof(PresentationTestApplication));
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
         await session.Dispatch(() =>
         {
             AvaloniaShellState shell = TrustedShell();
@@ -648,7 +830,7 @@ public sealed class PresentationControlTests
     public async Task Workbench_rejects_unknown_and_duplicate_layout_and_reset_restores_known_default()
     {
         using HeadlessUnitTestSession session =
-            HeadlessUnitTestSession.StartNew(typeof(PresentationTestApplication));
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
         await session.Dispatch(() =>
         {
             AvaloniaShellState shell = TrustedShell();

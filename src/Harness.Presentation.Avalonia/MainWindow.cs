@@ -2,6 +2,7 @@ using System.Reactive.Linq;
 using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -59,6 +60,21 @@ internal sealed class MainWindow : Window
     private readonly Border primary = new();
     private readonly Border utility = new();
     private readonly Border footer = new();
+    private readonly TextBlock brandDetail = new()
+    {
+        Text = "Local-first agent workspace",
+        FontSize = 11,
+    };
+    private readonly TextBlock modelLabel = new()
+    {
+        Text = "Model",
+        VerticalAlignment = VerticalAlignment.Center,
+    };
+    private readonly TextBlock themeLabel = new()
+    {
+        Text = "Theme",
+        VerticalAlignment = VerticalAlignment.Center,
+    };
     private WorkbenchDockHost? workbench;
     private bool suppressSelection;
     private bool loaded;
@@ -87,6 +103,11 @@ internal sealed class MainWindow : Window
         MinHeight = 600;
         Content = BuildContent();
         WireInteractions();
+        SizeChanged += (_, _) =>
+        {
+            UpdateResponsiveChrome(Bounds.Width);
+            workbench?.ApplyViewport(Bounds.Width, Bounds.Height);
+        };
 
         subscriptions.Add(store.States.Subscribe(state =>
             Dispatcher.UIThread.Post(() => Render(state))));
@@ -101,7 +122,7 @@ internal sealed class MainWindow : Window
     {
         Grid root = new()
         {
-            RowDefinitions = new("56,*,28"),
+            RowDefinitions = new("Auto,*,28"),
         };
         navigation.Child = BuildNavigation();
         primary.Child = BuildPrimary();
@@ -121,6 +142,7 @@ internal sealed class MainWindow : Window
         root.Children.Add(workbench.Control);
 
         header.Child = BuildHeader();
+        header.MinHeight = 56;
         Grid.SetRow(header, 0);
         root.Children.Add(header);
 
@@ -134,7 +156,7 @@ internal sealed class MainWindow : Window
     {
         Grid grid = new()
         {
-            ColumnDefinitions = new("Auto,*,Auto"),
+            ColumnDefinitions = new("Auto,*"),
             Margin = new(14, 8),
             ColumnSpacing = 16,
         };
@@ -144,42 +166,50 @@ internal sealed class MainWindow : Window
             Children =
             {
                 new TextBlock { Text = "Harness.NET", FontSize = 17, FontWeight = FontWeight.SemiBold },
-                new TextBlock { Text = "Local-first agent workspace", FontSize = 11 },
+                brandDetail,
             },
         };
         grid.Children.Add(title);
-
-        TextBlock center = new()
-        {
-            Text = "Workbench",
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-            FontWeight = FontWeight.SemiBold,
-        };
-        Grid.SetColumn(center, 1);
-        grid.Children.Add(center);
 
         StackPanel actions = new()
         {
             Orientation = Orientation.Horizontal,
             Spacing = 8,
+            HorizontalAlignment = HorizontalAlignment.Right,
             VerticalAlignment = VerticalAlignment.Center,
             Children =
             {
-                new TextBlock { Text = "Model", VerticalAlignment = VerticalAlignment.Center },
+                modelLabel,
                 modelPicker,
                 refreshProvider,
-                new TextBlock { Text = "Theme", VerticalAlignment = VerticalAlignment.Center },
+                themeLabel,
                 themePicker,
                 reloadThemes,
                 workbench?.LayoutActions ?? new TextBlock(),
             },
         };
-        Grid.SetColumn(actions, 2);
-        grid.Children.Add(actions);
+        ScrollViewer actionScroller = new()
+        {
+            Content = actions,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        };
+        AutomationProperties.SetName(actionScroller, "Workbench commands");
+        Grid.SetColumn(actionScroller, 1);
+        grid.Children.Add(actionScroller);
         AutomationProperties.SetName(modelPicker, "Conversation model");
         AutomationProperties.SetName(themePicker, "Color theme");
+        modelPicker.MinWidth = 120;
+        themePicker.MinWidth = 100;
         return grid;
+    }
+
+    private void UpdateResponsiveChrome(double width)
+    {
+        bool compact = width > 0 && width < 1024;
+        brandDetail.IsVisible = !compact;
+        modelLabel.IsVisible = !compact;
+        themeLabel.IsVisible = !compact;
     }
 
     private Control BuildNavigation()

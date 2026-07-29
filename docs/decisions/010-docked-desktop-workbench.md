@@ -28,8 +28,8 @@ proved against Harness.NET's pinned Avalonia version before adoption is accepted
 
 ## Compatibility checkpoint
 
-The first implementation checkpoint pins `Dock.Avalonia`,
-`Dock.Avalonia.Themes.Fluent`, and `Dock.Model.Mvvm` at stable version `12.0.0.2`.
+The implementation checkpoint pins `Dock.Avalonia`,
+`Dock.Avalonia.Themes.Fluent`, and `Dock.Model.Avalonia` at stable version `12.0.0.2`.
 The three packages are published from the same Dock source revision, expose .NET 10
 assets, and restore beside Avalonia 12.1.0 and AvaloniaEdit 12.0.0. Dock remains a
 Presentation-only dependency; no Dock contract crosses into Business Logic, Data
@@ -47,9 +47,13 @@ one Business Logic-owned original/approved-worktree context. Source and diff doc
 open, refresh, activation, close, and identity retention pass headless checks. The
 deliberate cache policy retains each open source editor and replaces bounded diff
 content on refresh; an 18-document, six-project scenario with 1,800 tab switches
-completed in 278 ms on 2026-07-29 under headless execution. Complete keyboard/focus
-traversal, floating-window ownership, compact layout, scaling, and
-assistive-technology behavior remain required before this record can become Accepted.
+completed in 278 ms on 2026-07-29 under headless execution. Deterministic checks now
+cover keyboard shortcuts and focus targets, floating-window ownership, compact
+sizing, explicit automation names, and 200% rendered-frame scaling. A 2026-07-29
+hands-on Linux review records real wide and minimum-size empty states in
+[`docs/acceptance/docked-workbench-2026-07-29.md`](../acceptance/docked-workbench-2026-07-29.md).
+A hands-on screen-reader pass and the complete Task 033 workflow matrix remain
+required before this record can become Accepted.
 The bottom edge now contains distinct Conversation and Run output tools. Run output
 is a typed projection of durable Build/Test/Restore evidence with bounded stdout and
 stderr; Presentation never decodes audit JSON and no unrestricted terminal is
@@ -61,8 +65,10 @@ Use Dock as the preferred docking engine, subject to a narrow compatibility and
 publish spike. Do not build a Harness-specific drag/drop docking engine unless that
 spike records a concrete blocker and this decision is amended.
 
-Prefer Dock's framework-neutral Avalonia model and collection-backed document/tool
-templates. Do not introduce ReactiveUI merely to integrate docking: the existing
+Use Dock's Avalonia model inside Avalonia Presentation so every tool and document
+implements Dock's rendered `IToolContent` or `IDocumentContent` contract. A plain
+MVVM `Context` is not a rendered content contract and is insufficient for this
+control integration. Do not introduce ReactiveUI merely to integrate docking: the existing
 Rx.NET presentation store remains responsible for reducing asynchronous Business
 Logic snapshots into immutable application state. Dock owns only desktop layout,
 active-document, and panel interaction state.
@@ -98,10 +104,11 @@ Presentation; Business Logic and Data Access contracts do not expose them.
 
 ## Acceptance before changing status
 
-- Pin a mutually compatible stable package set for Avalonia 12.1 and .NET 10.
+- Pin a mutually compatible stable package set for Avalonia 12.1 and .NET 10. **Met.**
 - Verify Fluent-theme token overrides, keyboard/focus behavior, screen-reader names,
-  scaling, floating-window ownership, and compact-layout fallback.
-- Verify headless construction plus Linux x64 single-file publishing.
+  scaling, floating-window ownership, and compact-layout fallback. **Automated checks
+  and wide/compact hands-on review met; hands-on screen-reader validation remains.**
+- Verify headless construction plus Linux x64 single-file publishing. **Met.**
 - Demonstrate open/activate/close for real source and diff documents without fake
   defaults and without leaking Dock types across the Presentation boundary. **Met.**
 - Measure startup and tab-switch behavior with a representative multi-project

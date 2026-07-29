@@ -1,7 +1,7 @@
 using Avalonia.Automation;
 using Avalonia.Controls;
 using AvaloniaEdit;
-using Dock.Model.Mvvm.Controls;
+using Dock.Model.Avalonia.Controls;
 using Harness.BusinessLogic.Documents;
 
 namespace Harness.Presentation.Avalonia;

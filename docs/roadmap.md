@@ -137,10 +137,9 @@ workflow boundaries without replaying uncertain calls.
   backup/export, and recovery acceptance coverage.
 - Complete hands-on Avalonia usability and visual-quality acceptance across the
   production workspace, goal, evidence, and recovery workflows.
-- Replace the conversation-first shell with the ADR 010 docked workbench: a real
-  central document editor plus movable explorer/search, Git, goal/activity,
-  conversation, and bounded-output tools. Persist and recover the validated layout
-  only in private XDG state.
+- Complete the ADR 010 workbench acceptance matrix, including hands-on screen-reader
+  and representative restart/corruption/multi-document workflows. The real central
+  editor, production tool docks, and private validated layout recovery are implemented.
 - Add other platforms or gRPC only through existing Business Logic contracts when a
   concrete workflow justifies them.
 

@@ -1,11 +1,12 @@
 using Avalonia;
+using Avalonia.Headless;
 using Avalonia.Markup.Xaml.Styling;
 using Avalonia.Themes.Fluent;
 using Dock.Avalonia.Themes.Fluent;
 
 namespace Harness.Presentation.Avalonia.Tests;
 
-public sealed class PresentationTestApplication : Application
+public class PresentationTestApplication : Application
 {
     public override void Initialize()
     {
@@ -16,4 +17,16 @@ public sealed class PresentationTestApplication : Application
             Source = new Uri("avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml"),
         });
     }
+}
+
+public static class RenderingTestAppBuilder
+{
+    public static AppBuilder BuildAvaloniaApp() =>
+        AppBuilder.Configure<PresentationTestApplication>()
+            .UseSkia()
+            .UseHeadless(new AvaloniaHeadlessPlatformOptions
+            {
+                UseHeadlessDrawing = false,
+                ShouldRenderOnUIThread = true,
+            });
 }

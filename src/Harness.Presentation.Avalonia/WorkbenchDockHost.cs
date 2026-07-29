@@ -5,12 +5,13 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using AvaloniaEdit;
 using Dock.Avalonia.Controls;
 using Dock.Model;
+using Dock.Model.Avalonia;
 using Dock.Model.Controls;
 using Dock.Model.Core;
-using Dock.Model.Mvvm;
 using Harness.BusinessLogic.Documents;
 using Harness.BusinessLogic.Evidence;
 using Harness.BusinessLogic.Goals;
@@ -45,6 +46,9 @@ internal sealed class WorkbenchDockHost
         VerticalAlignment = VerticalAlignment.Center,
     };
     private IDocumentDock documents = null!;
+    private IToolDock leftTools = null!;
+    private IToolDock rightTools = null!;
+    private IToolDock bottomTools = null!;
     private IDockable overviewDocument = null!;
     private IRootDock root = null!;
     private string defaultLayoutPayload = string.Empty;
@@ -77,6 +81,14 @@ internal sealed class WorkbenchDockHost
     private bool runOutputBusy;
     private bool suppressDocumentActivation;
     private bool resolvingDocumentTransition;
+    private bool adaptiveLeftCollapsed;
+    private bool adaptiveRightCollapsed;
+    private bool adaptiveBottomCollapsed;
+    private double expandedLeftProportion = 0.19;
+    private double expandedRightProportion = 0.22;
+    private double expandedBottomProportion = 0.32;
+    private bool viewportInitialized;
+    private int focusRegionIndex = -1;
     private IDockable? activeDocument;
 
     internal WorkbenchDockHost(
@@ -158,11 +170,17 @@ internal sealed class WorkbenchDockHost
                 .WithCanCloseLastDockable(false)
                 .WithCanCreateDocument(false))
             .ToolDock(out IToolDock left, DockAlignment.Left, dock => dock
-                .WithId(WorkbenchDockIds.Left))
+                .WithId(WorkbenchDockIds.Left)
+                .WithIsExpanded(true)
+                .WithAutoHide(false))
             .ToolDock(out IToolDock right, DockAlignment.Right, dock => dock
-                .WithId(WorkbenchDockIds.Right))
+                .WithId(WorkbenchDockIds.Right)
+                .WithIsExpanded(true)
+                .WithAutoHide(false))
             .ToolDock(out IToolDock bottom, DockAlignment.Bottom, dock => dock
-                .WithId(WorkbenchDockIds.Bottom))
+                .WithId(WorkbenchDockIds.Bottom)
+                .WithIsExpanded(true)
+                .WithAutoHide(false))
             .ProportionalDockSplitter(out IProportionalDockSplitter leftSplitter)
             .ProportionalDockSplitter(out IProportionalDockSplitter rightSplitter)
             .ProportionalDockSplitter(out IProportionalDockSplitter bottomSplitter)
@@ -179,6 +197,9 @@ internal sealed class WorkbenchDockHost
                 .WithActiveDockable(workbench));
 
         documents = documentDock ?? throw new InvalidOperationException("Dock did not create the document region.");
+        leftTools = left;
+        rightTools = right;
+        bottomTools = bottom;
         overviewDocument = overview ?? throw new InvalidOperationException("Dock did not create the overview document.");
         left!.WithProportion(0.19);
         right!.WithProportion(0.22);
@@ -192,12 +213,30 @@ internal sealed class WorkbenchDockHost
         bottom.ActiveDockable = conversationTool;
         documents.VisibleDockables = factory.CreateList<IDockable>(overviewDocument);
         documents.ActiveDockable = overviewDocument;
+        WorkbenchDockContent.Attach(navigationTool!, navigation);
+        WorkbenchDockContent.Attach(filesTool!, files);
+        WorkbenchDockContent.Attach(contextTool!, context);
+        WorkbenchDockContent.Attach(gitTool!, sourceControl);
+        WorkbenchDockContent.Attach(conversationTool!, conversation);
+        WorkbenchDockContent.Attach(runOutputTool!, runOutput);
+        WorkbenchDockContent.Attach(overviewDocument, overviewContent);
         EnsureDefaultTools(left, right, bottom, "before Dock initialization");
         factory.InitLayout(root);
         EnsureDefaultTools(left, right, bottom, "after Dock initialization");
+        left.IsExpanded = true;
+        right.IsExpanded = true;
+        bottom.IsExpanded = true;
         activeDocument = overviewDocument;
         factory.ActiveDockableChanged += OnActiveDockableChanged;
         factory.DockableClosed += OnDockableClosed;
+        factory.WindowAdded += (_, args) =>
+        {
+            if (args.Window is { } window)
+            {
+                window.OwnerMode = DockWindowOwnerMode.DockableWindow;
+                window.ShowInTaskbar = false;
+            }
+        };
         WorkbenchDockLayoutCaptureResult defaultLayout = layoutCodec.Capture(root);
         defaultLayoutPayload = defaultLayout.Payload ?? throw new InvalidOperationException(
             $"Dock did not create a valid default layout: {defaultLayout.Error}");
@@ -208,6 +247,8 @@ internal sealed class WorkbenchDockHost
             Layout = root,
         };
         AutomationProperties.SetName(Control, "Docked workspace workbench");
+        Control.KeyDown += OnWorkbenchKeyDown;
+        Control.SizeChanged += (_, _) => ApplyViewport(Control.Bounds.Width, Control.Bounds.Height);
         LayoutActions = BuildLayoutActions();
     }
 
@@ -217,6 +258,8 @@ internal sealed class WorkbenchDockHost
     internal IRootDock Root => root;
     internal IFactory Factory => factory;
     internal string? LayoutStatusText => layoutStatus.Text;
+    internal bool IsCompactViewport { get; private set; }
+    internal Control? LastRequestedFocusTarget { get; private set; }
     internal int SourceDocumentCount => sourceDocuments.Count;
     internal TextEditor? ActiveSourceEditor => activeDocument?.Id is { } id &&
                                                sourceDocuments.TryGetValue(id, out SourceDocumentSession? session)
@@ -611,10 +654,111 @@ internal sealed class WorkbenchDockHost
         root = restored;
         documents = restoredDocuments;
         overviewDocument = restoredOverview;
+        leftTools = FindDockable<IToolDock>(root, WorkbenchDockIds.Left);
+        rightTools = FindDockable<IToolDock>(root, WorkbenchDockIds.Right);
+        bottomTools = FindDockable<IToolDock>(root, WorkbenchDockIds.Bottom);
+        SetDockContentVisibility(leftTools, visible: true);
+        SetDockContentVisibility(rightTools, visible: true);
+        SetDockContentVisibility(bottomTools, visible: true);
+        adaptiveLeftCollapsed = false;
+        adaptiveRightCollapsed = false;
+        adaptiveBottomCollapsed = false;
         factory.InitLayout(root);
         Control.Layout = root;
         root.ShowWindows?.Execute(null);
         ActivateOverview();
+        viewportInitialized = true;
+        ApplyViewport(Control.Bounds.Width, Control.Bounds.Height);
+    }
+
+    internal void ApplyViewport(double width, double height)
+    {
+        bool compact = width > 0 && width < 1024;
+        bool narrow = width > 0 && width < 840;
+        bool shortViewport = height > 0 && height < 700;
+        IsCompactViewport = compact || shortViewport;
+        if (!viewportInitialized && width > 0 && height > 0)
+        {
+            leftTools.IsExpanded = !narrow;
+            rightTools.IsExpanded = !compact;
+            bottomTools.IsExpanded = !(compact || shortViewport);
+            if (narrow)
+            {
+                leftTools.Proportion = 0.06;
+                leftTools.CollapsedProportion = 0.06;
+                leftTools.MaxWidth = 76;
+                SetDockContentVisibility(leftTools, visible: false);
+            }
+            if (compact)
+            {
+                rightTools.Proportion = 0.06;
+                rightTools.CollapsedProportion = 0.06;
+                rightTools.MaxWidth = 76;
+                SetDockContentVisibility(rightTools, visible: false);
+            }
+            if (compact || shortViewport)
+            {
+                bottomTools.Proportion = 0.08;
+                bottomTools.CollapsedProportion = 0.08;
+                bottomTools.MaxHeight = 84;
+                SetDockContentVisibility(bottomTools, visible: false);
+            }
+            adaptiveLeftCollapsed = narrow;
+            adaptiveRightCollapsed = compact;
+            adaptiveBottomCollapsed = compact || shortViewport;
+            viewportInitialized = true;
+            return;
+        }
+
+        SetAdaptiveExpansion(
+            leftTools, narrow, 0.06, constrainWidth: true,
+            ref adaptiveLeftCollapsed, ref expandedLeftProportion);
+        SetAdaptiveExpansion(
+            rightTools, compact, 0.06, constrainWidth: true,
+            ref adaptiveRightCollapsed, ref expandedRightProportion);
+        SetAdaptiveExpansion(
+            bottomTools, compact || shortViewport, 0.08, constrainWidth: false,
+            ref adaptiveBottomCollapsed, ref expandedBottomProportion);
+    }
+
+    private static void SetAdaptiveExpansion(
+        IToolDock dock,
+        bool collapse,
+        double collapsedProportion,
+        bool constrainWidth,
+        ref bool adaptivelyCollapsed,
+        ref double expandedProportion)
+    {
+        if (collapse && !adaptivelyCollapsed)
+        {
+            if (double.IsFinite(dock.Proportion) && dock.Proportion > 0)
+            {
+                expandedProportion = dock.Proportion;
+            }
+            dock.Proportion = collapsedProportion;
+            dock.CollapsedProportion = collapsedProportion;
+            if (constrainWidth)
+            {
+                dock.MaxWidth = 76;
+            }
+            else
+            {
+                dock.MaxHeight = 84;
+            }
+            SetDockContentVisibility(dock, visible: false);
+            dock.IsExpanded = false;
+            adaptivelyCollapsed = true;
+        }
+        else if (!collapse && adaptivelyCollapsed)
+        {
+            dock.Proportion = expandedProportion;
+            dock.CollapsedProportion = expandedProportion;
+            dock.MaxWidth = double.PositiveInfinity;
+            dock.MaxHeight = double.PositiveInfinity;
+            SetDockContentVisibility(dock, visible: true);
+            dock.IsExpanded = true;
+            adaptivelyCollapsed = false;
+        }
     }
 
     private PixelRect WorkingArea()
@@ -636,6 +780,7 @@ internal sealed class WorkbenchDockHost
         path.PlaceholderText = "Relative file path";
         AutomationProperties.SetName(path, "Workspace-relative file path");
         Button open = new() { Content = "Open" };
+        AutomationProperties.SetName(open, "Open workspace-relative file");
         open.Click += async (_, _) => await OpenFileAsync(path.Text ?? string.Empty);
         path.KeyDown += async (_, args) =>
         {
@@ -654,6 +799,7 @@ internal sealed class WorkbenchDockHost
         query.PlaceholderText = "Search tracked text";
         AutomationProperties.SetName(query, "Search tracked workspace text");
         Button search = new() { Content = "Search" };
+        AutomationProperties.SetName(search, "Search tracked workspace text");
         search.Click += async (_, _) => await SearchAsync();
         query.KeyDown += async (_, args) =>
         {
@@ -700,8 +846,10 @@ internal sealed class WorkbenchDockHost
             Spacing = 6,
         };
         Button refresh = new() { Content = "Refresh" };
+        AutomationProperties.SetName(refresh, "Refresh Git working-tree state");
         refresh.Click += async (_, _) => await RefreshGitAsync();
         Button openDiff = new() { Content = "Open diff" };
+        AutomationProperties.SetName(openDiff, "Open bounded Git working-tree diff");
         openDiff.Click += async (_, _) => await OpenDiffAsync();
         actions.Children.Add(refresh);
         actions.Children.Add(openDiff);
@@ -734,8 +882,10 @@ internal sealed class WorkbenchDockHost
             Spacing = 6,
         };
         Button plan = new() { Content = "Open plan" };
+        AutomationProperties.SetName(plan, "Open selected goal plan document");
         plan.Click += (_, _) => OpenPlan();
         Button evidence = new() { Content = "Open evidence" };
+        AutomationProperties.SetName(evidence, "Open selected goal workflow evidence document");
         evidence.Click += (_, _) => OpenEvidence();
         actions.Children.Add(plan);
         actions.Children.Add(evidence);
@@ -974,11 +1124,11 @@ internal sealed class WorkbenchDockHost
         {
             Id = id,
             Title = SourceDocumentTitle(view),
-            Context = content,
             Factory = factory,
             CanClose = true,
             CanFloat = true,
         };
+        WorkbenchDockContent.Attach(document, content);
         SourceDocumentSession session = new(
             document,
             editor,
@@ -1356,7 +1506,7 @@ internal sealed class WorkbenchDockHost
         if (existing is not null)
         {
             existing.Title = title;
-            existing.Context = content;
+            WorkbenchDockContent.Attach(existing, content);
             factory.SetActiveDockable(existing);
             return existing;
         }
@@ -1368,6 +1518,7 @@ internal sealed class WorkbenchDockHost
             .WithCanFloat(true)
             .WithContext(content));
         IDocument created = document ?? throw new InvalidOperationException("Dock did not create the document.");
+        WorkbenchDockContent.Attach(created, content);
         documents.AddDocument(created);
         factory.SetActiveDockable(created);
         return created;
@@ -1433,6 +1584,185 @@ internal sealed class WorkbenchDockHost
     private static string DiffDocumentId(WorkbenchWorkspaceContext context) =>
         $"{WorkbenchDockIds.DiffDocument}.{context.WorkspaceId.Value}." +
         (context.GoalId?.Value ?? "original");
+
+    private void OnWorkbenchKeyDown(object? sender, KeyEventArgs args)
+    {
+        if (args.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Shift) &&
+            args.Key is Key.E)
+        {
+            args.Handled = ActivateTool(WorkbenchDockIds.FilesTool);
+        }
+        else if (args.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Shift) &&
+                 args.Key is Key.G)
+        {
+            args.Handled = ActivateTool(WorkbenchDockIds.GitTool);
+        }
+        else if (args.KeyModifiers == KeyModifiers.Control && args.Key is Key.J)
+        {
+            args.Handled = ActivateTool(WorkbenchDockIds.RunOutputTool);
+        }
+        else if (args.Key is Key.F6 && args.KeyModifiers is KeyModifiers.None)
+        {
+            args.Handled = FocusNextRegion();
+        }
+    }
+
+    private bool ActivateTool(string id)
+    {
+        IDockable? tool = FindDockable(root, id);
+        if (tool is null && factory.RestoreDockable(id) is { } restored)
+        {
+            tool = restored;
+        }
+
+        if (tool is null)
+        {
+            return false;
+        }
+
+        if (tool.Owner is IToolDock owner)
+        {
+            RestoreAdaptiveProportion(owner);
+            owner.IsExpanded = true;
+        }
+
+        factory.SetActiveDockable(tool);
+        FocusContext(tool);
+        return true;
+    }
+
+    private void RestoreAdaptiveProportion(IToolDock owner)
+    {
+        if (ReferenceEquals(owner, leftTools) && adaptiveLeftCollapsed)
+        {
+            owner.Proportion = expandedLeftProportion;
+            owner.CollapsedProportion = expandedLeftProportion;
+            owner.MaxWidth = double.PositiveInfinity;
+            SetDockContentVisibility(owner, visible: true);
+            adaptiveLeftCollapsed = false;
+        }
+        else if (ReferenceEquals(owner, rightTools) && adaptiveRightCollapsed)
+        {
+            owner.Proportion = expandedRightProportion;
+            owner.CollapsedProportion = expandedRightProportion;
+            owner.MaxWidth = double.PositiveInfinity;
+            SetDockContentVisibility(owner, visible: true);
+            adaptiveRightCollapsed = false;
+        }
+        else if (ReferenceEquals(owner, bottomTools) && adaptiveBottomCollapsed)
+        {
+            owner.Proportion = expandedBottomProportion;
+            owner.CollapsedProportion = expandedBottomProportion;
+            owner.MaxHeight = double.PositiveInfinity;
+            SetDockContentVisibility(owner, visible: true);
+            adaptiveBottomCollapsed = false;
+        }
+    }
+
+    private static void SetDockContentVisibility(IToolDock dock, bool visible)
+    {
+        foreach (IDockable item in dock.VisibleDockables ?? [])
+        {
+            if (item.Context is Control content)
+            {
+                content.IsVisible = visible;
+            }
+        }
+    }
+
+    private bool FocusNextRegion()
+    {
+        string[] regions =
+        [
+            WorkbenchDockIds.FilesTool,
+            WorkbenchDockIds.OverviewDocument,
+            WorkbenchDockIds.GitTool,
+            WorkbenchDockIds.RunOutputTool,
+        ];
+        focusRegionIndex = (focusRegionIndex + 1) % regions.Length;
+        if (regions[focusRegionIndex] == WorkbenchDockIds.OverviewDocument)
+        {
+            IDockable target = documents.ActiveDockable ?? overviewDocument;
+            factory.SetActiveDockable(target);
+            FocusContext(target);
+            return true;
+        }
+
+        return ActivateTool(regions[focusRegionIndex]);
+    }
+
+    private void FocusContext(IDockable dockable)
+    {
+        if (dockable.Context is not Control context)
+        {
+            return;
+        }
+
+        Control? target = context.Focusable
+            ? context
+            : context.GetVisualDescendants()
+                .OfType<Control>()
+                .FirstOrDefault(item => item.Focusable && item.IsEffectivelyVisible);
+        LastRequestedFocusTarget = target;
+        if (target is not null && !target.Focus())
+        {
+            Dispatcher.UIThread.Post(() => target.Focus());
+        }
+    }
+
+    private static T FindDockable<T>(IDockable root, string id)
+        where T : class, IDockable =>
+        FindDockable(root, id) as T ?? throw new InvalidOperationException(
+            $"The Dock graph is missing required element '{id}'.");
+
+    private static IDockable? FindDockable(IDockable root, string id)
+    {
+        HashSet<IDockable> visited = new(ReferenceEqualityComparer.Instance);
+        Stack<IDockable> pending = new();
+        pending.Push(root);
+        while (pending.TryPop(out IDockable? current))
+        {
+            if (!visited.Add(current))
+            {
+                continue;
+            }
+
+            if (current.Id == id)
+            {
+                return current;
+            }
+
+            if (current is IDock dock)
+            {
+                foreach (IDockable child in dock.VisibleDockables ?? [])
+                {
+                    pending.Push(child);
+                }
+            }
+
+            if (current is IRootDock rootDock)
+            {
+                foreach (IDockable child in (rootDock.HiddenDockables ?? [])
+                             .Concat(rootDock.LeftPinnedDockables ?? [])
+                             .Concat(rootDock.RightPinnedDockables ?? [])
+                             .Concat(rootDock.TopPinnedDockables ?? [])
+                             .Concat(rootDock.BottomPinnedDockables ?? []))
+                {
+                    pending.Push(child);
+                }
+
+                foreach (IDockWindow window in rootDock.Windows ?? [])
+                {
+                    if (window.Layout is not null)
+                    {
+                        pending.Push(window.Layout);
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
 
     private async ValueTask RunAsync(Func<ValueTask> operation)
     {

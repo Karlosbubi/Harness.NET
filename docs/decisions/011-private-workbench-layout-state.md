@@ -71,6 +71,9 @@ manual recovery process.
   off-screen floating state, and immediate reset.
 - Dock types remain confined to Avalonia Presentation and no repository metadata is
   created.
+- The live graph uses Dock's Avalonia content model so restored panes regain real
+  rendered controls; the persisted DTO still contains only closed layout data and
+  never serializes Avalonia controls, content factories, or Dock runtime objects.
 - Backup tests and the Linux x64 release verifier prove optional layout inclusion,
   manifest integrity, offline extraction, and safe startup after recovery.
 - Keyboard-accessible save/reset commands and an honest recovery status are visible

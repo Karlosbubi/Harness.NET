@@ -4,7 +4,7 @@
     <PackageReference Include="Avalonia.Desktop" />
     <PackageReference Include="Dock.Avalonia" />
     <PackageReference Include="Dock.Avalonia.Themes.Fluent" />
-    <PackageReference Include="Dock.Model.Mvvm" />
+    <PackageReference Include="Dock.Model.Avalonia" />
     <PackageReference Include="Markdig" />
     <PackageReference Include="Microsoft.Extensions.Logging" />
     <PackageReference Include="System.Reactive" />
