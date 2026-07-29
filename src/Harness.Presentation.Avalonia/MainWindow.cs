@@ -9,6 +9,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Harness.BusinessLogic.Appearance;
+using Harness.BusinessLogic.Agents;
 using Harness.BusinessLogic.Dashboard;
 using Harness.BusinessLogic.Documents;
 using Harness.BusinessLogic.Evidence;
@@ -16,6 +17,7 @@ using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Layouts;
 using Harness.BusinessLogic.Workspaces;
+using Harness.BusinessLogic.Workflows;
 using Harness.UI.Avalonia;
 
 namespace Harness.Presentation.Avalonia;
@@ -856,6 +858,29 @@ internal sealed class MainWindow : Window
             });
         }
 
+        IReadOnlyList<ConversationWorkflowAction> actions =
+            ConversationWorkflowActionProjector.Project(item, store.Current.Goals);
+        if (actions.Count > 0)
+        {
+            StackPanel actionRow = new()
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 8,
+                Margin = new Thickness(0, 4, 0, 0),
+            };
+            foreach (ConversationWorkflowAction action in actions)
+            {
+                Button button = new() { Content = action.Label };
+                button.Classes.Add(action.IsPrimary ? "primary" : "command");
+                button.IsEnabled = !store.Current.Goals.IsBusy &&
+                                   !store.Current.Goals.IsWorkflowRunning;
+                AutomationProperties.SetName(button, action.Label);
+                button.Click += async (_, _) => await ExecuteWorkflowActionAsync(action.Kind);
+                actionRow.Children.Add(button);
+            }
+            content.Children.Add(actionRow);
+        }
+
         Border card = new()
         {
             Classes = { "workflow-card" },
@@ -868,6 +893,113 @@ internal sealed class MainWindow : Window
         AutomationProperties.SetAccessibilityView(card, AccessibilityView.Content);
         return card;
     }
+
+    private async Task ExecuteWorkflowActionAsync(ConversationWorkflowActionKind action)
+    {
+        GoalView? goal = store.Current.Goals.SelectedGoal;
+        if (goal is null)
+        {
+            return;
+        }
+
+        switch (action)
+        {
+            case ConversationWorkflowActionKind.StartPlanning:
+                await StartPlanningAsync(goal);
+                break;
+            case ConversationWorkflowActionKind.ApprovePlan:
+                await ApprovePlanAsync(goal);
+                break;
+            case ConversationWorkflowActionKind.RequestPlanChanges:
+                await RequestPlanChangesAsync(goal);
+                break;
+            case ConversationWorkflowActionKind.ContinueRun:
+                await ContinueRunAsync(goal);
+                break;
+            case ConversationWorkflowActionKind.CancelRun:
+                store.CancelGoalWorkflow();
+                break;
+        }
+    }
+
+    private async Task StartPlanningAsync(GoalView goal)
+    {
+        OutputLimitsDialog dialog = new(
+            "Generate goal plan",
+            ["Lead maximum output tokens"],
+            GoalPresentationFormatter.StartDisclosure(store.Current.Goals),
+            [DefaultOutputMaximum(AgentRole.Lead)]);
+        await dialog.ShowDialog(this);
+        if (dialog.Result is { Length: 1 } limits)
+        {
+            await store.StartGoalWorkflowAsync(
+                goal.Id,
+                new(limits[0]),
+                cancellationToken);
+        }
+    }
+
+    private async Task ApprovePlanAsync(GoalView goal)
+    {
+        if (store.Current.Goals.CurrentPlan is not { } plan)
+        {
+            return;
+        }
+
+        PlanApprovalDialog dialog = new(goal, plan);
+        if (await dialog.ShowDialog<bool>(this))
+        {
+            await store.DecidePlanAsync(
+                goal.Id,
+                PlanDecision.Approve,
+                reason: null,
+                cancellationToken);
+        }
+    }
+
+    private async Task RequestPlanChangesAsync(GoalView goal)
+    {
+        TextEntryDialog dialog = new(
+            "Request plan changes",
+            "Required reason",
+            "Request changes",
+            "A reason is required.");
+        await dialog.ShowDialog(this);
+        if (dialog.Result is { } reason)
+        {
+            await store.DecidePlanAsync(
+                goal.Id,
+                PlanDecision.Deny,
+                reason,
+                cancellationToken);
+        }
+    }
+
+    private async Task ContinueRunAsync(GoalView goal)
+    {
+        OutputLimitsDialog dialog = new(
+            "Continue production run",
+            ["Implementer maximum output tokens", "Reviewer maximum output tokens"],
+            GoalPresentationFormatter.ResumeDisclosure(goal, store.Current.Goals),
+            [
+                DefaultOutputMaximum(AgentRole.Implementer),
+                DefaultOutputMaximum(AgentRole.Reviewer),
+            ]);
+        await dialog.ShowDialog(this);
+        if (dialog.Result is { Length: 2 } limits)
+        {
+            await store.ResumeGoalWorkflowAsync(
+                goal.Id,
+                new(limits[0]),
+                new(limits[1]),
+                cancellationToken);
+        }
+    }
+
+    private int DefaultOutputMaximum(AgentRole role) =>
+        store.Current.Settings.AgentDefaults?.Roles
+            .FirstOrDefault(item => item.Role == role)
+            ?.MaximumOutputTokens.Value ?? 2048;
 
     private Control CreateMessageCard(ActivityItem item)
     {

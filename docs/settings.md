@@ -42,6 +42,7 @@ Existing plan, workflow, evidence, Restore, commit, and handoff records project 
 immutable read-only conversation cards. With no selected goal, the composer creates a
 private draft directly from the objective only after workspace trust, using three
 review cycles and no remote budget or provider call. Existing goals appear as explicit
-inline Continue choices. The next increment moves workflow progression and typed
-authority actions into those cards, while plan, spend, Restore, destructive,
-budget-extension, and exact-commit decisions remain explicit goal-bound actions.
+inline Continue choices. Plan generation, approval/change requests,
+production continuation, and cancellation are delivered with their bounded-call
+disclosures and focused confirmation. Spend, Restore, destructive, budget-extension,
+and exact-commit decisions remain explicit goal-bound actions for the next increment.

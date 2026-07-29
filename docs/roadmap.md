@@ -163,13 +163,14 @@ of Stage 3 below.
   schema-19 role/provider/model/output defaults; unavailable categories are explicit;
   and remote authority remains goal-bound. `docs/settings.md` records ownership.
   The next increment is also present: durable goal, plan, run, task, evidence,
-  capability/Restore, and exact-commit records now project into immutable read-only
-  conversation cards with explicit normal and degraded states. Commands have not yet
-  moved, so this projection does not alter authority. The composer now creates a
+  capability/Restore, and exact-commit records now project into immutable conversation
+  cards with explicit normal and degraded states. The composer now creates a
   selected private draft from the user's first objective in a trusted workspace with
   conservative review defaults, no remote budget, and no model call; existing goals
-  are offered as inline Continue choices. Workflow progression and consequential
-  decisions remain the next chat migration increment.
+  are offered as inline Continue choices. Typed plan generation, approve/change,
+  production continuation, and cancellation actions sit on their matching cards and
+  retain bounded-call disclosures and focused confirmation. Remaining capability,
+  Restore, budget, destructive, and exact-commit decisions are the next migration.
 - Build the ADR 012 in-process Roslyn service behind replaceable semantic contracts.
   Begin with its SDK/MSBuild/self-contained-publish compatibility checkpoint.
   Versioned live buffers then surface syntax, compiler, and configured analyzer

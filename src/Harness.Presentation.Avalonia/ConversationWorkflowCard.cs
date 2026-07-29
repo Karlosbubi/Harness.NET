@@ -41,6 +41,68 @@ internal sealed record ConversationWorkflowCard(
     string? Details,
     int Order);
 
+internal enum ConversationWorkflowActionKind
+{
+    StartPlanning,
+    ApprovePlan,
+    RequestPlanChanges,
+    ContinueRun,
+    CancelRun,
+}
+
+internal sealed record ConversationWorkflowAction(
+    ConversationWorkflowActionKind Kind,
+    string Label,
+    bool IsPrimary);
+
+internal static class ConversationWorkflowActionProjector
+{
+    internal static IReadOnlyList<ConversationWorkflowAction> Project(
+        ConversationWorkflowCard card,
+        GoalManagementState goals)
+    {
+        GoalView? goal = goals.SelectedGoal;
+        if (goal is null)
+        {
+            return [];
+        }
+
+        if (card.Kind is ConversationWorkflowCardKind.Plan)
+        {
+            if (card.State is ConversationWorkflowCardState.Unavailable &&
+                goal.State is GoalState.Draft or GoalState.NeedsPlanRevision)
+            {
+                return [new(ConversationWorkflowActionKind.StartPlanning, "Generate plan", true)];
+            }
+
+            if (goals.CurrentPlan?.State is PlanState.Pending)
+            {
+                return
+                [
+                    new(ConversationWorkflowActionKind.ApprovePlan, "Approve plan", true),
+                    new(ConversationWorkflowActionKind.RequestPlanChanges, "Request changes", false),
+                ];
+            }
+        }
+
+        if (goals.Workflow is { } workflow && card.Id == $"run.{workflow.Id.Value}")
+        {
+            if (workflow.State is GoalWorkflowState.Running)
+            {
+                return [new(ConversationWorkflowActionKind.CancelRun, "Cancel run", false)];
+            }
+
+            if (workflow.State is GoalWorkflowState.AwaitingPlanApproval &&
+                goal.State is GoalState.Approved)
+            {
+                return [new(ConversationWorkflowActionKind.ContinueRun, "Continue run", true)];
+            }
+        }
+
+        return [];
+    }
+}
+
 internal static class ConversationWorkflowProjector
 {
     internal static IReadOnlyList<ConversationWorkflowCard> Project(

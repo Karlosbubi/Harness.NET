@@ -70,6 +70,46 @@ public sealed class PresentationControlTests
     }
 
     [Fact]
+    public void Workflow_actions_expose_only_the_current_plan_decision()
+    {
+        AvaloniaShellState shell = ApprovedGoalShell();
+        GoalView draft = shell.Goals.SelectedGoal! with { State = GoalState.Draft };
+        GoalManagementState draftState = shell.Goals with
+        {
+            Items = [draft],
+            CurrentPlan = null,
+        };
+        ConversationWorkflowCard missingPlan = Assert.Single(
+            ConversationWorkflowProjector.Project(draftState),
+            card => card.Kind is ConversationWorkflowCardKind.Plan);
+
+        Assert.Equal(
+            ConversationWorkflowActionKind.StartPlanning,
+            Assert.Single(ConversationWorkflowActionProjector.Project(missingPlan, draftState)).Kind);
+
+        PlanView pendingPlan = new(
+            new("plan-1"),
+            draft.Id,
+            new(1),
+            "1. Implement\n2. Verify",
+            PlanState.Pending,
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow);
+        GoalManagementState pendingState = draftState with { CurrentPlan = pendingPlan };
+        ConversationWorkflowCard planCard = Assert.Single(
+            ConversationWorkflowProjector.Project(pendingState),
+            card => card.Kind is ConversationWorkflowCardKind.Plan);
+
+        Assert.Equal(
+            [
+                ConversationWorkflowActionKind.ApprovePlan,
+                ConversationWorkflowActionKind.RequestPlanChanges,
+            ],
+            ConversationWorkflowActionProjector.Project(planCard, pendingState)
+                .Select(action => action.Kind));
+    }
+
+    [Fact]
     public void Settings_search_matches_stable_categories_and_related_terms()
     {
         Assert.Equal(7, SettingsCatalog.All.Count);
