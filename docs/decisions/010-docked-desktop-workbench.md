@@ -38,10 +38,14 @@ Access, or the reusable presentation toolkit.
 A code-first layout now constructs successfully under Avalonia Headless with the
 Dock Fluent theme, and a focused interaction check opens a real bounded
 `WorkspaceFileView` in AvaloniaEdit while retaining and activating center document
-tabs. The complete Linux x64 lifecycle verifier also passes with the Dock assemblies
-inside the self-contained publication. Keyboard/focus traversal, floating-window
-ownership, compact layout, assistive-technology behavior, restoration, and measured
-multi-document performance remain required before this record can become Accepted.
+tabs. Approved goals now open the same path from their isolated worktree with an exact
+content baseline; headless checks cover real dirty state, compare-and-swap save and
+conflict recovery, Dock tab switching, close, layout reset, and exit decisions. The
+complete Linux x64 lifecycle verifier also passes with the Dock assemblies inside the
+self-contained publication. Complete keyboard/focus traversal, floating-window
+ownership, compact layout, assistive-technology behavior, diff-document lifecycle,
+and measured multi-document performance remain required before this record can become
+Accepted.
 
 ## Proposed decision
 
@@ -69,11 +73,14 @@ diagnostic counts, diffs, test results, branches, progress, or activity. An
 unrestricted terminal remains prohibited; the bottom output tool presents bounded
 typed execution evidence only.
 
-Source documents initially open read-only from `WorkspaceFileView`. Editing and save
-commands become available only when they can target the active approved goal
-worktree through typed compare-and-swap mutation contracts. Dirty indicators must
-represent actual unsaved content. Closing or switching a dirty document requires an
-explicit save/discard/cancel decision.
+Source documents open read-only from the original workspace when no approved goal is
+selected. When the selected goal has an active approved worktree, the document opens
+from that worktree with an exact content hash and editing/save commands become
+available through typed compare-and-swap mutation contracts. Truncated content stays
+read-only. Dirty indicators represent actual unsaved content. Closing, switching,
+resetting layout, changing workspace, or exiting with a dirty document requires an
+explicit save/discard/cancel decision; external changes require explicit reload,
+overwrite/recreate, or keep-editing conflict resolution.
 
 Persist only a versioned, validated desktop-layout description in Harness.NET's
 private XDG state. Never write layout metadata into a user repository. Reject or
@@ -95,8 +102,9 @@ Presentation; Business Logic and Data Access contracts do not expose them.
 ## Consequences
 
 - The modal workspace inspector has been removed. Its real file/search/Git behavior
-  now lives in the workbench; incomplete layout and editing behavior remains tracked
-  explicitly rather than being represented by placeholder panels.
+  and approved-worktree editing now live in the workbench; remaining interaction and
+  acceptance gaps stay tracked explicitly rather than being represented by
+  placeholder panels.
 - Dock dependencies remain confined to `Harness.Presentation.Avalonia`; the reusable
   `Harness.UI.Avalonia` toolkit stays application- and docking-engine-neutral.
 - Layout persistence is private application state with the closed, validated schema

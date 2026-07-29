@@ -3,6 +3,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml.Styling;
 using Avalonia.Themes.Fluent;
 using Dock.Avalonia.Themes.Fluent;
+using Harness.BusinessLogic.Documents;
 using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Layouts;
 using Harness.UI.Avalonia;
@@ -13,6 +14,7 @@ internal sealed class HarnessApplication(
     AvaloniaPresentationStore store,
     HarnessThemeController themeController,
     IWorkspaceInspectionService inspectionService,
+    IWorkbenchDocumentService documentService,
     IWorkbenchLayoutService layoutService,
     CancellationToken cancellationToken) : Application
 {
@@ -36,6 +38,7 @@ internal sealed class HarnessApplication(
                 store,
                 themeController,
                 inspectionService,
+                documentService,
                 layoutService,
                 cancellationToken);
             desktop.MainWindow = MainWindow;

@@ -45,7 +45,11 @@ diff content open in a central document region while real workspace/search, Git,
 goal context, and conversation controls occupy tool regions. Panel movement, hiding,
 floating, explicit save/reset, restart restoration, corrupt-state fallback, and
 private backup/recovery are implemented without persisting transient editor content.
-Safe source editing, bounded run-output separation, adaptive/accessibility validation,
+An approved selected goal opens source from its isolated worktree in an editable
+AvaloniaEdit tab; exact-baseline saves flow through the durable typed mutation
+boundary, and dirty switching/closing plus external-change conflicts require explicit
+decisions. Original-workspace and truncated source remain honestly read-only. Bounded
+run-output separation, adaptive/accessibility validation, diff-document acceptance,
 and recorded visual acceptance tracked by ADR 010 and Tasks 028-033 remain release
 blockers.
 The Avalonia and TUI Framework surfaces show the resolved engineering rules and
@@ -93,10 +97,10 @@ before a local commit. An interrupted approved commit can be revalidated and res
 Neither adapter integrates the isolated branch automatically.
 The Avalonia and TUI Operations surfaces create a non-overwriting, integrity-checked
 application-state archive with explicit schema, byte-count, and SHA-256 evidence.
-Archives include the
-SQLite state needed for audit and recovery, but exclude credentials, logs, caches,
-worktrees, and repositories. Every pending schema upgrade first creates the same
-verified recovery point under XDG data storage.
+Archives include the SQLite state needed for audit and recovery plus optional
+validated private workbench layout, but exclude credentials, logs, caches, worktrees,
+and repositories. Every pending schema upgrade first creates the same verified
+recovery point under XDG data storage.
 
 Start with:
 

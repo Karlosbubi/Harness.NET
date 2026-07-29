@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Harness.BusinessLogic.Acceptance;
 using Harness.BusinessLogic.Approvals;
+using Harness.BusinessLogic.Documents;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Mutations;
 using Harness.BusinessLogic.Tools;
@@ -12,6 +13,7 @@ using Harness.DataAccess.Configuration;
 using Harness.DataAccess.Evidence;
 using Harness.DataAccess.Execution;
 using Harness.DataAccess.Goals;
+using Harness.DataAccess.Inspection;
 using Harness.DataAccess.Mutations;
 using Harness.DataAccess.Persistence;
 using Harness.DataAccess.Workflows;
@@ -72,14 +74,26 @@ public sealed class RepresentativeRepositoryAcceptanceTests : IDisposable
             evidenceStore,
             approvalStore);
 
+        WorkbenchDocumentService documents = new(
+            goalStore,
+            workspaceStore,
+            new WorkspaceFileReader(),
+            mutations);
+        WorkbenchDocumentView source = await documents.OpenAsync(new(
+            new(registered.Workspace.Id),
+            created.Goal.Id,
+            new("Program.cs")));
+        Assert.Equal(WorkbenchDocumentAccess.Editable, source.Access);
+        Assert.Equal(Hash("Console.WriteLine(\"before\");\n"), source.Sha256?.Value);
+
         const string updatedProgram = "Console.WriteLine(\"verified by Harness.NET\");\n";
-        FileEditView edit = await mutations.ApplyFileEditAsync(new(
-            created.Goal.Id.Value,
+        WorkbenchDocumentSaveResult edit = await documents.SaveAsync(new(
+            created.Goal.Id,
             new("representative-edit"),
-            "Program.cs",
-            Hash("Console.WriteLine(\"before\");\n"),
-            updatedProgram));
-        Assert.Null(edit.Error);
+            source.Path,
+            source.Sha256,
+            new(updatedProgram)));
+        Assert.Equal(WorkbenchDocumentSaveOutcome.Saved, edit.Outcome);
 
         ToolCorrelationId restoreCorrelation = new("representative-restore");
         CapabilityApprovalResult restoreRequest = await approvals.RequestAsync(new(

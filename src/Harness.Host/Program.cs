@@ -4,6 +4,7 @@ using Harness.BusinessLogic.Appearance;
 using Harness.BusinessLogic.Agents;
 using Harness.BusinessLogic.Costs;
 using Harness.BusinessLogic.Dashboard;
+using Harness.BusinessLogic.Documents;
 using Harness.BusinessLogic.Evidence;
 using Harness.BusinessLogic.Framework;
 using Harness.BusinessLogic.Goals;
@@ -89,6 +90,7 @@ builder.Services.AddSingleton<IWorkspaceTextSearcher, GitWorkspaceTextSearcher>(
 builder.Services.AddSingleton<IWorkspaceGitInspector, LibGitWorkspaceGitInspector>();
 builder.Services.AddSingleton<IWorkspaceDotNetInspector, WorkspaceDotNetInspector>();
 builder.Services.AddSingleton<IWorkspaceInspectionService, WorkspaceInspectionService>();
+builder.Services.AddSingleton<IWorkbenchDocumentService, WorkbenchDocumentService>();
 builder.Services.AddSingleton<IWorkbenchLayoutStore, FileWorkbenchLayoutStore>();
 builder.Services.AddSingleton<IWorkbenchLayoutService, WorkbenchLayoutService>();
 builder.Services.AddSingleton<IGoalWorkspaceInspectionService, GoalWorkspaceInspectionService>();

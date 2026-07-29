@@ -8,6 +8,7 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using Harness.BusinessLogic.Appearance;
 using Harness.BusinessLogic.Dashboard;
+using Harness.BusinessLogic.Documents;
 using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Layouts;
 using Harness.UI.Avalonia;
@@ -19,6 +20,7 @@ internal sealed class MainWindow : Window
     private readonly AvaloniaPresentationStore store;
     private readonly HarnessThemeController themeController;
     private readonly IWorkspaceInspectionService inspectionService;
+    private readonly IWorkbenchDocumentService documentService;
     private readonly IWorkbenchLayoutService layoutService;
     private readonly CancellationToken cancellationToken;
     private readonly CompositeDisposable subscriptions = new();
@@ -64,12 +66,14 @@ internal sealed class MainWindow : Window
         AvaloniaPresentationStore store,
         HarnessThemeController themeController,
         IWorkspaceInspectionService inspectionService,
+        IWorkbenchDocumentService documentService,
         IWorkbenchLayoutService layoutService,
         CancellationToken cancellationToken)
     {
         this.store = store;
         this.themeController = themeController;
         this.inspectionService = inspectionService;
+        this.documentService = documentService;
         this.layoutService = layoutService;
         this.cancellationToken = cancellationToken;
         Title = "Harness.NET";
@@ -100,7 +104,9 @@ internal sealed class MainWindow : Window
         utility.Child = BuildUtility();
         workbench = new(
             inspectionService,
+            documentService,
             layoutService,
+            new AvaloniaWorkbenchDocumentPrompt(),
             () => store.Current,
             navigation,
             primary,
@@ -368,6 +374,11 @@ internal sealed class MainWindow : Window
         }
 
         eventArgs.Cancel = true;
+        if (!await workbench.PrepareForShutdownAsync())
+        {
+            return;
+        }
+
         await workbench.SaveLayoutAsync(CancellationToken.None);
         closingAfterLayoutSave = true;
         Close();

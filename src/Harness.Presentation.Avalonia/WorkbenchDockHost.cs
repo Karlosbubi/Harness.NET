@@ -4,14 +4,18 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Threading;
 using AvaloniaEdit;
 using Dock.Avalonia.Controls;
 using Dock.Model;
 using Dock.Model.Controls;
 using Dock.Model.Core;
 using Dock.Model.Mvvm;
+using Harness.BusinessLogic.Documents;
+using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Layouts;
+using Harness.BusinessLogic.Tools;
 using Harness.BusinessLogic.Workspaces;
 using Harness.UI.Avalonia;
 using DockAlignment = Dock.Model.Core.Alignment;
@@ -23,12 +27,15 @@ namespace Harness.Presentation.Avalonia;
 internal sealed class WorkbenchDockHost
 {
     private readonly IWorkspaceInspectionService inspectionService;
+    private readonly IWorkbenchDocumentService documentService;
     private readonly IWorkbenchLayoutService layoutService;
+    private readonly IWorkbenchDocumentPrompt documentPrompt;
     private readonly Func<AvaloniaShellState> state;
     private readonly CancellationToken cancellationToken;
     private readonly Factory factory = new();
     private readonly WorkbenchDockLayoutCodec layoutCodec;
     private readonly Dictionary<string, Control> durableContexts = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, SourceDocumentSession> sourceDocuments = new(StringComparer.Ordinal);
     private readonly TextBlock layoutStatus = new()
     {
         MaxWidth = 180,
@@ -55,10 +62,15 @@ internal sealed class WorkbenchDockHost
     private readonly TextBlock gitStatus = new() { TextWrapping = TextWrapping.Wrap };
     private string? workspaceId;
     private bool busy;
+    private bool suppressDocumentActivation;
+    private bool resolvingDocumentTransition;
+    private IDockable? activeDocument;
 
     internal WorkbenchDockHost(
         IWorkspaceInspectionService inspectionService,
+        IWorkbenchDocumentService documentService,
         IWorkbenchLayoutService layoutService,
+        IWorkbenchDocumentPrompt documentPrompt,
         Func<AvaloniaShellState> state,
         Control navigation,
         Control conversation,
@@ -66,7 +78,9 @@ internal sealed class WorkbenchDockHost
         CancellationToken cancellationToken)
     {
         this.inspectionService = inspectionService;
+        this.documentService = documentService;
         this.layoutService = layoutService;
+        this.documentPrompt = documentPrompt;
         this.state = state;
         this.cancellationToken = cancellationToken;
         factory.HideToolsOnClose = true;
@@ -159,6 +173,9 @@ internal sealed class WorkbenchDockHost
         EnsureDefaultTools(left, right, bottom, "before Dock initialization");
         factory.InitLayout(root);
         EnsureDefaultTools(left, right, bottom, "after Dock initialization");
+        activeDocument = overviewDocument;
+        factory.ActiveDockableChanged += OnActiveDockableChanged;
+        factory.DockableClosed += OnDockableClosed;
         WorkbenchDockLayoutCaptureResult defaultLayout = layoutCodec.Capture(root);
         defaultLayoutPayload = defaultLayout.Payload ?? throw new InvalidOperationException(
             $"Dock did not create a valid default layout: {defaultLayout.Error}");
@@ -178,6 +195,26 @@ internal sealed class WorkbenchDockHost
     internal IRootDock Root => root;
     internal IFactory Factory => factory;
     internal string? LayoutStatusText => layoutStatus.Text;
+    internal int SourceDocumentCount => sourceDocuments.Count;
+    internal TextEditor? ActiveSourceEditor => activeDocument?.Id is { } id &&
+                                               sourceDocuments.TryGetValue(id, out SourceDocumentSession? session)
+        ? session.Editor
+        : null;
+    internal bool ActiveSourceDocumentIsDirty => activeDocument?.Id is { } id &&
+                                                 sourceDocuments.TryGetValue(id, out SourceDocumentSession? session) &&
+                                                 session.IsDirty;
+
+    internal ValueTask<bool> SaveActiveSourceDocumentAsync() =>
+        activeDocument?.Id is { } id &&
+        sourceDocuments.TryGetValue(id, out SourceDocumentSession? session)
+            ? SaveSourceDocumentAsync(session)
+            : ValueTask.FromResult(false);
+
+    internal ValueTask CloseActiveSourceDocumentAsync() =>
+        activeDocument?.Id is { } id &&
+        sourceDocuments.TryGetValue(id, out SourceDocumentSession? session)
+            ? RequestSourceDocumentCloseAsync(session)
+            : ValueTask.CompletedTask;
 
     internal async ValueTask RestoreLayoutAsync()
     {
@@ -228,6 +265,12 @@ internal sealed class WorkbenchDockHost
 
     internal async ValueTask ResetLayoutAsync()
     {
+        if (!await CloseAllSourceDocumentsAsync(WorkbenchDocumentTransition.Close))
+        {
+            layoutStatus.Text = "Layout reset cancelled · unsaved source changes kept";
+            return;
+        }
+
         WorkbenchLayoutWriteResult reset = await layoutService.ResetAsync(cancellationToken);
         WorkbenchDockLayoutRestoreResult restored = layoutCodec.Restore(
             defaultLayoutPayload,
@@ -254,13 +297,32 @@ internal sealed class WorkbenchDockHost
         }
     }
 
+    internal async ValueTask<bool> PrepareForShutdownAsync()
+    {
+        foreach (SourceDocumentSession session in sourceDocuments.Values
+                     .Where(item => item.IsDirty)
+                     .ToArray())
+        {
+            if (!await ResolveUnsavedAsync(
+                    session,
+                    WorkbenchDocumentTransition.Exit,
+                    discardKeepsDocument: true))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     internal void Update(AvaloniaShellState snapshot)
     {
         WorkspaceView? active = snapshot.Workspaces.Registered.FirstOrDefault(item => item.IsActive);
         if (!string.Equals(workspaceId, active?.Id, StringComparison.Ordinal))
         {
             workspaceId = active?.Id;
-            CloseWorkspaceDocuments();
+            Dispatcher.UIThread.Post(async () =>
+                await CloseAllSourceDocumentsAsync(WorkbenchDocumentTransition.Close));
             searchResults.ItemsSource = Array.Empty<SearchChoice>();
             changes.ItemsSource = Array.Empty<ChangeChoice>();
             fileStatus.Text = string.Empty;
@@ -297,9 +359,12 @@ internal sealed class WorkbenchDockHost
 
         await RunAsync(async () =>
         {
-            WorkspaceFileView file = await inspectionService.ReadFileAsync(
-                active.Id,
-                relativePath.Trim(),
+            GoalId? goalId = state().Goals.SelectedGoal?.Id;
+            WorkbenchDocumentView file = await documentService.OpenAsync(
+                new(
+                    new(active.Id),
+                    goalId,
+                    new(relativePath.Trim())),
                 cancellationToken);
             if (file.Error is not null)
             {
@@ -307,13 +372,28 @@ internal sealed class WorkbenchDockHost
                 return;
             }
 
-            string id = $"document.file.{active.Id}.{file.Path}";
-            IDockable document = OpenOrReplaceDocument(
-                id,
-                Path.GetFileName(file.Path),
-                CreateEditor(file.Content, file.Path, showLineNumbers: true));
-            document.Title = file.IsTruncated ? $"{Path.GetFileName(file.Path)} · truncated" : Path.GetFileName(file.Path);
-            fileStatus.Text = $"Opened {file.Path} · {file.SizeBytes:N0} bytes" +
+            string id = SourceDocumentId(file);
+            if (sourceDocuments.TryGetValue(id, out SourceDocumentSession? existing))
+            {
+                if (await TrySwitchDocumentAsync(existing.Document))
+                {
+                    fileStatus.Text = $"Activated {file.Path.Value}.";
+                }
+
+                return;
+            }
+
+            if (!await PrepareActiveDocumentTransitionAsync(WorkbenchDocumentTransition.Switch))
+            {
+                fileStatus.Text = $"Kept unsaved changes; {file.Path.Value} was not opened.";
+                return;
+            }
+
+            SourceDocumentSession session = CreateSourceDocument(id, file);
+            documents.AddDocument(session.Document);
+            SetActiveDocument(session.Document);
+            fileStatus.Text = $"Opened {file.Path.Value} · {file.Size.Value:N0} bytes · " +
+                              file.AccessDescription.TrimEnd('.') +
                               (file.IsTruncated ? " · truncated." : ".");
         });
     }
@@ -635,6 +715,436 @@ internal sealed class WorkbenchDockHost
         });
     }
 
+    private SourceDocumentSession CreateSourceDocument(
+        string id,
+        WorkbenchDocumentView view)
+    {
+        TextEditor editor = CodeEditorView.Create(
+            view.Content.Value,
+            isReadOnly: view.Access is not WorkbenchDocumentAccess.Editable,
+            wordWrap: false,
+            showLineNumbers: true,
+            path: view.Path.Value);
+        AutomationProperties.SetName(
+            editor,
+            view.Access is WorkbenchDocumentAccess.Editable
+                ? $"Editable source editor for {view.Path.Value}"
+                : $"Read-only source editor for {view.Path.Value}");
+
+        TextBlock status = new()
+        {
+            Text = view.AccessDescription,
+            TextWrapping = TextWrapping.Wrap,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        AutomationProperties.SetName(status, $"Editing status for {view.Path.Value}");
+        Button save = new() { Content = "Save", IsEnabled = false };
+        Button reload = new() { Content = "Reload" };
+        Button close = new() { Content = "Close" };
+        AutomationProperties.SetName(save, $"Save {view.Path.Value}");
+        AutomationProperties.SetName(reload, $"Reload {view.Path.Value}");
+        AutomationProperties.SetName(close, $"Close {view.Path.Value}");
+
+        Grid toolbar = new()
+        {
+            ColumnDefinitions = new("*,Auto,Auto,Auto"),
+            ColumnSpacing = 6,
+            Margin = new Thickness(8, 5),
+            Children = { status },
+        };
+        Grid.SetColumn(save, 1);
+        toolbar.Children.Add(save);
+        Grid.SetColumn(reload, 2);
+        toolbar.Children.Add(reload);
+        Grid.SetColumn(close, 3);
+        toolbar.Children.Add(close);
+        Grid content = new()
+        {
+            RowDefinitions = new("Auto,*"),
+            Children = { toolbar },
+        };
+        Grid.SetRow(editor, 1);
+        content.Children.Add(editor);
+
+        SourceDockDocument document = new()
+        {
+            Id = id,
+            Title = SourceDocumentTitle(view),
+            Context = content,
+            Factory = factory,
+            CanClose = true,
+            CanFloat = true,
+        };
+        SourceDocumentSession session = new(
+            document,
+            editor,
+            status,
+            save,
+            reload,
+            close,
+            view);
+        document.CloseRequested = () => OnSourceDocumentCloseRequested(session);
+        editor.TextChanged += (_, _) => session.SynchronizeDirtyState();
+        editor.KeyDown += async (_, args) =>
+        {
+            if (args.Key is Key.S && args.KeyModifiers.HasFlag(KeyModifiers.Control))
+            {
+                args.Handled = true;
+                await SaveSourceDocumentAsync(session);
+            }
+            else if (args.Key is Key.W && args.KeyModifiers.HasFlag(KeyModifiers.Control))
+            {
+                args.Handled = true;
+                await RequestSourceDocumentCloseAsync(session);
+            }
+        };
+        save.Click += async (_, _) => await SaveSourceDocumentAsync(session);
+        reload.Click += async (_, _) => await ReloadSourceDocumentAsync(session, confirmDiscard: true);
+        close.Click += async (_, _) => await RequestSourceDocumentCloseAsync(session);
+        sourceDocuments.Add(id, session);
+        session.SynchronizeDirtyState();
+        return session;
+    }
+
+    private async ValueTask<bool> SaveSourceDocumentAsync(
+        SourceDocumentSession session,
+        WorkbenchDocumentSha256? overrideBaseline = null)
+    {
+        if (session.View.Access is not WorkbenchDocumentAccess.Editable ||
+            session.View.GoalId is null || !session.IsDirty)
+        {
+            return !session.IsDirty;
+        }
+
+        session.SetBusy(true, "Saving through the approved goal worktree…");
+        try
+        {
+            WorkbenchDocumentSha256? baseline = overrideBaseline ?? session.View.Sha256;
+            while (true)
+            {
+                WorkbenchDocumentSaveResult result = await documentService.SaveAsync(
+                    new(
+                        session.View.GoalId,
+                        NewEditCorrelation(),
+                        session.View.Path,
+                        baseline,
+                        new(session.Editor.Text)),
+                    cancellationToken);
+                if (result.Outcome is WorkbenchDocumentSaveOutcome.Saved &&
+                    result.SavedSha256 is not null)
+                {
+                    session.AcceptSaved(result.SavedSha256, result.BytesWritten);
+                    return true;
+                }
+
+                if (result.Outcome is WorkbenchDocumentSaveOutcome.Conflict)
+                {
+                    session.SetStatus(
+                        result.CurrentSha256 is null
+                            ? "Save conflict: the file was deleted in the goal worktree."
+                            : "Save conflict: the file changed in the goal worktree.");
+                    WorkbenchConflictDecision decision = await documentPrompt.DecideConflictAsync(
+                        new(session.View.Path.Value, result.CurrentSha256 is null),
+                        OwnerWindow());
+                    if (decision is WorkbenchConflictDecision.Reload)
+                    {
+                        return await ReloadSourceDocumentAsync(session, confirmDiscard: false);
+                    }
+
+                    if (decision is WorkbenchConflictDecision.Overwrite)
+                    {
+                        baseline = result.CurrentSha256;
+                        continue;
+                    }
+
+                    if (decision is not WorkbenchConflictDecision.Cancel)
+                    {
+                        throw new ArgumentOutOfRangeException(nameof(decision));
+                    }
+
+                    return false;
+                }
+
+                session.SetStatus(result.Error ?? "The source document was not saved.");
+                return false;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            session.SetStatus("Source save cancelled; editor changes are still present.");
+            return false;
+        }
+        catch (Exception exception)
+        {
+            session.SetStatus($"Source save failed: {exception.Message}");
+            return false;
+        }
+        finally
+        {
+            session.SetBusy(false);
+        }
+    }
+
+    private async ValueTask<bool> ReloadSourceDocumentAsync(
+        SourceDocumentSession session,
+        bool confirmDiscard)
+    {
+        if (confirmDiscard && session.IsDirty)
+        {
+            WorkbenchUnsavedDecision decision = await documentPrompt.DecideUnsavedAsync(
+                new(session.View.Path.Value, WorkbenchDocumentTransition.Reload),
+                OwnerWindow());
+            if (decision is WorkbenchUnsavedDecision.Cancel)
+            {
+                return false;
+            }
+
+            if (decision is WorkbenchUnsavedDecision.Save)
+            {
+                return await SaveSourceDocumentAsync(session);
+            }
+        }
+
+        session.SetBusy(true, "Reloading from the workspace…");
+        try
+        {
+            WorkbenchDocumentView current = await documentService.OpenAsync(
+                new(session.View.WorkspaceId, session.View.GoalId, session.View.Path),
+                cancellationToken);
+            if (current.ErrorCode == "file_missing")
+            {
+                session.AllowClose = true;
+                factory.CloseDockable(session.Document);
+                fileStatus.Text = $"{session.View.Path.Value} no longer exists; the stale document was closed.";
+                return true;
+            }
+
+            if (current.Error is not null)
+            {
+                session.SetStatus($"Reload failed: {current.Error}");
+                return false;
+            }
+
+            session.ReplaceWith(current);
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            session.SetStatus("Reload cancelled; editor content was kept.");
+            return false;
+        }
+        catch (Exception exception)
+        {
+            session.SetStatus($"Reload failed: {exception.Message}");
+            return false;
+        }
+        finally
+        {
+            session.SetBusy(false);
+        }
+    }
+
+    private async ValueTask RequestSourceDocumentCloseAsync(SourceDocumentSession session)
+    {
+        if (!session.IsDirty || await ResolveUnsavedAsync(
+                session,
+                WorkbenchDocumentTransition.Close,
+                discardKeepsDocument: false))
+        {
+            session.AllowClose = true;
+            factory.CloseDockable(session.Document);
+        }
+    }
+
+    private bool OnSourceDocumentCloseRequested(SourceDocumentSession session)
+    {
+        if (!session.IsDirty || session.AllowClose)
+        {
+            return true;
+        }
+
+        if (resolvingDocumentTransition)
+        {
+            return false;
+        }
+
+        resolvingDocumentTransition = true;
+        Dispatcher.UIThread.Post(async () =>
+        {
+            try
+            {
+                await RequestSourceDocumentCloseAsync(session);
+                if (sourceDocuments.ContainsKey(session.Document.Id ?? string.Empty))
+                {
+                    session.IgnoreNextActivationChange = true;
+                    SetActiveDocument(session.Document);
+                }
+            }
+            finally
+            {
+                resolvingDocumentTransition = false;
+            }
+        });
+        return false;
+    }
+
+    private async ValueTask<bool> ResolveUnsavedAsync(
+        SourceDocumentSession session,
+        WorkbenchDocumentTransition transition,
+        bool discardKeepsDocument)
+    {
+        WorkbenchUnsavedDecision decision = await documentPrompt.DecideUnsavedAsync(
+            new(session.View.Path.Value, transition),
+            OwnerWindow());
+        switch (decision)
+        {
+            case WorkbenchUnsavedDecision.Save:
+                return await SaveSourceDocumentAsync(session);
+            case WorkbenchUnsavedDecision.Discard:
+                if (discardKeepsDocument)
+                {
+                    session.DiscardChanges();
+                }
+
+                return true;
+            case WorkbenchUnsavedDecision.Cancel:
+                return false;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(decision));
+        }
+    }
+
+    private async ValueTask<bool> PrepareActiveDocumentTransitionAsync(
+        WorkbenchDocumentTransition transition)
+    {
+        if (activeDocument?.Id is null ||
+            !sourceDocuments.TryGetValue(activeDocument.Id, out SourceDocumentSession? session) ||
+            !session.IsDirty)
+        {
+            return true;
+        }
+
+        return await ResolveUnsavedAsync(
+            session,
+            transition,
+            discardKeepsDocument: true);
+    }
+
+    private async ValueTask<bool> TrySwitchDocumentAsync(IDockable next)
+    {
+        if (ReferenceEquals(activeDocument, next))
+        {
+            return true;
+        }
+
+        if (!await PrepareActiveDocumentTransitionAsync(WorkbenchDocumentTransition.Switch))
+        {
+            return false;
+        }
+
+        SetActiveDocument(next);
+        return true;
+    }
+
+    private async void OnActiveDockableChanged(
+        object? sender,
+        Dock.Model.Core.Events.ActiveDockableChangedEventArgs args)
+    {
+        IDockable? next = args.Dockable;
+        if (next is null || suppressDocumentActivation || resolvingDocumentTransition ||
+            !IsDocument(next) || ReferenceEquals(activeDocument, next))
+        {
+            return;
+        }
+
+        IDockable? previous = activeDocument;
+        if (previous?.Id is not null &&
+            sourceDocuments.TryGetValue(previous.Id, out SourceDocumentSession? pending) &&
+            pending.IgnoreNextActivationChange)
+        {
+            pending.IgnoreNextActivationChange = false;
+            SetActiveDocument(previous);
+            return;
+        }
+
+        if (previous?.Id is null ||
+            !sourceDocuments.TryGetValue(previous.Id, out SourceDocumentSession? session) ||
+            !session.IsDirty || session.AllowClose)
+        {
+            activeDocument = next;
+            return;
+        }
+
+        resolvingDocumentTransition = true;
+        try
+        {
+            SetActiveDocument(previous);
+            if (await ResolveUnsavedAsync(
+                    session,
+                    WorkbenchDocumentTransition.Switch,
+                    discardKeepsDocument: true))
+            {
+                SetActiveDocument(next);
+            }
+        }
+        finally
+        {
+            resolvingDocumentTransition = false;
+        }
+    }
+
+    private void OnDockableClosed(
+        object? sender,
+        Dock.Model.Core.Events.DockableClosedEventArgs args)
+    {
+        IDockable? dockable = args.Dockable;
+        if (dockable?.Id is { } id && sourceDocuments.Remove(id, out SourceDocumentSession? session))
+        {
+            session.Dispose();
+        }
+
+        if (ReferenceEquals(activeDocument, dockable))
+        {
+            activeDocument = overviewDocument;
+        }
+    }
+
+    private void SetActiveDocument(IDockable document)
+    {
+        suppressDocumentActivation = true;
+        try
+        {
+            factory.SetActiveDockable(document);
+            activeDocument = document;
+        }
+        finally
+        {
+            suppressDocumentActivation = false;
+        }
+    }
+
+    private static bool IsDocument(IDockable dockable) =>
+        dockable is IDocument && dockable is not ITool;
+
+    private Window? OwnerWindow() => TopLevel.GetTopLevel(Control) as Window;
+
+    private static ToolCorrelationId NewEditCorrelation() =>
+        new($"desktop-edit-{Guid.NewGuid():N}");
+
+    private static string SourceDocumentId(WorkbenchDocumentView view) =>
+        $"document.file.{view.WorkspaceId.Value}.{view.GoalId?.Value ?? "original"}.{view.Path.Value}";
+
+    private static string SourceDocumentTitle(WorkbenchDocumentView view)
+    {
+        string title = Path.GetFileName(view.Path.Value);
+        if (view.IsTruncated)
+        {
+            return $"{title} · truncated";
+        }
+
+        return view.Branch is null ? title : $"{title} · {view.Branch.Value}";
+    }
+
     private IDockable OpenOrReplaceDocument(string id, string title, Control content)
     {
         IDockable? existing = documents.VisibleDockables?.FirstOrDefault(item =>
@@ -671,8 +1181,24 @@ internal sealed class WorkbenchDockHost
         return editor;
     }
 
-    private void CloseWorkspaceDocuments()
+    private async ValueTask<bool> CloseAllSourceDocumentsAsync(
+        WorkbenchDocumentTransition transition)
     {
+        foreach (SourceDocumentSession session in sourceDocuments.Values.ToArray())
+        {
+            if (session.IsDirty && !await ResolveUnsavedAsync(
+                    session,
+                    transition,
+                    discardKeepsDocument: false))
+            {
+                SetActiveDocument(session.Document);
+                return false;
+            }
+
+            session.AllowClose = true;
+            factory.CloseDockable(session.Document);
+        }
+
         foreach (IDockable document in documents.VisibleDockables?
                      .Where(item => !string.Equals(
                          item.Id,
@@ -683,10 +1209,11 @@ internal sealed class WorkbenchDockHost
             factory.CloseDockable(document);
         }
 
-        ActivateOverview();
+        SetActiveDocument(overviewDocument);
+        return true;
     }
 
-    private void ActivateOverview() => factory.SetActiveDockable(overviewDocument);
+    private void ActivateOverview() => SetActiveDocument(overviewDocument);
 
     private WorkspaceView? ActiveWorkspace() =>
         state().Workspaces.Registered.FirstOrDefault(item => item.IsActive);
@@ -723,4 +1250,5 @@ internal sealed class WorkbenchDockHost
     {
         public override string ToString() => $"{Change.Status}  {Change.Path}";
     }
+
 }

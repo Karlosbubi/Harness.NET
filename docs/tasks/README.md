@@ -56,12 +56,12 @@ but the end-user workflow is not complete.
 | 024 | Done | Retrieve relevant repository context | - | Eligible Git-tracked text is chunked, partitioned by embedding configuration, rebuilt, searched, and filtered by policy. |
 | 025 | Done | Use remote models under a cost cap | - | Remote use requires approval, streams through the provider boundary, and enforces estimated plus reconciled per-goal caps. |
 | 026 | Done | Operate and distribute v1.0 reliably | - | A self-contained Linux x64 release passes clean-install, migration, outage, cancellation, recovery, and representative-repository acceptance tests. |
-| 027 | In progress | Deliver the default desktop as a complete product surface | 013-026 | The conversation-first shell and modal inspector are replaced by the first real docked workbench, but editing, accessibility, adaptive layouts, and hands-on acceptance remain release blockers. Every visible surface must remain backed by production state, and obvious workspace and goal workflows require no mock or filler UI. |
+| 027 | In progress | Deliver the default desktop as a complete product surface | 013-026 | The conversation-first shell and modal inspector are replaced by a real docked workbench with safe source editing, but accessibility, adaptive layouts, bounded output, and hands-on acceptance remain release blockers. Every visible surface must remain backed by production state, and obvious workspace and goal workflows require no mock or filler UI. |
 | 028 | Partial | Validate the Dock dependency and package boundary | 027 | Stable Dock 12.0.0.2 packages are pinned at the Presentation boundary, the Fluent theme loads, headless construction/file activation passes, and the Linux x64 lifecycle verifier succeeds. Keyboard/focus, floating ownership, compact behavior, and the remaining ADR 010 acceptance evidence are outstanding. |
-| 029 | Partial | Build the central document workbench | 028 | A real workspace overview and bounded source files open as center tabs; Git diff, current plan, and durable evidence entry points use production state and honest empty states. Close/activate coverage and complete multi-document acceptance remain outstanding. |
+| 029 | Partial | Build the central document workbench | 028 | A real workspace overview and bounded source files open as center tabs; Git diff, current plan, and durable evidence entry points use production state and honest empty states. Source open/activate/switch/close behavior now passes headless multi-document checks; equivalent diff-document close/activation evidence and measured representative-workspace behavior remain outstanding. |
 | 030 | Partial | Deliver dockable production tool panels | 029 | Real workspace/search, source-control, goal context, and durable conversation controls occupy movable, hideable, floatable tool regions with save/reset actions and restart restoration. Bounded run-output separation, keyboard/accessibility acceptance, and compact-layout behavior remain outstanding. |
 | 031 | Done | Persist and recover the desktop layout | 030 | A versioned, bounded, integrity-checked layout persists atomically in private XDG state; only known production panes survive, transient documents are omitted, duplicate/unknown state falls back safely, floating bounds are clamped, reset is immediate, and backup v2/offline recovery retain verified layout state without repository metadata. |
-| 032 | Planned | Add safe source editing semantics | 029 | Editing is enabled only for an active approved goal worktree; save uses typed compare-and-swap mutation, dirty state is real, conflicts are actionable, and close/switch requires save, discard, or cancel. |
+| 032 | Done | Add safe source editing semantics | 029 | Original-workspace and truncated files remain honestly read-only; an active approved goal opens its isolated worktree with an exact content baseline. Editable AvaloniaEdit tabs expose real dirty state, keyboard and visible save/reload/close actions, durable compare-and-swap saves, explicit reload/overwrite conflict recovery, and save/discard/cancel decisions for tab switches, closes, layout reset, workspace change, and application exit. |
 | 033 | Planned | Pass docked-workbench product acceptance | 030-032 | Representative wide, compact, HiDPI, keyboard-only, screen-reader, restart, corrupted-layout, and multi-document workflows pass automated checks and recorded hands-on visual review using production data or honest empty states. |
 
 ### v1.0 release gate
@@ -280,3 +280,12 @@ model provider.
   invalid-proportion normalization; off-screen bound clamping; and immediate reset.
   Backup v2 tests and the Linux x64 lifecycle verifier prove optional layout hash
   evidence and offline recovery without adding repository metadata.
+- Task 032 adds a semantic Business Logic document boundary over the approved-goal
+  worktree and the existing durable mutation service. Deterministic tests prove
+  read-only fallback, trust and approval enforcement, exact UTF-8 baselines,
+  truncation safety, compare-and-swap conflicts, and current-version evidence. The
+  headless Dock workbench proves editable/dirty state, conflict overwrite,
+  cancel/save/discard tab activation, close, reset, and exit decisions; the editor
+  also exposes visible save/reload/close and keyboard save/close commands. The
+  representative repository acceptance test performs the real read and atomic save
+  in the isolated Git worktree.

@@ -197,6 +197,12 @@ overlay, `AGENTS.md`, or a suitable existing documentation file.
   grant general network access. Its framework dialog resolves effective rules and
   guidance with locks, provenance, privacy, and validation issues, and edits only the
   private workspace overlay in Harness.NET storage.
+- The docked source editor reads the original trusted workspace in read-only mode by
+  default. A selected approved goal switches new source documents to its isolated
+  worktree and enables edits with an exact UTF-8 baseline. Saves use the durable typed
+  mutation/evidence boundary and compare-and-swap; dirty close, switch, reset, and
+  exit paths require save/discard/cancel, while external changes require explicit
+  reload or baseline-protected overwrite.
 - Terminal.Gui v2 provides an adaptive full-screen layout: workspace/goals on the
   left, transcript/activity in the center, plan/diff/evidence tabs on the right,
   and a composer plus status/budget footer.
