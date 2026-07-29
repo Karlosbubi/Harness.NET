@@ -45,10 +45,12 @@ internal enum ConversationWorkflowActionKind
 {
     ConfigureGoal,
     StartPlanning,
+    WritePlan,
     ApprovePlan,
     RequestPlanChanges,
     ContinueRun,
     CancelRun,
+    ReviewAcceptedChanges,
     ApproveRestore,
     DenyRestore,
     ReviewCommitPreview,
@@ -84,7 +86,11 @@ internal static class ConversationWorkflowActionProjector
             if (card.State is ConversationWorkflowCardState.Unavailable &&
                 goal.State is GoalState.Draft or GoalState.NeedsPlanRevision)
             {
-                return [new(ConversationWorkflowActionKind.StartPlanning, "Generate plan", true)];
+                return
+                [
+                    new(ConversationWorkflowActionKind.StartPlanning, "Generate plan", true),
+                    new(ConversationWorkflowActionKind.WritePlan, "Write plan manually", false),
+                ];
             }
 
             if (goals.CurrentPlan?.State is PlanState.Pending)
@@ -108,6 +114,13 @@ internal static class ConversationWorkflowActionProjector
                 goal.State is GoalState.Approved)
             {
                 return [new(ConversationWorkflowActionKind.ContinueRun, "Continue run", true)];
+            }
+
+            if (workflow.State is GoalWorkflowState.AwaitingAcceptance or GoalWorkflowState.Completed &&
+                goals.CommitPreview is null && goals.CommitApproval is null)
+            {
+                return [new(ConversationWorkflowActionKind.ReviewAcceptedChanges,
+                    "Review accepted changes", true)];
             }
         }
 

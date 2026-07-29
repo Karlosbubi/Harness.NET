@@ -48,8 +48,7 @@ internal sealed class MainWindow : Window
     private readonly Button openWorkspace = new() { Content = "Open workspace" };
     private readonly Button manageWorkspaces = new() { Content = "Workspaces…" };
     private readonly Button manageFramework = new() { Content = "Framework" };
-    private readonly Button manageGoals = new() { Content = "Goals" };
-    private readonly Button goalAction = new() { Content = "Create or select a goal" };
+    private readonly Button inspectGoalContext = new() { Content = "Inspect semantic context…" };
     private readonly Button operations = new() { Content = "Operations" };
     private readonly Button settings = new() { Content = "Settings" };
     private readonly Button commandBar = new()
@@ -319,7 +318,6 @@ internal sealed class MainWindow : Window
                 new Separator(),
                 new TextBlock { Text = "COLLABORATE", FontSize = 11, FontWeight = FontWeight.Bold },
                 new TextBlock { Text = "●  Conversation", TextWrapping = TextWrapping.Wrap },
-                manageGoals,
                 manageFramework,
                 new Separator(),
                 new TextBlock { Text = "APPLICATION", FontSize = 11, FontWeight = FontWeight.Bold },
@@ -327,14 +325,13 @@ internal sealed class MainWindow : Window
                 operations,
             },
         };
-        foreach (Button button in new[] { manageWorkspaces, manageGoals, manageFramework, settings, operations })
+        foreach (Button button in new[] { manageWorkspaces, manageFramework, settings, operations })
         {
             button.Classes.Add("command");
             button.HorizontalAlignment = HorizontalAlignment.Stretch;
             button.HorizontalContentAlignment = HorizontalAlignment.Left;
         }
         AutomationProperties.SetName(manageWorkspaces, "Manage workspaces");
-        AutomationProperties.SetName(manageGoals, "Goals and plans");
         AutomationProperties.SetName(manageFramework, "Engineering framework");
         AutomationProperties.SetName(settings, "Application settings");
         AutomationProperties.SetName(operations, "Application operations");
@@ -346,23 +343,13 @@ internal sealed class MainWindow : Window
     {
         Grid grid = new()
         {
-            RowDefinitions = new("Auto,*,Auto"),
+            RowDefinitions = new("*,Auto"),
             Margin = new(1, 0),
         };
-        TextBlock heading = new()
-        {
-            Text = "Durable conversation",
-            Margin = new(16, 12),
-            FontSize = 16,
-            FontWeight = FontWeight.SemiBold,
-        };
-        grid.Children.Add(heading);
-
         activities.Margin = new(4, 0);
         AutomationProperties.SetName(activities, "Conversation activity");
         conversationScroll.Content = activities;
-        conversationScroll.Margin = new(12, 0);
-        Grid.SetRow(conversationScroll, 1);
+        conversationScroll.Margin = new(12, 10, 12, 0);
         grid.Children.Add(conversationScroll);
 
         Grid composerArea = new()
@@ -375,19 +362,19 @@ internal sealed class MainWindow : Window
         composer.TextWrapping = TextWrapping.Wrap;
         composer.MinHeight = 64;
         composer.PlaceholderText = "Message the local model";
-        AutomationProperties.SetName(composer, "Message the local model");
+        AutomationProperties.SetName(composer, "Goal or message composer");
         composerArea.Children.Add(composer);
         Grid.SetColumn(send, 1);
         send.VerticalAlignment = VerticalAlignment.Bottom;
         send.Classes.Add("primary");
-        AutomationProperties.SetName(send, "Send message");
+        AutomationProperties.SetName(send, "Submit composer");
         composerArea.Children.Add(send);
         Grid.SetColumn(cancel, 2);
         cancel.VerticalAlignment = VerticalAlignment.Bottom;
         cancel.Classes.Add("command");
         AutomationProperties.SetName(cancel, "Cancel current response");
         composerArea.Children.Add(cancel);
-        Grid.SetRow(composerArea, 2);
+        Grid.SetRow(composerArea, 1);
         grid.Children.Add(composerArea);
         return grid;
     }
@@ -403,14 +390,14 @@ internal sealed class MainWindow : Window
             {
                 new TextBlock { Text = "CURRENT GOAL", Classes = { "eyebrow" } },
                 goalContext,
-                goalAction,
+                inspectGoalContext,
                 new Separator(),
                 new TextBlock { Text = "RECENT EVIDENCE", Classes = { "eyebrow" } },
                 evidence,
             },
         };
-        goalAction.Classes.Add("command");
-        AutomationProperties.SetName(goalAction, "Create or select a goal");
+        inspectGoalContext.Classes.Add("command");
+        AutomationProperties.SetName(inspectGoalContext, "Inspect selected goal semantic context");
         AutomationProperties.SetName(panel, "Goal context and evidence details");
         return new ScrollViewer { Content = panel };
     }
@@ -464,16 +451,7 @@ internal sealed class MainWindow : Window
         openSettings.Click += async (_, _) => await ShowSettingsAsync();
         openWorkspace.Click += async (_, _) => await ShowWorkspaceDialogAsync(true);
         manageWorkspaces.Click += async (_, _) => await ShowWorkspaceDialogAsync(false);
-        manageGoals.Click += async (_, _) =>
-        {
-            GoalDialog dialog = new(store, cancellationToken);
-            await dialog.ShowDialog(this);
-        };
-        goalAction.Click += async (_, _) =>
-        {
-            GoalDialog dialog = new(store, cancellationToken);
-            await dialog.ShowDialog(this);
-        };
+        inspectGoalContext.Click += async (_, _) => await ShowSemanticContextAsync();
         manageFramework.Click += async (_, _) =>
         {
             FrameworkDialog dialog = new(store, cancellationToken);
@@ -555,9 +533,11 @@ internal sealed class MainWindow : Window
                 () => new(ShowWorkspaceDialogAsync(true))),
             new("workspace.manage", "Workspace", "Manage workspaces…",
                 () => new(ShowWorkspaceDialogAsync(false))),
-            new("goals.manage", "Goals", "Goals and plans…",
-                () => new(ShowDialogAsync(new GoalDialog(store, cancellationToken))),
-                UnavailableReason: needsWorkspace),
+            new("goal.context", "Goal", "Inspect semantic context…",
+                () => new(ShowSemanticContextAsync()),
+                UnavailableReason: state.Goals.SelectedGoal is null
+                    ? "Create or continue a goal first"
+                    : needsTrust),
             new("framework.manage", "Framework", "Effective framework…",
                 () => new(ShowDialogAsync(new FrameworkDialog(store, cancellationToken))),
                 UnavailableReason: needsWorkspace),
@@ -597,6 +577,17 @@ internal sealed class MainWindow : Window
 
     private async Task ShowSettingsAsync() =>
         await new SettingsWindow(store, cancellationToken).ShowDialog(this);
+
+    private async Task ShowSemanticContextAsync()
+    {
+        if (store.Current.Goals.SelectedGoal is not { } goal)
+        {
+            return;
+        }
+
+        await store.RefreshSemanticStatusAsync(goal.Id, cancellationToken);
+        await new SemanticContextDialog(store, goal, cancellationToken).ShowDialog(this);
+    }
 
     private async void OnOpened(object? sender, EventArgs eventArgs)
     {
@@ -661,20 +652,13 @@ internal sealed class MainWindow : Window
             composer.PlaceholderText = createsGoal
                 ? "Describe the goal you want Harness to pursue"
                 : "Message Harness about the selected goal";
-            AutomationProperties.SetName(composer, composer.PlaceholderText);
             send.Content = createsGoal ? "Create goal" : "Send";
-            AutomationProperties.SetName(send, createsGoal ? "Create goal from message" : "Send message");
             send.IsEnabled = !state.IsLoading && !state.IsStreaming &&
                              !string.IsNullOrWhiteSpace(state.ComposerText);
             cancel.IsVisible = state.IsStreaming;
-            manageGoals.IsEnabled = !state.IsLoading &&
-                                    state.Workspaces.Registered.Any(item => item.IsActive);
             manageFramework.IsEnabled = !state.IsLoading &&
                                         state.Workspaces.Registered.Any(item => item.IsActive);
-            goalAction.IsEnabled = manageGoals.IsEnabled;
-            goalAction.Content = manageGoals.IsEnabled
-                ? "Create or select a goal"
-                : "Open a workspace first";
+            inspectGoalContext.IsEnabled = !state.IsLoading && state.Goals.SelectedGoal is not null;
             DashboardSnapshot? dashboard = state.Dashboard;
             if (dashboard is not null)
             {
@@ -914,6 +898,9 @@ internal sealed class MainWindow : Window
             case ConversationWorkflowActionKind.StartPlanning:
                 await StartPlanningAsync(goal);
                 break;
+            case ConversationWorkflowActionKind.WritePlan:
+                await WritePlanAsync(goal);
+                break;
             case ConversationWorkflowActionKind.ApprovePlan:
                 await ApprovePlanAsync(goal);
                 break;
@@ -925,6 +912,9 @@ internal sealed class MainWindow : Window
                 break;
             case ConversationWorkflowActionKind.CancelRun:
                 store.CancelGoalWorkflow();
+                break;
+            case ConversationWorkflowActionKind.ReviewAcceptedChanges:
+                await store.RefreshCommitAsync(goal.Id, cancellationToken);
                 break;
             case ConversationWorkflowActionKind.ApproveRestore:
                 await ApproveRestoreAsync(goal, card);
@@ -961,6 +951,20 @@ internal sealed class MainWindow : Window
                 goal.Id,
                 new(limits[0]),
                 cancellationToken);
+        }
+    }
+
+    private async Task WritePlanAsync(GoalView goal)
+    {
+        TextEntryDialog dialog = new(
+            "Write plan manually",
+            "Plan content",
+            "Save plan",
+            "A plan is required.");
+        await dialog.ShowDialog(this);
+        if (dialog.Result is { } content)
+        {
+            await store.ProposePlanAsync(goal.Id, content, cancellationToken);
         }
     }
 

@@ -54,3 +54,7 @@ visible goal-bound authorization: the active workspace must be trusted, stale wr
 fail, it is disabled by default, and neither the cap nor review cycles can change once
 planning starts. Run-specific output ceilings remain explicit in the bounded-call
 sheet rather than becoming ambient authority.
+
+Task 040 production acceptance, including wide/compact captures and the Linux AT-SPI
+journey, is recorded in
+[`acceptance/chat-first-workflow-2026-07-29.md`](acceptance/chat-first-workflow-2026-07-29.md).

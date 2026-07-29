@@ -153,7 +153,7 @@ of Stage 3 below.
   acceptance. The bounded file tree, command palette/quick open, scannable Framework
   inspector, native backup picker, IDE headerbar, inline/side-by-side decorated diff,
   and theme-aware source editor now have recorded real-host evidence.
-- Replace the goal dialog chain with the ADR 013 chat-first workflow. Typed inline
+- Completed the ADR 013 chat-first workflow replacement. Typed inline
   cards carry plans, progress, evidence, validation, consequential decisions, and
   handoff; role/model/output defaults move to searchable Settings and goal-specific
   overrides use progressive disclosure. Durable plan, remote-spend, Restore,

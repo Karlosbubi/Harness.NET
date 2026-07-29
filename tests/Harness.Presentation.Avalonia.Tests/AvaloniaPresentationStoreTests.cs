@@ -407,6 +407,14 @@ public sealed class AvaloniaPresentationStoreTests
         Assert.Equal(1536, workflow.ReviewerMaximum);
         Assert.Equal(GoalWorkflowState.Completed, store.Current.Goals.Workflow?.State);
         Assert.False(store.Current.Goals.IsWorkflowRunning);
+        ConversationWorkflowCard runCard = Assert.Single(
+            ConversationWorkflowProjector.Project(store.Current.Goals),
+            card => card.Id == $"run.{store.Current.Goals.Workflow?.Id.Value}");
+        Assert.Equal(
+            ConversationWorkflowActionKind.ReviewAcceptedChanges,
+            Assert.Single(ConversationWorkflowActionProjector.Project(
+                runCard,
+                store.Current.Goals)).Kind);
     }
 
     [Fact]

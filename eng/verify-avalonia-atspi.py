@@ -155,14 +155,27 @@ class AtSpiApplication:
         time.sleep(0.5)
 
     def set_text(self, name: str, value: str) -> None:
-        node = self.find(name, "entry")
+        nodes = self.nodes()
+        matches = [node for node in nodes if node.name == name]
+        if not matches:
+            available = [
+                (node.role, node.name)
+                for node in nodes
+                if EDITABLE_TEXT in node.interfaces
+            ]
+            raise AssertionError(
+                f"AT-SPI did not expose editable control {name!r}; available: {available}"
+            )
+        node = matches[-1]
         if EDITABLE_TEXT not in node.interfaces:
-            raise AssertionError(f"entry {name!r} is not editable through AT-SPI")
+            raise AssertionError(
+                f"{node.role} {name!r} is not editable through AT-SPI"
+            )
         editable = dbus.Interface(
             self.bus.get_object(self.destination, node.path), EDITABLE_TEXT
         )
         if not bool(editable.SetTextContents(value)):
-            raise AssertionError(f"AT-SPI could not set entry {name!r}")
+            raise AssertionError(f"AT-SPI could not set {node.role} {name!r}")
 
     def text(self, name: str, role: str) -> str:
         node = self.find(name, role)
@@ -366,41 +379,32 @@ def register_workspace(application: AtSpiApplication, repository: Path) -> None:
 
 
 def create_and_approve_goal(application: AtSpiApplication) -> None:
-    application.invoke("Workspace", "page tab")
-    application.wait_for_name("Goals and plans", "push button")
-    application.invoke("Goals and plans")
-    application.wait_for_name("Goals and plans", "frame")
-    application.invoke("New goal")
-    application.wait_for_name("New goal", "frame")
-    application.set_text("Goal title", "AT-SPI representative change")
+    application.invoke("Conversation", "page tab")
     application.set_text(
-        "Goal objective",
-        "Add one real source change and preserve deterministic verification.",
+        "Goal or message composer",
+        "AT-SPI representative change: add one real source change and preserve deterministic verification.",
     )
-    application.set_text("Review-cycle limit", "2")
-    application.invoke("Create goal")
-    application.wait_for_name_containing("AT-SPI representative change — Draft", "list item")
+    application.invoke("Submit composer")
+    application.wait_for_name_containing(
+        "Goal: AT-SPI representative change", "panel"
+    )
 
-    application.invoke("Propose plan")
-    application.wait_for_name("Propose plan", "frame")
+    application.invoke("Write plan manually")
+    application.wait_for_name("Write plan manually", "frame")
     application.set_text(
         "Plan content",
         "1. Update Program.cs in the isolated goal worktree.\n"
         "2. Build and test before requesting exact commit approval.",
     )
     application.invoke("Save plan")
-    application.wait_for_name_containing(
-        "AT-SPI representative change — AwaitingPlanApproval", "list item"
-    )
+    application.wait_for_name_containing("Plan: Plan revision 1, Pending", "panel")
 
-    application.invoke("Approve plan…")
+    application.invoke("Approve plan")
     application.wait_for_name("Approve plan and capabilities", "frame")
     application.invoke("Approve and create worktree")
     application.wait_for_name_containing(
-        "AT-SPI representative change — Approved", "list item"
+        ", Approved", "panel"
     )
-    application.wait_for_name_containing("State: Approved", "label")
-    application.invoke("Close")
 
 
 def verify_documents_and_search(

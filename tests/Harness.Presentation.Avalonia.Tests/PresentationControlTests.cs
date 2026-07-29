@@ -84,8 +84,12 @@ public sealed class PresentationControlTests
             card => card.Kind is ConversationWorkflowCardKind.Plan);
 
         Assert.Equal(
-            ConversationWorkflowActionKind.StartPlanning,
-            Assert.Single(ConversationWorkflowActionProjector.Project(missingPlan, draftState)).Kind);
+            [
+                ConversationWorkflowActionKind.StartPlanning,
+                ConversationWorkflowActionKind.WritePlan,
+            ],
+            ConversationWorkflowActionProjector.Project(missingPlan, draftState)
+                .Select(action => action.Kind));
 
         PlanView pendingPlan = new(
             new("plan-1"),
@@ -857,7 +861,7 @@ public sealed class PresentationControlTests
             window.Show();
             window.Activate();
             Dispatcher.UIThread.RunJobs();
-            workbench.ApplyViewport(800, 600);
+            workbench.ApplyViewport(800, 520);
 
             IToolDock left = Find<IToolDock>(workbench.Root, WorkbenchDockIds.Left);
             IToolDock right = Find<IToolDock>(workbench.Root, WorkbenchDockIds.Right);

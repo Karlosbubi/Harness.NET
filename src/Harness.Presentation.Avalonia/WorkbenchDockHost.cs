@@ -103,7 +103,7 @@ internal sealed class WorkbenchDockHost
     private bool adaptiveBottomCollapsed;
     private double expandedLeftProportion = 0.19;
     private double expandedRightProportion = 0.22;
-    private double expandedBottomProportion = 0.32;
+    private double expandedBottomProportion = 0.45;
     private bool viewportInitialized;
     private int focusRegionIndex = -1;
     private IDockable? activeDocument;
@@ -222,7 +222,7 @@ internal sealed class WorkbenchDockHost
         overviewDocument = overview ?? throw new InvalidOperationException("Dock did not create the overview document.");
         left!.WithProportion(0.19);
         right!.WithProportion(0.22);
-        bottom!.WithProportion(0.32);
+        bottom!.WithProportion(0.45);
         root = rootDock ?? throw new InvalidOperationException("Dock did not create the workbench root.");
         left.VisibleDockables = factory.CreateList<IDockable>(navigationTool!, filesTool!);
         left.ActiveDockable = navigationTool;
@@ -871,13 +871,16 @@ internal sealed class WorkbenchDockHost
     {
         bool compact = width > 0 && width < 1024;
         bool narrow = width > 0 && width < 840;
-        bool shortViewport = height > 0 && height < 700;
+        // This receives the inner workbench height, after the shell header, footer, and
+        // document toolbar. Keep the primary conversation visible at a normal 800px
+        // window and collapse it only near the minimum-height layout.
+        bool shortViewport = height > 0 && height < 560;
         IsCompactViewport = compact || shortViewport;
         if (!viewportInitialized && width > 0 && height > 0)
         {
             leftTools.IsExpanded = !narrow;
             rightTools.IsExpanded = !compact;
-            bottomTools.IsExpanded = !(compact || shortViewport);
+            bottomTools.IsExpanded = !shortViewport;
             if (narrow)
             {
                 leftTools.Proportion = 0.06;
@@ -892,7 +895,7 @@ internal sealed class WorkbenchDockHost
                 rightTools.MaxWidth = 76;
                 SetDockContentVisibility(rightTools, visible: false);
             }
-            if (compact || shortViewport)
+            if (shortViewport)
             {
                 bottomTools.Proportion = 0.08;
                 bottomTools.CollapsedProportion = 0.08;
@@ -901,7 +904,7 @@ internal sealed class WorkbenchDockHost
             }
             adaptiveLeftCollapsed = narrow;
             adaptiveRightCollapsed = compact;
-            adaptiveBottomCollapsed = compact || shortViewport;
+            adaptiveBottomCollapsed = shortViewport;
             viewportInitialized = true;
             return;
         }
@@ -913,7 +916,7 @@ internal sealed class WorkbenchDockHost
             rightTools, compact, 0.06, constrainWidth: true,
             ref adaptiveRightCollapsed, ref expandedRightProportion);
         SetAdaptiveExpansion(
-            bottomTools, compact || shortViewport, 0.08, constrainWidth: false,
+            bottomTools, shortViewport, 0.08, constrainWidth: false,
             ref adaptiveBottomCollapsed, ref expandedBottomProportion);
     }
 
