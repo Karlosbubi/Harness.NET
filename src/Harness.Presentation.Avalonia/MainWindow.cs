@@ -175,17 +175,34 @@ internal sealed class MainWindow : Window
         Grid grid = new()
         {
             ColumnDefinitions = new("Auto,Auto,*"),
-            Margin = new(18, 10),
-            ColumnSpacing = 20,
+            Margin = new(14, 8),
+            ColumnSpacing = 16,
         };
-        StackPanel title = new()
+
+        Border mark = new()
+        {
+            Classes = { "app-mark" },
+            Child = new TextBlock { Text = "H" },
+            VerticalAlignment = VerticalAlignment.Center,
+            IsHitTestVisible = false,
+        };
+        AutomationProperties.SetAccessibilityView(mark, AccessibilityView.Raw);
+
+        StackPanel titleText = new()
         {
             VerticalAlignment = VerticalAlignment.Center,
             Children =
             {
-                new TextBlock { Text = "Harness.NET", FontSize = 17, FontWeight = FontWeight.SemiBold },
+                new TextBlock { Text = "Harness.NET", FontSize = 15, FontWeight = FontWeight.SemiBold },
                 brandDetail,
             },
+        };
+        StackPanel title = new()
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 10,
+            VerticalAlignment = VerticalAlignment.Center,
+            Children = { mark, titleText },
         };
         grid.Children.Add(title);
 
@@ -203,13 +220,11 @@ internal sealed class MainWindow : Window
             VerticalAlignment = VerticalAlignment.Center,
             Children =
             {
-                modelLabel,
-                modelPicker,
-                refreshProvider,
-                themeLabel,
-                themePicker,
-                reloadThemes,
-                workbench?.LayoutActions ?? new TextBlock(),
+                Cluster(modelLabel, modelPicker, refreshProvider),
+                Cluster(themeLabel, themePicker, reloadThemes),
+                workbench?.LayoutActions is { } layoutActions
+                    ? Cluster(layoutActions)
+                    : new TextBlock(),
             },
         };
         ScrollViewer actionScroller = new()
@@ -229,7 +244,31 @@ internal sealed class MainWindow : Window
         themePicker.Classes.Add("toolbar-input");
         refreshProvider.Classes.Add("icon");
         reloadThemes.Classes.Add("icon");
+        modelLabel.Classes.Add("cluster-label");
+        themeLabel.Classes.Add("cluster-label");
         return grid;
+    }
+
+    /// <summary>Groups a label with the control it names so the header reads as one affordance.</summary>
+    private static Border Cluster(params Control[] children)
+    {
+        StackPanel row = new()
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 4,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        foreach (Control child in children)
+        {
+            row.Children.Add(child);
+        }
+
+        return new Border
+        {
+            Classes = { "cluster" },
+            Child = row,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
     }
 
     private void UpdateResponsiveChrome(double width)
@@ -505,6 +544,9 @@ internal sealed class MainWindow : Window
                 workspace.Text = hasWorkspace
                     ? $"{dashboard.Workspace.Name}\n{dashboard.Workspace.Branch}\n{dashboard.Workspace.Trust}"
                     : "No workspace open\nChoose a Git-backed .NET repository to begin.";
+                brandDetail.Text = hasWorkspace
+                    ? $"{dashboard.Workspace.Name} · {dashboard.Workspace.Branch}"
+                    : "No workspace open";
                 manageWorkspaces.Content = hasWorkspace ? "Switch workspace…" : "Open workspace…";
                 RenderActivities(dashboard);
                 ToolTip.SetTip(modelPicker, ProviderText(dashboard.Provider));
