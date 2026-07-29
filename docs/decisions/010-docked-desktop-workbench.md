@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-07-28
 - Extends: [ADR 009](009-avalonia-presentation-toolkit.md)
+- Extended by: [ADR 012](012-roslyn-code-intelligence.md), [ADR 013](013-chat-first-desktop-workflow.md)
 
 ## Context
 

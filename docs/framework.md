@@ -21,6 +21,7 @@ behavior Harness.NET will provide.
 | Testing | Use xUnit, architecture enforcement, integration tests, and opt-in model evaluations. |
 | Presentation | Use Avalonia by default, retain Terminal.Gui v2, allow future gRPC adapters, and avoid web frontends. |
 | Process | Remain in one application process as long as practical. |
+| Code intelligence | Use in-process Roslyn first behind implementation-neutral contracts; keep a future local LSP module replaceable. |
 
 ## Layer and dependency rules
 
@@ -53,6 +54,9 @@ Data Access -> Business Logic -> Presentation
   report is reconciled after interruption; an uncertain call is never replayed.
   Atomic edit tools reject paths outside that task's normalized file-area grant.
 - An independent reviewer owns diff, architecture, and evidence review.
+- Model-authored source changes are preflighted by deterministic code intelligence.
+  They may not introduce a new compiler error, and warnings/analyzer findings become
+  structured evidence rather than prose supplied by the model.
 - Specialist exchanges are summarized in the activity timeline and fully expandable.
 - Each goal requires a review-cycle limit. Reaching it pauses the run for user input.
 - Local inference, elapsed time, and typed tool calls have no automatic quota but
@@ -77,6 +81,9 @@ Data Access -> Business Logic -> Presentation
 ## Approval and trust policy
 
 - A repository must be explicitly trusted once before build or test execution.
+- Workspace trust also covers project evaluation and configured analyzer/source-
+  generator execution for code intelligence. Untrusted repositories receive bounded
+  lexical viewing only, and code intelligence never performs an implicit restore.
 - Plan approval grants repository-local edits, builds, tests, searches, and
   inspection through typed tools in the goal worktree.
 - Network access, package changes/restores, destructive actions, budget extensions,
@@ -171,11 +178,26 @@ overlay, `AGENTS.md`, or a suitable existing documentation file.
 - Every approved goal receives a dedicated branch and worktree.
 - Typed tools cover file reads, tracked-file listing, text search, patch application,
   .NET build/test/restore/package operations, Git status/diff, and worktree lifecycle.
+- In-process Roslyn provides compiler diagnostics and semantic operations behind Data
+  Access contracts. Its implementation types do not cross into Business Logic.
+- Prefer typed compiler operations whenever Roslyn can determine the result. Semantic
+  rename resolves symbol identity and references, previews all affected baseline-
+  protected files, applies them atomically, and validates the result; agents do not
+  emulate rename through repository-wide text replacement.
 - No unrestricted shell is available to agents.
 - LibGit2Sharp handles supported Git operations. A structured Git CLI adapter handles
   worktrees or other required operations LibGit2Sharp does not support.
 
 ## Presentation and operations
+
+- Conversation is the primary goal workflow. Typed inline cards expose plans,
+  capability and cost decisions, progress, validation, evidence, Restore, exact
+  commit, and branch handoff while detailed artifacts remain available as documents
+  and tools. Conversational language alone never authorizes a consequential action.
+- One searchable Settings surface owns ordinary application preferences, including
+  editor, appearance, accessibility, model/role defaults, privacy, storage, and
+  advanced module configuration. Goal-specific overrides use progressive disclosure;
+  saved routes or credentials never authorize remote spending.
 
 - Avalonia is the default interactive adapter. It currently provides the durable
   conversation stream, provider/model selection, persisted semantic themes, safe
@@ -217,6 +239,11 @@ overlay, `AGENTS.md`, or a suitable existing documentation file.
 - The Terminal.Gui adapter remains available through `--ui=terminal`.
 - The initial release is a self-contained Linux x64 binary and keeps process, path,
   and presentation contracts portable for later platforms.
+- Linux remains the product gate. Native windows, pickers, clipboard, notifications,
+  screen geometry, shortcuts, and accessibility sit behind focused Presentation
+  capabilities. XDG storage, filesystem behavior, Secret Service, and process
+  execution sit behind focused Data Access capabilities. Host selects implementations;
+  feature code does not scatter platform checks or depend on one generic platform API.
 - Harness.NET uses XDG-managed config, data, state, and cache locations.
 - Typed runtime defaults ship as XML; an XDG XML file overrides them. Environment
   and command-line values remain optional, higher-precedence operational overrides.

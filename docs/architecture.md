@@ -21,7 +21,8 @@ sets and immutable single-value records where primitive values have distinct dom
 meaning. Implementations remain internal where practical; DI composition is the
 documented exception. Provider SDK payloads
 remain inside Data Access. Microsoft Agent Framework objects remain behind the
-Business Logic agent-role boundary.
+Business Logic agent-role boundary. Roslyn, MSBuild, and any future LSP protocol
+objects remain inside the code-intelligence implementation boundary.
 
 ## Business concepts
 
@@ -37,18 +38,23 @@ Business Logic agent-role boundary.
 | Artifact | A patch, file, plan, decision, report, or verification result. |
 | Approval | User authorization for a plan or consequential capability. |
 | Evidence | Build, test, diff, review, usage, or other completion proof. |
+| Code intelligence | Versioned compiler diagnostics, semantic navigation, and typed transformations for one trusted source context. |
 
 ## Module responsibilities
 
 - **Data Access:** SQLite/Dapper repositories, DbUp migrations, SQLite vector
   connector, Ollama/OpenRouter connectors, Git adapters, file access, typed process
-  tools, keyring access, and Serilog sinks.
+  tools, keyring access, the in-process Roslyn/MSBuild implementation, and Serilog
+  sinks.
 - **Business Logic:** goals, plans, roles, delegation, policy evaluation, approvals,
-  budgets, checkpoints, context assembly, retrieval coordination, and workflow state.
+  budgets, checkpoints, context assembly, retrieval coordination, trusted code-
+  intelligence lifecycle and validation policy, and workflow state.
 - **UI toolkit:** public Avalonia controls, semantic themes, accessibility helpers,
   and adaptive layouts with no dependency on another Harness runtime project.
 - **Presentation:** Avalonia and Terminal.Gui adapters consuming only Business Logic
-  interfaces, records, commands, and streams. Avalonia owns its Rx.NET view state.
+  interfaces, records, commands, and streams. Avalonia owns its Rx.NET view state,
+  chat-first workflow cards, transient editor buffers, and focused native desktop
+  capabilities such as pickers, clipboard, screen geometry, and accessibility.
 - **Host/composition:** lifecycle, configuration, DI registration, cancellation,
   startup migrations, and presentation selection.
 - **Analyzer:** compile-time diagnostics for reference direction and cross-layer
@@ -65,6 +71,12 @@ Business Logic agent-role boundary.
 Long-running calls accept cancellation. A completed tool call is persisted before
 the next workflow step. An interrupted call is marked uncertain and is not replayed
 automatically.
+
+Live editor buffers follow a separate transient path: Presentation sends an immutable
+context-, baseline-, and version-bound document snapshot; Business Logic validates
+the source context; Data Access computes semantic results; and Presentation discards
+any result whose context or buffer version is stale. Roslyn work never runs on the UI
+thread and transient buffers are not persisted.
 
 ## Storage boundary
 
@@ -97,6 +109,14 @@ atomic edit calls outside those repository-relative areas fail before reaching t
 mutation service. Review correction calls receive the union of the accepted tasks'
 areas, while build and test remain bound to the registered goal entry point.
 
+Model-authored mutations are first applied to an in-memory compiler solution. A new
+compiler Error rejects the mutation before disk write; warnings and analyzer findings
+become evidence. Accepted multi-file transformations revalidate all baselines and
+apply atomically, then run post-apply validation. Semantic rename is a closed typed
+operation over a Roslyn-resolved symbol and preview fingerprint, not a text-search
+tool. Manual buffers remain permissive and show diagnostics without blocking typing
+or save.
+
 Microsoft Agent Framework function declarations and calls map through provider-neutral
 records before Data Access serializes Ollama or OpenRouter payloads. Tool names,
 roles, calls, results, and scopes use enums or semantic single-value records. Remote
@@ -110,9 +130,14 @@ query embeddings use the same atomic goal reservation and reconciliation boundar
 ## Required qualities
 
 - Provider and agent-framework types stop at their owning boundary.
+- Roslyn, MSBuild, and LSP types stop at the Data Access implementation boundary;
+  diagnostics and semantic operations cross layers only as Harness records and enums.
 - Tools are capability-based, path-checked, cancellable, and correlated.
 - Workflow transitions and cost reconciliation are atomic where state consistency
   requires it.
 - Logs and OTLP telemetry redact secrets and omit model content by default.
 - Domain behavior is testable without Git, SQLite, a TUI, or a running model server.
 - Architecture rules fail compilation through the analyzer and remain review criteria.
+- Linux-specific Presentation and Data Access behavior is selected through focused
+  Host-composed capabilities rather than operating-system checks in Business Logic or
+  one unrestricted platform service.

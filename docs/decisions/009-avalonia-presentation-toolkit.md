@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-07-28
 - Amends: [ADR 001](001-layered-feature-architecture.md), [ADR 002](002-non-web-presentation.md)
-- Extended by: [ADR 010](010-docked-desktop-workbench.md)
+- Extended by: [ADR 010](010-docked-desktop-workbench.md), [ADR 013](013-chat-first-desktop-workflow.md)
 
 ## Context
 

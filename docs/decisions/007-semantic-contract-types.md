@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-07-27
 - Amends: [ADR 001](001-layered-feature-architecture.md)
+- Extended by: [ADR 012](012-roslyn-code-intelligence.md)
 
 ## Context
 

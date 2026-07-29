@@ -20,6 +20,13 @@ optimizes for useful, inspectable outcomes rather than maximum autonomy.
   capabilities, budget extensions, and Git commits.
 - **Workspace autonomy:** after plan approval, agents may use typed repository-local
   edit, build, test, and inspection tools without repeated prompts.
+- **Deterministic .NET assistance:** Roslyn checks manual and model-authored edits and
+  performs symbol-aware operations when a compiler answer exists; language-model text
+  does not replace deterministic refactoring.
+- **Conversation-led workflow:** the user collaborates through chat while plans,
+  approvals, progress, validation, evidence, and handoff appear as structured state
+  in context. Agent roles are configurable implementation detail, not the routine
+  interaction model.
 - **Provider boundaries:** Ollama and OpenRouter remain Data Access concerns; model
   payloads do not define Business Logic or Presentation contracts.
 - **Observable work:** activity, decisions, tool results, usage, and evidence are
@@ -34,11 +41,13 @@ optimizes for useful, inspectable outcomes rather than maximum autonomy.
 
 1. Register and trust a Git-backed .NET repository.
 2. Select a solution or project entry point and build its semantic index.
-3. Create a goal, select models per role, and set review and remote-cost limits.
+3. Describe a goal in conversation, using configured role/model defaults and setting
+   only any required goal-specific remote authorization or override.
 4. Let the lead inspect the repository and propose a plan.
 5. Approve, revise, or reject the plan.
 6. Create an isolated goal branch and worktree after approval.
-7. Let the implementer edit and verify through typed tools.
+7. Let the implementer edit through typed tools whose candidate changes are checked
+   by Roslyn, then verify through independent Build/Test evidence.
 8. Let an independent reviewer inspect the diff and evidence.
 9. Repeat within the configured review-cycle limit or pause for user direction.
 10. Inspect the outcome and explicitly approve a commit on the goal branch.

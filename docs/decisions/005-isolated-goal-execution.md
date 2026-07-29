@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-07-26
+- Extended by: [ADR 012](012-roslyn-code-intelligence.md)
 
 ## Context
 

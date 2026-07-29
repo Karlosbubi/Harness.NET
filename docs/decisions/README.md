@@ -28,3 +28,5 @@ link superseding records in both directions.
 | [009](009-avalonia-presentation-toolkit.md) | Accepted | Avalonia presentation toolkit and desktop adapter |
 | [010](010-docked-desktop-workbench.md) | Accepted | Docked desktop workbench and real editor documents |
 | [011](011-private-workbench-layout-state.md) | Accepted | Private workbench layout state and recovery |
+| [012](012-roslyn-code-intelligence.md) | Accepted | Roslyn code intelligence and verified transformations |
+| [013](013-chat-first-desktop-workflow.md) | Accepted | Chat-first desktop workflow and settings ownership |
