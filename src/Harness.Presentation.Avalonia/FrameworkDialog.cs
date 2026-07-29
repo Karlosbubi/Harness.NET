@@ -1,5 +1,4 @@
 using System.Reactive.Linq;
-using System.Text;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
@@ -15,7 +14,7 @@ internal sealed class FrameworkDialog : Window
     private readonly AvaloniaPresentationStore store;
     private readonly CancellationToken cancellationToken;
     private readonly IDisposable subscription;
-    private readonly TextEditor effective = CodeEditorView.Create(showLineNumbers: false);
+    private readonly ContentControl effective = new();
     private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap };
     private readonly Button refresh = new() { Content = "Refresh" };
     private readonly Button edit = new() { Content = "Edit private overlay…" };
@@ -92,76 +91,8 @@ internal sealed class FrameworkDialog : Window
     {
         refresh.IsEnabled = !state.IsBusy;
         edit.IsEnabled = !state.IsBusy && state.Snapshot is not null;
-        effective.Text = state.Snapshot is null
-            ? "Select an active workspace and refresh its effective framework."
-            : Format(state.Snapshot);
+        effective.Content = FrameworkContentView.Create(state.Snapshot);
         status.Text = state.IsBusy ? "Resolving framework…" : state.Status ?? string.Empty;
-    }
-
-    private static string Format(FrameworkSnapshot snapshot)
-    {
-        StringBuilder text = new();
-        text.AppendLine(snapshot.IsValid ? "VALID" : "ATTENTION REQUIRED")
-            .AppendLine()
-            .AppendLine("EFFECTIVE RULES");
-        if (snapshot.Rules.Count == 0)
-        {
-            text.AppendLine("(none)");
-        }
-
-        foreach (EffectiveFrameworkRule rule in snapshot.Rules)
-        {
-            text.Append(rule.IsLocked ? "[locked] " : "          ")
-                .Append(rule.Key)
-                .Append(" = ")
-                .AppendLine(rule.Value)
-                .Append("          layer: ")
-                .Append(rule.Layer)
-                .Append(" | source: ")
-                .AppendLine(rule.Source);
-        }
-
-        text.AppendLine().AppendLine("GUIDANCE DOCUMENTS");
-        if (snapshot.Documents.Count == 0)
-        {
-            text.AppendLine("(none)");
-        }
-
-        foreach (FrameworkDocumentView document in snapshot.Documents)
-        {
-            text.Append('[')
-                .Append(document.Layer)
-                .Append(" | precedence ")
-                .Append(document.Precedence)
-                .Append(document.IsPrivate ? " | private" : " | shared")
-                .Append("] ")
-                .AppendLine(document.Source)
-                .AppendLine(document.Content)
-                .AppendLine();
-        }
-
-        text.AppendLine("ISSUES");
-        if (snapshot.Issues.Count == 0)
-        {
-            text.AppendLine("(none)");
-        }
-
-        foreach (FrameworkIssue issue in snapshot.Issues)
-        {
-            text.Append('[').Append(issue.Code).Append("] ").AppendLine(issue.Message);
-            if (issue.Key is not null)
-            {
-                text.Append("          key: ").AppendLine(issue.Key);
-            }
-
-            if (issue.Sources.Count > 0)
-            {
-                text.Append("          sources: ")
-                    .AppendLine(string.Join(", ", issue.Sources));
-            }
-        }
-
-        return text.ToString();
     }
 }
 

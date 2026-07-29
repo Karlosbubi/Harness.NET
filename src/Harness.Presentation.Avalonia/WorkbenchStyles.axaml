@@ -79,6 +79,29 @@
     <Setter Property="Foreground" Value="{DynamicResource Harness.TextMuted}" />
   </Style>
 
+  <!-- Compact list rows and status chips used by the framework inspector. -->
+  <Style Selector="Border.card.row">
+    <Setter Property="Padding" Value="10,8" />
+    <Setter Property="CornerRadius" Value="7" />
+  </Style>
+  <Style Selector="Border.card.attention">
+    <Setter Property="BorderBrush" Value="{DynamicResource Harness.Warning}" />
+  </Style>
+  <Style Selector="Border.chip">
+    <Setter Property="Padding" Value="6,1" />
+    <Setter Property="CornerRadius" Value="5" />
+    <Setter Property="Background" Value="{DynamicResource Harness.AccentSoft}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Border.chip > TextBlock">
+    <Setter Property="FontSize" Value="10" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{DynamicResource Harness.AccentStrong}" />
+  </Style>
+  <Style Selector="TextBlock.attention">
+    <Setter Property="Foreground" Value="{DynamicResource Harness.Warning}" />
+  </Style>
+
   <!-- Application identity mark in the header bar. -->
   <Style Selector="Border.app-mark">
     <Setter Property="Width" Value="34" />
