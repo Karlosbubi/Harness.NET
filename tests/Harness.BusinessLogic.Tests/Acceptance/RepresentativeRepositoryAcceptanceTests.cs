@@ -3,6 +3,7 @@ using System.Text;
 using Harness.BusinessLogic.Acceptance;
 using Harness.BusinessLogic.Approvals;
 using Harness.BusinessLogic.Documents;
+using Harness.BusinessLogic.Evidence;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Mutations;
 using Harness.BusinessLogic.Tools;
@@ -116,6 +117,22 @@ public sealed class RepresentativeRepositoryAcceptanceTests : IDisposable
         Assert.Equal(0, restore.ExitCode);
         Assert.Equal(0, build.ExitCode);
         Assert.Equal(0, test.ExitCode);
+        RunOutputSnapshot runOutput = await new RunOutputService(new ToolEvidenceService(
+            goalStore,
+            workspaceStore,
+            evidenceStore)).ListAsync(created.Goal.Id);
+        Assert.Equal(3, runOutput.Items.Count);
+        Assert.All(runOutput.Items, item =>
+        {
+            Assert.Null(item.Error);
+            Assert.NotNull(item.Result);
+            Assert.Equal(0, item.Result!.ExitCode);
+        });
+        Assert.Contains(runOutput.Items, item =>
+            item.Operation is DotNetOperation.Build &&
+            item.CorrelationId.Value == "representative-build");
+        Assert.DoesNotContain(runOutput.Items, item =>
+            item.CorrelationId.Value == "representative-edit");
 
         SqliteGoalWorkflowStore workflowStore = new(applicationPaths);
         GoalWorkflowRunId runId = new(Guid.NewGuid().ToString("N"));

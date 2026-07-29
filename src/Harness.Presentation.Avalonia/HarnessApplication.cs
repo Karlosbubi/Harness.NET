@@ -4,6 +4,7 @@ using Avalonia.Markup.Xaml.Styling;
 using Avalonia.Themes.Fluent;
 using Dock.Avalonia.Themes.Fluent;
 using Harness.BusinessLogic.Documents;
+using Harness.BusinessLogic.Evidence;
 using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Layouts;
 using Harness.UI.Avalonia;
@@ -13,6 +14,7 @@ namespace Harness.Presentation.Avalonia;
 internal sealed class HarnessApplication(
     AvaloniaPresentationStore store,
     HarnessThemeController themeController,
+    IRunOutputService runOutputService,
     IWorkbenchInspectionService inspectionService,
     IWorkbenchDocumentService documentService,
     IWorkbenchLayoutService layoutService,
@@ -37,6 +39,7 @@ internal sealed class HarnessApplication(
             MainWindow = new(
                 store,
                 themeController,
+                runOutputService,
                 inspectionService,
                 documentService,
                 layoutService,

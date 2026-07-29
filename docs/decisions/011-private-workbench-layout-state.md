@@ -32,11 +32,12 @@ Persist one bounded `harness-workbench-layout-v1` JSON envelope at
 `$XDG_STATE_HOME/harness.net/workbench-layout.json`. Data Access owns atomic,
 user-private file I/O, size limits, schema decoding, and SHA-256 integrity. Business
 Logic maps that store through immutable layout payload/result contracts.
-Presentation alone maps the live Dock graph to a closed version-1 layout DTO and
-interprets that DTO. The durable schema admits only roots, proportional docks and
-splitters, tool docks, document docks, the six known production panes, bounded
-floating windows, and their layout properties. It does not serialize Dock runtime
-types.
+Presentation alone maps the live Dock graph to a closed layout DTO and interprets
+that DTO. Layout format 2 admits only roots, proportional docks and splitters, tool
+docks, document docks, the seven known production panes (including the required Run
+output tool), bounded floating windows, and their layout properties. Format 1 lacks
+that required production pane and is therefore rejected visibly in favor of the
+complete safe default. It does not serialize Dock runtime types.
 
 Before saving, Presentation traverses the graph and omits transient file, diff, plan,
 and evidence documents. Before activation, it rejects malformed, duplicate,

@@ -50,6 +50,10 @@ content on refresh; an 18-document, six-project scenario with 1,800 tab switches
 completed in 278 ms on 2026-07-29 under headless execution. Complete keyboard/focus
 traversal, floating-window ownership, compact layout, scaling, and
 assistive-technology behavior remain required before this record can become Accepted.
+The bottom edge now contains distinct Conversation and Run output tools. Run output
+is a typed projection of durable Build/Test/Restore evidence with bounded stdout and
+stderr; Presentation never decodes audit JSON and no unrestricted terminal is
+introduced.
 
 ## Proposed decision
 

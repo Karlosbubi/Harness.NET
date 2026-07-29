@@ -12,6 +12,7 @@ using Dock.Model.Controls;
 using Dock.Model.Core;
 using Dock.Model.Mvvm;
 using Harness.BusinessLogic.Documents;
+using Harness.BusinessLogic.Evidence;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Layouts;
@@ -26,6 +27,7 @@ namespace Harness.Presentation.Avalonia;
 
 internal sealed class WorkbenchDockHost
 {
+    private readonly IRunOutputService runOutputService;
     private readonly IWorkbenchInspectionService inspectionService;
     private readonly IWorkbenchDocumentService documentService;
     private readonly IWorkbenchLayoutService layoutService;
@@ -60,14 +62,25 @@ internal sealed class WorkbenchDockHost
     private readonly ListBox changes = new();
     private readonly TextBlock gitSummary = new() { TextWrapping = TextWrapping.Wrap };
     private readonly TextBlock gitStatus = new() { TextWrapping = TextWrapping.Wrap };
+    private readonly ListBox runOutputs = new();
+    private readonly TextBlock runOutputStatus = new() { TextWrapping = TextWrapping.Wrap };
+    private readonly TextEditor runOutputDetails = CodeEditorView.Create(
+        string.Empty,
+        isReadOnly: true,
+        wordWrap: false,
+        showLineNumbers: false,
+        path: "run-output.txt");
     private string? workspaceId;
     private string? selectedGoalId;
+    private string? runOutputFingerprint;
     private bool busy;
+    private bool runOutputBusy;
     private bool suppressDocumentActivation;
     private bool resolvingDocumentTransition;
     private IDockable? activeDocument;
 
     internal WorkbenchDockHost(
+        IRunOutputService runOutputService,
         IWorkbenchInspectionService inspectionService,
         IWorkbenchDocumentService documentService,
         IWorkbenchLayoutService layoutService,
@@ -78,6 +91,7 @@ internal sealed class WorkbenchDockHost
         Control goalContext,
         CancellationToken cancellationToken)
     {
+        this.runOutputService = runOutputService;
         this.inspectionService = inspectionService;
         this.documentService = documentService;
         this.layoutService = layoutService;
@@ -89,6 +103,7 @@ internal sealed class WorkbenchDockHost
 
         Control files = BuildFilesTool();
         Control sourceControl = BuildSourceControlTool();
+        Control runOutput = BuildRunOutputTool();
         Control context = BuildContextTool(goalContext);
         Control overviewContent = BuildOverviewDocument();
         durableContexts.Add(WorkbenchDockIds.NavigationTool, navigation);
@@ -96,6 +111,7 @@ internal sealed class WorkbenchDockHost
         durableContexts.Add(WorkbenchDockIds.ContextTool, context);
         durableContexts.Add(WorkbenchDockIds.GitTool, sourceControl);
         durableContexts.Add(WorkbenchDockIds.ConversationTool, conversation);
+        durableContexts.Add(WorkbenchDockIds.RunOutputTool, runOutput);
         durableContexts.Add(WorkbenchDockIds.OverviewDocument, overviewContent);
 
         factory
@@ -124,6 +140,11 @@ internal sealed class WorkbenchDockHost
                 .WithTitle("Conversation")
                 .WithCanClose(true)
                 .WithContext(conversation))
+            .Tool(out ITool? runOutputTool, item => item
+                .WithId(WorkbenchDockIds.RunOutputTool)
+                .WithTitle("Run output")
+                .WithCanClose(true)
+                .WithContext(runOutput))
             .Document(out IDocument? overview, item => item
                 .WithId(WorkbenchDockIds.OverviewDocument)
                 .WithTitle("Workspace overview")
@@ -167,7 +188,7 @@ internal sealed class WorkbenchDockHost
         left.ActiveDockable = filesTool;
         right.VisibleDockables = factory.CreateList<IDockable>(contextTool!, gitTool!);
         right.ActiveDockable = contextTool;
-        bottom.VisibleDockables = factory.CreateList<IDockable>(conversationTool!);
+        bottom.VisibleDockables = factory.CreateList<IDockable>(conversationTool!, runOutputTool!);
         bottom.ActiveDockable = conversationTool;
         documents.VisibleDockables = factory.CreateList<IDockable>(overviewDocument);
         documents.ActiveDockable = overviewDocument;
@@ -352,6 +373,15 @@ internal sealed class WorkbenchDockHost
             {
                 Dispatcher.UIThread.Post(async () => await RefreshGitAsync());
             }
+        }
+
+        string nextRunOutputFingerprint = $"{nextGoalId}|{snapshot.Goals.Workflow?.State}|" +
+                                          $"{snapshot.Goals.Workflow?.Activities.Count ?? 0}|" +
+                                          snapshot.Goals.IsWorkflowRunning;
+        if (!string.Equals(runOutputFingerprint, nextRunOutputFingerprint, StringComparison.Ordinal))
+        {
+            runOutputFingerprint = nextRunOutputFingerprint;
+            Dispatcher.UIThread.Post(async () => await RefreshRunOutputAsync());
         }
 
         if (active is null)
@@ -566,7 +596,7 @@ internal sealed class WorkbenchDockHost
         string stage)
     {
         if (left.VisibleDockables?.Count != 2 || right.VisibleDockables?.Count != 2 ||
-            bottom.VisibleDockables?.Count != 1)
+            bottom.VisibleDockables?.Count != 2)
         {
             throw new InvalidOperationException($"Dock lost the default tool panels {stage}.");
         }
@@ -712,6 +742,141 @@ internal sealed class WorkbenchDockHost
         Grid.SetRow(actions, 1);
         grid.Children.Add(actions);
         return grid;
+    }
+
+    private Control BuildRunOutputTool()
+    {
+        Grid grid = new()
+        {
+            RowDefinitions = new("Auto,*,2*"),
+            Margin = new Thickness(10),
+            RowSpacing = 8,
+        };
+        Grid heading = new() { ColumnDefinitions = new("*,Auto"), ColumnSpacing = 8 };
+        AutomationProperties.SetName(runOutputStatus, "Durable run output status");
+        runOutputStatus.Text = "Select a goal to inspect durable Build, Test, and Restore output.";
+        heading.Children.Add(runOutputStatus);
+        Button refresh = new() { Content = "Refresh" };
+        AutomationProperties.SetName(refresh, "Refresh durable run output");
+        refresh.Click += async (_, _) => await RefreshRunOutputAsync();
+        Grid.SetColumn(refresh, 1);
+        heading.Children.Add(refresh);
+        grid.Children.Add(heading);
+
+        AutomationProperties.SetName(runOutputs, "Durable Build, Test, and Restore runs");
+        runOutputs.SelectionChanged += (_, _) => ShowSelectedRunOutput();
+        Grid.SetRow(runOutputs, 1);
+        grid.Children.Add(runOutputs);
+
+        AutomationProperties.SetName(runOutputDetails, "Selected durable run output");
+        Grid.SetRow(runOutputDetails, 2);
+        grid.Children.Add(runOutputDetails);
+        return grid;
+    }
+
+    internal async ValueTask RefreshRunOutputAsync()
+    {
+        GoalView? goal = state().Goals.SelectedGoal;
+        if (runOutputBusy)
+        {
+            return;
+        }
+
+        if (goal is null)
+        {
+            runOutputs.ItemsSource = Array.Empty<RunOutputChoice>();
+            runOutputDetails.Text = string.Empty;
+            runOutputStatus.Text = "Select a goal to inspect durable Build, Test, and Restore output.";
+            return;
+        }
+
+        runOutputBusy = true;
+        runOutputStatus.Text = $"Loading durable run output for {goal.Title}…";
+        try
+        {
+            RunOutputSnapshot result = await runOutputService.ListAsync(goal.Id, cancellationToken);
+            if (result.Error is not null)
+            {
+                runOutputs.ItemsSource = Array.Empty<RunOutputChoice>();
+                runOutputDetails.Text = string.Empty;
+                runOutputStatus.Text = result.Error;
+                return;
+            }
+
+            RunOutputChoice[] choices = result.Items.Select(item => new RunOutputChoice(item)).ToArray();
+            runOutputs.ItemsSource = choices;
+            runOutputStatus.Text = choices.Length == 0
+                ? $"No Build, Test, or Restore runs are recorded for {goal.Title}."
+                : $"{choices.Length} durable run(s) for {goal.Title}." +
+                  (result.IsTruncated ? " Showing the latest 200 runs." : string.Empty);
+            runOutputs.SelectedIndex = choices.Length == 0 ? -1 : 0;
+            if (choices.Length == 0)
+            {
+                runOutputDetails.Text = string.Empty;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            runOutputStatus.Text = "Run-output refresh cancelled.";
+        }
+        catch (Exception exception)
+        {
+            runOutputs.ItemsSource = Array.Empty<RunOutputChoice>();
+            runOutputDetails.Text = string.Empty;
+            runOutputStatus.Text = $"Run output unavailable: {exception.Message}";
+        }
+        finally
+        {
+            runOutputBusy = false;
+        }
+    }
+
+    private void ShowSelectedRunOutput()
+    {
+        runOutputDetails.Text = runOutputs.SelectedItem is RunOutputChoice choice
+            ? FormatRunOutput(choice.Output)
+            : string.Empty;
+    }
+
+    private static string FormatRunOutput(RunOutputView output)
+    {
+        List<string> lines =
+        [
+            $"{output.Operation} · {output.State}",
+            $"Started: {output.StartedAt:O}",
+            $"Completed: {(output.CompletedAt is null ? "not recorded" : output.CompletedAt.Value.ToString("O"))}",
+            $"Correlation: {output.CorrelationId.Value}",
+        ];
+        if (output.Error is not null)
+        {
+            lines.Add($"Evidence error: {output.Error}");
+            return string.Join(Environment.NewLine, lines);
+        }
+
+        if (output.Result is not { } result)
+        {
+            lines.Add(output.State is ToolEvidenceState.Running
+                ? "The run is still active; output becomes available with durable completion evidence."
+                : "No completed output was recorded for this run.");
+            return string.Join(Environment.NewLine, lines);
+        }
+
+        lines.Add($"Entry point: {result.EntryPoint}");
+        lines.Add($"Exit code: {(result.ExitCode?.ToString() ?? "not reported")}");
+        lines.Add($"Duration: {result.DurationMilliseconds:N0} ms");
+        lines.Add($"Cancelled: {(result.WasCancelled ? "yes" : "no")}");
+        if (result.Error is not null)
+        {
+            lines.Add($"Operation error: {result.Error}");
+        }
+
+        lines.Add(string.Empty);
+        lines.Add(result.IsOutputTruncated ? "Standard output · truncated" : "Standard output");
+        lines.Add(result.StandardOutput);
+        lines.Add(string.Empty);
+        lines.Add(result.IsErrorTruncated ? "Standard error · truncated" : "Standard error");
+        lines.Add(result.StandardError);
+        return string.Join(Environment.NewLine, lines);
     }
 
     private Control BuildOverviewDocument() => new ScrollViewer
@@ -1300,6 +1465,15 @@ internal sealed class WorkbenchDockHost
     private sealed record ChangeChoice(WorkspaceGitFileChangeView Change, GoalId? GoalId)
     {
         public override string ToString() => $"{Change.Status}  {Change.Path}";
+    }
+
+    private sealed record RunOutputChoice(RunOutputView Output)
+    {
+        public override string ToString()
+        {
+            string exit = Output.Result?.ExitCode is { } code ? $" · exit {code}" : string.Empty;
+            return $"{Output.Operation} · {Output.State}{exit} · {Output.StartedAt.LocalDateTime:g}";
+        }
     }
 
 }

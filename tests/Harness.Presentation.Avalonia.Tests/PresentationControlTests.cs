@@ -11,9 +11,11 @@ using Dock.Avalonia.Controls;
 using Dock.Model.Controls;
 using Dock.Model.Core;
 using Harness.BusinessLogic.Documents;
+using Harness.BusinessLogic.Evidence;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Layouts;
+using Harness.BusinessLogic.Mutations;
 using Harness.BusinessLogic.Workspaces;
 using Harness.UI.Avalonia;
 
@@ -93,6 +95,7 @@ public sealed class PresentationControlTests
                 IsLoading = false,
             };
             WorkbenchDockHost workbench = new(
+                new RunOutputService(),
                 new InspectionService(),
                 new DocumentService(),
                 new LayoutService(),
@@ -111,7 +114,7 @@ public sealed class PresentationControlTests
             Assert.Equal(
                 ["document.workspace.overview", "document.file.workspace-1.original.src/App.cs"],
                 workbench.Documents.VisibleDockables?.Select(item => item.Id).ToArray() ?? []);
-            Assert.Equal(5, DurableTools(workbench.Root).Count);
+            Assert.Equal(6, DurableTools(workbench.Root).Count);
             Control documentContent = Assert.IsAssignableFrom<Control>(
                 workbench.Documents.ActiveDockable?.Context);
             TextEditor editor = Assert.Single(
@@ -462,6 +465,75 @@ public sealed class PresentationControlTests
     }
 
     [Fact]
+    public async Task Run_output_tool_renders_only_typed_durable_execution_evidence()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(PresentationTestApplication));
+        await session.Dispatch(() =>
+        {
+            DateTimeOffset now = DateTimeOffset.UtcNow;
+            RunOutputService output = new()
+            {
+                Result = new(
+                    [new(
+                        new("run-1"),
+                        new("goal-1"),
+                        new("build-1"),
+                        DotNetOperation.Build,
+                        ToolEvidenceState.Failed,
+                        new(
+                            "goal-1",
+                            new("build-1"),
+                            DotNetOperation.Build,
+                            "Harness.slnx",
+                            1,
+                            "compiler output",
+                            "CS1002: ; expected",
+                            IsOutputTruncated: true,
+                            IsErrorTruncated: false,
+                            WasCancelled: false,
+                            DurationMilliseconds: 725,
+                            "process_failed",
+                            "Build failed."),
+                        now,
+                        now.AddMilliseconds(725),
+                        Error: null)],
+                    IsTruncated: false,
+                    ErrorCode: null,
+                    Error: null),
+            };
+            WorkbenchDockHost workbench = CreateWorkbench(
+                ApprovedGoalShell(),
+                new(),
+                runOutput: output);
+            Window window = new() { Content = workbench.Control };
+            window.Show();
+
+            workbench.RefreshRunOutputAsync().AsTask().GetAwaiter().GetResult();
+
+            ITool tool = Find<ITool>(workbench.Root, WorkbenchDockIds.RunOutputTool);
+            Control content = Assert.IsAssignableFrom<Control>(tool.Context);
+            ListBox runs = Assert.Single(content.GetVisualDescendants().OfType<ListBox>());
+            TextEditor details = Assert.Single(content.GetVisualDescendants().OfType<TextEditor>());
+            Assert.Single(Assert.IsAssignableFrom<IEnumerable<object>>(runs.ItemsSource));
+            Assert.Contains("Build · Failed", details.Text, StringComparison.Ordinal);
+            Assert.Contains("Harness.slnx", details.Text, StringComparison.Ordinal);
+            Assert.Contains("Standard output · truncated", details.Text, StringComparison.Ordinal);
+            Assert.Contains("compiler output", details.Text, StringComparison.Ordinal);
+            Assert.Contains("CS1002: ; expected", details.Text, StringComparison.Ordinal);
+            Assert.Equal("goal-1", Assert.Single(output.Requests).Value);
+
+            output.Result = new([], false, null, null);
+            workbench.RefreshRunOutputAsync().AsTask().GetAwaiter().GetResult();
+            TextBlock status = Assert.Single(content.GetVisualDescendants().OfType<TextBlock>(),
+                item => AutomationProperties.GetName(item) == "Durable run output status");
+            Assert.Contains("No Build, Test, or Restore runs", status.Text, StringComparison.Ordinal);
+            Assert.Equal(string.Empty, details.Text);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
     public async Task Layout_reset_cannot_drop_a_dirty_source_buffer()
     {
         using HeadlessUnitTestSession session =
@@ -566,7 +638,7 @@ public sealed class PresentationControlTests
             Assert.Equal(0, restoredWindowState.Y);
             Assert.Equal(1920, restoredWindowState.Width);
             Assert.Equal(1280, restoredWindowState.Height);
-            Assert.Equal(5, DurableTools(restored.Root).Count);
+            Assert.Equal(6, DurableTools(restored.Root).Count);
             Assert.Equal("Layout restored", restored.LayoutStatusText);
             restoredWindow.Close();
         }, CancellationToken.None);
@@ -592,7 +664,14 @@ public sealed class PresentationControlTests
             WorkbenchDockHost unknown = CreateWorkbench(shell, layouts);
             unknown.RestoreLayoutAsync().AsTask().GetAwaiter().GetResult();
             Assert.Contains("rejected", unknown.LayoutStatusText, StringComparison.OrdinalIgnoreCase);
-            Assert.Equal(5, DurableTools(unknown.Root).Count);
+            Assert.Equal(6, DurableTools(unknown.Root).Count);
+
+            layouts.Stored = validLayout.Replace("\"Version\": 2", "\"Version\": 1",
+                StringComparison.Ordinal);
+            WorkbenchDockHost obsolete = CreateWorkbench(shell, layouts);
+            obsolete.RestoreLayoutAsync().AsTask().GetAwaiter().GetResult();
+            Assert.Contains("rejected", obsolete.LayoutStatusText, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal(6, DurableTools(obsolete.Root).Count);
 
             layouts.Stored = validLayout.Replace(
                 WorkbenchDockIds.FilesTool,
@@ -605,7 +684,7 @@ public sealed class PresentationControlTests
             workbench.RestoreLayoutAsync().AsTask().GetAwaiter().GetResult();
 
             Assert.Contains("rejected", workbench.LayoutStatusText, StringComparison.OrdinalIgnoreCase);
-            Assert.Equal(5, DurableTools(workbench.Root).Count);
+            Assert.Equal(6, DurableTools(workbench.Root).Count);
 
             workbench.ResetLayoutAsync().AsTask().GetAwaiter().GetResult();
             Assert.True(layouts.WasReset);
@@ -622,7 +701,9 @@ public sealed class PresentationControlTests
         LayoutService layouts,
         DocumentService? documents = null,
         DocumentPrompt? prompt = null,
-        InspectionService? inspection = null) => new(
+        InspectionService? inspection = null,
+        RunOutputService? runOutput = null) => new(
+        runOutput ?? new RunOutputService(),
         inspection ?? new InspectionService(),
         documents ?? new DocumentService(),
         layouts,
@@ -783,6 +864,20 @@ public sealed class PresentationControlTests
                     new("harness/goal-1"),
                     WorkbenchWorkspaceScope.ApprovedGoalWorktree,
                     "Approved goal worktree · harness/goal-1");
+    }
+
+    private sealed class RunOutputService : IRunOutputService
+    {
+        internal RunOutputSnapshot Result { get; set; } = new([], false, null, null);
+        internal List<GoalId> Requests { get; } = [];
+
+        public ValueTask<RunOutputSnapshot> ListAsync(
+            GoalId goalId,
+            CancellationToken cancellationToken = default)
+        {
+            Requests.Add(goalId);
+            return ValueTask.FromResult(Result);
+        }
     }
 
     private sealed class DocumentService : IWorkbenchDocumentService

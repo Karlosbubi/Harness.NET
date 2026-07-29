@@ -205,6 +205,11 @@ overlay, `AGENTS.md`, or a suitable existing documentation file.
   durable typed mutation/evidence boundary and compare-and-swap; dirty close, switch,
   reset, and exit paths require save/discard/cancel, while external changes require
   explicit reload or baseline-protected overwrite.
+- The bottom workbench edge separates durable conversation from typed run output.
+  Run output projects persisted Build, Test, and Restore evidence into real state,
+  correlation, timing, exit, cancellation, truncation, stdout, and stderr fields.
+  Presentation does not interpret stored audit JSON, and no terminal or synthetic
+  diagnostic stream is exposed.
 - Terminal.Gui v2 provides an adaptive full-screen layout: workspace/goals on the
   left, transcript/activity in the center, plan/diff/evidence tabs on the right,
   and a composer plus status/budget footer.

@@ -80,6 +80,7 @@ builder.Services.AddSingleton<ICapabilityApprovalStore, SqliteCapabilityApproval
 builder.Services.AddSingleton<ICapabilityApprovalService, CapabilityApprovalService>();
 builder.Services.AddSingleton<IToolEvidenceStore, SqliteToolEvidenceStore>();
 builder.Services.AddSingleton<IToolEvidenceService, ToolEvidenceService>();
+builder.Services.AddSingleton<IRunOutputService, RunOutputService>();
 builder.Services.AddSingleton<IGoalService, GoalService>();
 builder.Services.AddSingleton<IGoalWorktreeManager, GitGoalWorktreeManager>();
 builder.Services.AddSingleton<IWorkspaceFileEditor, AtomicWorkspaceFileEditor>();

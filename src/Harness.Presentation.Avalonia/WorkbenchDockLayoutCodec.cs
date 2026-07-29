@@ -9,7 +9,7 @@ namespace Harness.Presentation.Avalonia;
 
 internal sealed class WorkbenchDockLayoutCodec(IFactory factory)
 {
-    private const int FormatVersion = 1;
+    private const int FormatVersion = 2;
     private const int MaximumNodes = 128;
     private const int MaximumDepth = 16;
     private const int MaximumFloatingWindows = 8;
@@ -614,6 +614,7 @@ internal sealed class WorkbenchDockLayoutCodec(IFactory factory)
         WorkbenchDockIds.ContextTool => "Goal context",
         WorkbenchDockIds.GitTool => "Git",
         WorkbenchDockIds.ConversationTool => "Conversation",
+        WorkbenchDockIds.RunOutputTool => "Run output",
         WorkbenchDockIds.OverviewDocument => "Workspace overview",
         _ => stored.Length <= 128 ? stored : string.Empty,
     };

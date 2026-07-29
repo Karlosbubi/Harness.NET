@@ -14,6 +14,7 @@ internal static class WorkbenchDockIds
     internal const string ContextTool = "tool.context";
     internal const string GitTool = "tool.git";
     internal const string ConversationTool = "tool.conversation";
+    internal const string RunOutputTool = "tool.run-output";
     internal const string OverviewDocument = "document.workspace.overview";
     internal const string DiffDocument = "document.git.diff";
     internal const string PlanDocument = "document.goal.plan";
@@ -26,6 +27,7 @@ internal static class WorkbenchDockIds
             ContextTool,
             GitTool,
             ConversationTool,
+            RunOutputTool,
             OverviewDocument,
         ],
         StringComparer.Ordinal);

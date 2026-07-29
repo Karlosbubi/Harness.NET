@@ -9,6 +9,7 @@ using Avalonia.Threading;
 using Harness.BusinessLogic.Appearance;
 using Harness.BusinessLogic.Dashboard;
 using Harness.BusinessLogic.Documents;
+using Harness.BusinessLogic.Evidence;
 using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Layouts;
 using Harness.UI.Avalonia;
@@ -19,6 +20,7 @@ internal sealed class MainWindow : Window
 {
     private readonly AvaloniaPresentationStore store;
     private readonly HarnessThemeController themeController;
+    private readonly IRunOutputService runOutputService;
     private readonly IWorkbenchInspectionService inspectionService;
     private readonly IWorkbenchDocumentService documentService;
     private readonly IWorkbenchLayoutService layoutService;
@@ -65,6 +67,7 @@ internal sealed class MainWindow : Window
     internal MainWindow(
         AvaloniaPresentationStore store,
         HarnessThemeController themeController,
+        IRunOutputService runOutputService,
         IWorkbenchInspectionService inspectionService,
         IWorkbenchDocumentService documentService,
         IWorkbenchLayoutService layoutService,
@@ -72,6 +75,7 @@ internal sealed class MainWindow : Window
     {
         this.store = store;
         this.themeController = themeController;
+        this.runOutputService = runOutputService;
         this.inspectionService = inspectionService;
         this.documentService = documentService;
         this.layoutService = layoutService;
@@ -103,6 +107,7 @@ internal sealed class MainWindow : Window
         primary.Child = BuildPrimary();
         utility.Child = BuildUtility();
         workbench = new(
+            runOutputService,
             inspectionService,
             documentService,
             layoutService,

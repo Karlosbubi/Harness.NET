@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Threading;
 using Harness.BusinessLogic.Documents;
+using Harness.BusinessLogic.Evidence;
 using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Layouts;
 using Harness.UI.Avalonia;
@@ -12,6 +13,7 @@ namespace Harness.Presentation.Avalonia;
 internal sealed class AvaloniaShell(
     AvaloniaPresentationStore store,
     HarnessThemeController themeController,
+    IRunOutputService runOutputService,
     IWorkbenchInspectionService inspectionService,
     IWorkbenchDocumentService documentService,
     IWorkbenchLayoutService layoutService) : IAvaloniaShell
@@ -22,6 +24,7 @@ internal sealed class AvaloniaShell(
         AppBuilder.Configure(() => application = new(
                 store,
                 themeController,
+                runOutputService,
                 inspectionService,
                 documentService,
                 layoutService,
