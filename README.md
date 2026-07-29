@@ -54,10 +54,10 @@ read-only. Truncated source also remains read-only. Bounded run-output separatio
 is implemented as a distinct Dock tool over durable typed Build/Test/Restore evidence
 without adding a terminal. The rendered Dock content boundary, minimum-size fallback,
 keyboard restoration, floating ownership, accessible names, and 200% scaling are now
-covered, with real wide/compact review and a production AT-SPI traversal/action
-checkpoint recorded under `docs/acceptance`. Spoken screen-reader and complete
-representative-workflow acceptance tracked by ADR 010 and Tasks 028-033 remain
-release blockers.
+covered, with real wide/compact review and a repeatable production AT-SPI workflow
+recorded under `docs/acceptance`. Spoken screen-reader and complete explicit-goal
+desktop workflow acceptance tracked by ADR 010 and Tasks 027-033 remain release
+blockers.
 The Avalonia and TUI Framework surfaces show the resolved engineering rules and
 guidance with locks, provenance, privacy, and validation issues, and edit only the
 private workspace overlay without adding repository metadata.
@@ -167,6 +167,16 @@ model provider. Run only the package portion with:
 ```bash
 ./eng/verify-linux-x64-publish.sh
 ```
+
+In a graphical Linux session with `python3-dbus`, run the production accessibility,
+multi-document, and layout-recovery workflow with:
+
+```bash
+./eng/verify-avalonia-atspi.py
+```
+
+It uses a temporary real Git repository and isolated XDG directories, restores the
+session's accessibility flags, and never invokes a model.
 
 `--wait-for-shutdown` is a non-interactive operational mode used by lifecycle
 checks and service supervisors. It initializes storage, reports readiness, waits,

@@ -112,13 +112,35 @@ public sealed class PresentationControlTests
             workbench.Update(shell);
             Dispatcher.UIThread.RunJobs();
             workbench.OpenFileAsync("src/App.cs").AsTask().GetAwaiter().GetResult();
+            workbench.OpenFileAsync("src/Feature.cs").AsTask().GetAwaiter().GetResult();
             Dispatcher.UIThread.RunJobs();
             using Bitmap rendered = Assert.IsAssignableFrom<Bitmap>(window.CaptureRenderedFrame());
 
             Assert.IsType<DockControl>(workbench.Control);
             Assert.Equal(
-                ["document.workspace.overview", "document.file.workspace-1.original.src/App.cs"],
+                ["document.workspace.overview", "document.file.workspace-1.original.src/App.cs",
+                    "document.file.workspace-1.original.src/Feature.cs"],
                 workbench.Documents.VisibleDockables?.Select(item => item.Id).ToArray() ?? []);
+            DocumentTabStripItem[] documentTabs = window.GetVisualDescendants()
+                .OfType<DocumentTabStripItem>()
+                .ToArray();
+            Assert.Equal(3, documentTabs.Length);
+            Assert.Equal(
+                ["Workspace overview", "App.cs", "Feature.cs"],
+                documentTabs.Select(tab => AutomationProperties.GetName(tab) ?? string.Empty).ToArray());
+            Assert.All(documentTabs, tab => Assert.Equal(
+                AccessibilityView.Content,
+                AutomationProperties.GetAccessibilityView(tab)));
+            ComboBox documentSwitcher = workbench.DocumentSwitcher;
+            Assert.Equal("Open editor documents", AutomationProperties.GetName(documentSwitcher));
+            Assert.Equal(
+                ["Workspace overview", "App.cs", "Feature.cs"],
+                Assert.IsAssignableFrom<IEnumerable<object>>(documentSwitcher.ItemsSource)
+                    .Select(item => item.ToString() ?? string.Empty)
+                    .ToArray());
+            documentSwitcher.SelectedIndex = 1;
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal("App.cs", workbench.Documents.ActiveDockable?.Title);
             Assert.Equal(6, DurableTools(workbench.Root).Count);
             Control documentContent = Assert.IsAssignableFrom<Control>(
                 workbench.Documents.ActiveDockable?.Context);
@@ -786,9 +808,12 @@ public sealed class PresentationControlTests
             Window firstWindow = new() { Content = first.Control };
             firstWindow.Show();
             StackPanel layoutActions = Assert.IsType<StackPanel>(first.LayoutActions);
-            Assert.Equal("Workbench layout status", AutomationProperties.GetName(layoutActions.Children[0]));
-            Assert.Equal("Save current panel layout", AutomationProperties.GetName(layoutActions.Children[1]));
-            Assert.Equal("Reset panels to the default layout", AutomationProperties.GetName(layoutActions.Children[2]));
+            Assert.Contains(layoutActions.Children, item =>
+                AutomationProperties.GetName(item) == "Workbench layout status");
+            Assert.Contains(layoutActions.Children, item =>
+                AutomationProperties.GetName(item) == "Save current panel layout");
+            Assert.Contains(layoutActions.Children, item =>
+                AutomationProperties.GetName(item) == "Reset panels to the default layout");
             first.OpenFileAsync("src/App.cs").AsTask().GetAwaiter().GetResult();
 
             IToolDock left = Find<IToolDock>(first.Root, WorkbenchDockIds.Left);

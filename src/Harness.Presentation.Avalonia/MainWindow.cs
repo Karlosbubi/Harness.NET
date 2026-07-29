@@ -138,8 +138,20 @@ internal sealed class MainWindow : Window
             primary,
             utility,
             cancellationToken);
+        Border documentActions = new()
+        {
+            Child = workbench.DocumentActions,
+            Padding = new(10, 5),
+        };
+        Grid workbenchRegion = new()
+        {
+            RowDefinitions = new("Auto,*"),
+            Children = { documentActions },
+        };
         Grid.SetRow(workbench.Control, 1);
-        root.Children.Add(workbench.Control);
+        workbenchRegion.Children.Add(workbench.Control);
+        Grid.SetRow(workbenchRegion, 1);
+        root.Children.Add(workbenchRegion);
 
         header.Child = BuildHeader();
         header.MinHeight = 56;

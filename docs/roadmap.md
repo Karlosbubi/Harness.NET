@@ -137,9 +137,11 @@ workflow boundaries without replaying uncertain calls.
   backup/export, and recovery acceptance coverage.
 - Complete hands-on Avalonia usability and visual-quality acceptance across the
   production workspace, goal, evidence, and recovery workflows.
-- Complete the ADR 010 workbench acceptance matrix, including hands-on screen-reader
-  and representative restart/corruption/multi-document workflows. The real central
-  editor, production tool docks, and private validated layout recovery are implemented.
+- Complete the ADR 010 workbench acceptance matrix with a spoken screen-reader pass
+  and the complete explicit-goal desktop workflow. Production AT-SPI now covers real
+  repository registration/trust, search, multi-document switching, restart, and
+  corrupt-layout fallback. The real central editor, production tool docks, and
+  private validated layout recovery are implemented.
 - Add other platforms or gRPC only through existing Business Logic contracts when a
   concrete workflow justifies them.
 

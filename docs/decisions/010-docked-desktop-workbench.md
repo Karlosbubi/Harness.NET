@@ -52,11 +52,13 @@ cover keyboard shortcuts and focus targets, floating-window ownership, compact
 sizing, explicit automation names, and 200% rendered-frame scaling. A 2026-07-29
 hands-on Linux review records real wide and minimum-size empty states in
 [`docs/acceptance/docked-workbench-2026-07-29.md`](../acceptance/docked-workbench-2026-07-29.md).
-The production host has also been traversed and operated through the Linux AT-SPI
-accessibility bus: its real pages, tools, editor region, commands, and Dock chrome
-are exposed, and page selection plus workspace management respond to accessibility
-actions. A spoken screen-reader pass and the complete Task 033 workflow matrix remain
-required before this record can become Accepted.
+The production host is also exercised through the Linux AT-SPI accessibility bus.
+The repeatable verifier registers and trusts a temporary real repository, searches
+tracked text, opens two real source documents, switches them through an app-owned
+accessible document selector, saves and restores layout across a process restart,
+and proves corrupt-layout fallback. Its pages, tools, editor region, commands, and
+Dock chrome are exposed without generic actionable template labels. A spoken
+screen-reader pass remains required before this record can become Accepted.
 The bottom edge now contains distinct Conversation and Run output tools. Run output
 is a typed projection of durable Build/Test/Restore evidence with bounded stdout and
 stderr; Presentation never decodes audit JSON and no unrestricted terminal is
@@ -116,8 +118,8 @@ Presentation; Business Logic and Data Access contracts do not expose them.
 - Demonstrate open/activate/close for real source and diff documents without fake
   defaults and without leaking Dock types across the Presentation boundary. **Met.**
 - Measure startup and tab-switch behavior with a representative multi-project
-  workspace and choose content caching deliberately. **Met for the headless
-  compatibility checkpoint; hands-on product acceptance remains in Task 033.**
+  workspace and choose content caching deliberately. **Met by the headless
+  compatibility checkpoint and the production AT-SPI multi-document workflow.**
 
 ## Consequences
 

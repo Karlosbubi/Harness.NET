@@ -36,6 +36,19 @@ maximize/restore, close, title chrome, and proportional splitters have contextua
 names instead of template type names. AT-SPI actions successfully selected the
 Workspace page and opened the real workspace-management dialog.
 
-This is a checkpoint, not Task 033 completion. A hands-on screen-reader pass and the
-complete representative restart, corrupted-layout, and multi-document workflow
-matrix remain open.
+`./eng/verify-avalonia-atspi.py` makes that checkpoint repeatable in a graphical
+Linux session. With isolated XDG directories and a temporary real Git repository it:
+
+- registers, selects, and explicitly trusts the repository through the production
+  workspace dialogs;
+- opens `Program.cs` and the project file, switches back through the accessible
+  editor-document selector, and searches real Git-tracked text;
+- saves private layout, restarts the production process, and observes restoration;
+- replaces the private layout with an integrity failure, restarts again, and proves
+  the safe default workbench remains accessible.
+
+The verifier restores the session's original accessibility flags, invokes no model,
+and removes its temporary repository and XDG state. It passed on 2026-07-29.
+
+This is a checkpoint, not Task 033 completion. A spoken screen-reader pass remains
+open.

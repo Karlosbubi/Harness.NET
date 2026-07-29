@@ -45,6 +45,12 @@ internal sealed class WorkbenchDockHost
         TextTrimming = TextTrimming.CharacterEllipsis,
         VerticalAlignment = VerticalAlignment.Center,
     };
+    private readonly ComboBox documentSwitcher = new()
+    {
+        MinWidth = 170,
+        MaxWidth = 260,
+        VerticalAlignment = VerticalAlignment.Center,
+    };
     private IDocumentDock documents = null!;
     private IToolDock leftTools = null!;
     private IToolDock rightTools = null!;
@@ -80,6 +86,7 @@ internal sealed class WorkbenchDockHost
     private bool busy;
     private bool runOutputBusy;
     private bool suppressDocumentActivation;
+    private bool renderingDocumentSwitcher;
     private bool resolvingDocumentTransition;
     private bool adaptiveLeftCollapsed;
     private bool adaptiveRightCollapsed;
@@ -252,10 +259,13 @@ internal sealed class WorkbenchDockHost
         Control.SizeChanged += (_, _) => ApplyViewport(Control.Bounds.Width, Control.Bounds.Height);
         Control.LayoutUpdated += (_, _) => ApplyDockAutomationNames();
         LayoutActions = BuildLayoutActions();
+        DocumentActions = BuildDocumentActions();
     }
 
     internal DockControl Control { get; }
     internal Control LayoutActions { get; }
+    internal Control DocumentActions { get; }
+    internal ComboBox DocumentSwitcher => documentSwitcher;
     internal IDocumentDock Documents => documents;
     internal IRootDock Root => root;
     internal IFactory Factory => factory;
@@ -632,6 +642,61 @@ internal sealed class WorkbenchDockHost
             VerticalAlignment = VerticalAlignment.Center,
             Children = { layoutStatus, save, reset },
         };
+    }
+
+    private Control BuildDocumentActions()
+    {
+        AutomationProperties.SetName(documentSwitcher, "Open editor documents");
+        documentSwitcher.SelectionChanged += async (_, _) =>
+        {
+            if (renderingDocumentSwitcher ||
+                documentSwitcher.SelectedItem is not DocumentChoice choice)
+            {
+                return;
+            }
+
+            if (!await TrySwitchDocumentAsync(choice.Document))
+            {
+                UpdateDocumentSwitcher();
+            }
+        };
+        UpdateDocumentSwitcher();
+        StackPanel actions = new()
+        {
+            Orientation = AvaloniaOrientation.Horizontal,
+            Spacing = 6,
+            VerticalAlignment = VerticalAlignment.Center,
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = "Document",
+                    VerticalAlignment = VerticalAlignment.Center,
+                },
+                documentSwitcher,
+            },
+        };
+        AutomationProperties.SetName(actions, "Editor document navigation");
+        return actions;
+    }
+
+    private void UpdateDocumentSwitcher()
+    {
+        renderingDocumentSwitcher = true;
+        try
+        {
+            DocumentChoice[] choices = documents.VisibleDockables?
+                .Where(IsDocument)
+                .Select(item => new DocumentChoice(item))
+                .ToArray() ?? [];
+            documentSwitcher.ItemsSource = choices;
+            documentSwitcher.SelectedItem = choices.FirstOrDefault(item =>
+                ReferenceEquals(item.Document, activeDocument));
+        }
+        finally
+        {
+            renderingDocumentSwitcher = false;
+        }
     }
 
     private static void EnsureDefaultTools(
@@ -1428,6 +1493,7 @@ internal sealed class WorkbenchDockHost
             !session.IsDirty || session.AllowClose)
         {
             activeDocument = next;
+            UpdateDocumentSwitcher();
             return;
         }
 
@@ -1463,6 +1529,8 @@ internal sealed class WorkbenchDockHost
         {
             activeDocument = overviewDocument;
         }
+
+        Dispatcher.UIThread.Post(UpdateDocumentSwitcher);
     }
 
     private void SetActiveDocument(IDockable document)
@@ -1472,6 +1540,7 @@ internal sealed class WorkbenchDockHost
         {
             factory.SetActiveDockable(document);
             activeDocument = document;
+            UpdateDocumentSwitcher();
         }
         finally
         {
@@ -1509,7 +1578,7 @@ internal sealed class WorkbenchDockHost
         {
             existing.Title = title;
             WorkbenchDockContent.Attach(existing, content);
-            factory.SetActiveDockable(existing);
+            SetActiveDocument(existing);
             return existing;
         }
 
@@ -1522,7 +1591,7 @@ internal sealed class WorkbenchDockHost
         IDocument created = document ?? throw new InvalidOperationException("Dock did not create the document.");
         WorkbenchDockContent.Attach(created, content);
         documents.AddDocument(created);
-        factory.SetActiveDockable(created);
+        SetActiveDocument(created);
         return created;
     }
 
@@ -1571,6 +1640,12 @@ internal sealed class WorkbenchDockHost
     }
 
     private void ActivateOverview() => SetActiveDocument(overviewDocument);
+
+    private sealed record DocumentChoice(IDockable Document)
+    {
+        public override string ToString() =>
+            string.IsNullOrWhiteSpace(Document.Title) ? "Untitled document" : Document.Title;
+    }
 
     private WorkspaceView? ActiveWorkspace() =>
         state().Workspaces.Registered.FirstOrDefault(item => item.IsActive);
@@ -1674,6 +1749,16 @@ internal sealed class WorkbenchDockHost
 
     private void ApplyDockAutomationNames()
     {
+        foreach (DocumentTabStripItem tab in Control.GetVisualDescendants()
+                     .OfType<DocumentTabStripItem>())
+        {
+            if (tab.DataContext is IDockable { Title: { Length: > 0 } title })
+            {
+                AutomationProperties.SetAccessibilityView(tab, AccessibilityView.Content);
+                SetAutomationName(tab, title);
+            }
+        }
+
         foreach (ToolChromeControl chrome in Control.GetVisualDescendants()
                      .OfType<ToolChromeControl>())
         {
