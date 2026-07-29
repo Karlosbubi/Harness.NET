@@ -40,7 +40,9 @@ model call was created by that visual check.
 
 `Harness.Presentation.Avalonia.Tests` verifies that a real opened AvaloniaEdit source
 editor belongs to the rendered window visual tree, not merely a Dock context object.
-The same suite verifies compact tool restoration through Ctrl+Shift+E,
+It also replaces the live layout with the safe default and verifies that the active
+overview, workspace, conversation, and goal-context controls remain in that rendered
+tree. The same suite verifies compact tool restoration through Ctrl+Shift+E,
 Ctrl+Shift+G, Ctrl+J, and F6; focusable targets; explicit automation names; floating
 window ownership; layout recovery; and a 200% framebuffer whose pixel dimensions
 double without changing logical layout.

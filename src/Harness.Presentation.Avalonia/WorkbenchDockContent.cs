@@ -1,3 +1,6 @@
+using Avalonia.Controls;
+using Avalonia.Controls.Presenters;
+using Avalonia.VisualTree;
 using Dock.Model.Controls;
 using Dock.Model.Core;
 
@@ -20,5 +23,17 @@ internal static class WorkbenchDockContent
                 throw new InvalidOperationException(
                     $"Dockable '{dockable.Id}' does not expose a rendered content contract.");
         }
+    }
+
+    internal static void ReleaseFromPresenter(Control content)
+    {
+        if (content.GetVisualParent() is not ContentPresenter presenter ||
+            !ReferenceEquals(presenter.Child, content))
+        {
+            return;
+        }
+
+        presenter.SetCurrentValue(ContentPresenter.ContentProperty, null);
+        presenter.UpdateChild();
     }
 }

@@ -764,6 +764,14 @@ internal sealed class WorkbenchDockHost
         IDockable restoredOverview)
     {
         root.ExitWindows?.Execute(null);
+        // Dock's retired deferred presenters otherwise keep direct Control content parented,
+        // which prevents the replacement graph from materializing the same durable controls.
+        foreach (Control context in durableContexts.Values)
+        {
+            WorkbenchDockContent.ReleaseFromPresenter(context);
+        }
+
+        Control.Layout = null;
         root = restored;
         documents = restoredDocuments;
         overviewDocument = restoredOverview;

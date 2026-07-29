@@ -881,6 +881,46 @@ public sealed class PresentationControlTests
     }
 
     [Fact]
+    public async Task Layout_reset_keeps_durable_controls_in_the_rendered_tree()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            AvaloniaShellState shell = AvaloniaShellState.Initial with { IsLoading = false };
+            TextBlock navigation = new() { Text = "Rendered workspace navigation" };
+            TextBlock conversation = new() { Text = "Rendered conversation" };
+            TextBlock context = new() { Text = "Rendered goal context" };
+            WorkbenchDockHost workbench = new(
+                new RunOutputService(),
+                new InspectionService(),
+                new DocumentService(),
+                new LayoutService(),
+                new DocumentPrompt(),
+                () => shell,
+                navigation,
+                conversation,
+                context,
+                CancellationToken.None);
+            Window window = new() { Width = 1280, Height = 800, Content = workbench.Control };
+            window.Show();
+            workbench.Update(shell);
+            Dispatcher.UIThread.RunJobs();
+            Assert.Contains(workbench.OverviewAction, window.GetVisualDescendants());
+            Assert.Contains(navigation, window.GetVisualDescendants());
+
+            workbench.ResetLayoutAsync().AsTask().GetAwaiter().GetResult();
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.Contains(workbench.OverviewAction, window.GetVisualDescendants());
+            Assert.Contains(navigation, window.GetVisualDescendants());
+            Assert.Contains(conversation, window.GetVisualDescendants());
+            Assert.Contains(context, window.GetVisualDescendants());
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
     public async Task Workbench_layout_round_trips_moved_hidden_and_floating_production_panels()
     {
         using HeadlessUnitTestSession session =

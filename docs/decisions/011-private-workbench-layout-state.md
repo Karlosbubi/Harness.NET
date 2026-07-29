@@ -46,7 +46,9 @@ known production pane contexts; normalizes non-finite or unsafe proportions; and
 clamps or docks floating windows that are not safely visible on current screens. A
 rejected layout leaves the default layout active and reports an actionable recovery
 status. Reset deletes only this exact private state file and immediately rebuilds the
-known default layout.
+known default layout. When replacing a live Dock graph, Presentation first releases
+the seven durable Avalonia controls from Dock's retired deferred-content presenters;
+this preserves their control identity while allowing the new graph to render them.
 
 Save layout automatically during orderly desktop shutdown and after explicit layout
 actions. Do not persist conversation content, repository content, source buffers,
@@ -68,7 +70,8 @@ manual recovery process.
   unsupported, hash-mismatch, cancellation, and reset behavior.
 - Headless workbench tests cover restart restoration, moved/hidden panels, transient
   document removal, duplicate/unknown pane rejection, invalid proportions,
-  off-screen floating state, and immediate reset.
+  off-screen floating state, and an immediate reset whose active production controls
+  remain in the rendered visual tree.
 - Dock types remain confined to Avalonia Presentation and no repository metadata is
   created.
 - The live graph uses Dock's Avalonia content model so restored panes regain real

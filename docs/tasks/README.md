@@ -291,6 +291,9 @@ configured or paid provider.
   private XDG state. Headless tests prove moved, hidden, floated, and resized panel
   restoration; transient-document omission; unknown/duplicate graph rejection;
   invalid-proportion normalization; off-screen bound clamping; and immediate reset.
+  Reset and live graph replacement explicitly release durable application controls
+  from retired Dock presenters, and a rendered-tree regression proves the overview,
+  workspace, conversation, and goal-context content remains visible afterward.
   Backup v2 tests and the Linux x64 lifecycle verifier prove optional layout hash
   evidence and offline recovery without adding repository metadata.
 - Task 032 adds a semantic Business Logic document boundary over the approved-goal
