@@ -48,6 +48,12 @@ internal enum ConversationWorkflowActionKind
     RequestPlanChanges,
     ContinueRun,
     CancelRun,
+    ApproveRestore,
+    DenyRestore,
+    ReviewCommitPreview,
+    ApproveCommit,
+    DenyCommit,
+    ResumeCommit,
 }
 
 internal sealed record ConversationWorkflowAction(
@@ -97,6 +103,37 @@ internal static class ConversationWorkflowActionProjector
             {
                 return [new(ConversationWorkflowActionKind.ContinueRun, "Continue run", true)];
             }
+        }
+
+        if (card.Kind is ConversationWorkflowCardKind.CapabilityApproval &&
+            card.State is ConversationWorkflowCardState.Pending)
+        {
+            return
+            [
+                new(ConversationWorkflowActionKind.ApproveRestore, "Approve once", true),
+                new(ConversationWorkflowActionKind.DenyRestore, "Deny", false),
+            ];
+        }
+
+        if (card.Kind is ConversationWorkflowCardKind.CommitApproval)
+        {
+            if (goals.CommitPreview is not null && goals.CommitApproval is null)
+            {
+                return [new(ConversationWorkflowActionKind.ReviewCommitPreview,
+                    "Review exact diff", true)];
+            }
+
+            return goals.CommitApproval?.State switch
+            {
+                GoalCommitApprovalState.Pending =>
+                [
+                    new(ConversationWorkflowActionKind.ApproveCommit, "Approve exact diff", true),
+                    new(ConversationWorkflowActionKind.DenyCommit, "Deny", false),
+                ],
+                GoalCommitApprovalState.Approved =>
+                    [new(ConversationWorkflowActionKind.ResumeCommit, "Resume exact commit", true)],
+                _ => [],
+            };
         }
 
         return [];

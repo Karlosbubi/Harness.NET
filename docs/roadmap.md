@@ -169,8 +169,10 @@ of Stage 3 below.
   conservative review defaults, no remote budget, and no model call; existing goals
   are offered as inline Continue choices. Typed plan generation, approve/change,
   production continuation, and cancellation actions sit on their matching cards and
-  retain bounded-call disclosures and focused confirmation. Remaining capability,
-  Restore, budget, destructive, and exact-commit decisions are the next migration.
+  retain bounded-call disclosures and focused confirmation. Correlation-bound Restore
+  approve/deny and exact-diff request/approve/deny/resume also run from their matching
+  cards while preserving one-use and stale-fingerprint checks. Remaining remote
+  authorization, budget, and other destructive decisions are the next migration.
 - Build the ADR 012 in-process Roslyn service behind replaceable semantic contracts.
   Begin with its SDK/MSBuild/self-contained-publish compatibility checkpoint.
   Versioned live buffers then surface syntax, compiler, and configured analyzer

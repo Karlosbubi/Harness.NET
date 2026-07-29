@@ -10,6 +10,8 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using Harness.BusinessLogic.Appearance;
 using Harness.BusinessLogic.Agents;
+using Harness.BusinessLogic.Acceptance;
+using Harness.BusinessLogic.Approvals;
 using Harness.BusinessLogic.Dashboard;
 using Harness.BusinessLogic.Documents;
 using Harness.BusinessLogic.Evidence;
@@ -875,7 +877,7 @@ internal sealed class MainWindow : Window
                 button.IsEnabled = !store.Current.Goals.IsBusy &&
                                    !store.Current.Goals.IsWorkflowRunning;
                 AutomationProperties.SetName(button, action.Label);
-                button.Click += async (_, _) => await ExecuteWorkflowActionAsync(action.Kind);
+                button.Click += async (_, _) => await ExecuteWorkflowActionAsync(action.Kind, item);
                 actionRow.Children.Add(button);
             }
             content.Children.Add(actionRow);
@@ -894,7 +896,9 @@ internal sealed class MainWindow : Window
         return card;
     }
 
-    private async Task ExecuteWorkflowActionAsync(ConversationWorkflowActionKind action)
+    private async Task ExecuteWorkflowActionAsync(
+        ConversationWorkflowActionKind action,
+        ConversationWorkflowCard card)
     {
         GoalView? goal = store.Current.Goals.SelectedGoal;
         if (goal is null)
@@ -918,6 +922,24 @@ internal sealed class MainWindow : Window
                 break;
             case ConversationWorkflowActionKind.CancelRun:
                 store.CancelGoalWorkflow();
+                break;
+            case ConversationWorkflowActionKind.ApproveRestore:
+                await ApproveRestoreAsync(goal, card);
+                break;
+            case ConversationWorkflowActionKind.DenyRestore:
+                await DenyRestoreAsync(goal, card);
+                break;
+            case ConversationWorkflowActionKind.ReviewCommitPreview:
+                await new CommitApprovalDialog(store, cancellationToken).ShowDialog(this);
+                break;
+            case ConversationWorkflowActionKind.ApproveCommit:
+                await DecideCommitAsync(resuming: false);
+                break;
+            case ConversationWorkflowActionKind.DenyCommit:
+                await DenyCommitAsync();
+                break;
+            case ConversationWorkflowActionKind.ResumeCommit:
+                await DecideCommitAsync(resuming: true);
                 break;
         }
     }
@@ -1000,6 +1022,91 @@ internal sealed class MainWindow : Window
         store.Current.Settings.AgentDefaults?.Roles
             .FirstOrDefault(item => item.Role == role)
             ?.MaximumOutputTokens.Value ?? 2048;
+
+    private async Task ApproveRestoreAsync(GoalView goal, ConversationWorkflowCard card)
+    {
+        CapabilityApprovalView? approval = RestoreApproval(card);
+        if (approval is null)
+        {
+            return;
+        }
+
+        RestoreDecisionConfirmationDialog confirmation = new(approval);
+        if (await confirmation.ShowDialog<bool>(this))
+        {
+            await store.DecideRestoreApprovalAsync(
+                goal.Id,
+                approval.Id,
+                CapabilityDecision.Approve,
+                reason: null,
+                cancellationToken);
+        }
+    }
+
+    private async Task DenyRestoreAsync(GoalView goal, ConversationWorkflowCard card)
+    {
+        CapabilityApprovalView? approval = RestoreApproval(card);
+        if (approval is null)
+        {
+            return;
+        }
+
+        TextEntryDialog dialog = new(
+            "Deny restore request",
+            "Required reason",
+            "Deny request",
+            "A denial reason is required.");
+        await dialog.ShowDialog(this);
+        if (dialog.Result is { } reason)
+        {
+            await store.DecideRestoreApprovalAsync(
+                goal.Id,
+                approval.Id,
+                CapabilityDecision.Deny,
+                reason,
+                cancellationToken);
+        }
+    }
+
+    private CapabilityApprovalView? RestoreApproval(ConversationWorkflowCard card) =>
+        store.Current.Goals.CapabilityApprovals.FirstOrDefault(approval =>
+            card.Id == $"capability.{approval.Id.Value}" &&
+            approval.Capability is CapabilityKind.Restore &&
+            approval.State is CapabilityApprovalState.Pending);
+
+    private async Task DecideCommitAsync(bool resuming)
+    {
+        if (store.Current.Goals.CommitApproval is not { } approval)
+        {
+            return;
+        }
+
+        ExactCommitConfirmationDialog confirmation = new(approval, resuming);
+        if (await confirmation.ShowDialog<bool>(this))
+        {
+            await store.DecideCommitAsync(
+                GoalCommitDecision.Approve,
+                reason: null,
+                cancellationToken);
+        }
+    }
+
+    private async Task DenyCommitAsync()
+    {
+        TextEntryDialog dialog = new(
+            "Deny exact commit",
+            "Required reason",
+            "Deny commit",
+            "A denial reason is required.");
+        await dialog.ShowDialog(this);
+        if (dialog.Result is { } reason)
+        {
+            await store.DecideCommitAsync(
+                GoalCommitDecision.Deny,
+                new GoalCommitDecisionReason(reason),
+                cancellationToken);
+        }
+    }
 
     private Control CreateMessageCard(ActivityItem item)
     {

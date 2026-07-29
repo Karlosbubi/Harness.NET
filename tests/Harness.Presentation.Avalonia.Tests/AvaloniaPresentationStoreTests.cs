@@ -496,6 +496,16 @@ public sealed class AvaloniaPresentationStoreTests
         Assert.Equal(GoalCommitApprovalState.Pending, store.Current.Goals.CommitApproval?.State);
         Assert.Equal(preview.DiffHash, store.Current.Goals.CommitApproval?.DiffHash);
         Assert.Equal(0, acceptance.DecisionCalls);
+        ConversationWorkflowCard commitCard = Assert.Single(
+            ConversationWorkflowProjector.Project(store.Current.Goals),
+            card => card.Kind is ConversationWorkflowCardKind.CommitApproval);
+        Assert.Equal(
+            [
+                ConversationWorkflowActionKind.ApproveCommit,
+                ConversationWorkflowActionKind.DenyCommit,
+            ],
+            ConversationWorkflowActionProjector.Project(commitCard, store.Current.Goals)
+                .Select(action => action.Kind));
 
         await store.DecideCommitAsync(
             GoalCommitDecision.Approve,
@@ -633,6 +643,16 @@ public sealed class AvaloniaPresentationStoreTests
         Assert.Equal(correlation, pending.CorrelationId);
         Assert.Equal("Harness.slnx", pending.Target);
         Assert.Equal(0, approvals.DecisionCalls);
+        ConversationWorkflowCard restoreCard = Assert.Single(
+            ConversationWorkflowProjector.Project(store.Current.Goals),
+            card => card.Kind is ConversationWorkflowCardKind.CapabilityApproval);
+        Assert.Equal(
+            [
+                ConversationWorkflowActionKind.ApproveRestore,
+                ConversationWorkflowActionKind.DenyRestore,
+            ],
+            ConversationWorkflowActionProjector.Project(restoreCard, store.Current.Goals)
+                .Select(action => action.Kind));
 
         await store.DecideRestoreApprovalAsync(
             goal.Id,

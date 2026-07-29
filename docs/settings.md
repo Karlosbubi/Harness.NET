@@ -43,6 +43,7 @@ immutable read-only conversation cards. With no selected goal, the composer crea
 private draft directly from the objective only after workspace trust, using three
 review cycles and no remote budget or provider call. Existing goals appear as explicit
 inline Continue choices. Plan generation, approval/change requests,
-production continuation, and cancellation are delivered with their bounded-call
-disclosures and focused confirmation. Spend, Restore, destructive, budget-extension,
-and exact-commit decisions remain explicit goal-bound actions for the next increment.
+production continuation, cancellation, correlation-bound Restore decisions, and
+exact-diff commit decisions are delivered with their bounded-call, one-use, and exact
+fingerprint confirmations. Spend, other destructive operations, and budget-extension
+remain explicit goal-bound actions for the next increment.
