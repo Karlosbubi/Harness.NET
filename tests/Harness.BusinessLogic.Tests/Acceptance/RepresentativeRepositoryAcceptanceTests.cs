@@ -75,8 +75,7 @@ public sealed class RepresentativeRepositoryAcceptanceTests : IDisposable
             approvalStore);
 
         WorkbenchDocumentService documents = new(
-            goalStore,
-            workspaceStore,
+            new WorkbenchWorkspaceContextResolver(goalStore, workspaceStore),
             new WorkspaceFileReader(),
             mutations);
         WorkbenchDocumentView source = await documents.OpenAsync(new(

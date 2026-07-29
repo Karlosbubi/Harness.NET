@@ -1,11 +1,12 @@
 using Harness.BusinessLogic.Goals;
+using Harness.BusinessLogic.Workspaces;
 
 namespace Harness.BusinessLogic.Documents;
 
 public sealed record WorkbenchDocumentView(
-    WorkbenchWorkspaceId WorkspaceId,
+    WorkspaceId WorkspaceId,
     GoalId? GoalId,
-    WorkbenchBranchName? Branch,
+    WorkspaceBranchName? Branch,
     WorkbenchDocumentPath Path,
     WorkbenchDocumentContent Content,
     WorkbenchDocumentSha256? Sha256,

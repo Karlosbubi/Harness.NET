@@ -90,6 +90,8 @@ builder.Services.AddSingleton<IWorkspaceTextSearcher, GitWorkspaceTextSearcher>(
 builder.Services.AddSingleton<IWorkspaceGitInspector, LibGitWorkspaceGitInspector>();
 builder.Services.AddSingleton<IWorkspaceDotNetInspector, WorkspaceDotNetInspector>();
 builder.Services.AddSingleton<IWorkspaceInspectionService, WorkspaceInspectionService>();
+builder.Services.AddSingleton<IWorkbenchWorkspaceContextResolver, WorkbenchWorkspaceContextResolver>();
+builder.Services.AddSingleton<IWorkbenchInspectionService, WorkbenchInspectionService>();
 builder.Services.AddSingleton<IWorkbenchDocumentService, WorkbenchDocumentService>();
 builder.Services.AddSingleton<IWorkbenchLayoutStore, FileWorkbenchLayoutStore>();
 builder.Services.AddSingleton<IWorkbenchLayoutService, WorkbenchLayoutService>();

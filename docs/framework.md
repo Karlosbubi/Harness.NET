@@ -199,10 +199,12 @@ overlay, `AGENTS.md`, or a suitable existing documentation file.
   private workspace overlay in Harness.NET storage.
 - The docked source editor reads the original trusted workspace in read-only mode by
   default. A selected approved goal switches new source documents to its isolated
-  worktree and enables edits with an exact UTF-8 baseline. Saves use the durable typed
-  mutation/evidence boundary and compare-and-swap; dirty close, switch, reset, and
-  exit paths require save/discard/cancel, while external changes require explicit
-  reload or baseline-protected overwrite.
+  worktree and enables edits with an exact UTF-8 baseline. Tracked-text search, Git
+  state, and diff resolve through the same Business Logic-owned context so adjacent
+  panels cannot describe a different tree than the active editor. Saves use the
+  durable typed mutation/evidence boundary and compare-and-swap; dirty close, switch,
+  reset, and exit paths require save/discard/cancel, while external changes require
+  explicit reload or baseline-protected overwrite.
 - Terminal.Gui v2 provides an adaptive full-screen layout: workspace/goals on the
   left, transcript/activity in the center, plan/diff/evidence tabs on the right,
   and a composer plus status/budget footer.

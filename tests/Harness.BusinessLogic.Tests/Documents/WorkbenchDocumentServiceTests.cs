@@ -3,6 +3,7 @@ using System.Text;
 using Harness.BusinessLogic.Documents;
 using Harness.BusinessLogic.Mutations;
 using Harness.BusinessLogic.Tools;
+using Harness.BusinessLogic.Workspaces;
 using Harness.DataAccess.Goals;
 using Harness.DataAccess.Inspection;
 using Harness.DataAccess.Workspaces;
@@ -33,7 +34,7 @@ public sealed class WorkbenchDocumentServiceTests
         Assert.Equal("/state/worktrees/goal-id", reader.Root);
         Assert.Equal("harness/goal-test", result.Branch?.Value);
         Assert.Equal(Hash("content"), result.Sha256?.Value);
-        Assert.Contains("isolated branch", result.AccessDescription, StringComparison.Ordinal);
+        Assert.Contains("Approved goal worktree", result.AccessDescription, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -177,8 +178,9 @@ public sealed class WorkbenchDocumentServiceTests
         RegisteredWorkspace workspace,
         FileReader reader,
         MutationService mutations) => new(
-        new GoalStore(goal, worktree),
-        new WorkspaceStore(workspace),
+        new WorkbenchWorkspaceContextResolver(
+            new GoalStore(goal, worktree),
+            new WorkspaceStore(workspace)),
         reader,
         mutations);
 

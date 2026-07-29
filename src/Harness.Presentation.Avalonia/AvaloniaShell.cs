@@ -12,7 +12,7 @@ namespace Harness.Presentation.Avalonia;
 internal sealed class AvaloniaShell(
     AvaloniaPresentationStore store,
     HarnessThemeController themeController,
-    IWorkspaceInspectionService inspectionService,
+    IWorkbenchInspectionService inspectionService,
     IWorkbenchDocumentService documentService,
     IWorkbenchLayoutService layoutService) : IAvaloniaShell
 {

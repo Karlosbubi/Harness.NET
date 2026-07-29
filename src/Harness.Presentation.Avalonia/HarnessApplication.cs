@@ -13,7 +13,7 @@ namespace Harness.Presentation.Avalonia;
 internal sealed class HarnessApplication(
     AvaloniaPresentationStore store,
     HarnessThemeController themeController,
-    IWorkspaceInspectionService inspectionService,
+    IWorkbenchInspectionService inspectionService,
     IWorkbenchDocumentService documentService,
     IWorkbenchLayoutService layoutService,
     CancellationToken cancellationToken) : Application

@@ -1,8 +1,9 @@
 using Harness.BusinessLogic.Goals;
+using Harness.BusinessLogic.Workspaces;
 
 namespace Harness.BusinessLogic.Documents;
 
 public sealed record WorkbenchDocumentOpenRequest(
-    WorkbenchWorkspaceId WorkspaceId,
+    WorkspaceId WorkspaceId,
     GoalId? GoalId,
     WorkbenchDocumentPath Path);

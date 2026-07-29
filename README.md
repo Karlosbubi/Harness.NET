@@ -48,10 +48,11 @@ private backup/recovery are implemented without persisting transient editor cont
 An approved selected goal opens source from its isolated worktree in an editable
 AvaloniaEdit tab; exact-baseline saves flow through the durable typed mutation
 boundary, and dirty switching/closing plus external-change conflicts require explicit
-decisions. Original-workspace and truncated source remain honestly read-only. Bounded
-run-output separation, adaptive/accessibility validation, diff-document acceptance,
-and recorded visual acceptance tracked by ADR 010 and Tasks 028-033 remain release
-blockers.
+decisions. Search, Git state, diff, and source resolve to that same approved worktree;
+without one they identify and inspect the original workspace, whose source remains
+read-only. Truncated source also remains read-only. Bounded run-output separation,
+adaptive/accessibility validation, and recorded visual acceptance tracked by ADR 010
+and Tasks 028-033 remain release blockers.
 The Avalonia and TUI Framework surfaces show the resolved engineering rules and
 guidance with locks, provenance, privacy, and validation issues, and edit only the
 private workspace overlay without adding repository metadata.

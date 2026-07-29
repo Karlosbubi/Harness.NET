@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Headless;
@@ -363,6 +364,104 @@ public sealed class PresentationControlTests
     }
 
     [Fact]
+    public async Task Approved_goal_source_and_diff_share_context_and_keep_document_identity()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(PresentationTestApplication));
+        await session.Dispatch(() =>
+        {
+            AvaloniaShellState shell = ApprovedGoalShell();
+            InspectionService inspection = new();
+            WorkbenchDockHost workbench = CreateWorkbench(
+                shell,
+                new(),
+                new() { Editable = true },
+                inspection: inspection);
+            Window window = new() { Content = workbench.Control };
+            window.Show();
+
+            workbench.OpenFileAsync("src/App.cs").AsTask().GetAwaiter().GetResult();
+            IDockable source = workbench.Documents.ActiveDockable!;
+            TextEditor sourceEditor = workbench.ActiveSourceEditor!;
+            workbench.OpenDiffAsync().AsTask().GetAwaiter().GetResult();
+
+            IDockable diff = workbench.Documents.ActiveDockable!;
+            Assert.Equal("document.git.diff.workspace-1.goal-1", diff.Id);
+            Assert.Equal("harness/goal-1 working diff", diff.Title);
+            Assert.Equal("first diff", Assert.IsType<TextEditor>(diff.Context).Text);
+            Assert.All(inspection.Requests, request => Assert.Equal("goal-1", request.GoalId?.Value));
+
+            inspection.Diff = "refreshed diff";
+            workbench.OpenDiffAsync().AsTask().GetAwaiter().GetResult();
+            Assert.Same(diff, workbench.Documents.ActiveDockable);
+            Assert.Equal("refreshed diff", Assert.IsType<TextEditor>(diff.Context).Text);
+
+            workbench.Factory.SetActiveDockable(source);
+            Assert.Same(sourceEditor, workbench.ActiveSourceEditor);
+            workbench.Factory.SetActiveDockable(diff);
+            workbench.Factory.CloseDockable(diff);
+            Assert.DoesNotContain(workbench.Documents.VisibleDockables!, item => item.Id == diff.Id);
+            workbench.Factory.SetActiveDockable(source);
+            Assert.Same(sourceEditor, workbench.ActiveSourceEditor);
+            Assert.Equal("namespace Example;", sourceEditor.Text);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Representative_multi_project_tabs_retain_cached_editors_during_switching()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(PresentationTestApplication));
+        await session.Dispatch(() =>
+        {
+            WorkbenchDockHost workbench = CreateWorkbench(
+                ApprovedGoalShell(),
+                new(),
+                new() { Editable = true });
+            Window window = new() { Content = workbench.Control };
+            window.Show();
+            string[] paths = Enumerable.Range(1, 6)
+                .SelectMany(project => new[]
+                {
+                    $"src/Project{project}/Program.cs",
+                    $"src/Project{project}/Services/Worker.cs",
+                    $"tests/Project{project}.Tests/WorkerTests.cs",
+                })
+                .ToArray();
+            Dictionary<string, TextEditor> editors = new(StringComparer.Ordinal);
+            Stopwatch opening = Stopwatch.StartNew();
+            foreach (string item in paths)
+            {
+                workbench.OpenFileAsync(item).AsTask().GetAwaiter().GetResult();
+                editors.Add(workbench.Documents.ActiveDockable!.Id!, workbench.ActiveSourceEditor!);
+            }
+
+            opening.Stop();
+            IDockable[] documents = workbench.Documents.VisibleDockables!
+                .Where(item => item.Id?.StartsWith("document.file.", StringComparison.Ordinal) is true)
+                .ToArray();
+            Stopwatch switching = Stopwatch.StartNew();
+            for (int pass = 0; pass < 100; pass++)
+            {
+                foreach (IDockable document in documents)
+                {
+                    workbench.Factory.SetActiveDockable(document);
+                    Assert.Same(editors[document.Id!], workbench.ActiveSourceEditor);
+                }
+            }
+
+            switching.Stop();
+            Assert.Equal(18, documents.Length);
+            Assert.True(opening.Elapsed < TimeSpan.FromSeconds(10),
+                $"Opening 18 representative documents took {opening.Elapsed}.");
+            Assert.True(switching.Elapsed < TimeSpan.FromSeconds(5),
+                $"Switching 1,800 cached tabs took {switching.Elapsed}.");
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
     public async Task Layout_reset_cannot_drop_a_dirty_source_buffer()
     {
         using HeadlessUnitTestSession session =
@@ -522,8 +621,9 @@ public sealed class PresentationControlTests
         AvaloniaShellState shell,
         LayoutService layouts,
         DocumentService? documents = null,
-        DocumentPrompt? prompt = null) => new(
-        new InspectionService(),
+        DocumentPrompt? prompt = null,
+        InspectionService? inspection = null) => new(
+        inspection ?? new InspectionService(),
         documents ?? new DocumentService(),
         layouts,
         prompt ?? new DocumentPrompt(),
@@ -630,54 +730,59 @@ public sealed class PresentationControlTests
             .Select(id => Find<ITool>(root, id))
             .ToArray();
 
-    private sealed class InspectionService : IWorkspaceInspectionService
+    private sealed class InspectionService : IWorkbenchInspectionService
     {
-        public ValueTask<WorkspaceFileView> ReadFileAsync(
-            string workspaceId,
-            string relativePath,
-            CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(new WorkspaceFileView(
-                relativePath,
-                "namespace Example;",
-                18,
-                IsTruncated: false,
-                ErrorCode: null,
-                Error: null));
+        internal List<WorkbenchWorkspaceRequest> Requests { get; } = [];
+        internal string Diff { get; set; } = "first diff";
 
-        public ValueTask<WorkspaceTextSearchView> SearchTextAsync(
-            string workspaceId,
+        public ValueTask<WorkbenchTextSearchResult> SearchTextAsync(
+            WorkbenchWorkspaceRequest request,
             string query,
-            CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(new WorkspaceTextSearchView(
-                [new("src/App.cs", 1, "namespace Example;")],
-                1,
-                IsTruncated: false,
-                ErrorCode: null,
-                Error: null));
+            CancellationToken cancellationToken = default)
+        {
+            Requests.Add(request);
+            return ValueTask.FromResult(new WorkbenchTextSearchResult(
+                Context(request),
+                new(
+                    [new("src/App.cs", 1, "namespace Example;")],
+                    1,
+                    IsTruncated: false,
+                    ErrorCode: null,
+                    Error: null)));
+        }
 
-        public ValueTask<WorkspaceGitStateView> InspectGitAsync(
-            string workspaceId,
-            CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(new WorkspaceGitStateView(
-                "main",
-                "abc123",
-                [new("src/App.cs", "modified")],
-                "diff --git a/src/App.cs b/src/App.cs",
-                IsTruncated: false,
-                ErrorCode: null,
-                Error: null));
+        public ValueTask<WorkbenchGitInspectionResult> InspectGitAsync(
+            WorkbenchWorkspaceRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            Requests.Add(request);
+            WorkbenchWorkspaceContext context = Context(request);
+            return ValueTask.FromResult(new WorkbenchGitInspectionResult(
+                context,
+                new(
+                    context.Branch?.Value ?? "main",
+                    "abc123",
+                    [new("src/App.cs", "modified")],
+                    Diff,
+                    IsTruncated: false,
+                    ErrorCode: null,
+                    Error: null)));
+        }
 
-        public ValueTask<WorkspaceDotNetInfoView> InspectDotNetAsync(
-            string workspaceId,
-            CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(new WorkspaceDotNetInfoView(
-                "Harness.slnx",
-                "solution",
-                null,
-                [],
-                IsTruncated: false,
-                ErrorCode: null,
-                Error: null));
+        private static WorkbenchWorkspaceContext Context(WorkbenchWorkspaceRequest request) =>
+            request.GoalId is null
+                ? new(
+                    request.WorkspaceId,
+                    null,
+                    new("main"),
+                    WorkbenchWorkspaceScope.OriginalWorkspace,
+                    "Original workspace")
+                : new(
+                    request.WorkspaceId,
+                    request.GoalId,
+                    new("harness/goal-1"),
+                    WorkbenchWorkspaceScope.ApprovedGoalWorktree,
+                    "Approved goal worktree · harness/goal-1");
     }
 
     private sealed class DocumentService : IWorkbenchDocumentService

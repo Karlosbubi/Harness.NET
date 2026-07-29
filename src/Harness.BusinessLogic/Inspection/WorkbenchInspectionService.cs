@@ -1,0 +1,85 @@
+using Harness.BusinessLogic.Workspaces;
+using Harness.DataAccess.Inspection;
+
+namespace Harness.BusinessLogic.Inspection;
+
+internal sealed class WorkbenchInspectionService(
+    IWorkbenchWorkspaceContextResolver contextResolver,
+    IWorkspaceTextSearcher textSearcher,
+    IWorkspaceGitInspector gitInspector) : IWorkbenchInspectionService
+{
+    public async ValueTask<WorkbenchTextSearchResult> SearchTextAsync(
+        WorkbenchWorkspaceRequest request,
+        string query,
+        CancellationToken cancellationToken = default)
+    {
+        WorkbenchWorkspaceResolution resolution = await contextResolver.ResolveAsync(
+            request,
+            cancellationToken);
+        if (resolution.Error is not null || resolution.RootPath is null)
+        {
+            return new(
+                resolution.Context,
+                new(
+                    [],
+                    0,
+                    IsTruncated: false,
+                    resolution.ErrorCode ?? "workspace_unavailable",
+                    resolution.Error ?? "The workspace context is unavailable."));
+        }
+
+        WorkspaceTextSearch search = await textSearcher.SearchAsync(
+            resolution.RootPath,
+            query,
+            cancellationToken);
+        return new(
+            resolution.Context,
+            new(
+                search.Matches.Select(match => new WorkspaceTextMatchView(
+                    match.Path,
+                    match.LineNumber,
+                    match.Text)).ToArray(),
+                search.FilesScanned,
+                search.IsTruncated,
+                search.ErrorCode,
+                search.Error));
+    }
+
+    public async ValueTask<WorkbenchGitInspectionResult> InspectGitAsync(
+        WorkbenchWorkspaceRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        WorkbenchWorkspaceResolution resolution = await contextResolver.ResolveAsync(
+            request,
+            cancellationToken);
+        if (resolution.Error is not null || resolution.RootPath is null)
+        {
+            return new(
+                resolution.Context,
+                new(
+                    string.Empty,
+                    null,
+                    [],
+                    string.Empty,
+                    IsTruncated: false,
+                    resolution.ErrorCode ?? "workspace_unavailable",
+                    resolution.Error ?? "The workspace context is unavailable."));
+        }
+
+        WorkspaceGitState git = await gitInspector.InspectAsync(
+            resolution.RootPath,
+            cancellationToken);
+        return new(
+            resolution.Context,
+            new(
+                git.Branch,
+                git.HeadSha,
+                git.Changes.Select(change => new WorkspaceGitFileChangeView(
+                    change.Path,
+                    change.Status)).ToArray(),
+                git.Diff,
+                git.IsTruncated,
+                git.ErrorCode,
+                git.Error));
+    }
+}

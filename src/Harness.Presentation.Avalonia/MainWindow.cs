@@ -19,7 +19,7 @@ internal sealed class MainWindow : Window
 {
     private readonly AvaloniaPresentationStore store;
     private readonly HarnessThemeController themeController;
-    private readonly IWorkspaceInspectionService inspectionService;
+    private readonly IWorkbenchInspectionService inspectionService;
     private readonly IWorkbenchDocumentService documentService;
     private readonly IWorkbenchLayoutService layoutService;
     private readonly CancellationToken cancellationToken;
@@ -65,7 +65,7 @@ internal sealed class MainWindow : Window
     internal MainWindow(
         AvaloniaPresentationStore store,
         HarnessThemeController themeController,
-        IWorkspaceInspectionService inspectionService,
+        IWorkbenchInspectionService inspectionService,
         IWorkbenchDocumentService documentService,
         IWorkbenchLayoutService layoutService,
         CancellationToken cancellationToken)

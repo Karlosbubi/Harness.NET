@@ -42,10 +42,14 @@ tabs. Approved goals now open the same path from their isolated worktree with an
 content baseline; headless checks cover real dirty state, compare-and-swap save and
 conflict recovery, Dock tab switching, close, layout reset, and exit decisions. The
 complete Linux x64 lifecycle verifier also passes with the Dock assemblies inside the
-self-contained publication. Complete keyboard/focus traversal, floating-window
-ownership, compact layout, assistive-technology behavior, diff-document lifecycle,
-and measured multi-document performance remain required before this record can become
-Accepted.
+self-contained publication. Source, search, Git state, and diff now resolve through
+one Business Logic-owned original/approved-worktree context. Source and diff document
+open, refresh, activation, close, and identity retention pass headless checks. The
+deliberate cache policy retains each open source editor and replaces bounded diff
+content on refresh; an 18-document, six-project scenario with 1,800 tab switches
+completed in 278 ms on 2026-07-29 under headless execution. Complete keyboard/focus
+traversal, floating-window ownership, compact layout, scaling, and
+assistive-technology behavior remain required before this record can become Accepted.
 
 ## Proposed decision
 
@@ -95,9 +99,10 @@ Presentation; Business Logic and Data Access contracts do not expose them.
   scaling, floating-window ownership, and compact-layout fallback.
 - Verify headless construction plus Linux x64 single-file publishing.
 - Demonstrate open/activate/close for real source and diff documents without fake
-  defaults and without leaking Dock types across the Presentation boundary.
+  defaults and without leaking Dock types across the Presentation boundary. **Met.**
 - Measure startup and tab-switch behavior with a representative multi-project
-  workspace and choose content caching deliberately.
+  workspace and choose content caching deliberately. **Met for the headless
+  compatibility checkpoint; hands-on product acceptance remains in Task 033.**
 
 ## Consequences
 

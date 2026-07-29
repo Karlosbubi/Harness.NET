@@ -58,7 +58,7 @@ but the end-user workflow is not complete.
 | 026 | Done | Operate and distribute v1.0 reliably | - | A self-contained Linux x64 release passes clean-install, migration, outage, cancellation, recovery, and representative-repository acceptance tests. |
 | 027 | In progress | Deliver the default desktop as a complete product surface | 013-026 | The conversation-first shell and modal inspector are replaced by a real docked workbench with safe source editing, but accessibility, adaptive layouts, bounded output, and hands-on acceptance remain release blockers. Every visible surface must remain backed by production state, and obvious workspace and goal workflows require no mock or filler UI. |
 | 028 | Partial | Validate the Dock dependency and package boundary | 027 | Stable Dock 12.0.0.2 packages are pinned at the Presentation boundary, the Fluent theme loads, headless construction/file activation passes, and the Linux x64 lifecycle verifier succeeds. Keyboard/focus, floating ownership, compact behavior, and the remaining ADR 010 acceptance evidence are outstanding. |
-| 029 | Partial | Build the central document workbench | 028 | A real workspace overview and bounded source files open as center tabs; Git diff, current plan, and durable evidence entry points use production state and honest empty states. Source open/activate/switch/close behavior now passes headless multi-document checks; equivalent diff-document close/activation evidence and measured representative-workspace behavior remain outstanding. |
+| 029 | Done | Build the central document workbench | 028 | Workspace overview, bounded source, Git diff, current plan, and durable evidence documents use production state or honest empty states. Business Logic resolves one explicit original/approved-worktree context for source, search, Git, and diff; headless checks prove source/diff open, refresh, activation, close, identity retention, and cached switching across 18 documents from six representative projects. |
 | 030 | Partial | Deliver dockable production tool panels | 029 | Real workspace/search, source-control, goal context, and durable conversation controls occupy movable, hideable, floatable tool regions with save/reset actions and restart restoration. Bounded run-output separation, keyboard/accessibility acceptance, and compact-layout behavior remain outstanding. |
 | 031 | Done | Persist and recover the desktop layout | 030 | A versioned, bounded, integrity-checked layout persists atomically in private XDG state; only known production panes survive, transient documents are omitted, duplicate/unknown state falls back safely, floating bounds are clamped, reset is immediate, and backup v2/offline recovery retain verified layout state without repository metadata. |
 | 032 | Done | Add safe source editing semantics | 029 | Original-workspace and truncated files remain honestly read-only; an active approved goal opens its isolated worktree with an exact content baseline. Editable AvaloniaEdit tabs expose real dirty state, keyboard and visible save/reload/close actions, durable compare-and-swap saves, explicit reload/overwrite conflict recovery, and save/discard/cancel decisions for tab switches, closes, layout reset, workspace change, and application exit. |
@@ -289,3 +289,11 @@ model provider.
   also exposes visible save/reload/close and keyboard save/close commands. The
   representative repository acceptance test performs the real read and atomic save
   in the isolated Git worktree.
+- Task 029 routes source, tracked-text search, Git state, and diff through one semantic
+  Business Logic workspace context. An approved selected goal resolves all four to
+  its active worktree; otherwise the UI labels and reads the trusted original
+  workspace without implying edit authority. Headless Dock tests prove source and
+  diff open/refresh/activate/close behavior, retain source editor instances during
+  tab switching, and exercise 18 documents across six representative projects. The
+  complete open-and-1,800-switch scenario took 278 ms on the 2026-07-29 verification
+  run and is guarded by conservative 10-second open and 5-second switch ceilings.

@@ -26,7 +26,7 @@ namespace Harness.Presentation.Avalonia;
 
 internal sealed class WorkbenchDockHost
 {
-    private readonly IWorkspaceInspectionService inspectionService;
+    private readonly IWorkbenchInspectionService inspectionService;
     private readonly IWorkbenchDocumentService documentService;
     private readonly IWorkbenchLayoutService layoutService;
     private readonly IWorkbenchDocumentPrompt documentPrompt;
@@ -61,13 +61,14 @@ internal sealed class WorkbenchDockHost
     private readonly TextBlock gitSummary = new() { TextWrapping = TextWrapping.Wrap };
     private readonly TextBlock gitStatus = new() { TextWrapping = TextWrapping.Wrap };
     private string? workspaceId;
+    private string? selectedGoalId;
     private bool busy;
     private bool suppressDocumentActivation;
     private bool resolvingDocumentTransition;
     private IDockable? activeDocument;
 
     internal WorkbenchDockHost(
-        IWorkspaceInspectionService inspectionService,
+        IWorkbenchInspectionService inspectionService,
         IWorkbenchDocumentService documentService,
         IWorkbenchLayoutService layoutService,
         IWorkbenchDocumentPrompt documentPrompt,
@@ -330,6 +331,29 @@ internal sealed class WorkbenchDockHost
             gitSummary.Text = active is null ? "No workspace selected." : "Refresh Git state.";
         }
 
+        GoalView? selectedGoal = snapshot.Goals.SelectedGoal;
+        string? nextGoalId = selectedGoal is not null && active is not null &&
+                             selectedGoal.WorkspaceId == active.Id
+            ? selectedGoal.Id.Value
+            : null;
+        if (!string.Equals(selectedGoalId, nextGoalId, StringComparison.Ordinal))
+        {
+            selectedGoalId = nextGoalId;
+            searchResults.ItemsSource = Array.Empty<SearchChoice>();
+            changes.ItemsSource = Array.Empty<ChangeChoice>();
+            fileStatus.Text = nextGoalId is null
+                ? "Source context: original workspace."
+                : "Source context changed; refreshing the selected goal worktree.";
+            gitStatus.Text = string.Empty;
+            gitSummary.Text = active is null
+                ? "No workspace selected."
+                : "Refreshing Git state for the current source context…";
+            if (active is { IsTrusted: true })
+            {
+                Dispatcher.UIThread.Post(async () => await RefreshGitAsync());
+            }
+        }
+
         if (active is null)
         {
             overviewHeading.Text = "No workspace selected";
@@ -346,7 +370,10 @@ internal sealed class WorkbenchDockHost
                                    : "Trust this workspace before reading repository content.");
     }
 
-    internal async ValueTask OpenFileAsync(string relativePath)
+    internal ValueTask OpenFileAsync(string relativePath) =>
+        OpenFileAsync(relativePath, state().Goals.SelectedGoal?.Id);
+
+    private async ValueTask OpenFileAsync(string relativePath, GoalId? requestedGoalId)
     {
         WorkspaceView? active = ActiveWorkspace();
         if (busy || active is null || !active.IsTrusted || string.IsNullOrWhiteSpace(relativePath))
@@ -359,11 +386,10 @@ internal sealed class WorkbenchDockHost
 
         await RunAsync(async () =>
         {
-            GoalId? goalId = state().Goals.SelectedGoal?.Id;
             WorkbenchDocumentView file = await documentService.OpenAsync(
                 new(
                     new(active.Id),
-                    goalId,
+                    requestedGoalId,
                     new(relativePath.Trim())),
                 cancellationToken);
             if (file.Error is not null)
@@ -411,17 +437,23 @@ internal sealed class WorkbenchDockHost
 
         await RunAsync(async () =>
         {
-            WorkspaceGitStateView git = await inspectionService.InspectGitAsync(active.Id, cancellationToken);
+            WorkbenchGitInspectionResult inspected = await inspectionService.InspectGitAsync(
+                WorkbenchRequest(active),
+                cancellationToken);
+            WorkspaceGitStateView git = inspected.Git;
             if (git.Error is not null)
             {
                 gitStatus.Text = git.Error;
                 return;
             }
 
-            gitSummary.Text = $"Branch {git.Branch}\nHEAD {git.HeadSha ?? "unborn"}\n" +
+            gitSummary.Text = $"{inspected.Context.Description}\nBranch {git.Branch}\n" +
+                              $"HEAD {git.HeadSha ?? "unborn"}\n" +
                               $"{git.Changes.Count} change(s)" +
                               (git.IsTruncated ? " · truncated" : string.Empty);
-            changes.ItemsSource = git.Changes.Select(change => new ChangeChoice(change)).ToArray();
+            changes.ItemsSource = git.Changes
+                .Select(change => new ChangeChoice(change, inspected.Context.GoalId))
+                .ToArray();
             gitStatus.Text = "Git state refreshed.";
         });
     }
@@ -439,7 +471,10 @@ internal sealed class WorkbenchDockHost
 
         await RunAsync(async () =>
         {
-            WorkspaceGitStateView git = await inspectionService.InspectGitAsync(active.Id, cancellationToken);
+            WorkbenchGitInspectionResult inspected = await inspectionService.InspectGitAsync(
+                WorkbenchRequest(active),
+                cancellationToken);
+            WorkspaceGitStateView git = inspected.Git;
             if (git.Error is not null)
             {
                 gitStatus.Text = git.Error;
@@ -453,10 +488,10 @@ internal sealed class WorkbenchDockHost
             }
 
             OpenOrReplaceDocument(
-                WorkbenchDockIds.DiffDocument,
+                DiffDocumentId(inspected.Context),
                 $"{git.Branch} working diff",
                 CreateEditor(git.Diff, "workspace.diff", showLineNumbers: false));
-            gitStatus.Text = "Opened the current bounded Git diff.";
+            gitStatus.Text = $"Opened the current bounded Git diff · {inspected.Context.Description}.";
         });
     }
 
@@ -610,7 +645,7 @@ internal sealed class WorkbenchDockHost
             if (searchResults.SelectedItem is SearchChoice choice)
             {
                 path.Text = choice.Match.Path;
-                await OpenFileAsync(choice.Match.Path);
+                await OpenFileAsync(choice.Match.Path, choice.GoalId);
             }
         };
         Grid.SetRow(searchResults, 2);
@@ -648,7 +683,7 @@ internal sealed class WorkbenchDockHost
             if (changes.SelectedItem is ChangeChoice choice)
             {
                 path.Text = choice.Change.Path;
-                await OpenFileAsync(choice.Change.Path);
+                await OpenFileAsync(choice.Change.Path, choice.GoalId);
             }
         };
         Grid.SetRow(changes, 2);
@@ -704,13 +739,17 @@ internal sealed class WorkbenchDockHost
 
         await RunAsync(async () =>
         {
-            WorkspaceTextSearchView result = await inspectionService.SearchTextAsync(
-                active.Id,
+            WorkbenchTextSearchResult inspected = await inspectionService.SearchTextAsync(
+                WorkbenchRequest(active),
                 query.Text.Trim(),
                 cancellationToken);
-            searchResults.ItemsSource = result.Matches.Select(match => new SearchChoice(match)).ToArray();
+            WorkspaceTextSearchView result = inspected.Search;
+            searchResults.ItemsSource = result.Matches
+                .Select(match => new SearchChoice(match, inspected.Context.GoalId))
+                .ToArray();
             fileStatus.Text = result.Error ??
-                              $"{result.Matches.Count} match(es) in {result.FilesScanned} file(s)" +
+                              $"{inspected.Context.Description} · {result.Matches.Count} match(es) " +
+                              $"in {result.FilesScanned} file(s)" +
                               (result.IsTruncated ? " · truncated." : ".");
         });
     }
@@ -1218,6 +1257,18 @@ internal sealed class WorkbenchDockHost
     private WorkspaceView? ActiveWorkspace() =>
         state().Workspaces.Registered.FirstOrDefault(item => item.IsActive);
 
+    private WorkbenchWorkspaceRequest WorkbenchRequest(WorkspaceView workspace)
+    {
+        GoalView? goal = state().Goals.SelectedGoal;
+        return new(
+            new(workspace.Id),
+            goal?.WorkspaceId == workspace.Id ? goal.Id : null);
+    }
+
+    private static string DiffDocumentId(WorkbenchWorkspaceContext context) =>
+        $"{WorkbenchDockIds.DiffDocument}.{context.WorkspaceId.Value}." +
+        (context.GoalId?.Value ?? "original");
+
     private async ValueTask RunAsync(Func<ValueTask> operation)
     {
         busy = true;
@@ -1241,12 +1292,12 @@ internal sealed class WorkbenchDockHost
         }
     }
 
-    private sealed record SearchChoice(WorkspaceTextMatchView Match)
+    private sealed record SearchChoice(WorkspaceTextMatchView Match, GoalId? GoalId)
     {
         public override string ToString() => $"{Match.Path}:{Match.LineNumber}  {Match.Text}";
     }
 
-    private sealed record ChangeChoice(WorkspaceGitFileChangeView Change)
+    private sealed record ChangeChoice(WorkspaceGitFileChangeView Change, GoalId? GoalId)
     {
         public override string ToString() => $"{Change.Status}  {Change.Path}";
     }

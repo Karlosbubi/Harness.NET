@@ -1,17 +1,13 @@
 using System.Security.Cryptography;
 using System.Text;
-using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Mutations;
-using Harness.DataAccess.Goals;
+using Harness.BusinessLogic.Workspaces;
 using Harness.DataAccess.Inspection;
-using Harness.DataAccess.Workspaces;
-using Harness.DataAccess.Worktrees;
 
 namespace Harness.BusinessLogic.Documents;
 
 internal sealed class WorkbenchDocumentService(
-    IGoalStore goalStore,
-    IWorkspaceStore workspaceStore,
+    IWorkbenchWorkspaceContextResolver contextResolver,
     IWorkspaceFileReader fileReader,
     IWorkspaceMutationService mutationService) : IWorkbenchDocumentService
 {
@@ -33,64 +29,41 @@ internal sealed class WorkbenchDocumentService(
                 "A workspace and relative document path are required.");
         }
 
-        RegisteredWorkspace? workspace = await workspaceStore.GetActiveAsync(cancellationToken);
-        if (workspace is null || !workspace.Id.Equals(request.WorkspaceId.Value, StringComparison.Ordinal))
+        WorkbenchWorkspaceResolution resolution = await contextResolver.ResolveAsync(
+            new(request.WorkspaceId, request.GoalId),
+            cancellationToken);
+        if (resolution.Error is not null || resolution.RootPath is null)
         {
             return OpenFailure(
                 request,
-                "workspace_not_active",
-                "The requested workspace is not active.");
+                resolution.ErrorCode ?? "workspace_unavailable",
+                resolution.Error ?? "The workspace context is unavailable.");
         }
 
-        if (!workspace.IsTrusted)
+        WorkbenchDocumentAccess access = resolution.Context.Scope is
+            WorkbenchWorkspaceScope.ApprovedGoalWorktree
+            ? WorkbenchDocumentAccess.Editable
+            : WorkbenchDocumentAccess.ReadOnly;
+        string accessDescription = resolution.Context.Scope switch
         {
-            return OpenFailure(
-                request,
-                "workspace_not_trusted",
-                "Trust the workspace before opening source documents.");
-        }
-
-        string rootPath = workspace.RootPath;
-        GoalId? editableGoalId = null;
-        WorkbenchBranchName? branch = null;
-        WorkbenchDocumentAccess access = WorkbenchDocumentAccess.ReadOnly;
-        string accessDescription =
-            "Read-only original workspace. Select an approved goal to edit in its isolated worktree.";
-
-        if (request.GoalId is not null)
-        {
-            StoredGoal? goal = await goalStore.GetAsync(request.GoalId.Value, cancellationToken);
-            StoredGoalWorktree? worktree = await goalStore.GetWorktreeAsync(
-                request.GoalId.Value,
-                cancellationToken);
-            if (goal?.State == "Approved" && worktree?.State == "Active" &&
-                goal.WorkspaceId.Equals(workspace.Id, StringComparison.Ordinal) &&
-                worktree.WorkspaceId.Equals(workspace.Id, StringComparison.Ordinal))
-            {
-                rootPath = worktree.Path;
-                editableGoalId = request.GoalId;
-                branch = new(worktree.Branch);
-                access = WorkbenchDocumentAccess.Editable;
-                accessDescription =
-                    $"Editing isolated branch {worktree.Branch} for goal {goal.Title}.";
-            }
-            else
-            {
-                accessDescription =
-                    "Read-only original workspace. Approve the selected goal plan to edit safely.";
-            }
-        }
+            WorkbenchWorkspaceScope.ApprovedGoalWorktree =>
+                $"Editing {resolution.Context.Description}.",
+            WorkbenchWorkspaceScope.OriginalWorkspace when request.GoalId is not null =>
+                "Read-only original workspace. Approve the selected goal plan to edit safely.",
+            _ =>
+                "Read-only original workspace. Select an approved goal to edit in its isolated worktree.",
+        };
 
         WorkspaceFileRead file = await fileReader.ReadAsync(
-            rootPath,
+            resolution.RootPath,
             request.Path.Value,
             cancellationToken);
         if (file.Error is not null)
         {
             return new(
                 request.WorkspaceId,
-                editableGoalId,
-                branch,
+                resolution.Context.GoalId,
+                resolution.Context.Branch,
                 new(file.Path),
                 new(file.Content),
                 null,
@@ -115,8 +88,8 @@ internal sealed class WorkbenchDocumentService(
 
         return new(
             request.WorkspaceId,
-            editableGoalId,
-            branch,
+            resolution.Context.GoalId,
+            resolution.Context.Branch,
             new(file.Path),
             new(file.Content),
             hash,
