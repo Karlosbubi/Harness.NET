@@ -360,6 +360,12 @@ configured or paid provider.
   colour, and an effective theme change repaints them. `eng/capture-diff-viewer.py`
   records the evidence under `docs/acceptance` from the real production host over a
   real repository working tree.
+- Task 035 adds a command palette over the shell's real commands, reachable both
+  from a visible header command bar and with Ctrl+Shift+P, because a chord-only
+  entry point is undiscoverable and unreachable for some users. Matching is a
+  case-insensitive subsequence over "Category: Title", and a command that needs an
+  active or trusted workspace stays listed with the reason it cannot run rather
+  than disappearing. The bar states its own shortcut.
 - Task 035 replaces the framework text dump with a scannable inspector. A validity
   headline and counts sit above a filter and a locked-only toggle; rules and issues
   render as individual rows with lock chips and provenance, and guidance-document

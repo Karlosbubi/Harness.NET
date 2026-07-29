@@ -4,6 +4,7 @@ using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
@@ -13,6 +14,7 @@ using Harness.BusinessLogic.Documents;
 using Harness.BusinessLogic.Evidence;
 using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Layouts;
+using Harness.BusinessLogic.Workspaces;
 using Harness.UI.Avalonia;
 
 namespace Harness.Presentation.Avalonia;
@@ -45,6 +47,12 @@ internal sealed class MainWindow : Window
     private readonly Button manageGoals = new() { Content = "Goals" };
     private readonly Button goalAction = new() { Content = "Create or select a goal" };
     private readonly Button operations = new() { Content = "Operations" };
+    private readonly Button commandBar = new()
+    {
+        Classes = { "command-bar" },
+        MaxWidth = 460,
+        VerticalAlignment = VerticalAlignment.Center,
+    };
     private readonly AccessibleIconButton refreshProvider = new()
     {
         Content = "↻",
@@ -174,7 +182,7 @@ internal sealed class MainWindow : Window
     {
         Grid grid = new()
         {
-            ColumnDefinitions = new("Auto,Auto,*"),
+            ColumnDefinitions = new("Auto,Auto,*,Auto"),
             Margin = new(14, 8),
             ColumnSpacing = 16,
         };
@@ -227,6 +235,9 @@ internal sealed class MainWindow : Window
                     : new TextBlock(),
             },
         };
+        Grid.SetColumn(commandBar, 2);
+        grid.Children.Add(commandBar);
+
         ScrollViewer actionScroller = new()
         {
             Content = actions,
@@ -234,7 +245,7 @@ internal sealed class MainWindow : Window
             VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
         };
         AutomationProperties.SetName(actionScroller, "Workbench commands");
-        Grid.SetColumn(actionScroller, 2);
+        Grid.SetColumn(actionScroller, 3);
         grid.Children.Add(actionScroller);
         AutomationProperties.SetName(modelPicker, "Conversation model");
         AutomationProperties.SetName(themePicker, "Color theme");
@@ -247,6 +258,26 @@ internal sealed class MainWindow : Window
         modelLabel.Classes.Add("cluster-label");
         themeLabel.Classes.Add("cluster-label");
         return grid;
+    }
+
+    /// <summary>The command bar states its own shortcut so the palette is discoverable.</summary>
+    private Control BuildCommandBar()
+    {
+        Grid content = new() { ColumnDefinitions = new("*,Auto"), ColumnSpacing = 8 };
+        content.Children.Add(new TextBlock
+        {
+            Text = "Search commands",
+            FontSize = 12.5,
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        Border shortcut = new()
+        {
+            Classes = { "kbd" },
+            Child = new TextBlock { Text = "Ctrl+Shift+P" },
+        };
+        shortcut.SetValue(Grid.ColumnProperty, 1);
+        content.Children.Add(shortcut);
+        return content;
     }
 
     /// <summary>Groups a label with the control it names so the header reads as one affordance.</summary>
@@ -276,6 +307,8 @@ internal sealed class MainWindow : Window
         bool compact = width > 0 && width < 1024;
         brandDetail.IsVisible = !compact;
         openWorkspace.IsVisible = !compact;
+        // The palette keeps its keyboard shortcut when the bar is hidden for width.
+        commandBar.IsVisible = !compact;
         modelLabel.IsVisible = !compact;
         themeLabel.IsVisible = !compact;
     }
@@ -465,7 +498,83 @@ internal sealed class MainWindow : Window
             OperationsDialog dialog = new(store, cancellationToken);
             await dialog.ShowDialog(this);
         };
+        AddHandler(KeyDownEvent, OnShellKeyDown, RoutingStrategies.Tunnel);
+        commandBar.Content = BuildCommandBar();
+        AutomationProperties.SetName(commandBar, "Open the command palette");
+        commandBar.Click += async (_, _) => await ShowCommandPaletteAsync();
     }
+
+    private async void OnShellKeyDown(object? sender, KeyEventArgs args)
+    {
+        if (args.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Shift) && args.Key is Key.P)
+        {
+            args.Handled = true;
+            await ShowCommandPaletteAsync();
+        }
+    }
+
+    private async Task ShowCommandPaletteAsync()
+    {
+        CommandPaletteDialog palette = new(BuildCommands());
+        await palette.ShowDialog(this);
+    }
+
+    /// <summary>
+    /// Describes the commands the shell can actually run right now. A command that needs
+    /// an active or trusted workspace is listed with the reason instead of being hidden.
+    /// </summary>
+    internal IReadOnlyList<PaletteCommand> BuildCommands()
+    {
+        AvaloniaShellState state = store.Current;
+        WorkspaceView? active = state.Workspaces.Registered.FirstOrDefault(item => item.IsActive);
+        string? needsWorkspace = active is null ? "Open a workspace first" : null;
+        string? needsTrust = active is null
+            ? "Open a workspace first"
+            : active.IsTrusted ? null : "Trust the workspace first";
+
+        List<PaletteCommand> commands =
+        [
+            new("workspace.open", "Workspace", "Open workspace…",
+                () => new(ShowWorkspaceDialogAsync(true))),
+            new("workspace.manage", "Workspace", "Manage workspaces…",
+                () => new(ShowWorkspaceDialogAsync(false))),
+            new("goals.manage", "Goals", "Goals and plans…",
+                () => new(ShowDialogAsync(new GoalDialog(store, cancellationToken))),
+                UnavailableReason: needsWorkspace),
+            new("framework.manage", "Framework", "Effective framework…",
+                () => new(ShowDialogAsync(new FrameworkDialog(store, cancellationToken))),
+                UnavailableReason: needsWorkspace),
+            new("operations.manage", "Application", "Operations and backup…",
+                () => new(ShowDialogAsync(new OperationsDialog(store, cancellationToken)))),
+            new("provider.refresh", "Providers", "Refresh provider health",
+                async () => await store.RefreshProviderAsync(cancellationToken)),
+            new("themes.reload", "Appearance", "Reload user themes",
+                async () => await store.RefreshThemesAsync(cancellationToken)),
+        ];
+
+        if (workbench is { } host)
+        {
+            commands.AddRange(
+            [
+                new("tool.files", "Panels", "Show Files panel",
+                    () => { host.ShowFiles(); return ValueTask.CompletedTask; }, "Ctrl+Shift+E"),
+                new("tool.git", "Panels", "Show Git panel",
+                    () => { host.ShowGit(); return ValueTask.CompletedTask; }, "Ctrl+Shift+G"),
+                new("tool.output", "Panels", "Show Run output panel",
+                    () => { host.ShowRunOutput(); return ValueTask.CompletedTask; }, "Ctrl+J"),
+                new("git.diff", "Git", "Open working-tree diff",
+                    async () => await host.OpenDiffAsync(), UnavailableReason: needsTrust),
+                new("layout.save", "Layout", "Save workbench layout",
+                    async () => await host.SaveLayoutAsync()),
+                new("layout.reset", "Layout", "Reset workbench layout",
+                    async () => await host.ResetLayoutAsync()),
+            ]);
+        }
+
+        return commands;
+    }
+
+    private async Task ShowDialogAsync(Window dialog) => await dialog.ShowDialog(this);
 
     private async void OnOpened(object? sender, EventArgs eventArgs)
     {

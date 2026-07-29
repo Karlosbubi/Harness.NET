@@ -1920,22 +1920,31 @@ internal sealed class WorkbenchDockHost
         if (args.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Shift) &&
             args.Key is Key.E)
         {
-            args.Handled = ActivateTool(WorkbenchDockIds.FilesTool);
+            args.Handled = ShowFiles();
         }
         else if (args.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Shift) &&
                  args.Key is Key.G)
         {
-            args.Handled = ActivateTool(WorkbenchDockIds.GitTool);
+            args.Handled = ShowGit();
         }
         else if (args.KeyModifiers == KeyModifiers.Control && args.Key is Key.J)
         {
-            args.Handled = ActivateTool(WorkbenchDockIds.RunOutputTool);
+            args.Handled = ShowRunOutput();
         }
         else if (args.Key is Key.F6 && args.KeyModifiers is KeyModifiers.None)
         {
             args.Handled = FocusNextRegion();
         }
     }
+
+    /// <summary>Activates the Files panel, the same path as its keyboard shortcut.</summary>
+    internal bool ShowFiles() => ActivateTool(WorkbenchDockIds.FilesTool);
+
+    /// <summary>Activates the Git panel, the same path as its keyboard shortcut.</summary>
+    internal bool ShowGit() => ActivateTool(WorkbenchDockIds.GitTool);
+
+    /// <summary>Activates the Run output panel, the same path as its keyboard shortcut.</summary>
+    internal bool ShowRunOutput() => ActivateTool(WorkbenchDockIds.RunOutputTool);
 
     private bool ActivateTool(string id)
     {

@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Capture the production diff viewer against a real repository working tree.
+"""Capture production desktop surfaces against a real repository working tree.
 
 This is a design-evidence capture tool, not a release gate. It launches the real
 Avalonia host with an isolated XDG home, registers and trusts a real Git repository
 that has genuine uncommitted changes, opens the bounded working-tree diff, and
-screenshots the inline and side-by-side modes. It never invokes a model provider.
+screenshots the command palette and the inline and side-by-side diff modes. It
+never invokes a model provider.
 """
 
 from __future__ import annotations
@@ -152,6 +153,16 @@ def main() -> int:
                 executable, environment, accessibility_bus
             )
             atspi.register_workspace(application, repository)
+            # The command palette is reachable without a key chord.
+            application.invoke("Open the command palette")
+            application.wait_for_name("Command palette filter", "entry")
+            time.sleep(1.5)
+            screenshot(arguments.output / "command-palette-real.png")
+            application.set_text("Command palette filter", "diff")
+            time.sleep(1.0)
+            screenshot(arguments.output / "command-palette-filtered.png")
+            application.invoke("Open the command palette")
+
             application.invoke("Git", "page tab")
             application.wait_for_name("Open bounded Git working-tree diff", "push button")
             application.invoke("Open bounded Git working-tree diff")

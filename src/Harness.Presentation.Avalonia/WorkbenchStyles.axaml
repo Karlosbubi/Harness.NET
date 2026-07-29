@@ -79,6 +79,54 @@
     <Setter Property="Foreground" Value="{DynamicResource Harness.TextMuted}" />
   </Style>
 
+  <!-- Command palette surface. -->
+  <Style Selector="Window.palette">
+    <Setter Property="Background" Value="{DynamicResource Harness.Header}" />
+  </Style>
+  <Style Selector="ListBox.palette-results">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+  </Style>
+  <Style Selector="ListBox.palette-results ListBoxItem">
+    <Setter Property="Padding" Value="8,5" />
+    <Setter Property="CornerRadius" Value="6" />
+  </Style>
+  <Style Selector="ListBox.palette-results ListBoxItem:selected /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource Harness.AccentSoft}" />
+  </Style>
+  <Style Selector="ListBox.palette-results ListBoxItem:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource Harness.Hover}" />
+  </Style>
+
+  <!-- Command bar: the visible, discoverable entry point to the command palette. -->
+  <Style Selector="Button.command-bar">
+    <Setter Property="Height" Value="36" />
+    <Setter Property="Padding" Value="12,0" />
+    <Setter Property="CornerRadius" Value="10" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Harness.Border}" />
+    <Setter Property="Background" Value="{DynamicResource Harness.Panel}" />
+    <Setter Property="Foreground" Value="{DynamicResource Harness.TextMuted}" />
+  </Style>
+  <Style Selector="Button.command-bar:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource Harness.Hover}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Harness.BorderStrong}" />
+  </Style>
+  <Style Selector="Border.kbd">
+    <Setter Property="Padding" Value="6,1" />
+    <Setter Property="CornerRadius" Value="4" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Harness.BorderStrong}" />
+    <Setter Property="Background" Value="{DynamicResource Harness.Raised}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Border.kbd > TextBlock">
+    <Setter Property="FontSize" Value="10" />
+    <Setter Property="Foreground" Value="{DynamicResource Harness.TextDim}" />
+  </Style>
+
   <!-- Compact list rows and status chips used by the framework inspector. -->
   <Style Selector="Border.card.row">
     <Setter Property="Padding" Value="10,8" />
