@@ -504,6 +504,47 @@ internal sealed class WorkbenchDockHost
     internal ValueTask OpenFileAsync(string relativePath) =>
         OpenFileAsync(relativePath, state().Goals.SelectedGoal?.Id);
 
+    /// <summary>
+    /// Offers each Git-tracked file as a command that opens it. The catalog is loaded on
+    /// demand so quick open reflects the same bounded, context-resolved file list the
+    /// Files panel shows rather than a separate scan.
+    /// </summary>
+    internal async ValueTask<IReadOnlyList<PaletteCommand>> BuildFileCommandsAsync()
+    {
+        WorkspaceView? active = ActiveWorkspace();
+        if (active is null || !active.IsTrusted)
+        {
+            return [];
+        }
+
+        if (trackedFiles.Count == 0 && fileTreeError is null)
+        {
+            await RefreshFilesAsync();
+        }
+
+        return
+        [
+            .. trackedFiles.Select(path => new PaletteCommand(
+                $"file:{path.Value}",
+                Directory(path.Value),
+                Name(path.Value),
+                () => OpenFileAsync(path.Value),
+                MatchText: path.Value))
+        ];
+    }
+
+    private static string Directory(string path)
+    {
+        int separator = path.LastIndexOf('/');
+        return separator <= 0 ? "(repository root)" : path[..separator];
+    }
+
+    private static string Name(string path)
+    {
+        int separator = path.LastIndexOf('/');
+        return separator < 0 ? path : path[(separator + 1)..];
+    }
+
     private async ValueTask OpenFileAsync(string relativePath, GoalId? requestedGoalId)
     {
         WorkspaceView? active = ActiveWorkspace();

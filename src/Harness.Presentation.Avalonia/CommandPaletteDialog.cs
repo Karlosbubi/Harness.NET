@@ -16,13 +16,17 @@ namespace Harness.Presentation.Avalonia;
 internal sealed class CommandPaletteDialog : Window
 {
     private readonly IReadOnlyList<PaletteCommand> commands;
-    private readonly TextBox query = new() { PlaceholderText = "Type a command" };
+    private readonly TextBox query = new();
     private readonly ListBox results = new() { Classes = { "palette-results" } };
 
-    internal CommandPaletteDialog(IReadOnlyList<PaletteCommand> commands)
+    internal CommandPaletteDialog(
+        IReadOnlyList<PaletteCommand> commands,
+        string title = "Run a command",
+        string placeholder = "Type a command")
     {
         this.commands = commands;
-        Title = "Run a command";
+        query.PlaceholderText = placeholder;
+        Title = title;
         Classes.Add("palette");
         Width = 640;
         Height = 460;

@@ -53,6 +53,25 @@ public sealed class CommandPaletteFilterTests
     }
 
     [Fact]
+    public void A_file_entry_matches_its_whole_repository_relative_path()
+    {
+        IReadOnlyList<PaletteCommand> files =
+        [
+            new("a", "src/Harness.Presentation.Avalonia", "WorkbenchDockHost.cs",
+                () => ValueTask.CompletedTask,
+                MatchText: "src/Harness.Presentation.Avalonia/WorkbenchDockHost.cs"),
+            new("b", "tests", "GoalTests.cs", () => ValueTask.CompletedTask,
+                MatchText: "tests/GoalTests.cs"),
+        ];
+
+        // The directory is part of the query even though it is not part of the title.
+        Assert.Equal(
+            "WorkbenchDockHost.cs",
+            CommandPaletteFilter.Rank(files, "presentationdock")[0].Title);
+        Assert.Equal("GoalTests.cs", CommandPaletteFilter.Rank(files, "testsgoal")[0].Title);
+    }
+
+    [Fact]
     public void Unavailable_commands_rank_below_available_ones()
     {
         IReadOnlyList<PaletteCommand> commands =

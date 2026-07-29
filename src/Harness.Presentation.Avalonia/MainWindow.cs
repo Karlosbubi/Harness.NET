@@ -511,6 +511,31 @@ internal sealed class MainWindow : Window
             args.Handled = true;
             await ShowCommandPaletteAsync();
         }
+        else if (args.KeyModifiers == KeyModifiers.Control && args.Key is Key.P)
+        {
+            args.Handled = true;
+            await ShowQuickOpenAsync();
+        }
+    }
+
+    internal async Task ShowQuickOpenAsync()
+    {
+        if (workbench is not { } host)
+        {
+            return;
+        }
+
+        IReadOnlyList<PaletteCommand> files = await host.BuildFileCommandsAsync();
+        if (files.Count == 0)
+        {
+            // Say why nothing is offered instead of opening an empty picker.
+            status.Severity = StatusSeverity.Warning;
+            status.Message = "Open and trust a workspace to search its tracked files.";
+            return;
+        }
+
+        CommandPaletteDialog picker = new(files, "Go to file", "Type a file name");
+        await picker.ShowDialog(this);
     }
 
     private async Task ShowCommandPaletteAsync()

@@ -10,16 +10,21 @@ internal sealed record PaletteCommand(
     string Title,
     Func<ValueTask> InvokeAsync,
     string? Shortcut = null,
-    string? UnavailableReason = null)
+    string? UnavailableReason = null,
+    string? MatchText = null)
 {
     internal bool IsAvailable => UnavailableReason is null;
 
     internal string Label => $"{Category}: {Title}";
+
+    /// <summary>What the filter matches. Files match their whole repository-relative path.</summary>
+    internal string Searchable => MatchText ?? Label;
 }
 
 /// <summary>
-/// Ranks commands for the palette. Matching is a case-insensitive subsequence over the
-/// "Category: Title" label, so "gitdiff" finds "Git: Open working-tree diff".
+/// Ranks commands for the palette. Matching is a case-insensitive subsequence over each
+/// command's searchable text, so "gitdiff" finds "Git: Open working-tree diff" and
+/// "wdh" finds "src/Workbench/DockHost.cs".
 /// </summary>
 internal static class CommandPaletteFilter
 {
@@ -38,11 +43,11 @@ internal static class CommandPaletteFilter
         return
         [
             .. commands
-                .Select(command => (Command: command, Score: Score(command.Label, trimmed)))
+                .Select(command => (Command: command, Score: Score(command.Searchable, trimmed)))
                 .Where(entry => entry.Score > 0)
                 .OrderByDescending(entry => entry.Command.IsAvailable)
                 .ThenByDescending(entry => entry.Score)
-                .ThenBy(entry => entry.Command.Label, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(entry => entry.Command.Searchable, StringComparer.OrdinalIgnoreCase)
                 .Select(entry => entry.Command)
         ];
     }

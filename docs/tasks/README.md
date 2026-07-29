@@ -366,6 +366,11 @@ configured or paid provider.
   case-insensitive subsequence over "Category: Title", and a command that needs an
   active or trusted workspace stays listed with the reason it cannot run rather
   than disappearing. The bar states its own shortcut.
+- Task 035 adds Ctrl+P quick open over the same bounded, context-resolved
+  Git-tracked catalog the Files panel uses, loaded on demand. A file is offered as
+  a command that opens it, so ranking, keyboard handling, and styling are shared
+  with the palette; matching runs over the whole repository-relative path. Without
+  a trusted workspace the status line says so instead of opening an empty picker.
 - Task 035 replaces the framework text dump with a scannable inspector. A validity
   headline and counts sit above a filter and a locked-only toggle; rules and issues
   render as individual rows with lock chips and provenance, and guidance-document
