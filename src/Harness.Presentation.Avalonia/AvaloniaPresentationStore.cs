@@ -72,6 +72,47 @@ internal sealed class AvaloniaPresentationStore(
     internal void SetComposerText(string value) =>
         Publish(Current with { ComposerText = value });
 
+    internal async ValueTask SubmitComposerAsync(CancellationToken cancellationToken)
+    {
+        if (Current.IsStreaming || string.IsNullOrWhiteSpace(Current.ComposerText))
+        {
+            return;
+        }
+
+        if (Current.Goals.SelectedGoal is not null)
+        {
+            await SubmitAsync(cancellationToken);
+            return;
+        }
+
+        WorkspaceView? workspace = ActiveWorkspace(Current.Workspaces.Registered);
+        if (workspace is null)
+        {
+            Publish(Current with { Error = "Open a workspace before creating a goal." });
+            return;
+        }
+
+        if (!workspace.IsTrusted)
+        {
+            Publish(Current with { Error = "Trust the active workspace before creating a goal." });
+            return;
+        }
+
+        string objective = Current.ComposerText.Trim();
+        await CreateGoalAsync(
+            new(
+                workspace.Id,
+                GoalTitle(objective),
+                objective,
+                new ReviewCycleLimit(3),
+                RemoteBudget: null),
+            cancellationToken);
+        if (Current.Goals.SelectedGoal is not null)
+        {
+            Publish(Current with { ComposerText = string.Empty, Error = null });
+        }
+    }
+
     internal async ValueTask SubmitAsync(CancellationToken cancellationToken)
     {
         if (Current.IsStreaming || string.IsNullOrWhiteSpace(Current.ComposerText))
@@ -1144,6 +1185,23 @@ internal sealed class AvaloniaPresentationStore(
 
     private static WorkspaceView? ActiveWorkspace(IReadOnlyList<WorkspaceView> workspaces) =>
         workspaces.FirstOrDefault(workspace => workspace.IsActive);
+
+    private static string GoalTitle(string objective)
+    {
+        const int maximumCharacters = 72;
+        string firstLine = objective
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .FirstOrDefault() ?? objective;
+        string title = firstLine.Trim();
+        if (title.Length <= maximumCharacters)
+        {
+            return title;
+        }
+
+        int lastSpace = title.LastIndexOf(' ', maximumCharacters - 1, maximumCharacters);
+        int length = lastSpace > maximumCharacters / 2 ? lastSpace : maximumCharacters;
+        return $"{title[..length].TrimEnd()}…";
+    }
 
     private async ValueTask<IReadOnlyList<GoalView>> LoadGoalsAsync(
         IReadOnlyList<WorkspaceView> workspaces,

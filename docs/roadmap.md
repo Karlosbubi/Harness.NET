@@ -165,7 +165,11 @@ of Stage 3 below.
   The next increment is also present: durable goal, plan, run, task, evidence,
   capability/Restore, and exact-commit records now project into immutable read-only
   conversation cards with explicit normal and degraded states. Commands have not yet
-  moved, so this projection does not alter authority.
+  moved, so this projection does not alter authority. The composer now creates a
+  selected private draft from the user's first objective in a trusted workspace with
+  conservative review defaults, no remote budget, and no model call; existing goals
+  are offered as inline Continue choices. Workflow progression and consequential
+  decisions remain the next chat migration increment.
 - Build the ADR 012 in-process Roslyn service behind replaceable semantic contracts.
   Begin with its SDK/MSBuild/self-contained-publish compatibility checkpoint.
   Versioned live buffers then surface syntax, compiler, and configured analyzer

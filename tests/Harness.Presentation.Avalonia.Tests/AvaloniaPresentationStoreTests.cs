@@ -80,6 +80,69 @@ public sealed class AvaloniaPresentationStoreTests
     }
 
     [Fact]
+    public async Task First_composer_submission_creates_private_goal_without_calling_provider()
+    {
+        DashboardService dashboard = new();
+        GoalService goals = new();
+        using AvaloniaPresentationStore store = new(
+            dashboard,
+            new AppearanceService(),
+            new WorkspaceService(),
+            goals,
+            new GoalModelService(),
+            new AgentDefaultsService(),
+            new RemoteCostService(),
+            new GoalWorkflowService(),
+            new SemanticIndexService(),
+            new GoalAcceptanceService(),
+            new ApplicationOperationsService(),
+            new CapabilityApprovalService(),
+            new FrameworkService(),
+            NullLogger<AvaloniaPresentationStore>.Instance);
+        await store.LoadAsync(CancellationToken.None);
+        store.SetRepositoryPath("/work/repository");
+        await store.InspectWorkspaceAsync(CancellationToken.None);
+        await store.RegisterWorkspaceAsync(
+            Assert.Single(store.Current.Workspaces.EntryPoints),
+            CancellationToken.None);
+        WorkspaceView workspace = Assert.Single(store.Current.Workspaces.Registered);
+        await store.SetWorkspaceTrustAsync(workspace.Id, true, CancellationToken.None);
+        store.SetComposerText(
+            "Build a chat-first goal workflow with deterministic authority boundaries and clear feedback.");
+
+        await store.SubmitComposerAsync(CancellationToken.None);
+
+        GoalView goal = Assert.Single(store.Current.Goals.Items);
+        Assert.Equal(
+            "Build a chat-first goal workflow with deterministic authority…",
+            goal.Title);
+        Assert.Equal(new ReviewCycleLimit(3), goal.ReviewCycleLimit);
+        Assert.Null(goal.RemoteBudget);
+        Assert.Equal(goal.Id, store.Current.Goals.SelectedGoalId);
+        Assert.Equal(string.Empty, store.Current.ComposerText);
+        Assert.Null(dashboard.LastInstruction);
+    }
+
+    [Fact]
+    public async Task First_composer_submission_requires_trusted_workspace()
+    {
+        using AvaloniaPresentationStore store = CreateStore();
+        await store.LoadAsync(CancellationToken.None);
+        store.SetRepositoryPath("/work/repository");
+        await store.InspectWorkspaceAsync(CancellationToken.None);
+        await store.RegisterWorkspaceAsync(
+            Assert.Single(store.Current.Workspaces.EntryPoints),
+            CancellationToken.None);
+        store.SetComposerText("Create a safe goal");
+
+        await store.SubmitComposerAsync(CancellationToken.None);
+
+        Assert.Empty(store.Current.Goals.Items);
+        Assert.Equal("Create a safe goal", store.Current.ComposerText);
+        Assert.Contains("Trust", store.Current.Error, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Selects_theme_through_business_boundary()
     {
         AppearanceService appearance = new();

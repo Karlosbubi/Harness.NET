@@ -12,6 +12,7 @@ using Harness.BusinessLogic.Appearance;
 using Harness.BusinessLogic.Dashboard;
 using Harness.BusinessLogic.Documents;
 using Harness.BusinessLogic.Evidence;
+using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Layouts;
 using Harness.BusinessLogic.Workspaces;
@@ -438,14 +439,14 @@ internal sealed class MainWindow : Window
             if (eventArgs.Key is Key.Enter && eventArgs.KeyModifiers.HasFlag(KeyModifiers.Control))
             {
                 eventArgs.Handled = true;
-                await store.SubmitAsync(cancellationToken);
+                await store.SubmitComposerAsync(cancellationToken);
             }
             else if (eventArgs.Key is Key.Escape && store.Current.IsStreaming)
             {
                 store.CancelSubmission();
             }
         };
-        send.Click += async (_, _) => await store.SubmitAsync(cancellationToken);
+        send.Click += async (_, _) => await store.SubmitComposerAsync(cancellationToken);
         cancel.Click += (_, _) => store.CancelSubmission();
         modelPicker.SelectionChanged += async (_, _) =>
         {
@@ -652,6 +653,13 @@ internal sealed class MainWindow : Window
         {
             composer.Text = state.ComposerText;
             composer.IsEnabled = !state.IsLoading;
+            bool createsGoal = state.Goals.SelectedGoal is null;
+            composer.PlaceholderText = createsGoal
+                ? "Describe the goal you want Harness to pursue"
+                : "Message Harness about the selected goal";
+            AutomationProperties.SetName(composer, composer.PlaceholderText);
+            send.Content = createsGoal ? "Create goal" : "Send";
+            AutomationProperties.SetName(send, createsGoal ? "Create goal from message" : "Send message");
             send.IsEnabled = !state.IsLoading && !state.IsStreaming &&
                              !string.IsNullOrWhiteSpace(state.ComposerText);
             cancel.IsVisible = state.IsStreaming;
@@ -733,6 +741,16 @@ internal sealed class MainWindow : Window
         List<Control> timeline = state.Dashboard?.Activities
             .Select(CreateMessageCard)
             .ToList() ?? [];
+        if (state.Goals.SelectedGoal is null && state.Goals.Items.Count > 0)
+        {
+            timeline.Add(new TextBlock
+            {
+                Text = "CONTINUE A GOAL",
+                Classes = { "eyebrow" },
+                Margin = new Thickness(6, 8, 6, 6),
+            });
+            timeline.AddRange(state.Goals.Items.Select(CreateGoalChoice));
+        }
         IReadOnlyList<ConversationWorkflowCard> workflow =
             ConversationWorkflowProjector.Project(state.Goals, state.Error);
         if (workflow.Count > 0)
@@ -747,6 +765,50 @@ internal sealed class MainWindow : Window
         }
         activities.ItemsSource = timeline;
         Dispatcher.UIThread.Post(conversationScroll.ScrollToEnd);
+    }
+
+    private Control CreateGoalChoice(GoalView goal)
+    {
+        Button select = new()
+        {
+            Content = "Continue",
+            Classes = { "command" },
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        AutomationProperties.SetName(select, $"Continue goal {goal.Title}");
+        select.Click += async (_, _) => await store.SelectGoalAsync(goal.Id, cancellationToken);
+
+        Grid heading = new() { ColumnDefinitions = new("*,Auto"), ColumnSpacing = 10 };
+        heading.Children.Add(new TextBlock
+        {
+            Text = goal.Title,
+            FontWeight = FontWeight.SemiBold,
+            TextWrapping = TextWrapping.Wrap,
+        });
+        Grid.SetColumn(select, 1);
+        heading.Children.Add(select);
+        Border card = new()
+        {
+            Classes = { "workflow-card" },
+            Margin = new Thickness(4, 0, 28, 9),
+            Child = new StackPanel
+            {
+                Spacing = 6,
+                Children =
+                {
+                    heading,
+                    new TextBlock
+                    {
+                        Text = goal.Objective,
+                        TextWrapping = TextWrapping.Wrap,
+                        MaxHeight = 52,
+                    },
+                },
+            },
+        };
+        AutomationProperties.SetName(card, $"Available goal: {goal.Title}, {goal.State}");
+        AutomationProperties.SetAccessibilityView(card, AccessibilityView.Content);
+        return card;
     }
 
     private Control CreateWorkflowCard(ConversationWorkflowCard item)

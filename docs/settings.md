@@ -36,10 +36,12 @@ remote spending or another consequential operation.
   adjacent chat composer. Role defaults and goal-specific model overrides have not
   yet been conflated with that conversation control.
 
-## Next workflow slice
+## Chat-first workflow progress
 
-Project the existing plan, workflow, evidence, Restore, commit, and handoff records as
-immutable read-only conversation cards. This starts replacing the modal goal journey
-without changing authority: a saved remote route remains preference only, and plan,
-spend, Restore, destructive, budget-extension, and exact-commit decisions remain
-explicit goal-bound actions.
+Existing plan, workflow, evidence, Restore, commit, and handoff records project as
+immutable read-only conversation cards. With no selected goal, the composer creates a
+private draft directly from the objective only after workspace trust, using three
+review cycles and no remote budget or provider call. Existing goals appear as explicit
+inline Continue choices. The next increment moves workflow progression and typed
+authority actions into those cards, while plan, spend, Restore, destructive,
+budget-extension, and exact-commit decisions remain explicit goal-bound actions.
