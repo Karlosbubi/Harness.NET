@@ -56,7 +56,7 @@ public sealed class WorkspaceDotNetInspectorTests : IDisposable
     }
 
     [Fact]
-    public async Task Uses_msbuild_parser_for_classic_solutions()
+    public async Task Reads_classic_solution_projects_without_msbuild_evaluation()
     {
         Directory.CreateDirectory(root);
         await File.WriteAllTextAsync(

@@ -24,6 +24,9 @@ dotnet publish "$repository_root/src/Harness.Host/Harness.Host.csproj" \
 test -x "$publish_root/Harness.Host"
 test -f "$publish_root/harness.xml"
 test -n "$(find "$publish_root" -maxdepth 1 -type f -name '*.so' -print -quit)"
+test -f "$publish_root/BuildHost-netcore/Microsoft.CodeAnalysis.Workspaces.MSBuild.BuildHost.dll"
+test -f "$publish_root/BuildHost-netcore/Microsoft.CodeAnalysis.Workspaces.MSBuild.BuildHost.runtimeconfig.json"
+test ! -f "$publish_root/Microsoft.Build.dll"
 
 output_file="$smoke_root/output.log"
 env -i \

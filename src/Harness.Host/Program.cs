@@ -20,6 +20,7 @@ using Harness.DataAccess.Approvals;
 using Harness.DataAccess.Appearance;
 using Harness.DataAccess.Configuration;
 using Harness.DataAccess.Commits;
+using Harness.DataAccess.CodeIntelligence;
 using Harness.DataAccess.Conversations;
 using Harness.DataAccess.Evidence;
 using Harness.DataAccess.Execution;
@@ -93,6 +94,10 @@ builder.Services.AddSingleton<IWorkspaceFileCatalogReader, GitWorkspaceFileCatal
 builder.Services.AddSingleton<IWorkspaceTextSearcher, GitWorkspaceTextSearcher>();
 builder.Services.AddSingleton<IWorkspaceGitInspector, LibGitWorkspaceGitInspector>();
 builder.Services.AddSingleton<IWorkspaceDotNetInspector, WorkspaceDotNetInspector>();
+builder.Services.AddSingleton<IDotNetProcess, DotNetProcess>();
+builder.Services.AddSingleton<DotNetSdkSelector>();
+builder.Services.AddSingleton<IMSBuildRuntime, MSBuildRuntime>();
+builder.Services.AddSingleton<IRoslynWorkspaceProbe, RoslynWorkspaceProbe>();
 builder.Services.AddSingleton<IWorkspaceInspectionService, WorkspaceInspectionService>();
 builder.Services.AddSingleton<IWorkbenchWorkspaceContextResolver, WorkbenchWorkspaceContextResolver>();
 builder.Services.AddSingleton<IWorkbenchInspectionService, WorkbenchInspectionService>();

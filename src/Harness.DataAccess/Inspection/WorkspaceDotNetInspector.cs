@@ -1,8 +1,7 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
-using Microsoft.Build.Construction;
-using Microsoft.Build.Exceptions;
 
 namespace Harness.DataAccess.Inspection;
 
@@ -11,6 +10,10 @@ internal sealed class WorkspaceDotNetInspector : IWorkspaceDotNetInspector
     private const int MaximumProjects = 200;
     private const int MaximumReferencesPerProject = 500;
     private const long MaximumMetadataBytes = 1024 * 1024;
+    private static readonly Regex SolutionProject = new(
+        "^Project\\(\"[^\"]+\"\\)\\s*=\\s*\"[^\"]*\"\\s*,\\s*\"(?<path>[^\"]+)\"",
+        RegexOptions.CultureInvariant,
+        TimeSpan.FromMilliseconds(100));
 
     public async ValueTask<WorkspaceDotNetInfo> InspectAsync(
         string workspaceRoot,
@@ -114,17 +117,24 @@ internal sealed class WorkspaceDotNetInspector : IWorkspaceDotNetInspector
         }
         catch (Exception exception) when (
             exception is IOException or UnauthorizedAccessException or XmlException or
-            JsonException or InvalidProjectFileException)
+            JsonException or RegexMatchTimeoutException)
         {
             return Failure(confinedEntryPoint, "metadata_invalid", exception.Message);
         }
     }
 
-    private static IReadOnlyList<string> ReadSolutionProjects(string solutionPath) =>
-        SolutionFile.Parse(solutionPath).ProjectsInOrder
-            .Where(project => IsProjectFile(project.RelativePath))
-            .Select(project => project.AbsolutePath)
+    private static IReadOnlyList<string> ReadSolutionProjects(string solutionPath)
+    {
+        string directory = Path.GetDirectoryName(solutionPath)!;
+        return File.ReadLines(solutionPath)
+            .Select(line => SolutionProject.Match(line))
+            .Where(match => match.Success)
+            .Select(match => match.Groups["path"].Value.Replace('\\', Path.DirectorySeparatorChar))
+            .Where(IsProjectFile)
+            .Select(path => Path.GetFullPath(path, directory))
+            .Take(MaximumProjects + 1)
             .ToArray();
+    }
 
     private static async ValueTask<IReadOnlyList<string>> ReadSolutionXmlProjectsAsync(
         string solutionPath,

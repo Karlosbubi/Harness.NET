@@ -177,7 +177,8 @@ of Stage 3 below.
   remote USD cap is a typed, trust-required, goal-bound authorization that is disabled
   by default and becomes immutable once planning begins; stale draft snapshots fail.
 - Build the ADR 012 in-process Roslyn service behind replaceable semantic contracts.
-  Begin with its SDK/MSBuild/self-contained-publish compatibility checkpoint.
+  Its SDK/MSBuild/self-contained-publish compatibility checkpoint now passes for
+  `.csproj`, `.sln`, `.slnx`, missing-SDK degradation, and the real `Harness.slnx`.
   Versioned live buffers then surface syntax, compiler, and configured analyzer
   diagnostics inline and in Problems. Model-authored candidate changes fail closed
   when they introduce compiler errors and retain warning/analyzer evidence. (Task 042)
