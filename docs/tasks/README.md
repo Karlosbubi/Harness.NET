@@ -164,6 +164,14 @@ merely to complete the final visual design at once.
    load progress and actionable SDK/assets/reference/analyzer failures; dispose or
    invalidate state on context changes. Update trust copy for project evaluation and
    analyzer/source-generator execution.
+   Complete: the Host composes one bounded foreground Roslyn engine; it reports typed
+   SDK/load/evaluation/ready progress, warms project compilations without restore,
+   retains bounded workspace failures, synchronizes exact-baseline in-memory source,
+   runs compiler and configured analyzer diagnostics, and safely drains in-flight work
+   before context replacement or disposal. Real adapter tests prove diagnostics,
+   baseline staleness, progress, context invalidation, and absence of implicit restore.
+   Avalonia and TUI trust confirmations now name project evaluation plus configured
+   analyzer/source-generator execution.
 4. **Live diagnostics:** synchronize immutable editor buffers with debounce and
    cancellation; render version-matched diagnostics in AvaloniaEdit and a dockable
    Problems tool whose rows navigate to the exact document range. Record cold-load,

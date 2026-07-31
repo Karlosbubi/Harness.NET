@@ -18,6 +18,7 @@ internal sealed class WorkbenchCodeIntelligenceService(
 
     public async ValueTask<WorkbenchCodeSessionView> StartAsync(
         WorkbenchCodeSessionRequest request,
+        IProgress<WorkbenchCodeLoadProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -72,6 +73,7 @@ internal sealed class WorkbenchCodeIntelligenceService(
                     new(resolution.RootPath),
                     new(request.EntryPoint.Value),
                     sourceKind),
+                progress is null ? null : new LoadProgressAdapter(progress),
                 cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -388,6 +390,16 @@ internal sealed class WorkbenchCodeIntelligenceService(
         _ => throw new ArgumentOutOfRangeException(nameof(state)),
     };
 
+    private static WorkbenchCodeLoadStage Map(CodeIntelligenceLoadStage stage) => stage switch
+    {
+        CodeIntelligenceLoadStage.SelectingSdk => WorkbenchCodeLoadStage.SelectingSdk,
+        CodeIntelligenceLoadStage.RegisteringMSBuild => WorkbenchCodeLoadStage.RegisteringMSBuild,
+        CodeIntelligenceLoadStage.LoadingEntryPoint => WorkbenchCodeLoadStage.LoadingEntryPoint,
+        CodeIntelligenceLoadStage.EvaluatingProjects => WorkbenchCodeLoadStage.EvaluatingProjects,
+        CodeIntelligenceLoadStage.Ready => WorkbenchCodeLoadStage.Ready,
+        _ => throw new ArgumentOutOfRangeException(nameof(stage)),
+    };
+
     private static WorkbenchCodeDiagnostic Map(CodeIntelligenceDiagnostic diagnostic) => new(
         new(diagnostic.Id.Value),
         new(diagnostic.Message.Value),
@@ -436,5 +448,14 @@ internal sealed class WorkbenchCodeIntelligenceService(
         internal CodeIntelligenceContextId ContextId { get; } = contextId;
         internal CodeIntelligenceSessionId SessionId { get; } = sessionId;
         internal CodeIntelligenceSourceKind SourceKind { get; } = sourceKind;
+    }
+
+    private sealed class LoadProgressAdapter(IProgress<WorkbenchCodeLoadProgress> progress)
+        : IProgress<CodeIntelligenceLoadProgress>
+    {
+        public void Report(CodeIntelligenceLoadProgress value) => progress.Report(new(
+            new(value.ContextId.Value),
+            Map(value.Stage),
+            new(value.Message.Value)));
     }
 }

@@ -498,7 +498,8 @@ internal sealed class HarnessWindow : Window
         int? choice = MessageBox.Query(
             application,
             "Trust workspace",
-            $"Trust '{activeWorkspace.Name}' for repository-local build and test execution?",
+            $"Trust '{activeWorkspace.Name}' for local build/test and code-intelligence project " +
+            "evaluation, including configured analyzers and source generators?",
             "_Trust",
             "_Cancel");
         if (choice != 0)

@@ -363,7 +363,7 @@ internal sealed class TrustConfirmationDialog : Window
     {
         Title = "Trust workspace";
         Width = 520;
-        Height = 250;
+        Height = 320;
         CanResize = false;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
 
@@ -392,9 +392,11 @@ internal sealed class TrustConfirmationDialog : Window
                 },
                 new TextBlock
                 {
-                    Text = "Trust allows approved goals to run repository-local build and test " +
-                           "operations. Network, restore, destructive actions, and commits still " +
-                           "require separate approval.",
+                    Text = "Trust allows repository-local build and test operations. It also " +
+                           "allows code intelligence to evaluate project files and run configured " +
+                           "analyzers or source generators, which may execute repository or package " +
+                           "code. Network, restore, destructive actions, and commits still require " +
+                           "separate approval.",
                     TextWrapping = TextWrapping.Wrap,
                 },
                 new TextBlock { Text = workspace.RootPath, TextWrapping = TextWrapping.Wrap },

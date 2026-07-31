@@ -259,6 +259,7 @@ public sealed class WorkbenchCodeIntelligenceServiceTests
 
         public ValueTask<CodeIntelligenceSessionResult> OpenAsync(
             CodeIntelligenceOpenRequest request,
+            IProgress<CodeIntelligenceLoadProgress>? progress = null,
             CancellationToken cancellationToken = default)
         {
             OpenCallCount++;

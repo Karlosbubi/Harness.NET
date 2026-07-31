@@ -4,6 +4,7 @@ public interface ICodeIntelligenceEngine
 {
     ValueTask<CodeIntelligenceSessionResult> OpenAsync(
         CodeIntelligenceOpenRequest request,
+        IProgress<CodeIntelligenceLoadProgress>? progress = null,
         CancellationToken cancellationToken = default);
 
     ValueTask<CodeIntelligenceDiagnosticResult> GetDiagnosticsAsync(

@@ -42,6 +42,20 @@ public enum CodeIntelligenceResultState
     Stale,
 }
 
+public enum CodeIntelligenceLoadStage
+{
+    SelectingSdk,
+    RegisteringMSBuild,
+    LoadingEntryPoint,
+    EvaluatingProjects,
+    Ready,
+}
+
+public sealed record CodeIntelligenceLoadProgress(
+    CodeIntelligenceContextId ContextId,
+    CodeIntelligenceLoadStage Stage,
+    CodeIntelligenceMessage Message);
+
 public sealed record CodeIntelligenceIssue(
     CodeIntelligenceIssueCode Code,
     CodeIntelligenceMessage Message);

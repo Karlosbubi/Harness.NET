@@ -37,6 +37,20 @@ public enum WorkbenchCodeResultState
     Stale,
 }
 
+public enum WorkbenchCodeLoadStage
+{
+    SelectingSdk,
+    RegisteringMSBuild,
+    LoadingEntryPoint,
+    EvaluatingProjects,
+    Ready,
+}
+
+public sealed record WorkbenchCodeLoadProgress(
+    WorkbenchCodeContextId ContextId,
+    WorkbenchCodeLoadStage Stage,
+    WorkbenchCodeMessage Message);
+
 public sealed record WorkbenchCodeIssue(
     WorkbenchCodeIssueCode Code,
     WorkbenchCodeMessage Message);

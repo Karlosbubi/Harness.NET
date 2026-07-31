@@ -4,6 +4,7 @@ public interface IWorkbenchCodeIntelligenceService
 {
     ValueTask<WorkbenchCodeSessionView> StartAsync(
         WorkbenchCodeSessionRequest request,
+        IProgress<WorkbenchCodeLoadProgress>? progress = null,
         CancellationToken cancellationToken = default);
 
     ValueTask<WorkbenchCodeDiagnosticView> SynchronizeAsync(
