@@ -179,6 +179,9 @@ of Stage 3 below.
 - Build the ADR 012 in-process Roslyn service behind replaceable semantic contracts.
   Its SDK/MSBuild/self-contained-publish compatibility checkpoint now passes for
   `.csproj`, `.sln`, `.slnx`, missing-SDK degradation, and the real `Harness.slnx`.
+  Implementation-neutral Data Access and Business Logic contracts now enforce trust,
+  source-context identity, confined paths, cancellation, and buffer freshness against
+  a deterministic fake before the live Roslyn adapter is connected.
   Versioned live buffers then surface syntax, compiler, and configured analyzer
   diagnostics inline and in Problems. Model-authored candidate changes fail closed
   when they introduce compiler errors and retain warning/analyzer evidence. (Task 042)

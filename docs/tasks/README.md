@@ -154,6 +154,11 @@ merely to complete the final visual design at once.
    document-version, diagnostic, status, and validation records plus Data Access and
    Business Logic interfaces. Prove trust, path, cancellation, and stale-version
    policy without Roslyn or Avalonia.
+   Complete: capability-oriented Data Access contracts contain no Roslyn/MSBuild
+   types; presentation-neutral Business Logic contracts map source sessions,
+   immutable buffer snapshots, diagnostics, and candidate validation. A deterministic
+   engine fake proves trust gating, approved-worktree validation, confined paths,
+   cancellation, session disposal, and stale in-flight result rejection.
 3. **Roslyn/MSBuild implementation:** load the selected entry point for the trusted
    original workspace or approved goal worktree in Data Access; never restore; expose
    load progress and actionable SDK/assets/reference/analyzer failures; dispose or
