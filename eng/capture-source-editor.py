@@ -57,7 +57,13 @@ def resize(width: int, height: int) -> None:
     if shutil.which("wmctrl") is None:
         raise SystemExit("wmctrl is required for repeatable source-editor dimensions")
     subprocess.run(
-        ["wmctrl", "-r", "Harness.NET", "-e", f"0,80,60,{width},{height}"],
+        ["wmctrl", "-F", "-r", "Harness.NET", "-e", f"0,80,60,{width},{height}"],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    subprocess.run(
+        ["wmctrl", "-F", "-a", "Harness.NET"],
         check=True,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -140,6 +146,14 @@ def main() -> int:
                 "}\n",
                 encoding="utf-8",
             )
+            (repository / "Broken.cs").write_text(
+                "namespace Representative;\n\n"
+                "internal sealed class Broken\n"
+                "{\n"
+                "    private int value = ;\n"
+                "}\n",
+                encoding="utf-8",
+            )
             atspi.run(["git", "init", "-q"], repository)
             atspi.run(["git", "config", "user.name", "Harness Acceptance"], repository)
             atspi.run(
@@ -177,6 +191,17 @@ def main() -> int:
             screenshot(arguments.output / "source-editor-wide-2026-07-29.png")
             resize(900, 650)
             screenshot(arguments.output / "source-editor-compact-2026-07-29.png")
+            resize(1600, 1000)
+            application.invoke("Files", "page tab")
+            application.wait_for_name("Broken.cs", "push button")
+            application.invoke("Broken.cs")
+            application.wait_for_name("Editable source editor for Broken.cs", "panel")
+            application.invoke("Problems", "page tab")
+            application.wait_for_name_containing("CS")
+            screenshot(arguments.output / "roslyn-diagnostics-wide-2026-07-31.png")
+            resize(900, 650)
+            application.wait_for_name_containing("CS")
+            screenshot(arguments.output / "roslyn-diagnostics-compact-2026-07-31.png")
     finally:
         if process is not None:
             atspi.stop(process)

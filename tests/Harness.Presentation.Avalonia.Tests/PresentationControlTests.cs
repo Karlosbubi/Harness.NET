@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json.Nodes;
 using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Automation.Peers;
@@ -16,6 +17,7 @@ using Dock.Avalonia.Controls;
 using Dock.Model.Controls;
 using Dock.Model.Core;
 using Harness.BusinessLogic.Documents;
+using Harness.BusinessLogic.CodeIntelligence;
 using Harness.BusinessLogic.Evidence;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Inspection;
@@ -307,6 +309,7 @@ public sealed class PresentationControlTests
                 new RunOutputService(),
                 new InspectionService(),
                 new DocumentService(),
+                new CodeIntelligenceService(),
                 new LayoutService(),
                 new DocumentPrompt(),
                 () => shell,
@@ -355,7 +358,7 @@ public sealed class PresentationControlTests
                 AutomationProperties.GetName(focusEditor));
             focusEditor.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Assert.Same(workbench.ActiveSourceEditor, workbench.LastRequestedFocusTarget);
-            Assert.Equal(6, DurableTools(workbench.Root).Count);
+            Assert.Equal(7, DurableTools(workbench.Root).Count);
             Control documentContent = Assert.IsAssignableFrom<Control>(
                 workbench.Documents.ActiveDockable?.Context);
             TextEditor editor = Assert.Single(
@@ -895,6 +898,11 @@ public sealed class PresentationControlTests
             Assert.All(bottom.VisibleDockables!, item =>
                 Assert.True(Assert.IsAssignableFrom<Control>(item.Context).IsVisible));
 
+            window.KeyPressQwerty(
+                PhysicalKey.M,
+                RawInputModifiers.Control | RawInputModifiers.Shift);
+            Assert.Equal(WorkbenchDockIds.ProblemsTool, bottom.ActiveDockable?.Id);
+
             window.KeyPressQwerty(PhysicalKey.F6, RawInputModifiers.None);
             Dispatcher.UIThread.RunJobs();
             Assert.True(left.IsExpanded);
@@ -908,6 +916,59 @@ public sealed class PresentationControlTests
             Assert.True(left.IsExpanded);
             Assert.True(right.IsExpanded);
             Assert.True(bottom.IsExpanded);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Source_buffer_diagnostics_render_in_the_dockable_problems_tool_and_navigate()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            CodeIntelligenceService codeIntelligence = new()
+            {
+                Diagnostics = snapshot => new(
+                    snapshot.SessionId,
+                    snapshot.Path,
+                    snapshot.BufferVersion,
+                    WorkbenchCodeResultState.Ready,
+                    [new(
+                        new("CS1002"),
+                        new("; expected"),
+                        new("Compiler"),
+                        new("Sample"),
+                        snapshot.Path,
+                        new(new(0, 9), new(0, 10)),
+                        WorkbenchCodeDiagnosticSeverity.Error)],
+                    []),
+            };
+            WorkbenchDockHost workbench = CreateWorkbench(
+                TrustedShell(),
+                new(),
+                codeIntelligence: codeIntelligence);
+            Window window = new() { Width = 1280, Height = 800, Content = workbench.Control };
+            window.Show();
+
+            workbench.OpenFileAsync("src/App.cs").AsTask().GetAwaiter().GetResult();
+            Dispatcher.UIThread.RunJobs();
+
+            WorkbenchCodeDocumentSnapshot snapshot = Assert.Single(codeIntelligence.Snapshots);
+            Assert.Equal(1, snapshot.BufferVersion.Value);
+            Assert.Equal("src/App.cs", snapshot.Path.Value);
+            Assert.Single(Assert.IsAssignableFrom<IEnumerable<object>>(workbench.Problems.ItemsSource));
+            Assert.Contains("1 error", workbench.ProblemsStatusText, StringComparison.Ordinal);
+            Assert.NotNull(Find<ITool>(workbench.Root, WorkbenchDockIds.ProblemsTool));
+            CodeDiagnosticRenderer renderer = Assert.Single(
+                workbench.ActiveSourceEditor!.TextArea.TextView.BackgroundRenderers
+                    .OfType<CodeDiagnosticRenderer>());
+            Assert.Equal(1, renderer.SegmentCount);
+
+            workbench.Problems.SelectedIndex = 0;
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal(1, workbench.ActiveSourceEditor?.TextArea.Caret.Line);
+            Assert.Equal(10, workbench.ActiveSourceEditor?.TextArea.Caret.Column);
             window.Close();
         }, CancellationToken.None);
     }
@@ -1140,6 +1201,7 @@ public sealed class PresentationControlTests
                 new RunOutputService(),
                 new InspectionService(),
                 new DocumentService(),
+                new CodeIntelligenceService(),
                 new LayoutService(),
                 new DocumentPrompt(),
                 () => shell,
@@ -1239,9 +1301,32 @@ public sealed class PresentationControlTests
             Assert.Equal(0, restoredWindowState.Y);
             Assert.Equal(1920, restoredWindowState.Width);
             Assert.Equal(1280, restoredWindowState.Height);
-            Assert.Equal(6, DurableTools(restored.Root).Count);
+            Assert.Equal(7, DurableTools(restored.Root).Count);
             Assert.Equal("Layout restored", restored.LayoutStatusText);
             restoredWindow.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Legacy_six_tool_layout_is_upgraded_with_the_problems_pane()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            AvaloniaShellState shell = TrustedShell();
+            LayoutService layouts = new();
+            WorkbenchDockHost source = CreateWorkbench(shell, layouts);
+            source.SaveLayoutAsync().AsTask().GetAwaiter().GetResult();
+            JsonNode payload = JsonNode.Parse(layouts.Stored!)!;
+            RemovePane(payload, WorkbenchDockIds.ProblemsTool);
+            layouts.Stored = payload.ToJsonString();
+
+            WorkbenchDockHost restored = CreateWorkbench(shell, layouts);
+            restored.RestoreLayoutAsync().AsTask().GetAwaiter().GetResult();
+
+            Assert.NotNull(Find<ITool>(restored.Root, WorkbenchDockIds.ProblemsTool));
+            Assert.Equal(7, DurableTools(restored.Root).Count);
         }, CancellationToken.None);
     }
 
@@ -1265,14 +1350,14 @@ public sealed class PresentationControlTests
             WorkbenchDockHost unknown = CreateWorkbench(shell, layouts);
             unknown.RestoreLayoutAsync().AsTask().GetAwaiter().GetResult();
             Assert.Contains("rejected", unknown.LayoutStatusText, StringComparison.OrdinalIgnoreCase);
-            Assert.Equal(6, DurableTools(unknown.Root).Count);
+            Assert.Equal(7, DurableTools(unknown.Root).Count);
 
             layouts.Stored = validLayout.Replace("\"Version\": 2", "\"Version\": 1",
                 StringComparison.Ordinal);
             WorkbenchDockHost obsolete = CreateWorkbench(shell, layouts);
             obsolete.RestoreLayoutAsync().AsTask().GetAwaiter().GetResult();
             Assert.Contains("rejected", obsolete.LayoutStatusText, StringComparison.OrdinalIgnoreCase);
-            Assert.Equal(6, DurableTools(obsolete.Root).Count);
+            Assert.Equal(7, DurableTools(obsolete.Root).Count);
 
             layouts.Stored = validLayout.Replace(
                 WorkbenchDockIds.FilesTool,
@@ -1285,7 +1370,7 @@ public sealed class PresentationControlTests
             workbench.RestoreLayoutAsync().AsTask().GetAwaiter().GetResult();
 
             Assert.Contains("rejected", workbench.LayoutStatusText, StringComparison.OrdinalIgnoreCase);
-            Assert.Equal(6, DurableTools(workbench.Root).Count);
+            Assert.Equal(7, DurableTools(workbench.Root).Count);
 
             workbench.ResetLayoutAsync().AsTask().GetAwaiter().GetResult();
             Assert.True(layouts.WasReset);
@@ -1304,10 +1389,12 @@ public sealed class PresentationControlTests
         DocumentPrompt? prompt = null,
         InspectionService? inspection = null,
         RunOutputService? runOutput = null,
+        CodeIntelligenceService? codeIntelligence = null,
         Func<bool, Task>? manageWorkspace = null) => new(
         runOutput ?? new RunOutputService(),
         inspection ?? new InspectionService(),
         documents ?? new DocumentService(),
+        codeIntelligence ?? new CodeIntelligenceService(),
         layouts,
         prompt ?? new DocumentPrompt(),
         () => shell,
@@ -1412,7 +1499,37 @@ public sealed class PresentationControlTests
         WorkbenchDockIds.DurablePaneIds
             .Where(id => id.StartsWith("tool.", StringComparison.Ordinal))
             .Select(id => Find<ITool>(root, id))
-            .ToArray();
+        .ToArray();
+
+    private static void RemovePane(JsonNode node, string id)
+    {
+        if (node is JsonArray array)
+        {
+            for (int index = array.Count - 1; index >= 0; index--)
+            {
+                JsonNode? child = array[index];
+                if (child is JsonObject candidate &&
+                    string.Equals(candidate["Id"]?.GetValue<string>(), id, StringComparison.Ordinal))
+                {
+                    array.RemoveAt(index);
+                }
+                else if (child is not null)
+                {
+                    RemovePane(child, id);
+                }
+            }
+
+            return;
+        }
+
+        if (node is JsonObject value)
+        {
+            foreach (JsonNode child in value.Select(property => property.Value).OfType<JsonNode>())
+            {
+                RemovePane(child, id);
+            }
+        }
+    }
 
     private sealed class InspectionService : IWorkbenchInspectionService
     {
@@ -1568,6 +1685,55 @@ public sealed class PresentationControlTests
                 ? decision
                 : WorkbenchConflictDecision.Cancel);
         }
+    }
+
+    private sealed class CodeIntelligenceService : IWorkbenchCodeIntelligenceService
+    {
+        internal Func<WorkbenchCodeDocumentSnapshot, WorkbenchCodeDiagnosticView>? Diagnostics
+        {
+            get;
+            init;
+        }
+
+        internal List<WorkbenchCodeDocumentSnapshot> Snapshots { get; } = [];
+
+        public ValueTask<WorkbenchCodeSessionView> StartAsync(
+            WorkbenchCodeSessionRequest request,
+            IProgress<WorkbenchCodeLoadProgress>? progress = null,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<WorkbenchCodeSessionView>(new(
+            new("context-1"),
+            new("session-1"),
+            WorkbenchCodeResultState.Ready,
+            []));
+
+        public ValueTask<WorkbenchCodeDiagnosticView> SynchronizeAsync(
+            WorkbenchCodeDocumentSnapshot snapshot,
+            CancellationToken cancellationToken = default)
+        {
+            Snapshots.Add(snapshot);
+            return ValueTask.FromResult(Diagnostics?.Invoke(snapshot) ?? new(
+                snapshot.SessionId,
+                snapshot.Path,
+                snapshot.BufferVersion,
+                WorkbenchCodeResultState.Ready,
+                [],
+                []));
+        }
+
+        public ValueTask<WorkbenchCodeValidationView> ValidateAsync(
+            WorkbenchCodeValidationRequest request,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<WorkbenchCodeValidationView>(new(
+            request.SessionId,
+            WorkbenchCodeResultState.Degraded,
+            WorkbenchCodeValidationDisposition.NotApplicable,
+            [],
+            []));
+
+        public ValueTask StopAsync(
+            WorkbenchCodeSessionId sessionId,
+            CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
     }
 
     private sealed class LayoutService : IWorkbenchLayoutService

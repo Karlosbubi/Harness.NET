@@ -446,7 +446,7 @@ def verify_documents_and_search(
         raise AssertionError("the approved goal worktree does not contain Program.cs")
 
     application.set_text("Search tracked workspace text", "Hello")
-    application.invoke("Search tracked workspace text")
+    application.invoke("Run tracked workspace search")
     application.wait_for_name_containing("match(es)", "label")
 
 
@@ -576,8 +576,26 @@ def main() -> int:
             process = None
 
             process, application = launch(executable, environment, accessibility_bus)
-            application.wait_for_name("Layout restored", "label")
-            application.wait_for_name_containing("Trust: Trusted", "label")
+            application.wait_for(
+                lambda nodes: any(
+                    node.role == "label"
+                    and (
+                        node.name == "Layout restored"
+                        or "Saved layout rejected" in node.name
+                    )
+                    for node in nodes
+                ),
+                "AT-SPI did not expose a restored or rejected layout status",
+            )
+            rejected = [
+                node.name
+                for node in application.nodes()
+                if node.role == "label" and "Saved layout rejected" in node.name
+            ]
+            if rejected:
+                raise AssertionError(rejected[-1])
+            application.invoke("Workspace", "page tab")
+            application.wait_for_name_containing("Trusted", "label")
             stop(process)
             process = None
 

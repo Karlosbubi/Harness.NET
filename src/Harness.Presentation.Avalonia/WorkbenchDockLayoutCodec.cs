@@ -66,6 +66,8 @@ internal sealed class WorkbenchDockLayoutCodec(IFactory factory)
                 return Failure("The saved workbench layout could not be decoded.");
             }
 
+            snapshot = RestoreAddedProblemsPane(snapshot);
+
             string? validationError = Validate(snapshot);
             if (validationError is not null)
             {
@@ -391,6 +393,69 @@ internal sealed class WorkbenchDockLayoutCodec(IFactory factory)
               $"[{string.Join(", ", state.DurableCounts.Keys.Order(StringComparer.Ordinal))}].";
     }
 
+    private static LayoutSnapshot RestoreAddedProblemsPane(LayoutSnapshot snapshot)
+    {
+        if (snapshot.Version != FormatVersion || ContainsPane(
+                snapshot.Root,
+                WorkbenchDockIds.ProblemsTool))
+        {
+            return snapshot;
+        }
+
+        return snapshot with { Root = AddProblemsPane(snapshot.Root) };
+    }
+
+    private static LayoutNode AddProblemsPane(LayoutNode node)
+    {
+        IReadOnlyList<LayoutNode> children = node.Children
+            .Select(AddProblemsPane)
+            .ToArray();
+        if (node.Kind is LayoutNodeKind.ToolDock && node.Id == WorkbenchDockIds.Bottom)
+        {
+            children = children.Append(new LayoutNode(
+                LayoutNodeKind.Pane,
+                WorkbenchDockIds.ProblemsTool,
+                "Problems",
+                Proportion: 0.5,
+                Orientation: null,
+                Alignment: null,
+                IsExpanded: false,
+                AutoHide: false,
+                GripMode: null,
+                Children: [],
+                ActiveId: null,
+                DefaultId: null,
+                FocusedId: null,
+                Hidden: [],
+                LeftPinned: [],
+                RightPinned: [],
+                TopPinned: [],
+                BottomPinned: [],
+                PinnedDock: null,
+                Windows: [])).ToArray();
+        }
+
+        return node with
+        {
+            Children = children,
+            Hidden = node.Hidden.Select(AddProblemsPane).ToArray(),
+            LeftPinned = node.LeftPinned.Select(AddProblemsPane).ToArray(),
+            RightPinned = node.RightPinned.Select(AddProblemsPane).ToArray(),
+            TopPinned = node.TopPinned.Select(AddProblemsPane).ToArray(),
+            BottomPinned = node.BottomPinned.Select(AddProblemsPane).ToArray(),
+            PinnedDock = node.PinnedDock is null ? null : AddProblemsPane(node.PinnedDock),
+            Windows = node.Windows.Select(window => window with
+            {
+                Root = AddProblemsPane(window.Root),
+            }).ToArray(),
+        };
+    }
+
+    private static bool ContainsPane(LayoutNode node, string id) =>
+        node is { Kind: LayoutNodeKind.Pane, Id: var nodeId } && nodeId == id ||
+        AllChildren(node).Any(child => ContainsPane(child, id)) ||
+        node.Windows.Any(window => ContainsPane(window.Root, id));
+
     private static void Visit(
         LayoutNode node,
         LayoutNodeKind? parent,
@@ -615,6 +680,7 @@ internal sealed class WorkbenchDockLayoutCodec(IFactory factory)
         WorkbenchDockIds.GitTool => "Git",
         WorkbenchDockIds.ConversationTool => "Conversation",
         WorkbenchDockIds.RunOutputTool => "Run output",
+        WorkbenchDockIds.ProblemsTool => "Problems",
         WorkbenchDockIds.OverviewDocument => "Workspace overview",
         _ => stored.Length <= 128 ? stored : string.Empty,
     };

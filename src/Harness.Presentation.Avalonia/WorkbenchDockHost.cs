@@ -14,6 +14,7 @@ using Dock.Model.Avalonia;
 using Dock.Model.Controls;
 using Dock.Model.Core;
 using Harness.BusinessLogic.Documents;
+using Harness.BusinessLogic.CodeIntelligence;
 using Harness.BusinessLogic.Evidence;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Inspection;
@@ -32,6 +33,7 @@ internal sealed class WorkbenchDockHost
     private readonly IRunOutputService runOutputService;
     private readonly IWorkbenchInspectionService inspectionService;
     private readonly IWorkbenchDocumentService documentService;
+    private readonly IWorkbenchCodeIntelligenceService codeIntelligenceService;
     private readonly IWorkbenchLayoutService layoutService;
     private readonly IWorkbenchDocumentPrompt documentPrompt;
     private readonly Func<AvaloniaShellState> state;
@@ -41,6 +43,9 @@ internal sealed class WorkbenchDockHost
     private readonly WorkbenchDockLayoutCodec layoutCodec;
     private readonly Dictionary<string, Control> durableContexts = new(StringComparer.Ordinal);
     private readonly Dictionary<string, SourceDocumentSession> sourceDocuments = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, WorkbenchCodeDiagnosticView> documentDiagnostics =
+        new(StringComparer.Ordinal);
+    private readonly SemaphoreSlim codeSessionGate = new(1, 1);
     private readonly TextBlock layoutStatus = new()
     {
         MaxWidth = 180,
@@ -84,6 +89,11 @@ internal sealed class WorkbenchDockHost
         wordWrap: false,
         showLineNumbers: false,
         path: "run-output.txt");
+    private readonly ListBox problems = new();
+    private readonly TextBlock problemsStatus = new() { TextWrapping = TextWrapping.Wrap };
+    private readonly CheckBox showWarnings = new() { Content = "Warnings", IsChecked = true };
+    private readonly CheckBox showInformation = new() { Content = "Info", IsChecked = true };
+    private readonly CheckBox showHidden = new() { Content = "Hidden", IsChecked = false };
     private string? workspaceId;
     private string? selectedGoalId;
     private string? runOutputFingerprint;
@@ -107,11 +117,14 @@ internal sealed class WorkbenchDockHost
     private bool viewportInitialized;
     private int focusRegionIndex = -1;
     private IDockable? activeDocument;
+    private WorkbenchCodeSessionId? codeSessionId;
+    private string? codeSessionKey;
 
     internal WorkbenchDockHost(
         IRunOutputService runOutputService,
         IWorkbenchInspectionService inspectionService,
         IWorkbenchDocumentService documentService,
+        IWorkbenchCodeIntelligenceService codeIntelligenceService,
         IWorkbenchLayoutService layoutService,
         IWorkbenchDocumentPrompt documentPrompt,
         Func<AvaloniaShellState> state,
@@ -124,6 +137,7 @@ internal sealed class WorkbenchDockHost
         this.runOutputService = runOutputService;
         this.inspectionService = inspectionService;
         this.documentService = documentService;
+        this.codeIntelligenceService = codeIntelligenceService;
         this.layoutService = layoutService;
         this.documentPrompt = documentPrompt;
         this.state = state;
@@ -135,6 +149,7 @@ internal sealed class WorkbenchDockHost
         Control files = BuildFilesTool();
         Control sourceControl = BuildSourceControlTool();
         Control runOutput = BuildRunOutputTool();
+        Control problemsContent = BuildProblemsTool();
         Control context = BuildContextTool(goalContext);
         Control overviewContent = BuildOverviewDocument();
         durableContexts.Add(WorkbenchDockIds.NavigationTool, navigation);
@@ -143,6 +158,7 @@ internal sealed class WorkbenchDockHost
         durableContexts.Add(WorkbenchDockIds.GitTool, sourceControl);
         durableContexts.Add(WorkbenchDockIds.ConversationTool, conversation);
         durableContexts.Add(WorkbenchDockIds.RunOutputTool, runOutput);
+        durableContexts.Add(WorkbenchDockIds.ProblemsTool, problemsContent);
         durableContexts.Add(WorkbenchDockIds.OverviewDocument, overviewContent);
 
         factory
@@ -176,6 +192,11 @@ internal sealed class WorkbenchDockHost
                 .WithTitle("Run output")
                 .WithCanClose(true)
                 .WithContext(runOutput))
+            .Tool(out ITool? problemsTool, item => item
+                .WithId(WorkbenchDockIds.ProblemsTool)
+                .WithTitle("Problems")
+                .WithCanClose(true)
+                .WithContext(problemsContent))
             .Document(out IDocument? overview, item => item
                 .WithId(WorkbenchDockIds.OverviewDocument)
                 .WithTitle("Workspace overview")
@@ -228,7 +249,10 @@ internal sealed class WorkbenchDockHost
         left.ActiveDockable = navigationTool;
         right.VisibleDockables = factory.CreateList<IDockable>(contextTool!, gitTool!);
         right.ActiveDockable = contextTool;
-        bottom.VisibleDockables = factory.CreateList<IDockable>(conversationTool!, runOutputTool!);
+        bottom.VisibleDockables = factory.CreateList<IDockable>(
+            conversationTool!,
+            problemsTool!,
+            runOutputTool!);
         bottom.ActiveDockable = conversationTool;
         documents.VisibleDockables = factory.CreateList<IDockable>(overviewDocument);
         documents.ActiveDockable = overviewDocument;
@@ -238,6 +262,7 @@ internal sealed class WorkbenchDockHost
         WorkbenchDockContent.Attach(gitTool!, sourceControl);
         WorkbenchDockContent.Attach(conversationTool!, conversation);
         WorkbenchDockContent.Attach(runOutputTool!, runOutput);
+        WorkbenchDockContent.Attach(problemsTool!, problemsContent);
         WorkbenchDockContent.Attach(overviewDocument, overviewContent);
         EnsureDefaultTools(left, right, bottom, "before Dock initialization");
         factory.InitLayout(root);
@@ -292,6 +317,8 @@ internal sealed class WorkbenchDockHost
                                                sourceDocuments.TryGetValue(id, out SourceDocumentSession? session)
         ? session.Editor
         : null;
+    internal ListBox Problems => problems;
+    internal string? ProblemsStatusText => problemsStatus.Text;
     internal bool ActiveSourceDocumentIsDirty => activeDocument?.Id is { } id &&
                                                  sourceDocuments.TryGetValue(id, out SourceDocumentSession? session) &&
                                                  session.IsDirty;
@@ -429,6 +456,7 @@ internal sealed class WorkbenchDockHost
             workspaceId = active?.Id;
             Dispatcher.UIThread.Post(async () =>
                 await CloseAllSourceDocumentsAsync(WorkbenchDocumentTransition.Close));
+            Dispatcher.UIThread.Post(async () => await InvalidateCodeIntelligenceAsync());
             searchResults.ItemsSource = Array.Empty<SearchChoice>();
             searchResults.IsVisible = false;
             trackedFiles = [];
@@ -455,6 +483,7 @@ internal sealed class WorkbenchDockHost
         {
             fileTreeContextVersion++;
             selectedGoalId = nextGoalId;
+            Dispatcher.UIThread.Post(async () => await InvalidateCodeIntelligenceAsync());
             searchResults.ItemsSource = Array.Empty<SearchChoice>();
             searchResults.IsVisible = false;
             changes.ItemsSource = Array.Empty<ChangeChoice>();
@@ -827,7 +856,7 @@ internal sealed class WorkbenchDockHost
         string stage)
     {
         if (left.VisibleDockables?.Count != 2 || right.VisibleDockables?.Count != 2 ||
-            bottom.VisibleDockables?.Count != 2)
+            bottom.VisibleDockables?.Count != 3)
         {
             throw new InvalidOperationException($"Dock lost the default tool panels {stage}.");
         }
@@ -1029,10 +1058,10 @@ internal sealed class WorkbenchDockHost
         AccessibleIconButton search = new()
         {
             Content = "⌕",
-            AccessibleName = "Search tracked workspace text",
+            AccessibleName = "Run tracked workspace search",
         };
         search.Classes.Add("icon");
-        AutomationProperties.SetName(search, "Search tracked workspace text");
+        AutomationProperties.SetName(search, "Run tracked workspace search");
         search.Click += async (_, _) => await SearchAsync();
         query.KeyDown += async (_, args) =>
         {
@@ -1266,6 +1295,299 @@ internal sealed class WorkbenchDockHost
         return grid;
     }
 
+    private Control BuildProblemsTool()
+    {
+        Grid grid = new()
+        {
+            RowDefinitions = new("Auto,*"),
+            Margin = new Thickness(10),
+            RowSpacing = 8,
+        };
+        Grid heading = new()
+        {
+            ColumnDefinitions = new("*,Auto,Auto,Auto"),
+            ColumnSpacing = 10,
+            Children = { problemsStatus },
+        };
+        problemsStatus.Text = "Open a .NET source file to load compiler diagnostics.";
+        AutomationProperties.SetName(problemsStatus, "Code intelligence status");
+        AutomationProperties.SetName(showWarnings, "Show warning diagnostics");
+        AutomationProperties.SetName(showInformation, "Show information diagnostics");
+        AutomationProperties.SetName(showHidden, "Show hidden diagnostics");
+        Grid.SetColumn(showWarnings, 1);
+        Grid.SetColumn(showInformation, 2);
+        Grid.SetColumn(showHidden, 3);
+        heading.Children.Add(showWarnings);
+        heading.Children.Add(showInformation);
+        heading.Children.Add(showHidden);
+        showWarnings.IsCheckedChanged += (_, _) => RenderProblems();
+        showInformation.IsCheckedChanged += (_, _) => RenderProblems();
+        showHidden.IsCheckedChanged += (_, _) => RenderProblems();
+        grid.Children.Add(heading);
+        AutomationProperties.SetName(problems, "Compiler and analyzer problems");
+        problems.SelectionChanged += async (_, _) =>
+        {
+            if (problems.SelectedItem is ProblemChoice choice)
+            {
+                await NavigateToProblemAsync(choice);
+            }
+        };
+        Grid.SetRow(problems, 1);
+        grid.Children.Add(problems);
+        return grid;
+    }
+
+    private void ScheduleDiagnostics(SourceDocumentSession session, bool immediate = false)
+    {
+        if (session.View.Sha256 is null || session.View.IsTruncated ||
+            !IsDotNetSource(session.View.Path.Value))
+        {
+            session.Surface.SetCodeHealthNotApplicable();
+            return;
+        }
+
+        session.Surface.BeginCodeHealthUpdate();
+        if (session.Document.Id is { } documentId && documentDiagnostics.Remove(documentId))
+        {
+            RenderProblems();
+        }
+
+        (WorkbenchCodeBufferVersion version, CancellationToken token) =
+            session.BeginDiagnostics(cancellationToken);
+        _ = SynchronizeDiagnosticsAsync(session, version, token, immediate);
+    }
+
+    private async Task SynchronizeDiagnosticsAsync(
+        SourceDocumentSession session,
+        WorkbenchCodeBufferVersion version,
+        CancellationToken requestCancellation,
+        bool immediate)
+    {
+        try
+        {
+            if (!immediate)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(250), requestCancellation);
+            }
+
+            WorkbenchCodeSessionId? sessionId = await EnsureCodeSessionAsync(
+                session,
+                requestCancellation);
+            if (sessionId is null || !session.IsCurrentDiagnostics(version))
+            {
+                return;
+            }
+
+            WorkbenchCodeDiagnosticView result = await codeIntelligenceService.SynchronizeAsync(
+                new(
+                    sessionId,
+                    new(session.View.Path.Value),
+                    new(session.View.Sha256!.Value),
+                    version,
+                    new(session.Editor.Text)),
+                requestCancellation);
+            if (!session.IsCurrentDiagnostics(version) ||
+                result.State is WorkbenchCodeResultState.Stale or
+                    WorkbenchCodeResultState.Cancelled)
+            {
+                return;
+            }
+
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (session.Document.Id is not { } documentId ||
+                    !sourceDocuments.TryGetValue(documentId, out SourceDocumentSession? current) ||
+                    !ReferenceEquals(current, session) || !session.IsCurrentDiagnostics(version))
+                {
+                    return;
+                }
+
+                session.Surface.UpdateCodeHealth(result);
+                documentDiagnostics[documentId] = result;
+                RenderProblems();
+            });
+        }
+        catch (OperationCanceledException) when (requestCancellation.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or IOException or ArgumentException)
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                problemsStatus.Text = $"Code intelligence failed · {exception.Message}";
+            });
+        }
+    }
+
+    private async ValueTask<WorkbenchCodeSessionId?> EnsureCodeSessionAsync(
+        SourceDocumentSession document,
+        CancellationToken requestCancellation)
+    {
+        WorkspaceView? active = ActiveWorkspace();
+        if (active is null || !active.IsTrusted || active.Id != document.View.WorkspaceId.Value)
+        {
+            return null;
+        }
+
+        string key = $"{active.Id}:{document.View.GoalId?.Value ?? "original"}:" +
+                     $"{document.View.Branch?.Value ?? active.Branch}:{active.EntryPoint}";
+        await codeSessionGate.WaitAsync(requestCancellation);
+        try
+        {
+            if (codeSessionId is not null && string.Equals(codeSessionKey, key, StringComparison.Ordinal))
+            {
+                return codeSessionId;
+            }
+
+            if (codeSessionId is not null)
+            {
+                await codeIntelligenceService.StopAsync(codeSessionId, requestCancellation);
+                codeSessionId = null;
+                codeSessionKey = null;
+            }
+
+            string entryPoint = Path.IsPathRooted(active.EntryPoint)
+                ? Path.GetRelativePath(active.RootPath, active.EntryPoint)
+                : active.EntryPoint;
+            if (entryPoint == ".." ||
+                entryPoint.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+            {
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                    problemsStatus.Text = "Code intelligence unavailable · invalid workspace entry point.");
+                return null;
+            }
+
+            IProgress<WorkbenchCodeLoadProgress> progress = new UiLoadProgress(problemsStatus);
+            WorkbenchCodeSessionView started = await codeIntelligenceService.StartAsync(
+                new(
+                    new(active.Id),
+                    document.View.GoalId,
+                    new(entryPoint)),
+                progress,
+                requestCancellation);
+            if (started.SessionId is null)
+            {
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    problemsStatus.Text = started.Issues.Count == 0
+                        ? "Code intelligence unavailable."
+                        : $"Code intelligence unavailable · {started.Issues[0].Message.Value}";
+                });
+                return null;
+            }
+
+            codeSessionId = started.SessionId;
+            codeSessionKey = key;
+            return started.SessionId;
+        }
+        finally
+        {
+            codeSessionGate.Release();
+        }
+    }
+
+    private async ValueTask InvalidateCodeIntelligenceAsync()
+    {
+        try
+        {
+            await codeSessionGate.WaitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+
+        try
+        {
+            if (codeSessionId is not null)
+            {
+                await codeIntelligenceService.StopAsync(codeSessionId, cancellationToken);
+            }
+
+            codeSessionId = null;
+            codeSessionKey = null;
+            documentDiagnostics.Clear();
+            problems.ItemsSource = Array.Empty<ProblemChoice>();
+            problemsStatus.Text = "Open a .NET source file to load compiler diagnostics.";
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            codeSessionGate.Release();
+        }
+    }
+
+    private void RenderProblems()
+    {
+        ProblemChoice[] choices = documentDiagnostics
+            .SelectMany(pair => pair.Value.Diagnostics.Select(diagnostic => new ProblemChoice(
+                diagnostic,
+                sourceDocuments.TryGetValue(pair.Key, out SourceDocumentSession? session)
+                    ? session.View.GoalId
+                    : null)))
+            .Where(choice => choice.Diagnostic.Severity switch
+            {
+                WorkbenchCodeDiagnosticSeverity.Error => true,
+                WorkbenchCodeDiagnosticSeverity.Warning => showWarnings.IsChecked is true,
+                WorkbenchCodeDiagnosticSeverity.Information => showInformation.IsChecked is true,
+                WorkbenchCodeDiagnosticSeverity.Hidden => showHidden.IsChecked is true,
+                _ => false,
+            })
+            .OrderByDescending(choice => choice.Diagnostic.Severity)
+            .ThenBy(choice => choice.Diagnostic.Path.Value, StringComparer.Ordinal)
+            .ThenBy(choice => choice.Diagnostic.Range.Start.Line)
+            .Take(5_000)
+            .ToArray();
+        problems.ItemsSource = choices;
+        int errors = choices.Count(choice =>
+            choice.Diagnostic.Severity is WorkbenchCodeDiagnosticSeverity.Error);
+        int warnings = choices.Count(choice =>
+            choice.Diagnostic.Severity is WorkbenchCodeDiagnosticSeverity.Warning);
+        WorkbenchCodeDiagnosticView? unavailable = documentDiagnostics.Values.FirstOrDefault(
+            result => result.State is WorkbenchCodeResultState.Degraded or
+                WorkbenchCodeResultState.Failed);
+        problemsStatus.Text = unavailable?.Issues.FirstOrDefault() is { } issue
+            ? $"Code intelligence {unavailable.State.ToString().ToLowerInvariant()} · " +
+              issue.Message.Value
+            : choices.Length == 0
+                ? "No compiler or analyzer problems in the active buffers."
+                : $"{errors:N0} error(s), {warnings:N0} warning(s), " +
+                  $"{choices.Length - errors - warnings:N0} other finding(s).";
+    }
+
+    private async ValueTask NavigateToProblemAsync(ProblemChoice choice)
+    {
+        SourceDocumentSession? session = sourceDocuments.Values.FirstOrDefault(item =>
+            item.View.GoalId == choice.GoalId &&
+            item.View.Path.Value.Equals(choice.Diagnostic.Path.Value, StringComparison.Ordinal));
+        if (session is null)
+        {
+            await OpenFileAsync(choice.Diagnostic.Path.Value, choice.GoalId);
+            session = sourceDocuments.Values.FirstOrDefault(item =>
+                item.View.GoalId == choice.GoalId &&
+                item.View.Path.Value.Equals(choice.Diagnostic.Path.Value, StringComparison.Ordinal));
+        }
+
+        if (session is null)
+        {
+            return;
+        }
+
+        SetActiveDocument(session.Document);
+        int line = choice.Diagnostic.Range.Start.Line + 1;
+        int column = choice.Diagnostic.Range.Start.Character + 1;
+        session.Editor.TextArea.Caret.Line = Math.Clamp(line, 1, session.Editor.Document.LineCount);
+        session.Editor.TextArea.Caret.Column = Math.Max(1, column);
+        session.Editor.ScrollTo(line, column);
+        session.Editor.Focus();
+    }
+
+    private static bool IsDotNetSource(string path) =>
+        Path.GetExtension(path).Equals(".cs", StringComparison.OrdinalIgnoreCase);
+
     internal async ValueTask RefreshRunOutputAsync()
     {
         GoalView? goal = state().Goals.SelectedGoal;
@@ -1458,7 +1780,11 @@ internal sealed class WorkbenchDockHost
             surface,
             view);
         document.CloseRequested = () => OnSourceDocumentCloseRequested(session);
-        editor.TextChanged += (_, _) => session.SynchronizeDirtyState();
+        editor.TextChanged += (_, _) =>
+        {
+            session.SynchronizeDirtyState();
+            ScheduleDiagnostics(session);
+        };
         editor.KeyDown += async (_, args) =>
         {
             if (args.Key is Key.S && args.KeyModifiers.HasFlag(KeyModifiers.Control))
@@ -1477,6 +1803,7 @@ internal sealed class WorkbenchDockHost
         surface.Close.Click += async (_, _) => await RequestSourceDocumentCloseAsync(session);
         sourceDocuments.Add(id, session);
         session.SynchronizeDirtyState();
+        ScheduleDiagnostics(session, immediate: true);
         return session;
     }
 
@@ -1508,6 +1835,7 @@ internal sealed class WorkbenchDockHost
                     result.SavedSha256 is not null)
                 {
                     session.AcceptSaved(result.SavedSha256, result.BytesWritten);
+                    ScheduleDiagnostics(session, immediate: true);
                     return true;
                 }
 
@@ -1775,7 +2103,9 @@ internal sealed class WorkbenchDockHost
         IDockable? dockable = args.Dockable;
         if (dockable?.Id is { } id && sourceDocuments.Remove(id, out SourceDocumentSession? session))
         {
+            documentDiagnostics.Remove(id);
             session.Dispose();
+            RenderProblems();
         }
 
         if (ReferenceEquals(activeDocument, dockable))
@@ -1938,6 +2268,11 @@ internal sealed class WorkbenchDockHost
         {
             args.Handled = ShowRunOutput();
         }
+        else if (args.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Shift) &&
+                 args.Key is Key.M)
+        {
+            args.Handled = ShowProblems();
+        }
         else if (args.Key is Key.F6 && args.KeyModifiers is KeyModifiers.None)
         {
             args.Handled = FocusNextRegion();
@@ -1952,6 +2287,9 @@ internal sealed class WorkbenchDockHost
 
     /// <summary>Activates the Run output panel, the same path as its keyboard shortcut.</summary>
     internal bool ShowRunOutput() => ActivateTool(WorkbenchDockIds.RunOutputTool);
+
+    /// <summary>Activates the Problems panel, the same path as its keyboard shortcut.</summary>
+    internal bool ShowProblems() => ActivateTool(WorkbenchDockIds.ProblemsTool);
 
     private bool ActivateTool(string id)
     {
@@ -2273,6 +2611,25 @@ internal sealed class WorkbenchDockHost
             string exit = Output.Result?.ExitCode is { } code ? $" · exit {code}" : string.Empty;
             return $"{Output.Operation} · {Output.State}{exit} · {Output.StartedAt.LocalDateTime:g}";
         }
+    }
+
+    private sealed record ProblemChoice(
+        WorkbenchCodeDiagnostic Diagnostic,
+        GoalId? GoalId)
+    {
+        public override string ToString()
+        {
+            int line = Diagnostic.Range.Start.Line + 1;
+            int column = Diagnostic.Range.Start.Character + 1;
+            return $"{Diagnostic.Severity} {Diagnostic.Id.Value}  " +
+                   $"{Diagnostic.Path.Value}:{line}:{column}  {Diagnostic.Message.Value}";
+        }
+    }
+
+    private sealed class UiLoadProgress(TextBlock status) : IProgress<WorkbenchCodeLoadProgress>
+    {
+        public void Report(WorkbenchCodeLoadProgress value) => Dispatcher.UIThread.Post(() =>
+            status.Text = $"{value.Stage} · {value.Message.Value}");
     }
 
 }

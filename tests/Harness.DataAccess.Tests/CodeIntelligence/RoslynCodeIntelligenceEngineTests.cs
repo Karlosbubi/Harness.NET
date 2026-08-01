@@ -1,11 +1,13 @@
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using Harness.DataAccess.CodeIntelligence;
+using Xunit.Abstractions;
 
 namespace Harness.DataAccess.Tests.CodeIntelligence;
 
 [Collection("Roslyn workspace compatibility")]
-public sealed class RoslynCodeIntelligenceEngineTests : IDisposable
+public sealed class RoslynCodeIntelligenceEngineTests(ITestOutputHelper output) : IDisposable
 {
     private static readonly UTF8Encoding Utf8WithoutBom = new(false, true);
     private readonly string root = Path.Combine(
@@ -108,6 +110,66 @@ public sealed class RoslynCodeIntelligenceEngineTests : IDisposable
         Assert.All(result.Issues, issue => Assert.False(string.IsNullOrWhiteSpace(issue.Message.Value)));
     }
 
+    [Fact]
+    public async Task Actual_harness_workspace_meets_the_bounded_foreground_session_budget()
+    {
+        string repository = FindRepositoryRoot();
+        const string relativePath =
+            "src/Harness.BusinessLogic/Documents/WorkbenchDocumentTypes.cs";
+        string source = await File.ReadAllTextAsync(
+            Path.Combine(repository, relativePath),
+            Utf8WithoutBom);
+        long beforeBytes = GC.GetTotalMemory(forceFullCollection: true);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("harness-performance-context");
+        Stopwatch cold = Stopwatch.StartNew();
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(new(
+            contextId,
+            new(repository),
+            new("Harness.slnx"),
+            CodeIntelligenceSourceKind.OriginalWorkspace));
+        cold.Stop();
+        Assert.NotEqual(CodeIntelligenceResultState.Failed, session.State);
+
+        CodeIntelligenceDocumentSnapshot snapshot = new(
+            contextId,
+            session.SessionId!,
+            new(relativePath),
+            new(Hash(source)),
+            new(1),
+            new(source));
+        _ = await engine.GetDiagnosticsAsync(snapshot);
+        Stopwatch warm = Stopwatch.StartNew();
+        CodeIntelligenceDiagnosticResult updated = await engine.GetDiagnosticsAsync(
+            snapshot with
+            {
+                BufferVersion = new(2),
+                Text = new(source + " "),
+            });
+        warm.Stop();
+
+        using CancellationTokenSource cancellation = new();
+        cancellation.Cancel();
+        Stopwatch cancelled = Stopwatch.StartNew();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => engine.GetDiagnosticsAsync(
+            snapshot with { BufferVersion = new(3) },
+            cancellation.Token).AsTask());
+        cancelled.Stop();
+        long retainedBytes = Math.Max(0, GC.GetTotalMemory(forceFullCollection: true) - beforeBytes);
+
+        output.WriteLine($"cold_load_ms={cold.Elapsed.TotalMilliseconds:F0}");
+        output.WriteLine($"warm_update_ms={warm.Elapsed.TotalMilliseconds:F0}");
+        output.WriteLine($"retained_memory_mib={retainedBytes / 1024d / 1024d:F1}");
+        output.WriteLine($"cancellation_ms={cancelled.Elapsed.TotalMilliseconds:F1}");
+        Assert.NotEqual(CodeIntelligenceResultState.Failed, updated.State);
+        Assert.True(cold.Elapsed < TimeSpan.FromSeconds(60), $"Cold load took {cold.Elapsed}.");
+        Assert.True(warm.Elapsed < TimeSpan.FromSeconds(15), $"Warm update took {warm.Elapsed}.");
+        Assert.True(retainedBytes < 1024L * 1024 * 1024,
+            $"Foreground session retained {retainedBytes / 1024d / 1024d:F1} MiB.");
+        Assert.True(cancelled.Elapsed < TimeSpan.FromSeconds(1),
+            $"Cancellation took {cancelled.Elapsed}.");
+    }
+
     private async ValueTask CreateProjectAsync(string source)
     {
         Directory.CreateDirectory(root);
@@ -145,6 +207,18 @@ public sealed class RoslynCodeIntelligenceEngineTests : IDisposable
 
     private static string Hash(string content) => Convert.ToHexStringLower(
         SHA256.HashData(Utf8WithoutBom.GetBytes(content)));
+
+    private static string FindRepositoryRoot()
+    {
+        DirectoryInfo? current = new(AppContext.BaseDirectory);
+        while (current is not null && !File.Exists(Path.Combine(current.FullName, "Harness.slnx")))
+        {
+            current = current.Parent;
+        }
+
+        return current?.FullName ??
+            throw new InvalidOperationException("Harness.slnx was not found above the test output.");
+    }
 
     public void Dispose()
     {

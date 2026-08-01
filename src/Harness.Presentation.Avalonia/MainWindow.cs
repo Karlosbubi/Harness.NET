@@ -14,6 +14,7 @@ using Harness.BusinessLogic.Acceptance;
 using Harness.BusinessLogic.Approvals;
 using Harness.BusinessLogic.Dashboard;
 using Harness.BusinessLogic.Documents;
+using Harness.BusinessLogic.CodeIntelligence;
 using Harness.BusinessLogic.Evidence;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Inspection;
@@ -31,6 +32,7 @@ internal sealed class MainWindow : Window
     private readonly IRunOutputService runOutputService;
     private readonly IWorkbenchInspectionService inspectionService;
     private readonly IWorkbenchDocumentService documentService;
+    private readonly IWorkbenchCodeIntelligenceService codeIntelligenceService;
     private readonly IWorkbenchLayoutService layoutService;
     private readonly CancellationToken cancellationToken;
     private readonly CompositeDisposable subscriptions = new();
@@ -93,6 +95,7 @@ internal sealed class MainWindow : Window
         IRunOutputService runOutputService,
         IWorkbenchInspectionService inspectionService,
         IWorkbenchDocumentService documentService,
+        IWorkbenchCodeIntelligenceService codeIntelligenceService,
         IWorkbenchLayoutService layoutService,
         CancellationToken cancellationToken)
     {
@@ -101,6 +104,7 @@ internal sealed class MainWindow : Window
         this.runOutputService = runOutputService;
         this.inspectionService = inspectionService;
         this.documentService = documentService;
+        this.codeIntelligenceService = codeIntelligenceService;
         this.layoutService = layoutService;
         this.cancellationToken = cancellationToken;
         Title = "Harness.NET";
@@ -142,6 +146,7 @@ internal sealed class MainWindow : Window
             runOutputService,
             inspectionService,
             documentService,
+            codeIntelligenceService,
             layoutService,
             new AvaloniaWorkbenchDocumentPrompt(),
             () => store.Current,
@@ -561,6 +566,8 @@ internal sealed class MainWindow : Window
                     () => { host.ShowGit(); return ValueTask.CompletedTask; }, "Ctrl+Shift+G"),
                 new("tool.output", "Panels", "Show Run output panel",
                     () => { host.ShowRunOutput(); return ValueTask.CompletedTask; }, "Ctrl+J"),
+                new("tool.problems", "Panels", "Show Problems panel",
+                    () => { host.ShowProblems(); return ValueTask.CompletedTask; }, "Ctrl+Shift+M"),
                 new("git.diff", "Git", "Open working-tree diff",
                     async () => await host.OpenDiffAsync(), UnavailableReason: needsTrust),
                 new("layout.save", "Layout", "Save workbench layout",

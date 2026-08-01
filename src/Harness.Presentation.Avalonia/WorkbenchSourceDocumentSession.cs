@@ -2,6 +2,7 @@ using Avalonia.Automation;
 using Avalonia.Controls;
 using AvaloniaEdit;
 using Dock.Model.Avalonia.Controls;
+using Harness.BusinessLogic.CodeIntelligence;
 using Harness.BusinessLogic.Documents;
 
 namespace Harness.Presentation.Avalonia;
@@ -17,6 +18,8 @@ internal sealed class SourceDocumentSession : IDisposable
 {
     private bool suppressChanges;
     private bool isBusy;
+    private CancellationTokenSource? diagnosticsCancellation;
+    private long bufferVersion;
 
     internal SourceDocumentSession(
         SourceDockDocument document,
@@ -39,6 +42,18 @@ internal sealed class SourceDocumentSession : IDisposable
     internal bool IsDirty { get; private set; }
     internal bool AllowClose { get; set; }
     internal bool IgnoreNextActivationChange { get; set; }
+
+    internal (WorkbenchCodeBufferVersion Version, CancellationToken Token) BeginDiagnostics(
+        CancellationToken parentCancellation)
+    {
+        diagnosticsCancellation?.Cancel();
+        diagnosticsCancellation?.Dispose();
+        diagnosticsCancellation = CancellationTokenSource.CreateLinkedTokenSource(parentCancellation);
+        return (new(++bufferVersion), diagnosticsCancellation.Token);
+    }
+
+    internal bool IsCurrentDiagnostics(WorkbenchCodeBufferVersion version) =>
+        bufferVersion == version.Value && diagnosticsCancellation?.IsCancellationRequested is false;
 
     internal void SynchronizeDirtyState()
     {
@@ -140,7 +155,10 @@ internal sealed class SourceDocumentSession : IDisposable
 
     public void Dispose()
     {
+        diagnosticsCancellation?.Cancel();
+        diagnosticsCancellation?.Dispose();
         Document.CloseRequested = null;
+        Surface.Dispose();
     }
 
     private static string Title(WorkbenchDocumentView view)

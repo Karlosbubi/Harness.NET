@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Threading;
 using Harness.BusinessLogic.Documents;
+using Harness.BusinessLogic.CodeIntelligence;
 using Harness.BusinessLogic.Evidence;
 using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Layouts;
@@ -16,6 +17,7 @@ internal sealed class AvaloniaShell(
     IRunOutputService runOutputService,
     IWorkbenchInspectionService inspectionService,
     IWorkbenchDocumentService documentService,
+    IWorkbenchCodeIntelligenceService codeIntelligenceService,
     IWorkbenchLayoutService layoutService) : IAvaloniaShell
 {
     public ValueTask RunAsync(CancellationToken cancellationToken = default)
@@ -27,6 +29,7 @@ internal sealed class AvaloniaShell(
                 runOutputService,
                 inspectionService,
                 documentService,
+                codeIntelligenceService,
                 layoutService,
                 cancellationToken))
             .UsePlatformDetect()

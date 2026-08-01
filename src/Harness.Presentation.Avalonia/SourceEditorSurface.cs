@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
 using AvaloniaEdit;
+using Harness.BusinessLogic.CodeIntelligence;
 using Harness.BusinessLogic.Documents;
 
 namespace Harness.Presentation.Avalonia;
@@ -12,8 +13,10 @@ namespace Harness.Presentation.Avalonia;
 /// Owns the transient visual chrome around one real source editor. Document mutation,
 /// access, and conflict policy remain in Business Logic and <see cref="SourceDocumentSession"/>.
 /// </summary>
-internal sealed class SourceEditorSurface
+internal sealed class SourceEditorSurface : IDisposable
 {
+    private string codeHealth = "Code intelligence loading";
+    private CodeDiagnosticRenderer renderer = null!;
     private readonly TextBlock path = new()
     {
         FontFamily = new FontFamily("Cascadia Code,JetBrains Mono,Consolas,Menlo,monospace"),
@@ -80,6 +83,7 @@ internal sealed class SourceEditorSurface
             save,
             reload,
             close);
+        surface.renderer = new(editor);
         surface.accessBadge.Child = surface.access;
         surface.accessBadge.Classes.Add("editor-access");
         surface.BuildHeader(save, reload, close);
@@ -121,8 +125,48 @@ internal sealed class SourceEditorSurface
         int selected = Editor.SelectionLength;
         string selection = selected == 0 ? string.Empty : $" · {selected:N0} selected";
         metrics.Text = $"Ln {Editor.TextArea.Caret.Line:N0}, Col {Editor.TextArea.Caret.Column:N0}" +
-                       selection + $" · UTF-8 · {LineEndings(Editor.Text)}";
+                       selection + $" · UTF-8 · {LineEndings(Editor.Text)} · {codeHealth}";
     }
+
+    internal void UpdateCodeHealth(WorkbenchCodeDiagnosticView result)
+    {
+        renderer.SetDiagnostics(result.Diagnostics);
+        int errors = result.Diagnostics.Count(item =>
+            item.Severity is WorkbenchCodeDiagnosticSeverity.Error);
+        int warnings = result.Diagnostics.Count(item =>
+            item.Severity is WorkbenchCodeDiagnosticSeverity.Warning);
+        codeHealth = result.State switch
+        {
+            WorkbenchCodeResultState.Ready or WorkbenchCodeResultState.Degraded when errors > 0 =>
+                $"{errors:N0} error(s), {warnings:N0} warning(s)",
+            WorkbenchCodeResultState.Ready or WorkbenchCodeResultState.Degraded when warnings > 0 =>
+                $"{warnings:N0} warning(s)",
+            WorkbenchCodeResultState.Ready => "No problems",
+            WorkbenchCodeResultState.Degraded => "Code intelligence degraded",
+            WorkbenchCodeResultState.Loading => "Code intelligence loading",
+            WorkbenchCodeResultState.Cancelled => "Check cancelled",
+            WorkbenchCodeResultState.Failed => "Code intelligence failed",
+            WorkbenchCodeResultState.Stale => "Checking newer buffer",
+            _ => "Code intelligence unavailable",
+        };
+        UpdateMetrics();
+    }
+
+    internal void BeginCodeHealthUpdate()
+    {
+        renderer.SetDiagnostics([]);
+        codeHealth = "Checking…";
+        UpdateMetrics();
+    }
+
+    internal void SetCodeHealthNotApplicable()
+    {
+        renderer.SetDiagnostics([]);
+        codeHealth = "Compiler check not applicable";
+        UpdateMetrics();
+    }
+
+    public void Dispose() => renderer.Dispose();
 
     private static Button Action(string content, string name, string tip)
     {

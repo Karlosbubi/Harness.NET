@@ -184,8 +184,9 @@ of Stage 3 below.
   a deterministic fake. The composed Roslyn adapter now loads one foreground context,
   reports progress and bounded failures, synchronizes exact-baseline in-memory text,
   runs compiler/configured-analyzer diagnostics, and disposes safely without restore.
-  Versioned live buffers then surface syntax, compiler, and configured analyzer
-  diagnostics inline and in Problems. Model-authored candidate changes fail closed
+  Versioned C# buffers now surface syntax, compiler, and configured analyzer
+  diagnostics inline and in a navigable, filterable Problems tool with measured cold,
+  warm, memory, and cancellation behavior. Model-authored candidate changes fail closed
   when they introduce compiler errors and retain warning/analyzer evidence. (Task 042)
 - Add completion, quick info, signature help, go-to-definition, and find-references
   over the exact active trusted source context, with stale-result rejection and

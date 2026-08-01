@@ -11,6 +11,7 @@ internal sealed class WorkbenchCodeIntelligenceService(
     ICodeIntelligenceEngine engine) : IWorkbenchCodeIntelligenceService
 {
     private const int MaximumCandidateEdits = 100;
+    private const int MaximumDiagnostics = 5_000;
     private const int MaximumIssues = 100;
     private const int MaximumIssueMessageLength = 2_048;
     private readonly ConcurrentDictionary<string, ActiveSession> sessions =
@@ -183,7 +184,11 @@ internal sealed class WorkbenchCodeIntelligenceService(
             snapshot.Path,
             snapshot.BufferVersion,
             Map(result.State),
-            result.Diagnostics.Select(Map).ToArray(),
+            result.Diagnostics
+                .Where(IsValidDiagnostic)
+                .Take(MaximumDiagnostics)
+                .Select(Map)
+                .ToArray(),
             MapIssues(result.Issues));
     }
 
@@ -258,9 +263,13 @@ internal sealed class WorkbenchCodeIntelligenceService(
             request.SessionId,
             Map(result.State),
             Map(result.Disposition),
-            result.Diagnostics.Select(diagnostic => new WorkbenchCodeValidationDiagnostic(
-                Map(diagnostic.Kind),
-                Map(diagnostic.Diagnostic))).ToArray(),
+            result.Diagnostics
+                .Where(diagnostic => IsValidDiagnostic(diagnostic.Diagnostic))
+                .Take(MaximumDiagnostics)
+                .Select(diagnostic => new WorkbenchCodeValidationDiagnostic(
+                    Map(diagnostic.Kind),
+                    Map(diagnostic.Diagnostic)))
+                .ToArray(),
             MapIssues(result.Issues));
     }
 
@@ -338,6 +347,14 @@ internal sealed class WorkbenchCodeIntelligenceService(
         value.Length == 64 && value.All(character =>
             character is >= '0' and <= '9' or >= 'a' and <= 'f' or >= 'A' and <= 'F');
 
+    private static bool IsValidDiagnostic(CodeIntelligenceDiagnostic diagnostic) =>
+        IsConfinedRelativePath(diagnostic.Path.Value) &&
+        diagnostic.Range.Start.Line >= 0 && diagnostic.Range.Start.Character >= 0 &&
+        diagnostic.Range.End.Line >= diagnostic.Range.Start.Line &&
+        diagnostic.Range.End.Character >= 0 &&
+        (diagnostic.Range.End.Line > diagnostic.Range.Start.Line ||
+         diagnostic.Range.End.Character >= diagnostic.Range.Start.Character);
+
     private static WorkbenchCodeSessionView SessionFailure(string code, string message) => new(
         null,
         null,
@@ -402,7 +419,9 @@ internal sealed class WorkbenchCodeIntelligenceService(
 
     private static WorkbenchCodeDiagnostic Map(CodeIntelligenceDiagnostic diagnostic) => new(
         new(diagnostic.Id.Value),
-        new(diagnostic.Message.Value),
+        new(diagnostic.Message.Value.Length <= MaximumIssueMessageLength
+            ? diagnostic.Message.Value
+            : diagnostic.Message.Value[..MaximumIssueMessageLength]),
         new(diagnostic.Source.Value),
         diagnostic.Project is null ? null : new(diagnostic.Project.Value),
         new(diagnostic.Path.Value),
