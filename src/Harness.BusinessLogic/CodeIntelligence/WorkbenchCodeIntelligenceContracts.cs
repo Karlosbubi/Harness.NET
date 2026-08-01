@@ -111,8 +111,15 @@ public sealed record WorkbenchCodeCandidateEdit(
     WorkbenchCodeBaselineHash BaselineHash,
     WorkbenchCodeText Text);
 
+public enum WorkbenchCodeValidationPhase
+{
+    Candidate,
+    Applied,
+}
+
 public sealed record WorkbenchCodeValidationRequest(
     WorkbenchCodeSessionId SessionId,
+    WorkbenchCodeValidationPhase Phase,
     IReadOnlyList<WorkbenchCodeCandidateEdit> Edits);
 
 public enum WorkbenchCodeValidationDisposition

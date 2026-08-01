@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Harness.BusinessLogic.CodeIntelligence;
 using Harness.DataAccess.Approvals;
 using Harness.DataAccess.Evidence;
 using Harness.DataAccess.Execution;
@@ -17,9 +18,13 @@ internal sealed class WorkspaceMutationService(
     IWorkspaceFileEditor fileEditor,
     IDotNetToolRunner dotNetToolRunner,
     IToolEvidenceStore evidenceStore,
-    ICapabilityApprovalStore approvalStore) : IWorkspaceMutationService
+    ICapabilityApprovalStore approvalStore,
+    IWorkbenchCodeIntelligenceService? codeIntelligenceService = null) : IWorkspaceMutationService
 {
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
+    private static readonly HashSet<string> CompilerInputExtensions = new(
+        [".cs", ".csproj", ".sln", ".slnx", ".props", ".targets"],
+        StringComparer.OrdinalIgnoreCase);
 
     public async ValueTask<FileEditView> ApplyFileEditAsync(
         FileEditRequest request,
@@ -30,6 +35,11 @@ internal sealed class WorkspaceMutationService(
             request.CorrelationId.Value.Length > 128)
         {
             return Failure(request, "invalid_correlation", "A correlation identifier of at most 128 characters is required.");
+        }
+
+        if (!Enum.IsDefined(request.Origin))
+        {
+            return Failure(request, "invalid_origin", "The edit origin must be Human or Model.");
         }
 
         StoredGoal? goal = await goalStore.GetAsync(request.GoalId, cancellationToken);
@@ -61,6 +71,101 @@ internal sealed class WorkspaceMutationService(
             return Failure(request, "duplicate_correlation", "This goal already has a tool call with that correlation identifier.");
         }
 
+        WorkbenchCodeValidationView? validation = null;
+        WorkbenchCodeSessionId? validationSession = null;
+        bool requiresCompilerValidation = request.Origin is FileEditOrigin.Model &&
+            CompilerInputExtensions.Contains(Path.GetExtension(request.Path));
+        if (request.Origin is FileEditOrigin.Model)
+        {
+            if (requiresCompilerValidation)
+            {
+                if (codeIntelligenceService is null)
+                {
+                    FileEditView unavailable = Failure(
+                        request,
+                        "code_intelligence_unavailable",
+                        "Compiler validation is unavailable.");
+                    await CompleteEvidenceAsync(
+                        started.ToolCall.Id,
+                        ToolCallState.Failed,
+                        unavailable);
+                    return unavailable;
+                }
+
+                if (request.ExpectedSha256 is null)
+                {
+                    FileEditView missingBaseline = Failure(
+                        request,
+                        "compiler_baseline_required",
+                        "Model-authored compiler inputs require an exact existing-file baseline.");
+                    await CompleteEvidenceAsync(
+                        started.ToolCall.Id,
+                        ToolCallState.Failed,
+                        missingBaseline);
+                    return missingBaseline;
+                }
+
+                string entryPoint = Path.GetRelativePath(workspace.RootPath, workspace.EntryPoint);
+                WorkbenchCodeSessionView session = await codeIntelligenceService.StartAsync(
+                    new(new(workspace.Id), new(goal.Id), new(entryPoint)),
+                    progress: null,
+                    cancellationToken);
+                validationSession = session.SessionId;
+                if (validationSession is null ||
+                    session.State is WorkbenchCodeResultState.Failed or
+                        WorkbenchCodeResultState.Cancelled or WorkbenchCodeResultState.Stale)
+                {
+                    FileEditView unavailable = new(
+                        goal.Id,
+                        request.CorrelationId,
+                        request.Path,
+                        null,
+                        null,
+                        0,
+                        WasCreated: false,
+                        "code_intelligence_unavailable",
+                        session.Issues.FirstOrDefault()?.Message.Value ??
+                            "Compiler validation is unavailable.");
+                    await CompleteEvidenceAsync(
+                        started.ToolCall.Id,
+                        ToolCallState.Failed,
+                        unavailable);
+                    return unavailable;
+                }
+
+                validation = await codeIntelligenceService.ValidateAsync(
+                    new(
+                        validationSession,
+                        WorkbenchCodeValidationPhase.Candidate,
+                        [new(new(request.Path), new(request.ExpectedSha256), new(request.Content))]),
+                    cancellationToken);
+                if (validation.Disposition is not WorkbenchCodeValidationDisposition.Validated)
+                {
+                    FileEditView rejected = new(
+                        goal.Id,
+                        request.CorrelationId,
+                        request.Path,
+                        null,
+                        null,
+                        0,
+                        WasCreated: false,
+                        "compiler_validation_rejected",
+                        validation.Issues.FirstOrDefault()?.Message.Value ??
+                            "The candidate introduced a compiler error.",
+                        validation);
+                    await CompleteEvidenceAsync(
+                        started.ToolCall.Id,
+                        ToolCallState.Failed,
+                        rejected);
+                    return rejected;
+                }
+            }
+            else
+            {
+                validation = NotApplicableValidation(request.Path);
+            }
+        }
+
         WorkspaceFileEditResult result = await fileEditor.ApplyAsync(
             worktree.Path,
             new(request.Path, request.ExpectedSha256, request.Content),
@@ -74,10 +179,33 @@ internal sealed class WorkspaceMutationService(
             result.BytesWritten,
             result.WasCreated,
             result.ErrorCode,
-            result.Error);
+            result.Error,
+            validation);
+
+        if (result.ErrorCode is null && requiresCompilerValidation &&
+            codeIntelligenceService is not null && validationSession is not null &&
+            result.NewSha256 is not null)
+        {
+            WorkbenchCodeValidationView applied = await codeIntelligenceService.ValidateAsync(
+                new(
+                    validationSession,
+                    WorkbenchCodeValidationPhase.Applied,
+                    [new(new(result.Path), new(result.NewSha256), new(request.Content))]),
+                cancellationToken);
+            view = view with { AppliedCodeValidation = applied };
+            if (applied.Disposition is not WorkbenchCodeValidationDisposition.Validated)
+            {
+                view = view with
+                {
+                    ErrorCode = "post_apply_validation_failed",
+                    Error = applied.Issues.FirstOrDefault()?.Message.Value ??
+                        "The applied edit did not match its compiler-validated candidate.",
+                };
+            }
+        }
         await CompleteEvidenceAsync(
             started.ToolCall.Id,
-            result.ErrorCode is null ? ToolCallState.Succeeded : ToolCallState.Failed,
+            view.ErrorCode is null ? ToolCallState.Succeeded : ToolCallState.Failed,
             view);
         return view;
     }
@@ -251,6 +379,15 @@ internal sealed class WorkspaceMutationService(
             WasCreated: false,
             code,
             error);
+
+    private static WorkbenchCodeValidationView NotApplicableValidation(string path) => new(
+        new(string.Empty),
+        WorkbenchCodeResultState.Ready,
+        WorkbenchCodeValidationDisposition.NotApplicable,
+        [],
+        [new(
+            new("compiler_validation_not_applicable"),
+            new($"{path} is outside the loaded compiler workspace."))]);
 
     private static DotNetOperationView DotNetFailure(
         DotNetOperationRequest request,

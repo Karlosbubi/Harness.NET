@@ -214,7 +214,8 @@ internal sealed class WorkbenchCodeIntelligenceService(
                 "Candidate validation requires an approved goal worktree context.");
         }
 
-        if (request.Edits is null || request.Edits.Count is 0 or > MaximumCandidateEdits ||
+        if (!Enum.IsDefined(request.Phase) || request.Edits is null ||
+            request.Edits.Count is 0 or > MaximumCandidateEdits ||
             request.Edits.Any(edit => edit.Path is null ||
                 !IsConfinedRelativePath(edit.Path.Value) ||
                 edit.BaselineHash is null || !IsSha256(edit.BaselineHash.Value) ||
@@ -235,6 +236,14 @@ internal sealed class WorkbenchCodeIntelligenceService(
                 new(
                     session.ContextId,
                     session.SessionId,
+                    request.Phase switch
+                    {
+                        WorkbenchCodeValidationPhase.Candidate =>
+                            CodeIntelligenceValidationPhase.Candidate,
+                        WorkbenchCodeValidationPhase.Applied =>
+                            CodeIntelligenceValidationPhase.Applied,
+                        _ => throw new ArgumentOutOfRangeException(nameof(request)),
+                    },
                     request.Edits.Select(edit => new CodeIntelligenceCandidateEdit(
                         new(edit.Path.Value),
                         new(edit.BaselineHash.Value),

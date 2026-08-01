@@ -243,21 +243,208 @@ internal sealed class RoslynCodeIntelligenceEngine(IMSBuildRuntime msBuildRuntim
         }
     }
 
-    public ValueTask<CodeIntelligenceValidationResult> ValidateAsync(
+    public async ValueTask<CodeIntelligenceValidationResult> ValidateAsync(
         CodeIntelligenceValidationRequest request,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        cancellationToken.ThrowIfCancellationRequested();
-        return ValueTask.FromResult(new CodeIntelligenceValidationResult(
-            request.ContextId,
-            request.SessionId,
-            CodeIntelligenceResultState.Degraded,
-            CodeIntelligenceValidationDisposition.Rejected,
-            [],
-            [Issue(
-                "validation_not_ready",
-                "Roslyn candidate validation is not connected to the durable mutation boundary yet.")]));
+        ActiveSession? session = activeSession;
+        if (session is null || session.SessionId != request.SessionId ||
+            session.ContextId != request.ContextId)
+        {
+            return ValidationFailure(
+                request,
+                CodeIntelligenceResultState.Stale,
+                "session_unavailable",
+                "The Roslyn session no longer matches this source context.");
+        }
+
+        if (!Enum.IsDefined(request.Phase) || request.Edits.Count == 0)
+        {
+            return ValidationFailure(
+                request,
+                CodeIntelligenceResultState.Failed,
+                "invalid_validation_request",
+                "A valid phase and at least one candidate edit are required.");
+        }
+
+        await session.OperationGate.WaitAsync(cancellationToken);
+        try
+        {
+            if (activeSession != session)
+            {
+                return ValidationFailure(
+                    request,
+                    CodeIntelligenceResultState.Stale,
+                    "session_replaced",
+                    "The Roslyn session was replaced while validation was queued.");
+            }
+
+            Solution baseline = session.PersistedSolution;
+            Dictionary<CodeIntelligenceDocumentPath, IReadOnlyList<DocumentId>> documents = [];
+            HashSet<ProjectId> affectedProjects = [];
+            foreach (CodeIntelligenceCandidateEdit edit in request.Edits)
+            {
+                if (!TryResolveDocumentPath(session.RootPath, edit.Path.Value, out string path))
+                {
+                    return ValidationFailure(
+                        request,
+                        CodeIntelligenceResultState.Failed,
+                        "invalid_document_path",
+                        "A candidate document path is missing or outside the source context.");
+                }
+
+                IReadOnlyList<DocumentId> matching = baseline.Projects
+                    .SelectMany(project => project.Documents)
+                    .Where(document => document.FilePath is not null &&
+                        Path.GetFullPath(document.FilePath).Equals(path, StringComparison.Ordinal))
+                    .Select(document => document.Id)
+                    .ToArray();
+                if (matching.Count == 0)
+                {
+                    if (request.Edits.Count == 1)
+                    {
+                        return new(
+                            request.ContextId,
+                            request.SessionId,
+                            CodeIntelligenceResultState.Ready,
+                            CodeIntelligenceValidationDisposition.NotApplicable,
+                            [],
+                            [Issue(
+                                "document_not_in_workspace",
+                                "The changed file is not represented by the loaded compiler workspace.")]);
+                    }
+
+                    return ValidationFailure(
+                        request,
+                        CodeIntelligenceResultState.Failed,
+                        "mixed_validation_scope",
+                        "A candidate batch cannot mix compiler documents with unsupported files.");
+                }
+
+                string persistedText;
+                try
+                {
+                    persistedText = await File.ReadAllTextAsync(path, Utf8WithoutBom, cancellationToken);
+                }
+                catch (DecoderFallbackException exception)
+                {
+                    return ValidationFailure(
+                        request,
+                        CodeIntelligenceResultState.Failed,
+                        "document_encoding_unsupported",
+                        exception.Message);
+                }
+
+                string persistedHash = Hash(persistedText);
+                if (!persistedHash.Equals(edit.BaselineHash.Value, StringComparison.OrdinalIgnoreCase))
+                {
+                    return ValidationFailure(
+                        request,
+                        CodeIntelligenceResultState.Stale,
+                        "baseline_changed",
+                        "A persisted document changed after the candidate baseline was created.");
+                }
+
+                if (request.Phase is CodeIntelligenceValidationPhase.Applied &&
+                    !Hash(edit.Text.Value).Equals(persistedHash, StringComparison.OrdinalIgnoreCase))
+                {
+                    return ValidationFailure(
+                        request,
+                        CodeIntelligenceResultState.Stale,
+                        "applied_content_mismatch",
+                        "The applied document does not match the validated candidate text.");
+                }
+
+                SourceText persistedSource = SourceText.From(persistedText, Utf8WithoutBom);
+                foreach (DocumentId documentId in matching)
+                {
+                    baseline = baseline.WithDocumentText(
+                        documentId,
+                        persistedSource,
+                        PreservationMode.PreserveIdentity);
+                    affectedProjects.Add(documentId.ProjectId);
+                }
+
+                documents.Add(edit.Path, matching);
+            }
+
+            session.PersistedSolution = baseline;
+            Solution candidate = baseline;
+            foreach (CodeIntelligenceCandidateEdit edit in request.Edits)
+            {
+                SourceText candidateSource = SourceText.From(edit.Text.Value, Utf8WithoutBom);
+                foreach (DocumentId documentId in documents[edit.Path])
+                {
+                    candidate = candidate.WithDocumentText(
+                        documentId,
+                        candidateSource,
+                        PreservationMode.PreserveIdentity);
+                }
+            }
+
+            IReadOnlyList<CollectedDiagnostic> baselineDiagnostics =
+                await CollectDiagnosticsAsync(baseline, affectedProjects, session.RootPath, cancellationToken);
+            IReadOnlyList<CollectedDiagnostic> candidateDiagnostics =
+                await CollectDiagnosticsAsync(candidate, affectedProjects, session.RootPath, cancellationToken);
+            IReadOnlyList<CodeIntelligenceValidationDiagnostic> delta = CompareDiagnostics(
+                baselineDiagnostics,
+                candidateDiagnostics);
+            bool introducedCompilerError = delta.Any(item =>
+                item.Kind is CodeIntelligenceDiagnosticDeltaKind.Introduced &&
+                item.Diagnostic.Source.Value.Equals("Compiler", StringComparison.Ordinal) &&
+                item.Diagnostic.Severity is CodeIntelligenceDiagnosticSeverity.Error);
+
+            if (request.Phase is CodeIntelligenceValidationPhase.Applied &&
+                !introducedCompilerError)
+            {
+                session.PersistedSolution = candidate;
+                Solution live = session.CurrentSolution;
+                foreach (CodeIntelligenceCandidateEdit edit in request.Edits)
+                {
+                    SourceText appliedSource = SourceText.From(edit.Text.Value, Utf8WithoutBom);
+                    foreach (DocumentId documentId in documents[edit.Path])
+                    {
+                        live = live.WithDocumentText(
+                            documentId,
+                            appliedSource,
+                            PreservationMode.PreserveIdentity);
+                    }
+                }
+
+                session.CurrentSolution = live;
+            }
+
+            return new(
+                request.ContextId,
+                request.SessionId,
+                session.Issues.IsEmpty
+                    ? CodeIntelligenceResultState.Ready
+                    : CodeIntelligenceResultState.Degraded,
+                introducedCompilerError
+                    ? CodeIntelligenceValidationDisposition.Rejected
+                    : CodeIntelligenceValidationDisposition.Validated,
+                delta.Take(MaximumDiagnostics).ToArray(),
+                session.Issues.ToArray());
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException or
+                InvalidOperationException or ArgumentException)
+        {
+            return ValidationFailure(
+                request,
+                CodeIntelligenceResultState.Failed,
+                "validation_failed",
+                exception.Message);
+        }
+        finally
+        {
+            session.OperationGate.Release();
+        }
     }
 
     public async ValueTask CloseAsync(
@@ -439,6 +626,93 @@ internal sealed class RoslynCodeIntelligenceEngine(IMSBuildRuntime msBuildRuntim
         diagnostic.Location.SourceTree?.FilePath is { } diagnosticPath &&
         Path.GetFullPath(diagnosticPath).Equals(path, StringComparison.Ordinal);
 
+    private static async ValueTask<IReadOnlyList<CollectedDiagnostic>> CollectDiagnosticsAsync(
+        Solution solution,
+        IReadOnlySet<ProjectId> projectIds,
+        string root,
+        CancellationToken cancellationToken)
+    {
+        List<CollectedDiagnostic> result = [];
+        foreach (ProjectId projectId in projectIds.OrderBy(id => id.Id))
+        {
+            Project? project = solution.GetProject(projectId);
+            if (project is null)
+            {
+                continue;
+            }
+
+            Compilation? compilation = await project.GetCompilationAsync(cancellationToken);
+            if (compilation is null)
+            {
+                throw new InvalidOperationException(
+                    $"Project {project.Name} did not produce a compilation.");
+            }
+
+            ImmutableArray<DiagnosticAnalyzer> analyzers = project.AnalyzerReferences
+                .SelectMany(reference => reference.GetAnalyzers(project.Language))
+                .ToImmutableArray();
+            ImmutableArray<Diagnostic> diagnostics = analyzers.IsEmpty
+                ? compilation.GetDiagnostics(cancellationToken)
+                : await compilation
+                    .WithAnalyzers(analyzers, project.AnalyzerOptions)
+                    .GetAllDiagnosticsAsync(cancellationToken);
+            CodeIntelligenceDocumentPath fallback = new(project.FilePath is null
+                ? project.Name
+                : Path.GetRelativePath(root, project.FilePath));
+            result.AddRange(diagnostics
+                .Take(MaximumDiagnostics)
+                .Select(diagnostic => new CollectedDiagnostic(
+                    projectId,
+                    MapDiagnostic(diagnostic, project.Name, root, fallback))));
+        }
+
+        return result
+            .OrderByDescending(item => item.Diagnostic.Severity)
+            .Take(MaximumDiagnostics)
+            .ToArray();
+    }
+
+    private static IReadOnlyList<CodeIntelligenceValidationDiagnostic> CompareDiagnostics(
+        IReadOnlyList<CollectedDiagnostic> baseline,
+        IReadOnlyList<CollectedDiagnostic> candidate)
+    {
+        Dictionary<DiagnosticIdentity, Queue<CollectedDiagnostic>> remaining = baseline
+            .GroupBy(Identity)
+            .ToDictionary(group => group.Key, group => new Queue<CollectedDiagnostic>(group));
+        List<CodeIntelligenceValidationDiagnostic> result = [];
+        foreach (CollectedDiagnostic item in candidate)
+        {
+            DiagnosticIdentity identity = Identity(item);
+            bool retained = remaining.TryGetValue(identity, out Queue<CollectedDiagnostic>? matches) &&
+                matches.Count > 0;
+            if (retained)
+            {
+                _ = matches!.Dequeue();
+            }
+
+            result.Add(new(
+                retained
+                    ? CodeIntelligenceDiagnosticDeltaKind.Retained
+                    : CodeIntelligenceDiagnosticDeltaKind.Introduced,
+                item.Diagnostic));
+        }
+
+        result.AddRange(remaining.Values
+            .SelectMany(matches => matches)
+            .Select(item => new CodeIntelligenceValidationDiagnostic(
+                CodeIntelligenceDiagnosticDeltaKind.Resolved,
+                item.Diagnostic)));
+        return result;
+    }
+
+    private static DiagnosticIdentity Identity(CollectedDiagnostic diagnostic) => new(
+        diagnostic.ProjectId,
+        diagnostic.Diagnostic.Id.Value,
+        diagnostic.Diagnostic.Message.Value,
+        diagnostic.Diagnostic.Source.Value,
+        diagnostic.Diagnostic.Path.Value,
+        diagnostic.Diagnostic.Severity);
+
     private static CodeIntelligenceDiagnostic MapDiagnostic(
         Diagnostic diagnostic,
         string project,
@@ -494,6 +768,18 @@ internal sealed class RoslynCodeIntelligenceEngine(IMSBuildRuntime msBuildRuntim
         [],
         [Issue(code, message)]);
 
+    private static CodeIntelligenceValidationResult ValidationFailure(
+        CodeIntelligenceValidationRequest request,
+        CodeIntelligenceResultState state,
+        string code,
+        string message) => new(
+        request.ContextId,
+        request.SessionId,
+        state,
+        CodeIntelligenceValidationDisposition.Rejected,
+        [],
+        [Issue(code, message)]);
+
     private static CodeIntelligenceIssue Issue(string code, string message) => new(
         new(code),
         new(Bound(message, MaximumIssueLength)));
@@ -519,6 +805,21 @@ internal sealed class RoslynCodeIntelligenceEngine(IMSBuildRuntime msBuildRuntim
 
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(disposed, this);
 
+    private static string Hash(string content) => Convert.ToHexStringLower(
+        SHA256.HashData(Utf8WithoutBom.GetBytes(content)));
+
+    private sealed record CollectedDiagnostic(
+        ProjectId ProjectId,
+        CodeIntelligenceDiagnostic Diagnostic);
+
+    private sealed record DiagnosticIdentity(
+        ProjectId ProjectId,
+        string Id,
+        string Message,
+        string Source,
+        string Path,
+        CodeIntelligenceDiagnosticSeverity Severity);
+
     private sealed class ActiveSession(
         CodeIntelligenceContextId contextId,
         CodeIntelligenceSessionId sessionId,
@@ -539,6 +840,7 @@ internal sealed class RoslynCodeIntelligenceEngine(IMSBuildRuntime msBuildRuntim
         internal IDisposable WorkspaceFailure { get; } = workspaceFailure;
         internal ConcurrentQueue<CodeIntelligenceIssue> Issues { get; } = issues;
         internal SemaphoreSlim OperationGate { get; } = new(1, 1);
+        internal Solution PersistedSolution { get; set; } = solution;
         internal Solution CurrentSolution { get; set; } = solution;
 
         internal CodeIntelligenceSessionResult AsResult() => new(

@@ -156,6 +156,7 @@ public sealed class WorkbenchCodeIntelligenceServiceTests
 
         WorkbenchCodeValidationView readOnly = await original.ValidateAsync(new(
             originalSession,
+            WorkbenchCodeValidationPhase.Candidate,
             [new(new("src/App.cs"), new(Baseline), new("class App { }"))]));
 
         Assert.Equal("editable_context_required", Assert.Single(readOnly.Issues).Code.Value);
@@ -168,10 +169,30 @@ public sealed class WorkbenchCodeIntelligenceServiceTests
             new("workspace-id"), new("goal-id"), new("Harness.slnx")))).SessionId!;
         WorkbenchCodeValidationView escaped = await approved.ValidateAsync(new(
             approvedSession,
+            WorkbenchCodeValidationPhase.Candidate,
             [new(new("../App.cs"), new(Baseline), new("class App { }"))]));
 
         Assert.Equal("invalid_candidate", Assert.Single(escaped.Issues).Code.Value);
         Assert.Equal(0, engine.ValidateCallCount);
+    }
+
+    [Fact]
+    public async Task Applied_validation_phase_crosses_the_boundary_explicitly()
+    {
+        DeterministicCodeIntelligenceEngine engine = new();
+        WorkbenchCodeIntelligenceService service = new(
+            new ContextResolver(ApprovedResolution()),
+            engine);
+        WorkbenchCodeSessionId sessionId = (await service.StartAsync(new(
+            new("workspace-id"), new("goal-id"), new("Harness.slnx")))).SessionId!;
+
+        WorkbenchCodeValidationView result = await service.ValidateAsync(new(
+            sessionId,
+            WorkbenchCodeValidationPhase.Applied,
+            [new(new("src/App.cs"), new(Baseline), new("class App { }"))]));
+
+        Assert.Equal(WorkbenchCodeValidationDisposition.Validated, result.Disposition);
+        Assert.Equal(CodeIntelligenceValidationPhase.Applied, engine.LastValidation?.Phase);
     }
 
     [Fact]
@@ -256,6 +277,7 @@ public sealed class WorkbenchCodeIntelligenceServiceTests
         internal CodeIntelligenceSessionId? ClosedSession { get; private set; }
         internal int OpenCallCount { get; private set; }
         internal int ValidateCallCount { get; private set; }
+        internal CodeIntelligenceValidationRequest? LastValidation { get; private set; }
 
         public ValueTask<CodeIntelligenceSessionResult> OpenAsync(
             CodeIntelligenceOpenRequest request,
@@ -282,6 +304,7 @@ public sealed class WorkbenchCodeIntelligenceServiceTests
             CancellationToken cancellationToken = default)
         {
             ValidateCallCount++;
+            LastValidation = request;
             return ValueTask.FromResult(new CodeIntelligenceValidationResult(
                 request.ContextId,
                 request.SessionId,

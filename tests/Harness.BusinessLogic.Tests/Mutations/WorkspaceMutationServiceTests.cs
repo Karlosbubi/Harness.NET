@@ -1,5 +1,6 @@
 using Harness.BusinessLogic.Mutations;
 using Harness.BusinessLogic.Tools;
+using Harness.BusinessLogic.CodeIntelligence;
 using Harness.DataAccess.Approvals;
 using Harness.DataAccess.Evidence;
 using Harness.DataAccess.Execution;
@@ -12,6 +13,9 @@ namespace Harness.BusinessLogic.Tests.Mutations;
 
 public sealed class WorkspaceMutationServiceTests
 {
+    private const string Baseline =
+        "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
     [Fact]
     public async Task Approved_goal_uses_its_persisted_worktree_and_preserves_correlation()
     {
@@ -85,6 +89,138 @@ public sealed class WorkspaceMutationServiceTests
 
         Assert.Equal("workspace_not_trusted", result.ErrorCode);
         Assert.Equal(0, editor.CallCount);
+    }
+
+    [Fact]
+    public async Task Model_compiler_edit_is_rejected_before_writing_when_validation_rejects_it()
+    {
+        FakeFileEditor editor = new();
+        FakeToolEvidenceStore evidence = new();
+        FakeCodeIntelligenceService codeIntelligence = new()
+        {
+            CandidateDisposition = WorkbenchCodeValidationDisposition.Rejected,
+        };
+        WorkspaceMutationService service = new(
+            new FakeGoalStore(CreateGoal("Approved"), CreateWorktree()),
+            new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)),
+            editor,
+            new FakeDotNetToolRunner(),
+            evidence,
+            new FakeCapabilityApprovalStore(),
+            codeIntelligence);
+
+        FileEditView result = await service.ApplyFileEditAsync(new(
+            "goal-id",
+            new("model-rejected"),
+            "Program.cs",
+            Baseline,
+            "class Program { int value = ; }",
+            FileEditOrigin.Model));
+
+        Assert.Equal("compiler_validation_rejected", result.ErrorCode);
+        Assert.Equal(0, editor.CallCount);
+        Assert.Equal([WorkbenchCodeValidationPhase.Candidate], codeIntelligence.Phases);
+        Assert.Equal(ToolCallState.Failed, Assert.Single(evidence.Items).State);
+        Assert.Contains(
+            "candidateCodeValidation",
+            evidence.Items[0].ResultJson,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Model_compiler_edit_is_checked_before_and_after_the_atomic_write()
+    {
+        FakeFileEditor editor = new();
+        FakeToolEvidenceStore evidence = new();
+        FakeCodeIntelligenceService codeIntelligence = new();
+        WorkspaceMutationService service = new(
+            new FakeGoalStore(CreateGoal("Approved"), CreateWorktree()),
+            new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)),
+            editor,
+            new FakeDotNetToolRunner(),
+            evidence,
+            new FakeCapabilityApprovalStore(),
+            codeIntelligence);
+
+        FileEditView result = await service.ApplyFileEditAsync(new(
+            "goal-id",
+            new("model-validated"),
+            "Program.cs",
+            Baseline,
+            "class Program { }",
+            FileEditOrigin.Model));
+
+        Assert.Null(result.ErrorCode);
+        Assert.Equal(1, editor.CallCount);
+        Assert.Equal(
+            [WorkbenchCodeValidationPhase.Candidate, WorkbenchCodeValidationPhase.Applied],
+            codeIntelligence.Phases);
+        Assert.Equal(
+            WorkbenchCodeValidationDisposition.Validated,
+            result.CandidateCodeValidation?.Disposition);
+        Assert.Equal(
+            WorkbenchCodeValidationDisposition.Validated,
+            result.AppliedCodeValidation?.Disposition);
+        Assert.Equal(ToolCallState.Succeeded, Assert.Single(evidence.Items).State);
+    }
+
+    [Fact]
+    public async Task Model_documentation_edit_records_not_applicable_without_loading_roslyn()
+    {
+        FakeFileEditor editor = new();
+        FakeCodeIntelligenceService codeIntelligence = new();
+        WorkspaceMutationService service = new(
+            new FakeGoalStore(CreateGoal("Approved"), CreateWorktree()),
+            new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)),
+            editor,
+            new FakeDotNetToolRunner(),
+            new FakeToolEvidenceStore(),
+            new FakeCapabilityApprovalStore(),
+            codeIntelligence);
+
+        FileEditView result = await service.ApplyFileEditAsync(new(
+            "goal-id",
+            new("model-docs"),
+            "README.md",
+            null,
+            "# Updated",
+            FileEditOrigin.Model));
+
+        Assert.Null(result.ErrorCode);
+        Assert.Equal(WorkbenchCodeValidationDisposition.NotApplicable,
+            result.CandidateCodeValidation?.Disposition);
+        Assert.Equal(0, codeIntelligence.StartCallCount);
+        Assert.Equal(1, editor.CallCount);
+    }
+
+    [Fact]
+    public async Task Post_apply_validation_failure_is_durable_failed_evidence()
+    {
+        FakeToolEvidenceStore evidence = new();
+        FakeCodeIntelligenceService codeIntelligence = new()
+        {
+            AppliedDisposition = WorkbenchCodeValidationDisposition.Rejected,
+        };
+        WorkspaceMutationService service = new(
+            new FakeGoalStore(CreateGoal("Approved"), CreateWorktree()),
+            new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)),
+            new FakeFileEditor(),
+            new FakeDotNetToolRunner(),
+            evidence,
+            new FakeCapabilityApprovalStore(),
+            codeIntelligence);
+
+        FileEditView result = await service.ApplyFileEditAsync(new(
+            "goal-id",
+            new("model-post-failed"),
+            "Program.cs",
+            Baseline,
+            "class Program { }",
+            FileEditOrigin.Model));
+
+        Assert.Equal("post_apply_validation_failed", result.ErrorCode);
+        Assert.NotNull(result.NewSha256);
+        Assert.Equal(ToolCallState.Failed, Assert.Single(evidence.Items).State);
     }
 
     [Fact]
@@ -501,6 +637,57 @@ public sealed class WorkspaceMutationServiceTests
             throw new NotSupportedException();
         public ValueTask<IReadOnlyList<StoredCapabilityApproval>> ListAsync(string goalId, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
+    }
+
+    private sealed class FakeCodeIntelligenceService : IWorkbenchCodeIntelligenceService
+    {
+        private static readonly WorkbenchCodeSessionId SessionId = new("session-id");
+
+        internal int StartCallCount { get; private set; }
+        internal List<WorkbenchCodeValidationPhase> Phases { get; } = [];
+        internal WorkbenchCodeValidationDisposition CandidateDisposition { get; init; } =
+            WorkbenchCodeValidationDisposition.Validated;
+        internal WorkbenchCodeValidationDisposition AppliedDisposition { get; init; } =
+            WorkbenchCodeValidationDisposition.Validated;
+
+        public ValueTask<WorkbenchCodeSessionView> StartAsync(
+            WorkbenchCodeSessionRequest request,
+            IProgress<WorkbenchCodeLoadProgress>? progress = null,
+            CancellationToken cancellationToken = default)
+        {
+            StartCallCount++;
+            return ValueTask.FromResult(new WorkbenchCodeSessionView(
+                new("context-id"),
+                SessionId,
+                WorkbenchCodeResultState.Ready,
+                []));
+        }
+
+        public ValueTask<WorkbenchCodeValidationView> ValidateAsync(
+            WorkbenchCodeValidationRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            Phases.Add(request.Phase);
+            WorkbenchCodeValidationDisposition disposition =
+                request.Phase is WorkbenchCodeValidationPhase.Candidate
+                    ? CandidateDisposition
+                    : AppliedDisposition;
+            return ValueTask.FromResult(new WorkbenchCodeValidationView(
+                request.SessionId,
+                WorkbenchCodeResultState.Ready,
+                disposition,
+                [],
+                []));
+        }
+
+        public ValueTask<WorkbenchCodeDiagnosticView> SynchronizeAsync(
+            WorkbenchCodeDocumentSnapshot snapshot,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public ValueTask StopAsync(
+            WorkbenchCodeSessionId sessionId,
+            CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
     }
 
     private sealed class FakeGoalStore(

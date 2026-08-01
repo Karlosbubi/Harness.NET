@@ -96,6 +96,108 @@ public sealed class RoslynCodeIntelligenceEngineTests(ITestOutputHelper output) 
     }
 
     [Fact]
+    public async Task Candidate_validation_rejects_an_introduced_compiler_error_without_writing()
+    {
+        const string original = "class Sample { void Run() { } }\n";
+        const string candidate = "class Sample { void Run() { int value = ; } }\n";
+        await CreateProjectAsync(original);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("context-1");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+
+        CodeIntelligenceValidationResult result = await engine.ValidateAsync(new(
+            contextId,
+            session.SessionId!,
+            CodeIntelligenceValidationPhase.Candidate,
+            [new(new("Sample.cs"), new(Hash(original)), new(candidate))]));
+
+        Assert.Equal(CodeIntelligenceValidationDisposition.Rejected, result.Disposition);
+        Assert.Contains(result.Diagnostics, diagnostic =>
+            diagnostic.Kind is CodeIntelligenceDiagnosticDeltaKind.Introduced &&
+            diagnostic.Diagnostic.Source.Value == "Compiler" &&
+            diagnostic.Diagnostic.Severity is CodeIntelligenceDiagnosticSeverity.Error);
+        Assert.Equal(original, await File.ReadAllTextAsync(Path.Combine(root, "Sample.cs")));
+    }
+
+    [Fact]
+    public async Task Candidate_validation_preserves_existing_errors_and_reports_warning_evidence()
+    {
+        const string original = "class Sample { Missing value; }\n";
+        const string candidate = "class Sample { Missing value; void Run() { int unused = 1; } }\n";
+        await CreateProjectAsync(original);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("context-1");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+
+        CodeIntelligenceValidationResult result = await engine.ValidateAsync(new(
+            contextId,
+            session.SessionId!,
+            CodeIntelligenceValidationPhase.Candidate,
+            [new(new("Sample.cs"), new(Hash(original)), new(candidate))]));
+
+        Assert.Equal(CodeIntelligenceValidationDisposition.Validated, result.Disposition);
+        Assert.Contains(result.Diagnostics, diagnostic =>
+            diagnostic.Kind is CodeIntelligenceDiagnosticDeltaKind.Retained &&
+            diagnostic.Diagnostic.Severity is CodeIntelligenceDiagnosticSeverity.Error);
+        Assert.Contains(result.Diagnostics, diagnostic =>
+            diagnostic.Kind is CodeIntelligenceDiagnosticDeltaKind.Introduced &&
+            diagnostic.Diagnostic.Severity is CodeIntelligenceDiagnosticSeverity.Warning);
+    }
+
+    [Fact]
+    public async Task Applied_validation_requires_the_persisted_candidate_and_updates_the_session()
+    {
+        const string original = "class Sample { }\n";
+        const string candidate = "class Sample { int Value { get; } }\n";
+        await CreateProjectAsync(original);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("context-1");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+        _ = await engine.ValidateAsync(new(
+            contextId,
+            session.SessionId!,
+            CodeIntelligenceValidationPhase.Candidate,
+            [new(new("Sample.cs"), new(Hash(original)), new(candidate))]));
+        await File.WriteAllTextAsync(Path.Combine(root, "Sample.cs"), candidate, Utf8WithoutBom);
+
+        CodeIntelligenceValidationResult mismatch = await engine.ValidateAsync(new(
+            contextId,
+            session.SessionId!,
+            CodeIntelligenceValidationPhase.Applied,
+            [new(new("Sample.cs"), new(Hash(candidate)), new(original))]));
+        CodeIntelligenceValidationResult applied = await engine.ValidateAsync(new(
+            contextId,
+            session.SessionId!,
+            CodeIntelligenceValidationPhase.Applied,
+            [new(new("Sample.cs"), new(Hash(candidate)), new(candidate))]));
+
+        Assert.Equal(CodeIntelligenceResultState.Stale, mismatch.State);
+        Assert.Equal("applied_content_mismatch", Assert.Single(mismatch.Issues).Code.Value);
+        Assert.Equal(CodeIntelligenceValidationDisposition.Validated, applied.Disposition);
+    }
+
+    [Fact]
+    public async Task Unsupported_file_validation_is_explicitly_not_applicable()
+    {
+        const string original = "class Sample { }\n";
+        const string documentation = "# Notes\n";
+        await CreateProjectAsync(original);
+        await File.WriteAllTextAsync(Path.Combine(root, "README.md"), documentation);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("context-1");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+
+        CodeIntelligenceValidationResult result = await engine.ValidateAsync(new(
+            contextId,
+            session.SessionId!,
+            CodeIntelligenceValidationPhase.Candidate,
+            [new(new("README.md"), new(Hash(documentation)), new("# Updated\n"))]));
+
+        Assert.Equal(CodeIntelligenceValidationDisposition.NotApplicable, result.Disposition);
+        Assert.Equal("document_not_in_workspace", Assert.Single(result.Issues).Code.Value);
+    }
+
+    [Fact]
     public async Task Invalid_project_returns_an_actionable_degraded_state()
     {
         await CreateProjectAsync("class Sample { }\n");

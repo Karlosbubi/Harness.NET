@@ -119,9 +119,16 @@ public sealed record CodeIntelligenceCandidateEdit(
     CodeIntelligenceBaselineHash BaselineHash,
     CodeIntelligenceText Text);
 
+public enum CodeIntelligenceValidationPhase
+{
+    Candidate,
+    Applied,
+}
+
 public sealed record CodeIntelligenceValidationRequest(
     CodeIntelligenceContextId ContextId,
     CodeIntelligenceSessionId SessionId,
+    CodeIntelligenceValidationPhase Phase,
     IReadOnlyList<CodeIntelligenceCandidateEdit> Edits);
 
 public enum CodeIntelligenceValidationDisposition

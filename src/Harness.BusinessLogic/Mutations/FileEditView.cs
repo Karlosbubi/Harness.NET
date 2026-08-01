@@ -1,3 +1,4 @@
+using Harness.BusinessLogic.CodeIntelligence;
 using Harness.BusinessLogic.Tools;
 
 namespace Harness.BusinessLogic.Mutations;
@@ -11,4 +12,6 @@ public sealed record FileEditView(
     int BytesWritten,
     bool WasCreated,
     string? ErrorCode,
-    string? Error);
+    string? Error,
+    WorkbenchCodeValidationView? CandidateCodeValidation = null,
+    WorkbenchCodeValidationView? AppliedCodeValidation = null);

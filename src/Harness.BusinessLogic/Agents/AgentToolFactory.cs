@@ -59,7 +59,7 @@ internal sealed class AgentToolFactory(
                 IsWithinFileAreas(relativePath, fileAreas)
                     ? mutationService.ApplyFileEditAsync(
                         new(goalId.Value, new ToolCorrelationId(correlationId), relativePath,
-                            expectedSha256, content),
+                            expectedSha256, content, FileEditOrigin.Model),
                         cancellationToken)
                     : ValueTask.FromResult(new FileEditView(
                         goalId.Value,
@@ -72,7 +72,7 @@ internal sealed class AgentToolFactory(
                         "task_file_area_denied",
                         "The delegated task does not authorize edits in this file area.")),
             Options("apply_file_edit",
-                "Apply one atomic file replacement in the approved goal worktree.")),
+                "Validate and atomically apply one file replacement in the approved goal worktree.")),
         AgentToolKind.Build => AIFunctionFactory.Create(
             (string correlationId, CancellationToken cancellationToken) =>
                 mutationService.RunDotNetAsync(
