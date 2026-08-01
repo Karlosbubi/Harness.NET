@@ -39,6 +39,24 @@ public interface ICodeIntelligenceEngine
         CodeIntelligenceInteractiveSnapshot snapshot,
         CancellationToken cancellationToken = default);
 
+    ValueTask<CodeIntelligenceRenamePreviewResult> PreviewRenameAsync(
+        CodeIntelligenceRenamePreviewRequest request,
+        CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult(new CodeIntelligenceRenamePreviewResult(
+            request.Snapshot.ContextId,
+            request.Snapshot.SessionId,
+            request.Snapshot.Path,
+            request.Snapshot.BufferVersion,
+            CodeIntelligenceResultState.Failed,
+            CodeIntelligenceTransformationDisposition.Rejected,
+            Symbol: null,
+            request.NewName,
+            [],
+            [],
+            [],
+            Fingerprint: null,
+            [new(new("rename_not_supported"), new("Semantic rename is unavailable."))]));
+
     ValueTask CloseAsync(
         CodeIntelligenceSessionId sessionId,
         CancellationToken cancellationToken = default);

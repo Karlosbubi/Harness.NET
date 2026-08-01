@@ -8,6 +8,8 @@ internal enum AgentToolKind
     InspectDotNet,
     SemanticContext,
     ApplyFileEdit,
+    PreviewRename,
+    ApplyRename,
     Build,
     Test,
     ListEvidence,

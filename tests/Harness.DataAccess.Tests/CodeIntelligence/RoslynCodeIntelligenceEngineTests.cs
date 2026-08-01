@@ -298,6 +298,204 @@ public sealed class RoslynCodeIntelligenceEngineTests(ITestOutputHelper output) 
     }
 
     [Fact]
+    public async Task Rename_preview_resolves_a_partial_type_across_files_without_writing()
+    {
+        const string declaration = "public partial class Widget { public void Run() { } }\n";
+        const string use = "public partial class Widget { }\nclass Use { Widget value = new(); }\n";
+        await CreateProjectAsync(declaration);
+        await File.WriteAllTextAsync(Path.Combine(root, "Use.cs"), use, Utf8WithoutBom);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("rename-context");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+        int offset = declaration.IndexOf("Widget", StringComparison.Ordinal) + 2;
+
+        CodeIntelligenceRenamePreviewResult result = await engine.PreviewRenameAsync(new(
+            InteractiveSnapshot(contextId, session.SessionId!, declaration, offset),
+            new("Gadget")));
+
+        Assert.Equal(CodeIntelligenceTransformationDisposition.Ready, result.Disposition);
+        Assert.NotNull(result.Symbol);
+        Assert.NotNull(result.Fingerprint);
+        Assert.Equal(2, result.Edits.Count);
+        Assert.All(result.Edits, edit => Assert.Contains("Gadget", edit.Text.Value, StringComparison.Ordinal));
+        Assert.Contains(result.Edits, edit => edit.OriginalText.Value == declaration);
+        Assert.Contains(result.Edits, edit => edit.OriginalText.Value == use);
+        Assert.Equal(declaration, await File.ReadAllTextAsync(Path.Combine(root, "Sample.cs")));
+        Assert.Equal(use, await File.ReadAllTextAsync(Path.Combine(root, "Use.cs")));
+    }
+
+    [Fact]
+    public async Task Rename_preview_reports_semantic_name_conflicts_without_a_fingerprint()
+    {
+        const string source = "class Existing { } class Widget { Widget value = new(); }\n";
+        await CreateProjectAsync(source);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("rename-conflict-context");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+        int offset = source.IndexOf("Widget", StringComparison.Ordinal) + 2;
+
+        CodeIntelligenceRenamePreviewResult result = await engine.PreviewRenameAsync(new(
+            InteractiveSnapshot(contextId, session.SessionId!, source, offset),
+            new("Existing")));
+
+        Assert.Equal(CodeIntelligenceTransformationDisposition.Conflicted, result.Disposition);
+        Assert.Null(result.Fingerprint);
+        Assert.Contains(result.Conflicts, conflict =>
+            conflict.Kind is CodeIntelligenceRenameConflictKind.Semantic);
+        Assert.Equal(source, await File.ReadAllTextAsync(Path.Combine(root, "Sample.cs")));
+    }
+
+    [Fact]
+    public async Task Rename_preview_rejects_invalid_identifiers_before_resolving_a_symbol()
+    {
+        const string source = "class Widget { }\n";
+        await CreateProjectAsync(source);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("rename-invalid-context");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+
+        CodeIntelligenceRenamePreviewResult result = await engine.PreviewRenameAsync(new(
+            InteractiveSnapshot(contextId, session.SessionId!, source, 7),
+            new("class")));
+
+        Assert.Equal(CodeIntelligenceTransformationDisposition.Rejected, result.Disposition);
+        Assert.Equal("invalid_identifier", Assert.Single(result.Issues).Code.Value);
+    }
+
+    [Fact]
+    public async Task Rename_preview_targets_one_overload_and_its_bound_calls()
+    {
+        const string source = """
+            class Sample
+            {
+                void Run(int value) { }
+                void Run(string value) { }
+                void Test() { Run(1); Run("x"); }
+            }
+            """;
+        await CreateProjectAsync(source);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("rename-overload-context");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+        int offset = source.IndexOf("Run(int", StringComparison.Ordinal) + 2;
+
+        CodeIntelligenceRenamePreviewResult result = await engine.PreviewRenameAsync(new(
+            InteractiveSnapshot(contextId, session.SessionId!, source, offset),
+            new("Execute")));
+
+        CodeIntelligenceRenameEdit edit = Assert.Single(result.Edits);
+        Assert.Equal(CodeIntelligenceTransformationDisposition.Ready, result.Disposition);
+        Assert.Contains("Execute(int", edit.Text.Value, StringComparison.Ordinal);
+        Assert.Contains("Execute(1)", edit.Text.Value, StringComparison.Ordinal);
+        Assert.Contains("Run(string", edit.Text.Value, StringComparison.Ordinal);
+        Assert.Contains("Run(\"x\")", edit.Text.Value, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Rename_preview_reports_metadata_symbols_as_uneditable()
+    {
+        const string source = "class Sample { string Value = string.Empty; }\n";
+        await CreateProjectAsync(source);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("rename-metadata-context");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+        int offset = source.IndexOf("string Value", StringComparison.Ordinal) + 2;
+
+        CodeIntelligenceRenamePreviewResult result = await engine.PreviewRenameAsync(new(
+            InteractiveSnapshot(contextId, session.SessionId!, source, offset),
+            new("Text")));
+
+        Assert.Equal(CodeIntelligenceTransformationDisposition.Conflicted, result.Disposition);
+        Assert.Contains(result.Conflicts, conflict =>
+            conflict.Kind is CodeIntelligenceRenameConflictKind.Metadata);
+    }
+
+    [Fact]
+    public async Task Rename_preview_keeps_a_large_bounded_file_set_complete()
+    {
+        const string declaration = "public class Widget { }\n";
+        await CreateProjectAsync(declaration);
+        for (int index = 0; index < 24; index++)
+        {
+            await File.WriteAllTextAsync(
+                Path.Combine(root, $"Use{index:D2}.cs"),
+                $"class Use{index:D2} {{ Widget value = new(); }}\n",
+                Utf8WithoutBom);
+        }
+
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("rename-large-context");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+
+        CodeIntelligenceRenamePreviewResult result = await engine.PreviewRenameAsync(new(
+            InteractiveSnapshot(contextId, session.SessionId!, declaration, 15),
+            new("Gadget")));
+
+        Assert.Equal(CodeIntelligenceTransformationDisposition.Ready, result.Disposition);
+        Assert.Equal(25, result.Edits.Count);
+        Assert.Equal(25, result.Edits.Select(edit => edit.Path.Value).Distinct().Count());
+        Assert.NotNull(result.Fingerprint);
+    }
+
+    [Fact]
+    public async Task Rename_preview_rejects_an_unwritable_affected_source_file()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        const string declaration = "public class Widget { }\n";
+        const string use = "class Use { Widget value = new(); }\n";
+        await CreateProjectAsync(declaration);
+        string usePath = Path.Combine(root, "Use.cs");
+        await File.WriteAllTextAsync(usePath, use, Utf8WithoutBom);
+        File.SetUnixFileMode(usePath, UnixFileMode.UserRead | UnixFileMode.GroupRead | UnixFileMode.OtherRead);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("rename-unwritable-context");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+
+        CodeIntelligenceRenamePreviewResult result = await engine.PreviewRenameAsync(new(
+            InteractiveSnapshot(contextId, session.SessionId!, declaration, 15),
+            new("Gadget")));
+
+        Assert.Equal(CodeIntelligenceTransformationDisposition.Conflicted, result.Disposition);
+        Assert.Contains(result.Conflicts, conflict =>
+            conflict.Kind is CodeIntelligenceRenameConflictKind.Uneditable &&
+            conflict.Path?.Value == "Use.cs");
+    }
+
+    [Fact]
+    public async Task Rename_preview_coalesces_linked_documents_by_physical_path()
+    {
+        const string shared = "public class Widget { }\n";
+        await CreateLinkedSolutionAsync(shared);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("rename-linked-context");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(new(
+            contextId,
+            new(root),
+            new("Linked.slnx"),
+            CodeIntelligenceSourceKind.ApprovedGoalWorktree));
+
+        CodeIntelligenceRenamePreviewResult result = await engine.PreviewRenameAsync(new(
+            InteractiveSnapshot(
+                contextId,
+                session.SessionId!,
+                shared,
+                shared,
+                15,
+                "Shared.cs"),
+            new("Gadget")));
+
+        Assert.Equal(CodeIntelligenceTransformationDisposition.Ready, result.Disposition);
+        Assert.Equal(3, result.Edits.Count);
+        Assert.Single(result.Edits, edit => edit.Path.Value == "Shared.cs");
+        Assert.DoesNotContain(result.Conflicts, conflict =>
+            conflict.Kind is CodeIntelligenceRenameConflictKind.InconsistentLinkedFile);
+    }
+
+    [Fact]
     public async Task Invalid_project_returns_an_actionable_degraded_state()
     {
         await CreateProjectAsync("class Sample { }\n");
@@ -454,6 +652,44 @@ public sealed class RoslynCodeIntelligenceEngineTests(ITestOutputHelper output) 
             Path.Combine(root, "Sample.cs"),
             source,
             Utf8WithoutBom);
+    }
+
+    private async ValueTask CreateLinkedSolutionAsync(string shared)
+    {
+        Directory.CreateDirectory(Path.Combine(root, "First"));
+        Directory.CreateDirectory(Path.Combine(root, "Second"));
+        await File.WriteAllTextAsync(Path.Combine(root, "global.json"), """
+            {
+              "sdk": {
+                "version": "10.0.201",
+                "rollForward": "latestPatch",
+                "allowPrerelease": false
+              }
+            }
+            """);
+        const string project = """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+              <ItemGroup><Compile Include="../Shared.cs" Link="Shared.cs" /></ItemGroup>
+            </Project>
+            """;
+        await File.WriteAllTextAsync(Path.Combine(root, "First", "First.csproj"), project);
+        await File.WriteAllTextAsync(Path.Combine(root, "Second", "Second.csproj"), project);
+        await File.WriteAllTextAsync(Path.Combine(root, "Shared.cs"), shared, Utf8WithoutBom);
+        await File.WriteAllTextAsync(
+            Path.Combine(root, "First", "Use.cs"),
+            "class FirstUse { Widget value = new(); }\n",
+            Utf8WithoutBom);
+        await File.WriteAllTextAsync(
+            Path.Combine(root, "Second", "Use.cs"),
+            "class SecondUse { Widget value = new(); }\n",
+            Utf8WithoutBom);
+        await File.WriteAllTextAsync(Path.Combine(root, "Linked.slnx"), """
+            <Solution>
+              <Project Path="First/First.csproj" />
+              <Project Path="Second/Second.csproj" />
+            </Solution>
+            """);
     }
 
     private RoslynCodeIntelligenceEngine CreateEngine() => new(

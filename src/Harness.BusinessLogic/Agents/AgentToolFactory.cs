@@ -3,6 +3,7 @@ using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Mutations;
 using Harness.BusinessLogic.Retrieval;
+using Harness.BusinessLogic.CodeIntelligence;
 using Harness.BusinessLogic.Tools;
 using Microsoft.Extensions.AI;
 
@@ -73,6 +74,26 @@ internal sealed class AgentToolFactory(
                         "The delegated task does not authorize edits in this file area.")),
             Options("apply_file_edit",
                 "Validate and atomically apply one file replacement in the approved goal worktree.")),
+        AgentToolKind.PreviewRename => AIFunctionFactory.Create(
+            (string relativePath, string expectedSha256, string content, int line, int character,
+                    string newName, CancellationToken cancellationToken) =>
+                mutationService.PreviewRenameAsync(
+                    RenameRequest(goalId, relativePath, expectedSha256, content, line, character,
+                        newName, fileAreas),
+                    cancellationToken),
+            Options("preview_symbol_rename",
+                "Resolve a Roslyn symbol rename and return its complete bounded preview and fingerprint.")),
+        AgentToolKind.ApplyRename => AIFunctionFactory.Create(
+            (string correlationId, string fingerprint, string relativePath, string expectedSha256,
+                    string content, int line, int character, string newName,
+                    CancellationToken cancellationToken) =>
+                mutationService.ApplyRenameAsync(new(
+                    RenameRequest(goalId, relativePath, expectedSha256, content, line, character,
+                        newName, fileAreas),
+                    new ToolCorrelationId(correlationId),
+                    new(fingerprint)), cancellationToken),
+            Options("apply_symbol_rename",
+                "Recompute and atomically apply an accepted Roslyn rename preview by fingerprint.")),
         AgentToolKind.Build => AIFunctionFactory.Create(
             (string correlationId, CancellationToken cancellationToken) =>
                 mutationService.RunDotNetAsync(
@@ -96,6 +117,25 @@ internal sealed class AgentToolFactory(
         role is AgentRole.Lead
             ? GoalWorkspaceScope.Original
             : GoalWorkspaceScope.ApprovedWorktree;
+
+    private static RenameSymbolPreviewRequest RenameRequest(
+        GoalId goalId,
+        string relativePath,
+        string expectedSha256,
+        string content,
+        int line,
+        int character,
+        string newName,
+        IReadOnlyList<AgentFileArea> fileAreas) => new(
+        goalId.Value,
+        new(relativePath),
+        new(expectedSha256),
+        new(1),
+        new(content),
+        new(line, character),
+        new(newName),
+        RenameSymbolOrigin.Model,
+        fileAreas.Select(area => new RenameFileArea(area.Value)).ToArray());
 
     internal static bool IsWithinFileAreas(
         string relativePath,

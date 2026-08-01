@@ -39,6 +39,23 @@ public interface IWorkbenchCodeIntelligenceService
         WorkbenchCodeInteractiveSnapshot snapshot,
         CancellationToken cancellationToken = default);
 
+    ValueTask<WorkbenchCodeRenamePreviewView> PreviewRenameAsync(
+        WorkbenchCodeRenamePreviewRequest request,
+        CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult(new WorkbenchCodeRenamePreviewView(
+            request.Snapshot.SessionId,
+            request.Snapshot.Path,
+            request.Snapshot.BufferVersion,
+            WorkbenchCodeResultState.Failed,
+            WorkbenchCodeTransformationDisposition.Rejected,
+            Symbol: null,
+            request.NewName,
+            [],
+            [],
+            [],
+            Fingerprint: null,
+            [new(new("rename_not_supported"), new("Semantic rename is unavailable."))]));
+
     ValueTask StopAsync(
         WorkbenchCodeSessionId sessionId,
         CancellationToken cancellationToken = default);

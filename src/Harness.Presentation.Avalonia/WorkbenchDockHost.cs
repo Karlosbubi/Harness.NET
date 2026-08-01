@@ -20,6 +20,7 @@ using Harness.BusinessLogic.Evidence;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Layouts;
+using Harness.BusinessLogic.Mutations;
 using Harness.BusinessLogic.Tools;
 using Harness.BusinessLogic.Workspaces;
 using Harness.UI.Avalonia;
@@ -35,6 +36,7 @@ internal sealed class WorkbenchDockHost
     private readonly IWorkbenchInspectionService inspectionService;
     private readonly IWorkbenchDocumentService documentService;
     private readonly IWorkbenchCodeIntelligenceService codeIntelligenceService;
+    private readonly IWorkspaceMutationService? mutationService;
     private readonly IWorkbenchLayoutService layoutService;
     private readonly IWorkbenchDocumentPrompt documentPrompt;
     private readonly Func<AvaloniaShellState> state;
@@ -133,12 +135,14 @@ internal sealed class WorkbenchDockHost
         Control conversation,
         Control goalContext,
         CancellationToken cancellationToken,
-        Func<bool, Task>? manageWorkspace = null)
+        Func<bool, Task>? manageWorkspace = null,
+        IWorkspaceMutationService? mutationService = null)
     {
         this.runOutputService = runOutputService;
         this.inspectionService = inspectionService;
         this.documentService = documentService;
         this.codeIntelligenceService = codeIntelligenceService;
+        this.mutationService = mutationService;
         this.layoutService = layoutService;
         this.documentPrompt = documentPrompt;
         this.state = state;
@@ -1832,6 +1836,11 @@ internal sealed class WorkbenchDockHost
                 args.Handled = true;
                 await NavigateSymbolAsync(session, references: true);
             }
+            else if (args.Key is Key.F2 && args.KeyModifiers == KeyModifiers.None)
+            {
+                args.Handled = true;
+                await RenameSymbolAsync(session);
+            }
             else if (args.Key is Key.S && args.KeyModifiers.HasFlag(KeyModifiers.Control))
             {
                 args.Handled = true;
@@ -1949,6 +1958,160 @@ internal sealed class WorkbenchDockHost
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
+        }
+    }
+
+    private async ValueTask RenameSymbolAsync(SourceDocumentSession session)
+    {
+        if (mutationService is null || session.View.GoalId is null ||
+            session.View.Access is not WorkbenchDocumentAccess.Editable ||
+            !CanUseSemanticAssistance(session) || OwnerWindow() is not { } owner)
+        {
+            session.SetStatus("Semantic rename requires an editable approved goal source document.");
+            return;
+        }
+
+        RenameNameDialog name = new();
+        await name.ShowDialog(owner);
+        if (name.Result is not { } newName)
+        {
+            return;
+        }
+
+        PendingWorkbenchRename? pending = await PreviewActiveRenameAsync(newName);
+        if (pending is null)
+        {
+            return;
+        }
+
+        RenamePreviewDialog preview = new(pending.Preview);
+        if (!await preview.ShowDialog<bool>(owner))
+        {
+            session.SetStatus("Rename preview closed without changing files.");
+            return;
+        }
+
+        _ = await ApplyActiveRenameAsync(pending);
+    }
+
+    internal async ValueTask<PendingWorkbenchRename?> PreviewActiveRenameAsync(string newName)
+    {
+        if (mutationService is null || activeDocument?.Id is not { } id ||
+            !sourceDocuments.TryGetValue(id, out SourceDocumentSession? session) ||
+            session.View.GoalId is null || session.View.Sha256 is null ||
+            session.View.Access is not WorkbenchDocumentAccess.Editable ||
+            session.View.IsTruncated)
+        {
+            return null;
+        }
+
+        (WorkbenchCodeBufferVersion version, CancellationToken token) =
+            session.BeginInteraction(cancellationToken);
+        RenameSymbolPreviewRequest request = new(
+            session.View.GoalId.Value,
+            new(session.View.Path.Value),
+            new(session.View.Sha256.Value),
+            version,
+            new(session.Editor.Text),
+            new(
+                session.Editor.TextArea.Caret.Line - 1,
+                session.Editor.TextArea.Caret.Column - 1),
+            new(newName),
+            RenameSymbolOrigin.Human,
+            []);
+        session.SetBusy(true, "Resolving rename with Roslyn…");
+        try
+        {
+            RenameSymbolPreviewView result = await mutationService.PreviewRenameAsync(request, token);
+            if (result.Preview is null || result.ErrorCode is not null)
+            {
+                session.SetStatus(result.Error ?? "Rename preview is unavailable.");
+                return null;
+            }
+
+            if (result.Preview.Disposition is not WorkbenchCodeTransformationDisposition.Ready ||
+                result.Preview.Fingerprint is null)
+            {
+                session.SetStatus(result.Preview.Conflicts.FirstOrDefault()?.Message.Value ??
+                    result.Preview.Issues.FirstOrDefault()?.Message.Value ??
+                    "Rename has conflicts and cannot be applied.");
+            }
+            else
+            {
+                session.SetStatus(
+                    $"Rename preview ready · {result.Preview.Edits.Count} affected file(s).");
+            }
+
+            return new(request, result.Preview);
+        }
+        catch (OperationCanceledException)
+        {
+            session.SetStatus("Rename preview cancelled.");
+            return null;
+        }
+        finally
+        {
+            session.SetBusy(false);
+            await InvalidateCodeIntelligenceAsync();
+        }
+    }
+
+    internal async ValueTask<RenameSymbolApplyView?> ApplyActiveRenameAsync(
+        PendingWorkbenchRename pending)
+    {
+        if (mutationService is null || pending.Preview.Fingerprint is null ||
+            activeDocument?.Id is not { } id ||
+            !sourceDocuments.TryGetValue(id, out SourceDocumentSession? active))
+        {
+            return null;
+        }
+
+        active.SetBusy(true, "Applying the accepted rename atomically…");
+        try
+        {
+            RenameSymbolApplyView result = await mutationService.ApplyRenameAsync(new(
+                pending.Request,
+                NewEditCorrelation(),
+                pending.Preview.Fingerprint), cancellationToken);
+            if (result.ErrorCode is not null)
+            {
+                active.SetStatus(result.Error ?? "Rename was not applied.");
+                return result;
+            }
+
+            foreach (WorkbenchCodeRenameEdit edit in result.Preview!.Edits)
+            {
+                SourceDocumentSession? open = sourceDocuments.Values.FirstOrDefault(candidate =>
+                    candidate.View.Path.Value.Equals(edit.Path.Value, StringComparison.Ordinal));
+                FileEditView? evidence = result.Files.FirstOrDefault(file =>
+                    file.Path.Equals(edit.Path.Value, StringComparison.Ordinal));
+                if (open is null || evidence?.NewSha256 is null)
+                {
+                    continue;
+                }
+
+                open.ReplaceWith(open.View with
+                {
+                    Content = new(edit.Text.Value),
+                    Sha256 = new(evidence.NewSha256),
+                    Size = new(evidence.BytesWritten),
+                });
+                open.SetStatus(
+                    $"Renamed to {pending.Preview.NewName.Value} · compiler-verified atomic apply.");
+            }
+
+            await InvalidateCodeIntelligenceAsync();
+            ScheduleDiagnostics(active, immediate: true);
+            return result;
+        }
+        catch (OperationCanceledException)
+        {
+            active.SetStatus("Rename cancelled; no partial file set was accepted.");
+            return null;
+        }
+        finally
+        {
+            active.SetBusy(false);
         }
     }
 

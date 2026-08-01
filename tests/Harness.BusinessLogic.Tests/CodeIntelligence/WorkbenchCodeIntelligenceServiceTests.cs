@@ -245,6 +245,56 @@ public sealed class WorkbenchCodeIntelligenceServiceTests
     }
 
     [Fact]
+    public async Task Newer_buffer_discards_an_in_flight_rename_preview()
+    {
+        TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        DeterministicCodeIntelligenceEngine engine = new()
+        {
+            Renames = async (request, cancellationToken) =>
+            {
+                entered.SetResult();
+                await release.Task.WaitAsync(cancellationToken);
+                return new(
+                    request.Snapshot.ContextId,
+                    request.Snapshot.SessionId,
+                    request.Snapshot.Path,
+                    request.Snapshot.BufferVersion,
+                    CodeIntelligenceResultState.Ready,
+                    CodeIntelligenceTransformationDisposition.Ready,
+                    new("Class|C"),
+                    request.NewName,
+                    [new(request.Snapshot.Path, request.Snapshot.BaselineHash,
+                        request.Snapshot.Text,
+                        new("class Renamed { }"), 1)],
+                    [],
+                    [],
+                    new(Baseline),
+                    []);
+            },
+        };
+        WorkbenchCodeIntelligenceService service = new(
+            new ContextResolver(ApprovedResolution()), engine);
+        WorkbenchCodeSessionId sessionId = (await service.StartAsync(new(
+            new("workspace-id"), new("goal-id"), new("Harness.slnx")))).SessionId!;
+        _ = await service.SynchronizeAsync(Snapshot(sessionId, 1, "class C { }"));
+        WorkbenchCodeInteractiveSnapshot snapshot = new(
+            sessionId, new("src/App.cs"), new(Baseline), new(1),
+            new("class C { }"), new(0, 6));
+
+        Task<WorkbenchCodeRenamePreviewView> pending = service.PreviewRenameAsync(new(
+            snapshot, new("Renamed"))).AsTask();
+        await entered.Task;
+        _ = await service.SynchronizeAsync(Snapshot(sessionId, 2, "class C { int X; }"));
+        release.SetResult();
+        WorkbenchCodeRenamePreviewView result = await pending;
+
+        Assert.Equal(WorkbenchCodeResultState.Stale, result.State);
+        Assert.Equal("stale_buffer", Assert.Single(result.Issues).Code.Value);
+        Assert.Null(result.Fingerprint);
+    }
+
+    [Fact]
     public async Task Stop_invalidates_the_session_and_disposes_the_engine_state()
     {
         DeterministicCodeIntelligenceEngine engine = new();
@@ -324,6 +374,8 @@ public sealed class WorkbenchCodeIntelligenceServiceTests
             ValueTask<CodeIntelligenceDiagnosticResult>>? Diagnostics { get; init; }
         internal Func<CodeIntelligenceCompletionRequest, CancellationToken,
             ValueTask<CodeIntelligenceCompletionResult>>? Completions { get; init; }
+        internal Func<CodeIntelligenceRenamePreviewRequest, CancellationToken,
+            ValueTask<CodeIntelligenceRenamePreviewResult>>? Renames { get; init; }
         internal CodeIntelligenceOpenRequest? OpenRequest { get; private set; }
         internal CodeIntelligenceSessionId? ClosedSession { get; private set; }
         internal int OpenCallCount { get; private set; }
@@ -385,6 +437,11 @@ public sealed class WorkbenchCodeIntelligenceServiceTests
         public ValueTask<CodeIntelligenceNavigationResult> FindReferencesAsync(
             CodeIntelligenceInteractiveSnapshot snapshot,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<CodeIntelligenceRenamePreviewResult> PreviewRenameAsync(
+            CodeIntelligenceRenamePreviewRequest request,
+            CancellationToken cancellationToken = default) => Renames is null
+            ? throw new NotSupportedException()
+            : Renames(request, cancellationToken);
 
         public ValueTask CloseAsync(
             CodeIntelligenceSessionId sessionId,

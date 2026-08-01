@@ -29,6 +29,8 @@ public sealed class AgentToolPolicyTests
         IReadOnlyList<AgentToolKind> tools = AgentToolPolicy.AllowedFor(AgentRole.Implementer);
 
         Assert.Contains(AgentToolKind.ApplyFileEdit, tools);
+        Assert.Contains(AgentToolKind.PreviewRename, tools);
+        Assert.Contains(AgentToolKind.ApplyRename, tools);
         Assert.Contains(AgentToolKind.Build, tools);
         Assert.Contains(AgentToolKind.Test, tools);
         Assert.Contains(AgentToolKind.SemanticContext, tools);
@@ -52,7 +54,7 @@ public sealed class AgentToolPolicyTests
     [InlineData(AgentRole.Lead,
         "read_file,search_text,inspect_git,inspect_dotnet,search_semantic_context")]
     [InlineData(AgentRole.Implementer,
-        "read_file,search_text,inspect_git,inspect_dotnet,search_semantic_context,apply_file_edit,dotnet_build,dotnet_test")]
+        "read_file,search_text,inspect_git,inspect_dotnet,search_semantic_context,apply_file_edit,preview_symbol_rename,apply_symbol_rename,dotnet_build,dotnet_test")]
     [InlineData(AgentRole.Reviewer,
         "read_file,search_text,inspect_git,inspect_dotnet,search_semantic_context,list_tool_evidence")]
     public void Factory_exposes_only_the_closed_role_scope(

@@ -224,6 +224,87 @@ public sealed class WorkspaceMutationServiceTests
     }
 
     [Fact]
+    public async Task Fingerprinted_rename_applies_one_atomic_batch_and_records_post_validation()
+    {
+        FakeFileEditor editor = new();
+        FakeToolEvidenceStore evidence = new();
+        FakeCodeIntelligenceService codeIntelligence = new() { RenameFingerprint = Baseline };
+        WorkspaceMutationService service = new(
+            new FakeGoalStore(CreateGoal("Approved"), CreateWorktree()),
+            new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)),
+            editor,
+            new FakeDotNetToolRunner(),
+            evidence,
+            new FakeCapabilityApprovalStore(),
+            codeIntelligence);
+        RenameSymbolPreviewRequest previewRequest = RenameRequest(
+            RenameSymbolOrigin.Human, []);
+
+        RenameSymbolApplyView result = await service.ApplyRenameAsync(new(
+            previewRequest,
+            new("rename-apply"),
+            new(Baseline)));
+
+        Assert.Null(result.ErrorCode);
+        Assert.Equal(1, editor.BatchCallCount);
+        Assert.Equal(2, result.Files.Count);
+        Assert.Equal(WorkbenchCodeValidationDisposition.Validated,
+            result.AppliedCodeValidation?.Disposition);
+        Assert.Equal([WorkbenchCodeValidationPhase.Applied], codeIntelligence.Phases);
+        StoredToolCall item = Assert.Single(evidence.Items);
+        Assert.Equal(ToolKind.Rename, item.Tool);
+        Assert.Equal(ToolCallState.Succeeded, item.State);
+        Assert.Contains("fingerprint", item.RequestJson, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("originalText", item.ResultJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Changed_rename_fingerprint_is_rejected_before_the_batch_boundary()
+    {
+        FakeFileEditor editor = new();
+        FakeCodeIntelligenceService codeIntelligence = new() { RenameFingerprint = Baseline };
+        WorkspaceMutationService service = new(
+            new FakeGoalStore(CreateGoal("Approved"), CreateWorktree()),
+            new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)),
+            editor,
+            new FakeDotNetToolRunner(),
+            new FakeToolEvidenceStore(),
+            new FakeCapabilityApprovalStore(),
+            codeIntelligence);
+
+        RenameSymbolApplyView result = await service.ApplyRenameAsync(new(
+            RenameRequest(RenameSymbolOrigin.Human, []),
+            new("rename-stale"),
+            new(new string('a', 64))));
+
+        Assert.Equal("preview_changed", result.ErrorCode);
+        Assert.Equal(0, editor.BatchCallCount);
+    }
+
+    [Fact]
+    public async Task Implementer_rename_fails_closed_when_any_affected_path_is_out_of_grant()
+    {
+        FakeFileEditor editor = new();
+        FakeCodeIntelligenceService codeIntelligence = new() { RenameFingerprint = Baseline };
+        WorkspaceMutationService service = new(
+            new FakeGoalStore(CreateGoal("Approved"), CreateWorktree()),
+            new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)),
+            editor,
+            new FakeDotNetToolRunner(),
+            new FakeToolEvidenceStore(),
+            new FakeCapabilityApprovalStore(),
+            codeIntelligence);
+
+        RenameSymbolApplyView result = await service.ApplyRenameAsync(new(
+            RenameRequest(RenameSymbolOrigin.Model, [new("src")]),
+            new("rename-denied"),
+            new(Baseline)));
+
+        Assert.Equal("task_file_area_denied", result.ErrorCode);
+        Assert.Equal(0, editor.BatchCallCount);
+    }
+
+    [Fact]
     public async Task Approved_goal_runs_dotnet_in_its_worktree_with_the_registered_entry_point()
     {
         FakeDotNetToolRunner runner = new();
@@ -468,6 +549,19 @@ public sealed class WorkspaceMutationServiceTests
         DateTimeOffset.UtcNow,
         DateTimeOffset.UtcNow);
 
+    private static RenameSymbolPreviewRequest RenameRequest(
+        RenameSymbolOrigin origin,
+        IReadOnlyList<RenameFileArea> areas) => new(
+        "goal-id",
+        new("src/First.cs"),
+        new(Baseline),
+        new(1),
+        new("class First { }"),
+        new(0, 7),
+        new("Renamed"),
+        origin,
+        areas);
+
     private static StoredGoalWorktree CreateWorktree() => new(
         "goal-id",
         "workspace-id",
@@ -507,6 +601,7 @@ public sealed class WorkspaceMutationServiceTests
     private sealed class FakeFileEditor : IWorkspaceFileEditor
     {
         internal int CallCount { get; private set; }
+        internal int BatchCallCount { get; private set; }
         internal string? Root { get; private set; }
         internal Exception? Exception { get; init; }
 
@@ -528,6 +623,28 @@ public sealed class WorkspaceMutationServiceTests
                 "new-hash",
                 11,
                 WasCreated: false,
+                ErrorCode: null,
+                Error: null));
+        }
+
+        public ValueTask<WorkspaceFileBatchEditResult> ApplyBatchAsync(
+            string worktreeRoot,
+            WorkspaceFileBatchEdit batch,
+            CancellationToken cancellationToken = default)
+        {
+            BatchCallCount++;
+            Root = worktreeRoot;
+            return ValueTask.FromResult(new WorkspaceFileBatchEditResult(
+                batch.Edits.Select(edit => new WorkspaceFileEditResult(
+                    edit.Path,
+                    edit.ExpectedSha256,
+                    Baseline,
+                    edit.Content.Length,
+                    WasCreated: false,
+                    ErrorCode: null,
+                    Error: null)).ToArray(),
+                WasRolledBack: false,
+                WasCancelled: false,
                 ErrorCode: null,
                 Error: null));
         }
@@ -649,6 +766,7 @@ public sealed class WorkspaceMutationServiceTests
             WorkbenchCodeValidationDisposition.Validated;
         internal WorkbenchCodeValidationDisposition AppliedDisposition { get; init; } =
             WorkbenchCodeValidationDisposition.Validated;
+        internal string RenameFingerprint { get; init; } = Baseline;
 
         public ValueTask<WorkbenchCodeSessionView> StartAsync(
             WorkbenchCodeSessionRequest request,
@@ -703,6 +821,28 @@ public sealed class WorkspaceMutationServiceTests
         public ValueTask<WorkbenchCodeNavigationView> FindReferencesAsync(
             WorkbenchCodeInteractiveSnapshot snapshot,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public ValueTask<WorkbenchCodeRenamePreviewView> PreviewRenameAsync(
+            WorkbenchCodeRenamePreviewRequest request,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new WorkbenchCodeRenamePreviewView(
+                request.Snapshot.SessionId,
+                request.Snapshot.Path,
+                request.Snapshot.BufferVersion,
+                WorkbenchCodeResultState.Ready,
+                WorkbenchCodeTransformationDisposition.Ready,
+                new("Class|First"),
+                request.NewName,
+                [
+                    new(new("src/First.cs"), new(Baseline), new("class First { }"),
+                        new("class Renamed { }"), 1),
+                    new(new("tests/Second.cs"), new(Baseline), new("class Use { First value; }"),
+                        new("class Use { Renamed value; }"), 1),
+                ],
+                [],
+                [],
+                new(RenameFingerprint),
+                []));
 
         public ValueTask StopAsync(
             WorkbenchCodeSessionId sessionId,

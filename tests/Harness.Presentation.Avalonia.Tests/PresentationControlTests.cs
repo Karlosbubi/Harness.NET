@@ -1151,6 +1151,41 @@ public sealed class PresentationControlTests
     }
 
     [Fact]
+    public async Task Editor_rename_uses_the_shared_fingerprinted_atomic_operation()
+    {
+        using HeadlessUnitTestSession testSession =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await testSession.Dispatch(() =>
+        {
+            MutationService mutations = new();
+            WorkbenchDockHost workbench = CreateWorkbench(
+                ApprovedGoalShell(),
+                new(),
+                new() { Editable = true },
+                mutationService: mutations);
+            Window window = new() { Width = 1280, Height = 800, Content = workbench.Control };
+            window.Show();
+            workbench.OpenFileAsync("src/App.cs").AsTask().GetAwaiter().GetResult();
+            TextEditor editor = workbench.ActiveSourceEditor!;
+            editor.CaretOffset = editor.Text.IndexOf("Example", StringComparison.Ordinal) + 2;
+
+            PendingWorkbenchRename pending = Assert.IsType<PendingWorkbenchRename>(
+                workbench.PreviewActiveRenameAsync("Renamed").AsTask().GetAwaiter().GetResult());
+            RenameSymbolApplyView applied = Assert.IsType<RenameSymbolApplyView>(
+                workbench.ApplyActiveRenameAsync(pending).AsTask().GetAwaiter().GetResult());
+
+            Assert.Equal("Renamed", pending.Preview.NewName.Value);
+            Assert.Equal("goal-1", mutations.PreviewRequest?.GoalId);
+            Assert.Equal("src/App.cs", mutations.PreviewRequest?.Path.Value);
+            Assert.Equal(1, mutations.ApplyCallCount);
+            Assert.Null(applied.ErrorCode);
+            Assert.Equal("namespace Renamed;", editor.Text);
+            Assert.False(workbench.ActiveSourceDocumentIsDirty);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
     public async Task Floating_tools_use_the_originating_dock_window_as_owner()
     {
         using HeadlessUnitTestSession session =
@@ -1567,7 +1602,8 @@ public sealed class PresentationControlTests
         InspectionService? inspection = null,
         RunOutputService? runOutput = null,
         CodeIntelligenceService? codeIntelligence = null,
-        Func<bool, Task>? manageWorkspace = null) => new(
+        Func<bool, Task>? manageWorkspace = null,
+        MutationService? mutationService = null) => new(
         runOutput ?? new RunOutputService(),
         inspection ?? new InspectionService(),
         documents ?? new DocumentService(),
@@ -1579,7 +1615,8 @@ public sealed class PresentationControlTests
         new TextBlock { Text = "Conversation" },
         new TextBlock { Text = "Goal context" },
         CancellationToken.None,
-        manageWorkspace);
+        manageWorkspace,
+        mutationService);
 
     private static AvaloniaShellState TrustedShell()
     {
@@ -1986,6 +2023,87 @@ public sealed class PresentationControlTests
         public ValueTask StopAsync(
             WorkbenchCodeSessionId sessionId,
             CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+    }
+
+    private sealed class MutationService : IWorkspaceMutationService
+    {
+        private const string Fingerprint =
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        private const string NewHash =
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+        internal RenameSymbolPreviewRequest? PreviewRequest { get; private set; }
+        internal int ApplyCallCount { get; private set; }
+
+        public ValueTask<RenameSymbolPreviewView> PreviewRenameAsync(
+            RenameSymbolPreviewRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            PreviewRequest = request;
+            return ValueTask.FromResult(new RenameSymbolPreviewView(
+                Preview(request),
+                ErrorCode: null,
+                Error: null));
+        }
+
+        public ValueTask<RenameSymbolApplyView> ApplyRenameAsync(
+            RenameSymbolApplyRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            ApplyCallCount++;
+            WorkbenchCodeRenamePreviewView preview = Preview(request.PreviewRequest);
+            return ValueTask.FromResult(new RenameSymbolApplyView(
+                request.PreviewRequest.GoalId,
+                request.CorrelationId,
+                preview,
+                [new(
+                    request.PreviewRequest.GoalId,
+                    request.CorrelationId,
+                    "src/App.cs",
+                    request.PreviewRequest.BaselineHash.Value,
+                    NewHash,
+                    "namespace Renamed;".Length,
+                    WasCreated: false,
+                    ErrorCode: null,
+                    Error: null)],
+                WasRolledBack: false,
+                WasCancelled: false,
+                new(
+                    new("session-1"),
+                    WorkbenchCodeResultState.Ready,
+                    WorkbenchCodeValidationDisposition.Validated,
+                    [],
+                    []),
+                ErrorCode: null,
+                Error: null));
+        }
+
+        public ValueTask<FileEditView> ApplyFileEditAsync(
+            FileEditRequest request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public ValueTask<DotNetOperationView> RunDotNetAsync(
+            DotNetOperationRequest request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        private static WorkbenchCodeRenamePreviewView Preview(RenameSymbolPreviewRequest request) => new(
+            new("session-1"),
+            request.Path,
+            request.BufferVersion,
+            WorkbenchCodeResultState.Ready,
+            WorkbenchCodeTransformationDisposition.Ready,
+            new("Class|Example"),
+            request.NewName,
+            [new(
+                request.Path,
+                request.BaselineHash,
+                request.Text,
+                new("namespace Renamed;"),
+                1)],
+            [],
+            [],
+            new(Fingerprint),
+            []);
     }
 
     private sealed class LayoutService : IWorkbenchLayoutService

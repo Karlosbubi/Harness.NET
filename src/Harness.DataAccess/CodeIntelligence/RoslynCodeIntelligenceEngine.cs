@@ -16,7 +16,7 @@ using Microsoft.CodeAnalysis.Text;
 
 namespace Harness.DataAccess.CodeIntelligence;
 
-internal sealed class RoslynCodeIntelligenceEngine(IMSBuildRuntime msBuildRuntime)
+internal sealed partial class RoslynCodeIntelligenceEngine(IMSBuildRuntime msBuildRuntime)
     : ICodeIntelligenceEngine, IDisposable
 {
     private const int MaximumIssues = 100;

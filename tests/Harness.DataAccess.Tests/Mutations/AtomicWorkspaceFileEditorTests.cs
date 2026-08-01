@@ -76,6 +76,94 @@ public sealed class AtomicWorkspaceFileEditorTests : IDisposable
         Assert.Equal("outside_workspace", result.ErrorCode);
     }
 
+    [Fact]
+    public async Task Applies_multiple_baseline_protected_files_as_one_batch()
+    {
+        Directory.CreateDirectory(root);
+        await File.WriteAllTextAsync(Path.Combine(root, "First.cs"), "first");
+        await File.WriteAllTextAsync(Path.Combine(root, "Second.cs"), "second");
+        AtomicWorkspaceFileEditor editor = new();
+
+        WorkspaceFileBatchEditResult result = await editor.ApplyBatchAsync(
+            root,
+            new([
+                new("First.cs", Hash("first"), "renamed first"),
+                new("Second.cs", Hash("second"), "renamed second"),
+            ]));
+
+        Assert.Null(result.ErrorCode);
+        Assert.False(result.WasRolledBack);
+        Assert.Equal(2, result.Files.Count);
+        Assert.Equal("renamed first", await File.ReadAllTextAsync(Path.Combine(root, "First.cs")));
+        Assert.Equal("renamed second", await File.ReadAllTextAsync(Path.Combine(root, "Second.cs")));
+        Assert.Empty(Directory.EnumerateFiles(root, ".harness-*.tmp"));
+    }
+
+    [Fact]
+    public async Task Rejects_the_whole_batch_when_any_baseline_is_stale()
+    {
+        Directory.CreateDirectory(root);
+        await File.WriteAllTextAsync(Path.Combine(root, "First.cs"), "first");
+        await File.WriteAllTextAsync(Path.Combine(root, "Second.cs"), "second");
+        AtomicWorkspaceFileEditor editor = new();
+
+        WorkspaceFileBatchEditResult result = await editor.ApplyBatchAsync(
+            root,
+            new([
+                new("First.cs", Hash("first"), "changed first"),
+                new("Second.cs", Hash("stale"), "changed second"),
+            ]));
+
+        Assert.Equal("content_changed", result.ErrorCode);
+        Assert.Equal("first", await File.ReadAllTextAsync(Path.Combine(root, "First.cs")));
+        Assert.Equal("second", await File.ReadAllTextAsync(Path.Combine(root, "Second.cs")));
+    }
+
+    [Fact]
+    public async Task Rolls_back_every_file_when_a_commit_fails_mid_batch()
+    {
+        Directory.CreateDirectory(root);
+        await File.WriteAllTextAsync(Path.Combine(root, "First.cs"), "first");
+        await File.WriteAllTextAsync(Path.Combine(root, "Second.cs"), "second");
+        AtomicWorkspaceFileEditor editor = new(index =>
+            index == 1 ? new IOException("Injected failure.") : null);
+
+        WorkspaceFileBatchEditResult result = await editor.ApplyBatchAsync(
+            root,
+            new([
+                new("First.cs", Hash("first"), "changed first"),
+                new("Second.cs", Hash("second"), "changed second"),
+            ]));
+
+        Assert.Equal("batch_write_failed", result.ErrorCode);
+        Assert.True(result.WasRolledBack);
+        Assert.Equal("first", await File.ReadAllTextAsync(Path.Combine(root, "First.cs")));
+        Assert.Equal("second", await File.ReadAllTextAsync(Path.Combine(root, "Second.cs")));
+        Assert.Empty(Directory.EnumerateFiles(root, ".harness-*.tmp"));
+    }
+
+    [Fact]
+    public async Task Cancellation_before_commit_leaves_every_file_unchanged()
+    {
+        Directory.CreateDirectory(root);
+        await File.WriteAllTextAsync(Path.Combine(root, "First.cs"), "first");
+        using CancellationTokenSource cancellation = new();
+        AtomicWorkspaceFileEditor editor = new(_ =>
+        {
+            cancellation.Cancel();
+            return new OperationCanceledException(cancellation.Token);
+        });
+
+        WorkspaceFileBatchEditResult result = await editor.ApplyBatchAsync(
+            root,
+            new([new("First.cs", Hash("first"), "changed")]),
+            cancellation.Token);
+
+        Assert.True(result.WasCancelled);
+        Assert.True(result.WasRolledBack);
+        Assert.Equal("first", await File.ReadAllTextAsync(Path.Combine(root, "First.cs")));
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(root))

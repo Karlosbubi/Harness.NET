@@ -210,6 +210,295 @@ internal sealed class WorkspaceMutationService(
         return view;
     }
 
+    public async ValueTask<RenameSymbolPreviewView> PreviewRenameAsync(
+        RenameSymbolPreviewRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        RenameContext context = await PrepareRenameContextAsync(request, cancellationToken);
+        if (context.ErrorCode is not null)
+        {
+            return new(null, context.ErrorCode, context.Error);
+        }
+
+        try
+        {
+            WorkbenchCodeRenamePreviewView preview = await codeIntelligenceService!.PreviewRenameAsync(
+                new(
+                    new(
+                        context.SessionId!,
+                        request.Path,
+                        request.BaselineHash,
+                        request.BufferVersion,
+                        request.Text,
+                        request.Position),
+                    request.NewName),
+                cancellationToken);
+            string? grantError = ValidateRenameGrants(request, preview);
+            return grantError is null
+                ? new(preview, null, null)
+                : new(preview, "task_file_area_denied", grantError);
+        }
+        finally
+        {
+            await codeIntelligenceService!.StopAsync(context.SessionId!, CancellationToken.None);
+        }
+    }
+
+    public async ValueTask<RenameSymbolApplyView> ApplyRenameAsync(
+        RenameSymbolApplyRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        RenameSymbolPreviewRequest previewRequest = request.PreviewRequest;
+        if (request.CorrelationId is null ||
+            string.IsNullOrWhiteSpace(request.CorrelationId.Value) ||
+            request.CorrelationId.Value.Length > 128 ||
+            request.Fingerprint is null || !IsSha256(request.Fingerprint.Value))
+        {
+            return RenameFailure(request, "invalid_apply_request",
+                "A correlation identifier and exact preview fingerprint are required.");
+        }
+
+        RenameContext context = await PrepareRenameContextAsync(previewRequest, cancellationToken);
+        if (context.ErrorCode is not null)
+        {
+            return RenameFailure(request, context.ErrorCode, context.Error!);
+        }
+
+        StoredToolCallStart started = await StartEvidenceAsync(
+            previewRequest.GoalId,
+            request.CorrelationId,
+            ToolKind.Rename,
+            request,
+            cancellationToken);
+        if (!started.WasCreated)
+        {
+            await codeIntelligenceService!.StopAsync(context.SessionId!, CancellationToken.None);
+            return RenameFailure(request, "duplicate_correlation",
+                "This goal already has a tool call with that correlation identifier.");
+        }
+
+        RenameSymbolApplyView view;
+        try
+        {
+            WorkbenchCodeRenamePreviewView preview = await codeIntelligenceService!.PreviewRenameAsync(
+                new(
+                    new(
+                        context.SessionId!,
+                        previewRequest.Path,
+                        previewRequest.BaselineHash,
+                        previewRequest.BufferVersion,
+                        previewRequest.Text,
+                        previewRequest.Position),
+                    previewRequest.NewName),
+                cancellationToken);
+            if (preview.Disposition is not WorkbenchCodeTransformationDisposition.Ready ||
+                preview.Fingerprint is null)
+            {
+                view = RenameFailure(request, "rename_not_ready",
+                    preview.Issues.FirstOrDefault()?.Message.Value ??
+                    preview.Conflicts.FirstOrDefault()?.Message.Value ??
+                    "The rename preview is not ready to apply.", preview);
+            }
+            else if (!preview.Fingerprint.Value.Equals(request.Fingerprint.Value, StringComparison.Ordinal))
+            {
+                view = RenameFailure(request, "preview_changed",
+                    "The rename preview no longer matches the accepted fingerprint.", preview);
+            }
+            else if (ValidateRenameGrants(previewRequest, preview) is { } grantError)
+            {
+                view = RenameFailure(request, "task_file_area_denied", grantError, preview);
+            }
+            else
+            {
+                WorkspaceFileBatchEditResult batch = await fileEditor.ApplyBatchAsync(
+                    context.WorktreePath!,
+                    new(preview.Edits.Select(edit => new WorkspaceFileEdit(
+                        edit.Path.Value,
+                        edit.BaselineHash.Value,
+                        edit.Text.Value)).ToArray()),
+                    cancellationToken);
+                IReadOnlyList<FileEditView> files = batch.Files.Select(file => new FileEditView(
+                    previewRequest.GoalId,
+                    request.CorrelationId,
+                    file.Path,
+                    file.PreviousSha256,
+                    file.NewSha256,
+                    file.BytesWritten,
+                    file.WasCreated,
+                    file.ErrorCode,
+                    file.Error)).ToArray();
+                WorkbenchCodeValidationView? applied = null;
+                string? errorCode = batch.ErrorCode;
+                string? error = batch.Error;
+                if (errorCode is null)
+                {
+                    applied = await codeIntelligenceService.ValidateAsync(new(
+                        context.SessionId!,
+                        WorkbenchCodeValidationPhase.Applied,
+                        batch.Files.Zip(preview.Edits).Select(pair => new WorkbenchCodeCandidateEdit(
+                            new(pair.First.Path),
+                            new(pair.First.NewSha256!),
+                            pair.Second.Text)).ToArray()), CancellationToken.None);
+                    if (applied.Disposition is not WorkbenchCodeValidationDisposition.Validated)
+                    {
+                        errorCode = "post_apply_validation_failed";
+                        error = applied.Issues.FirstOrDefault()?.Message.Value ??
+                            "The applied rename did not match its compiler-validated preview.";
+                    }
+                }
+
+                view = new(
+                    previewRequest.GoalId,
+                    request.CorrelationId,
+                    preview,
+                    files,
+                    batch.WasRolledBack,
+                    batch.WasCancelled,
+                    applied,
+                    errorCode,
+                    error);
+            }
+        }
+        catch (OperationCanceledException exception) when (cancellationToken.IsCancellationRequested)
+        {
+            view = RenameFailure(request, "cancelled", exception.Message) with { WasCancelled = true };
+        }
+        finally
+        {
+            await codeIntelligenceService!.StopAsync(context.SessionId!, CancellationToken.None);
+        }
+
+        await CompleteEvidenceAsync(
+            started.ToolCall.Id,
+            view.WasCancelled
+                ? ToolCallState.Cancelled
+                : view.ErrorCode is null ? ToolCallState.Succeeded : ToolCallState.Failed,
+            view);
+        return view;
+    }
+
+    private async ValueTask<RenameContext> PrepareRenameContextAsync(
+        RenameSymbolPreviewRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (codeIntelligenceService is null)
+        {
+            return RenameContext.Failure("code_intelligence_unavailable", "Semantic rename is unavailable.");
+        }
+
+        if (!Enum.IsDefined(request.Origin) || request.Path is null || request.BaselineHash is null ||
+            !IsSha256(request.BaselineHash.Value) || request.BufferVersion is null ||
+            request.BufferVersion.Value <= 0 || request.Text is null || request.Position is null ||
+            request.NewName is null || string.IsNullOrWhiteSpace(request.NewName.Value))
+        {
+            return RenameContext.Failure("invalid_rename_request",
+                "Rename requires an exact source snapshot, caret, and new identifier.");
+        }
+
+        StoredGoal? goal = await goalStore.GetAsync(request.GoalId, cancellationToken);
+        StoredGoalWorktree? worktree = await goalStore.GetWorktreeAsync(request.GoalId, cancellationToken);
+        RegisteredWorkspace? workspace = await workspaceStore.GetActiveAsync(cancellationToken);
+        if (goal?.State != "Approved" || worktree?.State != "Active")
+        {
+            return RenameContext.Failure("goal_not_approved",
+                "The goal has no active approved worktree grant.");
+        }
+
+        if (workspace is null || !workspace.Id.Equals(goal.WorkspaceId, StringComparison.Ordinal))
+        {
+            return RenameContext.Failure("workspace_not_active", "The goal workspace must remain active.");
+        }
+
+        if (!workspace.IsTrusted || !worktree.WorkspaceId.Equals(workspace.Id, StringComparison.Ordinal))
+        {
+            return RenameContext.Failure("workspace_not_trusted", "The goal workspace must remain trusted.");
+        }
+
+        string entryPoint = Path.GetRelativePath(workspace.RootPath, workspace.EntryPoint);
+        WorkbenchCodeSessionView session = await codeIntelligenceService.StartAsync(
+            new(new(workspace.Id), new(goal.Id), new(entryPoint)),
+            progress: null,
+            cancellationToken);
+        if (session.SessionId is null || session.State is WorkbenchCodeResultState.Failed or
+            WorkbenchCodeResultState.Cancelled or WorkbenchCodeResultState.Stale)
+        {
+            return RenameContext.Failure("code_intelligence_unavailable",
+                session.Issues.FirstOrDefault()?.Message.Value ?? "Semantic rename is unavailable.");
+        }
+
+        return new(session.SessionId, worktree.Path, null, null);
+    }
+
+    private static string? ValidateRenameGrants(
+        RenameSymbolPreviewRequest request,
+        WorkbenchCodeRenamePreviewView preview)
+    {
+        if (request.Origin is RenameSymbolOrigin.Human)
+        {
+            return null;
+        }
+
+        if (request.AllowedFileAreas is null || request.AllowedFileAreas.Count == 0)
+        {
+            return "The Implementer has no delegated file areas for this rename.";
+        }
+
+        if (request.AllowedFileAreas.Any(area => !ValidRenameArea(area.Value)))
+        {
+            return "The Implementer's delegated file areas are malformed.";
+        }
+
+        bool allowed = preview.Edits.All(edit => request.AllowedFileAreas.Any(area =>
+        {
+            string path = edit.Path.Value.Replace('\\', '/').Trim('/');
+            string grant = area.Value.Replace('\\', '/').Trim('/');
+            return path.Equals(grant, StringComparison.Ordinal) ||
+                path.StartsWith(grant + "/", StringComparison.Ordinal);
+        }));
+        return allowed ? null : "The rename affects a path outside the Implementer's delegated file areas.";
+    }
+
+    private static bool ValidRenameArea(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Length > 512 ||
+            Path.IsPathRooted(value) || value.Contains('\\', StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        string[] segments = value.Trim('/').Split('/');
+        return segments.Length > 0 && segments.All(segment =>
+            segment.Length > 0 && segment is not "." and not "..");
+    }
+
+    private static RenameSymbolApplyView RenameFailure(
+        RenameSymbolApplyRequest request,
+        string code,
+        string error,
+        WorkbenchCodeRenamePreviewView? preview = null) => new(
+        request.PreviewRequest.GoalId,
+        request.CorrelationId,
+        preview,
+        [],
+        WasRolledBack: false,
+        WasCancelled: false,
+        AppliedCodeValidation: null,
+        code,
+        error);
+
+    private static bool IsSha256(string value) => value.Length == 64 && value.All(character =>
+        character is >= '0' and <= '9' or >= 'a' and <= 'f' or >= 'A' and <= 'F');
+
+    private sealed record RenameContext(
+        WorkbenchCodeSessionId? SessionId,
+        string? WorktreePath,
+        string? ErrorCode,
+        string? Error)
+    {
+        internal static RenameContext Failure(string code, string error) =>
+            new(null, null, code, error);
+    }
+
     public async ValueTask<DotNetOperationView> RunDotNetAsync(
         DotNetOperationRequest request,
         CancellationToken cancellationToken = default)

@@ -20,6 +20,8 @@ internal static class AgentToolPolicy
             AgentToolKind.InspectDotNet,
             AgentToolKind.SemanticContext,
             AgentToolKind.ApplyFileEdit,
+            AgentToolKind.PreviewRename,
+            AgentToolKind.ApplyRename,
             AgentToolKind.Build,
             AgentToolKind.Test,
         ],

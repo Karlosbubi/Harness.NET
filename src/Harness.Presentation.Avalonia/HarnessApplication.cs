@@ -8,6 +8,7 @@ using Harness.BusinessLogic.CodeIntelligence;
 using Harness.BusinessLogic.Evidence;
 using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Layouts;
+using Harness.BusinessLogic.Mutations;
 using Harness.UI.Avalonia;
 
 namespace Harness.Presentation.Avalonia;
@@ -19,6 +20,7 @@ internal sealed class HarnessApplication(
     IWorkbenchInspectionService inspectionService,
     IWorkbenchDocumentService documentService,
     IWorkbenchCodeIntelligenceService codeIntelligenceService,
+    IWorkspaceMutationService mutationService,
     IWorkbenchLayoutService layoutService,
     CancellationToken cancellationToken) : Application
 {
@@ -50,6 +52,7 @@ internal sealed class HarnessApplication(
                 inspectionService,
                 documentService,
                 codeIntelligenceService,
+                mutationService,
                 layoutService,
                 cancellationToken);
             desktop.MainWindow = MainWindow;
