@@ -3,9 +3,15 @@ using System.Collections.Immutable;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
+using System.Xml;
+using System.Xml.Linq;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.Completion;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Diagnostics;
+using Microsoft.CodeAnalysis.FindSymbols;
 using Microsoft.CodeAnalysis.MSBuild;
+using Microsoft.CodeAnalysis.QuickInfo;
 using Microsoft.CodeAnalysis.Text;
 
 namespace Harness.DataAccess.CodeIntelligence;
@@ -16,6 +22,8 @@ internal sealed class RoslynCodeIntelligenceEngine(IMSBuildRuntime msBuildRuntim
     private const int MaximumIssues = 100;
     private const int MaximumIssueLength = 2_048;
     private const int MaximumDiagnostics = 5_000;
+    private const int MaximumCompletionItems = 200;
+    private const int MaximumNavigationItems = 500;
     private static readonly UTF8Encoding Utf8WithoutBom = new(
         encoderShouldEmitUTF8Identifier: false,
         throwOnInvalidBytes: true);
@@ -447,6 +455,420 @@ internal sealed class RoslynCodeIntelligenceEngine(IMSBuildRuntime msBuildRuntim
         }
     }
 
+    public async ValueTask<CodeIntelligenceCompletionResult> GetCompletionsAsync(
+        CodeIntelligenceCompletionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ActiveSession? session = MatchingSession(request.Snapshot);
+        if (session is null)
+        {
+            return CompletionFailure(request.Snapshot, CodeIntelligenceResultState.Stale,
+                "session_unavailable", "The Roslyn session no longer matches this source context.");
+        }
+
+        await session.OperationGate.WaitAsync(cancellationToken);
+        try
+        {
+            PreparedInteractive prepared = await PrepareInteractiveAsync(
+                session, request.Snapshot, cancellationToken);
+            if (prepared.Issue is not null)
+            {
+                return CompletionFailure(
+                    request.Snapshot, prepared.State, prepared.Issue.Code.Value,
+                    prepared.Issue.Message.Value);
+            }
+
+            CompletionService? service = CompletionService.GetService(prepared.Document!);
+            if (service is null)
+            {
+                return CompletionFailure(request.Snapshot, CodeIntelligenceResultState.Degraded,
+                    "completion_unavailable", "Completion is unavailable for this document.");
+            }
+
+            CompletionTrigger trigger = request.TriggerKind switch
+            {
+                CodeIntelligenceCompletionTriggerKind.Invoke => CompletionTrigger.Invoke,
+                CodeIntelligenceCompletionTriggerKind.Insertion when request.TriggerCharacter is { } value =>
+                    CompletionTrigger.CreateInsertionTrigger(value),
+                CodeIntelligenceCompletionTriggerKind.Insertion => CompletionTrigger.Invoke,
+                _ => throw new ArgumentOutOfRangeException(nameof(request)),
+            };
+            CompletionList? list = await service.GetCompletionsAsync(
+                prepared.Document!, prepared.Offset, trigger, cancellationToken: cancellationToken);
+            if (list is null)
+            {
+                return new(
+                    request.Snapshot.ContextId,
+                    request.Snapshot.SessionId,
+                    request.Snapshot.Path,
+                    request.Snapshot.BufferVersion,
+                    SessionState(session),
+                    null,
+                    Range(prepared.Text!, new TextSpan(prepared.Offset, 0)),
+                    [],
+                    session.Issues.ToArray());
+            }
+
+            CodeIntelligenceCompletionListId listId = new(Guid.NewGuid().ToString("N"));
+            Dictionary<CodeIntelligenceCompletionItemId, CompletionItem> cachedItems = [];
+            List<CodeIntelligenceCompletionItem> items = [];
+            int index = 0;
+            foreach (CompletionItem item in list.ItemsList.Take(MaximumCompletionItems))
+            {
+                CodeIntelligenceCompletionItemId itemId = new((index++).ToString(
+                    System.Globalization.CultureInfo.InvariantCulture));
+                cachedItems.Add(itemId, item);
+                items.Add(new(
+                    itemId,
+                    new(Bound(item.DisplayText + item.DisplayTextSuffix, MaximumIssueLength)),
+                    new(Bound(item.FilterText, MaximumIssueLength)),
+                    new(Bound(item.SortText, MaximumIssueLength)),
+                    new(Bound(item.InlineDescription ?? string.Empty, MaximumIssueLength)),
+                    MapSymbolKind(item.Tags),
+                    CommitCharacters(item.Rules),
+                    IsRecommended: false));
+            }
+
+            session.CompletionCache = new(
+                listId,
+                request.Snapshot.Path,
+                request.Snapshot.BufferVersion,
+                Hash(request.Snapshot.Text.Value),
+                service,
+                cachedItems);
+            return new(
+                request.Snapshot.ContextId,
+                request.Snapshot.SessionId,
+                request.Snapshot.Path,
+                request.Snapshot.BufferVersion,
+                SessionState(session),
+                listId,
+                Range(prepared.Text!, list.Span),
+                items,
+                session.Issues.ToArray());
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException or
+                InvalidOperationException or ArgumentException)
+        {
+            return CompletionFailure(request.Snapshot, CodeIntelligenceResultState.Failed,
+                "completion_failed", exception.Message);
+        }
+        finally
+        {
+            session.OperationGate.Release();
+        }
+    }
+
+    public async ValueTask<CodeIntelligenceCompletionCommitResult> CommitCompletionAsync(
+        CodeIntelligenceCompletionCommitRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ActiveSession? session = MatchingSession(request.Snapshot);
+        if (session is null)
+        {
+            return CommitFailure(request.Snapshot, CodeIntelligenceResultState.Stale,
+                "session_unavailable", "The Roslyn session no longer matches this source context.");
+        }
+
+        await session.OperationGate.WaitAsync(cancellationToken);
+        try
+        {
+            PreparedInteractive prepared = await PrepareInteractiveAsync(
+                session, request.Snapshot, cancellationToken);
+            CompletionCache? cache = session.CompletionCache;
+            if (prepared.Issue is not null || cache is null || cache.ListId != request.ListId ||
+                cache.Path != request.Snapshot.Path ||
+                cache.BufferVersion != request.Snapshot.BufferVersion ||
+                !cache.TextHash.Equals(Hash(request.Snapshot.Text.Value), StringComparison.Ordinal) ||
+                !cache.Items.TryGetValue(request.ItemId, out CompletionItem? item))
+            {
+                return CommitFailure(
+                    request.Snapshot,
+                    prepared.Issue is null
+                        ? CodeIntelligenceResultState.Stale
+                        : prepared.State,
+                    prepared.Issue?.Code.Value ?? "completion_stale",
+                    prepared.Issue?.Message.Value ??
+                        "The completion list no longer matches the active buffer.");
+            }
+
+            CompletionChange change = await cache.Service.GetChangeAsync(
+                prepared.Document!, item, request.CommitCharacter, cancellationToken);
+            return new(
+                request.Snapshot.ContextId,
+                request.Snapshot.SessionId,
+                request.Snapshot.Path,
+                request.Snapshot.BufferVersion,
+                SessionState(session),
+                [new(
+                    Range(prepared.Text!, change.TextChange.Span),
+                    new(change.TextChange.NewText ?? string.Empty))],
+                change.NewPosition is { } position
+                    ? Position(prepared.Text!, position)
+                    : null,
+                session.Issues.ToArray());
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            return CommitFailure(request.Snapshot, CodeIntelligenceResultState.Failed,
+                "completion_commit_failed", exception.Message);
+        }
+        finally
+        {
+            session.OperationGate.Release();
+        }
+    }
+
+    public async ValueTask<CodeIntelligenceQuickInfoResult> GetQuickInfoAsync(
+        CodeIntelligenceInteractiveSnapshot snapshot,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        ActiveSession? session = MatchingSession(snapshot);
+        if (session is null)
+        {
+            return QuickInfoFailure(snapshot, CodeIntelligenceResultState.Stale,
+                "session_unavailable", "The Roslyn session no longer matches this source context.");
+        }
+
+        await session.OperationGate.WaitAsync(cancellationToken);
+        try
+        {
+            PreparedInteractive prepared = await PrepareInteractiveAsync(
+                session, snapshot, cancellationToken);
+            if (prepared.Issue is not null)
+            {
+                return QuickInfoFailure(
+                    snapshot, prepared.State, prepared.Issue.Code.Value,
+                    prepared.Issue.Message.Value);
+            }
+
+            QuickInfoService? service = QuickInfoService.GetService(prepared.Document!);
+            QuickInfoItem? item = service is null
+                ? null
+                : await service.GetQuickInfoAsync(
+                    prepared.Document!, prepared.Offset, cancellationToken);
+            return new(
+                snapshot.ContextId,
+                snapshot.SessionId,
+                snapshot.Path,
+                snapshot.BufferVersion,
+                SessionState(session),
+                item is null ? null : Range(prepared.Text!, item.Span),
+                item?.Sections
+                    .Select(section => new CodeIntelligenceMessage(Bound(
+                        string.Concat(section.TaggedParts.Select(part => part.Text)),
+                        MaximumIssueLength)))
+                    .Where(section => !string.IsNullOrWhiteSpace(section.Value))
+                    .Take(12)
+                    .ToArray() ?? [],
+                session.Issues.ToArray());
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException or
+                InvalidOperationException or ArgumentException)
+        {
+            return QuickInfoFailure(snapshot, CodeIntelligenceResultState.Failed,
+                "quick_info_failed", exception.Message);
+        }
+        finally
+        {
+            session.OperationGate.Release();
+        }
+    }
+
+    public async ValueTask<CodeIntelligenceSignatureHelpResult> GetSignatureHelpAsync(
+        CodeIntelligenceInteractiveSnapshot snapshot,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        ActiveSession? session = MatchingSession(snapshot);
+        if (session is null)
+        {
+            return SignatureFailure(snapshot, CodeIntelligenceResultState.Stale,
+                "session_unavailable", "The Roslyn session no longer matches this source context.");
+        }
+
+        await session.OperationGate.WaitAsync(cancellationToken);
+        try
+        {
+            PreparedInteractive prepared = await PrepareInteractiveAsync(
+                session, snapshot, cancellationToken);
+            if (prepared.Issue is not null)
+            {
+                return SignatureFailure(snapshot, prepared.State, prepared.Issue.Code.Value,
+                    prepared.Issue.Message.Value);
+            }
+
+            SyntaxNode? root = await prepared.Document!.GetSyntaxRootAsync(cancellationToken);
+            SemanticModel? model = await prepared.Document.GetSemanticModelAsync(cancellationToken);
+            SyntaxNode? node = root?.FindToken(Math.Max(0, prepared.Offset - 1)).Parent;
+            BaseArgumentListSyntax? arguments = node?.AncestorsAndSelf()
+                .OfType<BaseArgumentListSyntax>()
+                .FirstOrDefault();
+            SyntaxNode? callable = arguments?.Parent;
+            SymbolInfo symbolInfo = callable is null || model is null
+                ? default
+                : model.GetSymbolInfo(callable, cancellationToken);
+            IReadOnlyList<IMethodSymbol> methods = (symbolInfo.Symbol is IMethodSymbol method
+                    ? [method]
+                    : symbolInfo.CandidateSymbols.OfType<IMethodSymbol>())
+                .Cast<ISymbol>()
+                .Distinct(SymbolEqualityComparer.Default)
+                .OfType<IMethodSymbol>()
+                .Take(12)
+                .ToArray();
+            int selectedParameter = arguments?.Arguments.GetSeparators()
+                .Count(separator => separator.SpanStart < prepared.Offset) ?? 0;
+            return new(
+                snapshot.ContextId,
+                snapshot.SessionId,
+                snapshot.Path,
+                snapshot.BufferVersion,
+                SessionState(session),
+                methods.Select(method => MapSignature(method, cancellationToken)).ToArray(),
+                SelectedSignature: 0,
+                selectedParameter,
+                session.Issues.ToArray());
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            return SignatureFailure(snapshot, CodeIntelligenceResultState.Failed,
+                "signature_help_failed", exception.Message);
+        }
+        finally
+        {
+            session.OperationGate.Release();
+        }
+    }
+
+    public ValueTask<CodeIntelligenceNavigationResult> FindDefinitionAsync(
+        CodeIntelligenceInteractiveSnapshot snapshot,
+        CancellationToken cancellationToken = default) =>
+        NavigateAsync(snapshot, references: false, cancellationToken);
+
+    public ValueTask<CodeIntelligenceNavigationResult> FindReferencesAsync(
+        CodeIntelligenceInteractiveSnapshot snapshot,
+        CancellationToken cancellationToken = default) =>
+        NavigateAsync(snapshot, references: true, cancellationToken);
+
+    private async ValueTask<CodeIntelligenceNavigationResult> NavigateAsync(
+        CodeIntelligenceInteractiveSnapshot snapshot,
+        bool references,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        ActiveSession? session = MatchingSession(snapshot);
+        if (session is null)
+        {
+            return NavigationFailure(snapshot, CodeIntelligenceResultState.Stale,
+                "session_unavailable", "The Roslyn session no longer matches this source context.");
+        }
+
+        await session.OperationGate.WaitAsync(cancellationToken);
+        try
+        {
+            PreparedInteractive prepared = await PrepareInteractiveAsync(
+                session, snapshot, cancellationToken);
+            if (prepared.Issue is not null)
+            {
+                return NavigationFailure(snapshot, prepared.State, prepared.Issue.Code.Value,
+                    prepared.Issue.Message.Value);
+            }
+
+            ISymbol? symbol = await SymbolFinder.FindSymbolAtPositionAsync(
+                prepared.Document!, prepared.Offset, cancellationToken);
+            if (symbol is null)
+            {
+                return new(
+                    snapshot.ContextId,
+                    snapshot.SessionId,
+                    snapshot.Path,
+                    snapshot.BufferVersion,
+                    SessionState(session),
+                    [UnavailableDestination("No symbol is available at the active caret.")],
+                    session.Issues.ToArray());
+            }
+
+            IReadOnlyList<Location> locations;
+            if (references)
+            {
+                IEnumerable<ReferencedSymbol> found = await SymbolFinder.FindReferencesAsync(
+                    symbol, prepared.Document!.Project.Solution, cancellationToken);
+                locations = found
+                    .SelectMany(item => item.Locations)
+                    .Select(item => item.Location)
+                    .Take(MaximumNavigationItems)
+                    .ToArray();
+            }
+            else
+            {
+                locations = symbol.OriginalDefinition.Locations
+                    .Take(MaximumNavigationItems)
+                    .ToArray();
+            }
+
+            IReadOnlyList<CodeIntelligenceSymbolDestination> destinations = locations
+                .Select(location => MapDestination(
+                    location,
+                    symbol.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+                    session.RootPath))
+                .ToArray();
+            if (destinations.Count == 0)
+            {
+                destinations = [new(
+                    CodeIntelligenceDestinationKind.Metadata,
+                    new(Bound(symbol.ToDisplayString(), MaximumIssueLength)),
+                    null,
+                    null)];
+            }
+
+            return new(
+                snapshot.ContextId,
+                snapshot.SessionId,
+                snapshot.Path,
+                snapshot.BufferVersion,
+                SessionState(session),
+                destinations,
+                session.Issues.ToArray());
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            return NavigationFailure(snapshot, CodeIntelligenceResultState.Failed,
+                "navigation_failed", exception.Message);
+        }
+        finally
+        {
+            session.OperationGate.Release();
+        }
+    }
+
     public async ValueTask CloseAsync(
         CodeIntelligenceSessionId sessionId,
         CancellationToken cancellationToken = default)
@@ -626,6 +1048,247 @@ internal sealed class RoslynCodeIntelligenceEngine(IMSBuildRuntime msBuildRuntim
         diagnostic.Location.SourceTree?.FilePath is { } diagnosticPath &&
         Path.GetFullPath(diagnosticPath).Equals(path, StringComparison.Ordinal);
 
+    private ActiveSession? MatchingSession(CodeIntelligenceInteractiveSnapshot snapshot)
+    {
+        ActiveSession? session = activeSession;
+        return session is not null && session.SessionId == snapshot.SessionId &&
+            session.ContextId == snapshot.ContextId
+            ? session
+            : null;
+    }
+
+    private async ValueTask<PreparedInteractive> PrepareInteractiveAsync(
+        ActiveSession session,
+        CodeIntelligenceInteractiveSnapshot snapshot,
+        CancellationToken cancellationToken)
+    {
+        if (activeSession != session)
+        {
+            return PreparedInteractive.Failure(
+                CodeIntelligenceResultState.Stale,
+                Issue("session_replaced", "The Roslyn session was replaced while work was queued."));
+        }
+
+        if (!TryResolveDocumentPath(session.RootPath, snapshot.Path.Value, out string path))
+        {
+            return PreparedInteractive.Failure(
+                CodeIntelligenceResultState.Failed,
+                Issue("invalid_document_path", "The document path is outside the source context."));
+        }
+
+        Document? document = session.CurrentSolution.Projects
+            .SelectMany(project => project.Documents)
+            .FirstOrDefault(candidate => candidate.FilePath is not null &&
+                Path.GetFullPath(candidate.FilePath).Equals(path, StringComparison.Ordinal));
+        if (document is null)
+        {
+            return PreparedInteractive.Failure(
+                CodeIntelligenceResultState.Degraded,
+                Issue("document_not_in_workspace",
+                    "The document is not represented by the loaded .NET workspace."));
+        }
+
+        CodeIntelligenceIssue? baselineIssue = await VerifyBaselineAsync(
+            path, snapshot.BaselineHash, cancellationToken);
+        if (baselineIssue is not null)
+        {
+            return PreparedInteractive.Failure(
+                CodeIntelligenceResultState.Stale,
+                baselineIssue);
+        }
+
+        SourceText text = SourceText.From(snapshot.Text.Value, Utf8WithoutBom);
+        if (snapshot.Position.Line < 0 || snapshot.Position.Character < 0 ||
+            snapshot.Position.Line >= text.Lines.Count ||
+            snapshot.Position.Character > text.Lines[snapshot.Position.Line].Span.Length)
+        {
+            return PreparedInteractive.Failure(
+                CodeIntelligenceResultState.Failed,
+                Issue("invalid_position", "The caret is outside the active document buffer."));
+        }
+
+        Solution candidate = session.CurrentSolution.WithDocumentText(
+            document.Id, text, PreservationMode.PreserveIdentity);
+        session.CurrentSolution = candidate;
+        Document preparedDocument = candidate.GetDocument(document.Id)!;
+        int offset = text.Lines.GetPosition(new LinePosition(
+            snapshot.Position.Line, snapshot.Position.Character));
+        return new(
+            preparedDocument,
+            text,
+            offset,
+            SessionState(session),
+            Issue: null);
+    }
+
+    private static CodeIntelligenceResultState SessionState(ActiveSession session) =>
+        session.Issues.IsEmpty
+            ? CodeIntelligenceResultState.Ready
+            : CodeIntelligenceResultState.Degraded;
+
+    private static CodeIntelligenceRange Range(SourceText text, TextSpan span)
+    {
+        LinePositionSpan lines = text.Lines.GetLinePositionSpan(span);
+        return new(
+            new(lines.Start.Line, lines.Start.Character),
+            new(lines.End.Line, lines.End.Character));
+    }
+
+    private static CodeIntelligencePosition Position(SourceText text, int offset)
+    {
+        LinePosition position = text.Lines.GetLinePosition(Math.Clamp(offset, 0, text.Length));
+        return new(position.Line, position.Character);
+    }
+
+    private static CodeIntelligenceSymbolKind MapSymbolKind(ImmutableArray<string> tags)
+    {
+        if (tags.Contains("Keyword")) return CodeIntelligenceSymbolKind.Keyword;
+        if (tags.Contains("Namespace")) return CodeIntelligenceSymbolKind.Namespace;
+        if (tags.Contains("Class")) return CodeIntelligenceSymbolKind.Class;
+        if (tags.Contains("Interface")) return CodeIntelligenceSymbolKind.Interface;
+        if (tags.Contains("Structure")) return CodeIntelligenceSymbolKind.Structure;
+        if (tags.Contains("Enum")) return CodeIntelligenceSymbolKind.Enumeration;
+        if (tags.Contains("Delegate")) return CodeIntelligenceSymbolKind.Delegate;
+        if (tags.Contains("ExtensionMethod")) return CodeIntelligenceSymbolKind.ExtensionMethod;
+        if (tags.Contains("Method")) return CodeIntelligenceSymbolKind.Method;
+        if (tags.Contains("Property")) return CodeIntelligenceSymbolKind.Property;
+        if (tags.Contains("Field")) return CodeIntelligenceSymbolKind.Field;
+        if (tags.Contains("Event")) return CodeIntelligenceSymbolKind.Event;
+        if (tags.Contains("Constant")) return CodeIntelligenceSymbolKind.Constant;
+        if (tags.Contains("Local")) return CodeIntelligenceSymbolKind.Local;
+        if (tags.Contains("Parameter")) return CodeIntelligenceSymbolKind.Parameter;
+        if (tags.Contains("TypeParameter")) return CodeIntelligenceSymbolKind.TypeParameter;
+        if (tags.Contains("Snippet")) return CodeIntelligenceSymbolKind.Snippet;
+        return CodeIntelligenceSymbolKind.Other;
+    }
+
+    private static IReadOnlyList<char> CommitCharacters(CompletionItemRules rules)
+    {
+        HashSet<char> characters =
+        [
+            ' ', '(', ')', '[', ']', '{', '}', ':', ';', ',', '.', '+', '-', '*', '/', '%',
+            '&', '|', '^', '!', '~', '=', '<', '>', '?', '@', '#', '\'', '"', '\\',
+        ];
+        foreach (CharacterSetModificationRule rule in rules.CommitCharacterRules)
+        {
+            switch (rule.Kind)
+            {
+                case CharacterSetModificationKind.Add:
+                    characters.UnionWith(rule.Characters);
+                    break;
+                case CharacterSetModificationKind.Remove:
+                    characters.ExceptWith(rule.Characters);
+                    break;
+                case CharacterSetModificationKind.Replace:
+                    characters.Clear();
+                    characters.UnionWith(rule.Characters);
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(rules));
+            }
+        }
+
+        return characters.Order().ToArray();
+    }
+
+    private static CodeIntelligenceSignatureItem MapSignature(
+        IMethodSymbol method,
+        CancellationToken cancellationToken)
+    {
+        SignatureDocumentation documentation = Documentation(method, cancellationToken);
+        return new(
+            new(Bound(
+                method.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+                MaximumIssueLength)),
+            new(documentation.Summary),
+            method.Parameters.Select(parameter => new CodeIntelligenceSignatureParameter(
+                new(parameter.Name),
+                new(Bound(parameter.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+                    MaximumIssueLength)),
+                new(documentation.Parameters.GetValueOrDefault(parameter.Name, string.Empty))))
+                .ToArray());
+    }
+
+    private static SignatureDocumentation Documentation(
+        IMethodSymbol method,
+        CancellationToken cancellationToken)
+    {
+        string? xml = method.GetDocumentationCommentXml(
+            expandIncludes: false,
+            cancellationToken: cancellationToken);
+        if (string.IsNullOrWhiteSpace(xml))
+        {
+            return new(string.Empty, new Dictionary<string, string>(StringComparer.Ordinal));
+        }
+
+        try
+        {
+            XDocument document = XDocument.Parse(xml, LoadOptions.None);
+            string summary = NormalizeDocumentation(document.Root?.Element("summary")?.Value);
+            Dictionary<string, string> parameters = document.Root?.Elements("param")
+                .Where(element => element.Attribute("name")?.Value is { Length: > 0 })
+                .GroupBy(element => element.Attribute("name")!.Value, StringComparer.Ordinal)
+                .ToDictionary(
+                    group => group.Key,
+                    group => NormalizeDocumentation(group.First().Value),
+                    StringComparer.Ordinal) ?? new(StringComparer.Ordinal);
+            return new(summary, parameters);
+        }
+        catch (XmlException)
+        {
+            return new(string.Empty, new Dictionary<string, string>(StringComparer.Ordinal));
+        }
+    }
+
+    private static string NormalizeDocumentation(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        return Bound(string.Join(' ', value.Split(
+            (char[]?)null,
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)),
+            MaximumIssueLength);
+    }
+
+    private static CodeIntelligenceSymbolDestination MapDestination(
+        Location location,
+        string display,
+        string root)
+    {
+        if (!location.IsInSource || location.SourceTree?.FilePath is not { } sourcePath)
+        {
+            return new(
+                CodeIntelligenceDestinationKind.Metadata,
+                new(Bound(display, MaximumIssueLength)),
+                null,
+                null);
+        }
+
+        string fullPath = Path.GetFullPath(sourcePath);
+        string relative = Path.GetRelativePath(root, fullPath);
+        bool confined = relative != ".." &&
+            !relative.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal);
+        FileLinePositionSpan span = location.GetLineSpan();
+        return new(
+            confined && File.Exists(fullPath)
+                ? CodeIntelligenceDestinationKind.Source
+                : CodeIntelligenceDestinationKind.Generated,
+            new(Bound(display, MaximumIssueLength)),
+            confined ? new(relative) : null,
+            new(
+                new(span.StartLinePosition.Line, span.StartLinePosition.Character),
+                new(span.EndLinePosition.Line, span.EndLinePosition.Character)));
+    }
+
+    private static CodeIntelligenceSymbolDestination UnavailableDestination(string message) => new(
+        CodeIntelligenceDestinationKind.Unavailable,
+        new(message),
+        null,
+        null);
+
     private static async ValueTask<IReadOnlyList<CollectedDiagnostic>> CollectDiagnosticsAsync(
         Solution solution,
         IReadOnlySet<ProjectId> projectIds,
@@ -780,6 +1443,77 @@ internal sealed class RoslynCodeIntelligenceEngine(IMSBuildRuntime msBuildRuntim
         [],
         [Issue(code, message)]);
 
+    private static CodeIntelligenceCompletionResult CompletionFailure(
+        CodeIntelligenceInteractiveSnapshot snapshot,
+        CodeIntelligenceResultState state,
+        string code,
+        string message) => new(
+        snapshot.ContextId,
+        snapshot.SessionId,
+        snapshot.Path,
+        snapshot.BufferVersion,
+        state,
+        null,
+        new(snapshot.Position, snapshot.Position),
+        [],
+        [Issue(code, message)]);
+
+    private static CodeIntelligenceCompletionCommitResult CommitFailure(
+        CodeIntelligenceInteractiveSnapshot snapshot,
+        CodeIntelligenceResultState state,
+        string code,
+        string message) => new(
+        snapshot.ContextId,
+        snapshot.SessionId,
+        snapshot.Path,
+        snapshot.BufferVersion,
+        state,
+        [],
+        null,
+        [Issue(code, message)]);
+
+    private static CodeIntelligenceQuickInfoResult QuickInfoFailure(
+        CodeIntelligenceInteractiveSnapshot snapshot,
+        CodeIntelligenceResultState state,
+        string code,
+        string message) => new(
+        snapshot.ContextId,
+        snapshot.SessionId,
+        snapshot.Path,
+        snapshot.BufferVersion,
+        state,
+        null,
+        [],
+        [Issue(code, message)]);
+
+    private static CodeIntelligenceSignatureHelpResult SignatureFailure(
+        CodeIntelligenceInteractiveSnapshot snapshot,
+        CodeIntelligenceResultState state,
+        string code,
+        string message) => new(
+        snapshot.ContextId,
+        snapshot.SessionId,
+        snapshot.Path,
+        snapshot.BufferVersion,
+        state,
+        [],
+        0,
+        0,
+        [Issue(code, message)]);
+
+    private static CodeIntelligenceNavigationResult NavigationFailure(
+        CodeIntelligenceInteractiveSnapshot snapshot,
+        CodeIntelligenceResultState state,
+        string code,
+        string message) => new(
+        snapshot.ContextId,
+        snapshot.SessionId,
+        snapshot.Path,
+        snapshot.BufferVersion,
+        state,
+        [],
+        [Issue(code, message)]);
+
     private static CodeIntelligenceIssue Issue(string code, string message) => new(
         new(code),
         new(Bound(message, MaximumIssueLength)));
@@ -820,6 +1554,30 @@ internal sealed class RoslynCodeIntelligenceEngine(IMSBuildRuntime msBuildRuntim
         string Path,
         CodeIntelligenceDiagnosticSeverity Severity);
 
+    private sealed record PreparedInteractive(
+        Document? Document,
+        SourceText? Text,
+        int Offset,
+        CodeIntelligenceResultState State,
+        CodeIntelligenceIssue? Issue)
+    {
+        internal static PreparedInteractive Failure(
+            CodeIntelligenceResultState state,
+            CodeIntelligenceIssue issue) => new(null, null, 0, state, issue);
+    }
+
+    private sealed record CompletionCache(
+        CodeIntelligenceCompletionListId ListId,
+        CodeIntelligenceDocumentPath Path,
+        CodeIntelligenceBufferVersion BufferVersion,
+        string TextHash,
+        CompletionService Service,
+        IReadOnlyDictionary<CodeIntelligenceCompletionItemId, CompletionItem> Items);
+
+    private sealed record SignatureDocumentation(
+        string Summary,
+        IReadOnlyDictionary<string, string> Parameters);
+
     private sealed class ActiveSession(
         CodeIntelligenceContextId contextId,
         CodeIntelligenceSessionId sessionId,
@@ -840,6 +1598,7 @@ internal sealed class RoslynCodeIntelligenceEngine(IMSBuildRuntime msBuildRuntim
         internal IDisposable WorkspaceFailure { get; } = workspaceFailure;
         internal ConcurrentQueue<CodeIntelligenceIssue> Issues { get; } = issues;
         internal SemaphoreSlim OperationGate { get; } = new(1, 1);
+        internal CompletionCache? CompletionCache { get; set; }
         internal Solution PersistedSolution { get; set; } = solution;
         internal Solution CurrentSolution { get; set; } = solution;
 

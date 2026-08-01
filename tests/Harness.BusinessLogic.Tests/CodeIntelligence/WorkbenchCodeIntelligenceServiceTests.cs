@@ -196,6 +196,55 @@ public sealed class WorkbenchCodeIntelligenceServiceTests
     }
 
     [Fact]
+    public async Task Newer_buffer_discards_an_in_flight_completion_result()
+    {
+        TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        DeterministicCodeIntelligenceEngine engine = new()
+        {
+            Completions = async (request, cancellationToken) =>
+            {
+                entered.SetResult();
+                await release.Task.WaitAsync(cancellationToken);
+                return new(
+                    request.Snapshot.ContextId,
+                    request.Snapshot.SessionId,
+                    request.Snapshot.Path,
+                    request.Snapshot.BufferVersion,
+                    CodeIntelligenceResultState.Ready,
+                    new("list-1"),
+                    new(request.Snapshot.Position, request.Snapshot.Position),
+                    [],
+                    []);
+            },
+        };
+        WorkbenchCodeIntelligenceService service = new(
+            new ContextResolver(ApprovedResolution()), engine);
+        WorkbenchCodeSessionId sessionId = (await service.StartAsync(new(
+            new("workspace-id"), new("goal-id"), new("Harness.slnx")))).SessionId!;
+        _ = await service.SynchronizeAsync(Snapshot(sessionId, version: 1, "class C { }"));
+        WorkbenchCodeInteractiveSnapshot interactive = new(
+            sessionId,
+            new("src/App.cs"),
+            new(Baseline),
+            new(1),
+            new("class C { }"),
+            new(0, 5));
+
+        Task<WorkbenchCodeCompletionView> pending = service.GetCompletionsAsync(new(
+            interactive,
+            WorkbenchCodeCompletionTriggerKind.Invoke,
+            TriggerCharacter: null)).AsTask();
+        await entered.Task;
+        _ = await service.SynchronizeAsync(Snapshot(sessionId, version: 2, "class C { int X; }"));
+        release.SetResult();
+        WorkbenchCodeCompletionView result = await pending;
+
+        Assert.Equal(WorkbenchCodeResultState.Stale, result.State);
+        Assert.Equal("stale_buffer", Assert.Single(result.Issues).Code.Value);
+    }
+
+    [Fact]
     public async Task Stop_invalidates_the_session_and_disposes_the_engine_state()
     {
         DeterministicCodeIntelligenceEngine engine = new();
@@ -273,6 +322,8 @@ public sealed class WorkbenchCodeIntelligenceServiceTests
     {
         internal Func<CodeIntelligenceDocumentSnapshot, CancellationToken,
             ValueTask<CodeIntelligenceDiagnosticResult>>? Diagnostics { get; init; }
+        internal Func<CodeIntelligenceCompletionRequest, CancellationToken,
+            ValueTask<CodeIntelligenceCompletionResult>>? Completions { get; init; }
         internal CodeIntelligenceOpenRequest? OpenRequest { get; private set; }
         internal CodeIntelligenceSessionId? ClosedSession { get; private set; }
         internal int OpenCallCount { get; private set; }
@@ -313,6 +364,27 @@ public sealed class WorkbenchCodeIntelligenceServiceTests
                 [],
                 []));
         }
+
+        public ValueTask<CodeIntelligenceCompletionResult> GetCompletionsAsync(
+            CodeIntelligenceCompletionRequest request,
+            CancellationToken cancellationToken = default) => Completions is null
+            ? throw new NotSupportedException()
+            : Completions(request, cancellationToken);
+        public ValueTask<CodeIntelligenceCompletionCommitResult> CommitCompletionAsync(
+            CodeIntelligenceCompletionCommitRequest request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<CodeIntelligenceQuickInfoResult> GetQuickInfoAsync(
+            CodeIntelligenceInteractiveSnapshot snapshot,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<CodeIntelligenceSignatureHelpResult> GetSignatureHelpAsync(
+            CodeIntelligenceInteractiveSnapshot snapshot,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<CodeIntelligenceNavigationResult> FindDefinitionAsync(
+            CodeIntelligenceInteractiveSnapshot snapshot,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<CodeIntelligenceNavigationResult> FindReferencesAsync(
+            CodeIntelligenceInteractiveSnapshot snapshot,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
         public ValueTask CloseAsync(
             CodeIntelligenceSessionId sessionId,

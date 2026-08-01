@@ -685,6 +685,25 @@ public sealed class WorkspaceMutationServiceTests
             CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
+        public ValueTask<WorkbenchCodeCompletionView> GetCompletionsAsync(
+            WorkbenchCodeCompletionRequest request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<WorkbenchCodeCompletionCommitView> CommitCompletionAsync(
+            WorkbenchCodeCompletionCommitRequest request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<WorkbenchCodeQuickInfoView> GetQuickInfoAsync(
+            WorkbenchCodeInteractiveSnapshot snapshot,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<WorkbenchCodeSignatureHelpView> GetSignatureHelpAsync(
+            WorkbenchCodeInteractiveSnapshot snapshot,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<WorkbenchCodeNavigationView> FindDefinitionAsync(
+            WorkbenchCodeInteractiveSnapshot snapshot,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<WorkbenchCodeNavigationView> FindReferencesAsync(
+            WorkbenchCodeInteractiveSnapshot snapshot,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
         public ValueTask StopAsync(
             WorkbenchCodeSessionId sessionId,
             CancellationToken cancellationToken = default) => ValueTask.CompletedTask;

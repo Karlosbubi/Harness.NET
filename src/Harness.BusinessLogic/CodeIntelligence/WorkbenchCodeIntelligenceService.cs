@@ -6,7 +6,7 @@ using Harness.DataAccess.CodeIntelligence;
 
 namespace Harness.BusinessLogic.CodeIntelligence;
 
-internal sealed class WorkbenchCodeIntelligenceService(
+internal sealed partial class WorkbenchCodeIntelligenceService(
     IWorkbenchWorkspaceContextResolver contextResolver,
     ICodeIntelligenceEngine engine) : IWorkbenchCodeIntelligenceService
 {

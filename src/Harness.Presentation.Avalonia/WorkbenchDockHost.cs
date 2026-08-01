@@ -8,6 +8,7 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using AvaloniaEdit;
+using AvaloniaEdit.CodeCompletion;
 using Dock.Avalonia.Controls;
 using Dock.Model;
 using Dock.Model.Avalonia;
@@ -322,6 +323,26 @@ internal sealed class WorkbenchDockHost
     internal bool ActiveSourceDocumentIsDirty => activeDocument?.Id is { } id &&
                                                  sourceDocuments.TryGetValue(id, out SourceDocumentSession? session) &&
                                                  session.IsDirty;
+
+    internal int ActiveCompletionItemCount => activeDocument?.Id is { } completionId &&
+                                               sourceDocuments.TryGetValue(
+                                                   completionId,
+                                                   out SourceDocumentSession? completionSession)
+        ? completionSession.CompletionWindow?.CompletionList.CompletionData.Count ?? 0
+        : 0;
+
+    internal CompletionWindow? ActiveCompletionWindow => activeDocument?.Id is { } windowId &&
+                                                          sourceDocuments.TryGetValue(
+                                                              windowId,
+                                                              out SourceDocumentSession? windowSession)
+        ? windowSession.CompletionWindow
+        : null;
+
+    internal bool ActiveQuickInfoIsOpen => activeDocument?.Id is { } quickInfoId &&
+                                           sourceDocuments.TryGetValue(
+                                               quickInfoId,
+                                               out SourceDocumentSession? quickInfoSession) &&
+                                           quickInfoSession.QuickInfoWindow?.IsVisible is true;
 
     internal ValueTask<bool> SaveActiveSourceDocumentAsync() =>
         activeDocument?.Id is { } id &&
@@ -1782,12 +1803,36 @@ internal sealed class WorkbenchDockHost
         document.CloseRequested = () => OnSourceDocumentCloseRequested(session);
         editor.TextChanged += (_, _) =>
         {
+            session.CancelHover();
             session.SynchronizeDirtyState();
             ScheduleDiagnostics(session);
         };
         editor.KeyDown += async (_, args) =>
         {
-            if (args.Key is Key.S && args.KeyModifiers.HasFlag(KeyModifiers.Control))
+            if (args.Key is Key.Space && args.KeyModifiers == KeyModifiers.Control)
+            {
+                args.Handled = true;
+                await ShowCompletionAsync(
+                    session,
+                    WorkbenchCodeCompletionTriggerKind.Invoke,
+                    triggerCharacter: null);
+            }
+            else if (args.Key is Key.K && args.KeyModifiers == KeyModifiers.Control)
+            {
+                args.Handled = true;
+                await ShowQuickInfoAsync(session);
+            }
+            else if (args.Key is Key.F12 && args.KeyModifiers == KeyModifiers.None)
+            {
+                args.Handled = true;
+                await NavigateSymbolAsync(session, references: false);
+            }
+            else if (args.Key is Key.F12 && args.KeyModifiers == KeyModifiers.Shift)
+            {
+                args.Handled = true;
+                await NavigateSymbolAsync(session, references: true);
+            }
+            else if (args.Key is Key.S && args.KeyModifiers.HasFlag(KeyModifiers.Control))
             {
                 args.Handled = true;
                 await SaveSourceDocumentAsync(session);
@@ -1798,6 +1843,44 @@ internal sealed class WorkbenchDockHost
                 await RequestSourceDocumentCloseAsync(session);
             }
         };
+        editor.TextArea.TextEntered += async (_, args) =>
+        {
+            if (args.Text is not { Length: 1 })
+            {
+                return;
+            }
+
+            char value = args.Text[0];
+            if (value is '(' or ',')
+            {
+                await ShowSignatureHelpAsync(session);
+            }
+            else if (value == ')')
+            {
+                session.SignatureWindow?.Hide();
+                session.SignatureWindow = null;
+            }
+
+            if (char.IsLetterOrDigit(value) || value is '_' or '.')
+            {
+                await ShowCompletionAsync(
+                    session,
+                    WorkbenchCodeCompletionTriggerKind.Insertion,
+                    value);
+            }
+        };
+        editor.PointerMoved += (_, args) =>
+        {
+            var position = editor.GetPositionFromPoint(args.GetPosition(editor));
+            if (position is { } value)
+            {
+                _ = ShowQuickInfoOnHoverAsync(
+                    session,
+                    new(value.Line - 1, value.Column - 1),
+                    session.BeginHover(cancellationToken));
+            }
+        };
+        editor.PointerExited += (_, _) => session.CancelHover();
         surface.Save.Click += async (_, _) => await SaveSourceDocumentAsync(session);
         surface.Reload.Click += async (_, _) => await ReloadSourceDocumentAsync(session, confirmDiscard: true);
         surface.Close.Click += async (_, _) => await RequestSourceDocumentCloseAsync(session);
@@ -1805,6 +1888,387 @@ internal sealed class WorkbenchDockHost
         session.SynchronizeDirtyState();
         ScheduleDiagnostics(session, immediate: true);
         return session;
+    }
+
+    private async ValueTask ShowCompletionAsync(
+        SourceDocumentSession session,
+        WorkbenchCodeCompletionTriggerKind triggerKind,
+        char? triggerCharacter)
+    {
+        if (!CanUseSemanticAssistance(session))
+        {
+            return;
+        }
+
+        (WorkbenchCodeBufferVersion version, CancellationToken token) =
+            session.BeginInteraction(cancellationToken);
+        try
+        {
+            WorkbenchCodeSessionId? codeSession = await EnsureCodeSessionAsync(session, token);
+            if (codeSession is null || !session.IsCurrentInteraction(version))
+            {
+                return;
+            }
+
+            WorkbenchCodeInteractiveSnapshot snapshot = InteractiveSnapshot(
+                session, codeSession, version);
+            WorkbenchCodeCompletionView result = await codeIntelligenceService.GetCompletionsAsync(
+                new(snapshot, triggerKind, triggerCharacter), token);
+            if (!session.IsCurrentInteraction(version) || result.ListId is null ||
+                result.Items.Count == 0 || result.State is WorkbenchCodeResultState.Stale or
+                    WorkbenchCodeResultState.Cancelled or WorkbenchCodeResultState.Failed)
+            {
+                return;
+            }
+
+            session.CompletionWindow?.Hide();
+            CompletionWindow window = new RoslynCompletionWindow(session.Editor.TextArea)
+            {
+                StartOffset = Offset(session.Editor, result.ApplicableRange.Start),
+                EndOffset = Offset(session.Editor, result.ApplicableRange.End),
+                CloseWhenCaretAtBeginning = triggerKind is WorkbenchCodeCompletionTriggerKind.Invoke,
+            };
+            foreach (WorkbenchCodeCompletionItem item in result.Items)
+            {
+                window.CompletionList.CompletionData.Add(new RoslynCompletionData(
+                    item,
+                    (selected, commitCharacter) =>
+                        _ = CommitCompletionAsync(
+                            session,
+                            snapshot,
+                            result.ListId,
+                            selected,
+                            commitCharacter)));
+            }
+
+            AutomationProperties.SetName(
+                window.CompletionList,
+                $"Code completions for {session.View.Path.Value}");
+            session.CompletionWindow = window;
+            window.Show();
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+        }
+    }
+
+    private async Task CommitCompletionAsync(
+        SourceDocumentSession session,
+        WorkbenchCodeInteractiveSnapshot snapshot,
+        WorkbenchCodeCompletionListId listId,
+        WorkbenchCodeCompletionItem item,
+        char? commitCharacter)
+    {
+        try
+        {
+            WorkbenchCodeCompletionCommitView result =
+                await codeIntelligenceService.CommitCompletionAsync(
+                    new(snapshot, listId, item.Id, commitCharacter),
+                    cancellationToken);
+            if (!session.IsCurrentInteraction(snapshot.BufferVersion) ||
+                result.State is WorkbenchCodeResultState.Stale or
+                    WorkbenchCodeResultState.Cancelled or WorkbenchCodeResultState.Failed)
+            {
+                session.SetStatus("Completion expired because the document changed.");
+                return;
+            }
+
+            foreach (WorkbenchCodeTextChange change in result.Changes
+                         .OrderByDescending(value => Offset(session.Editor, value.Range.Start)))
+            {
+                int start = Offset(session.Editor, change.Range.Start);
+                int end = Offset(session.Editor, change.Range.End);
+                session.Editor.Document.Replace(start, Math.Max(0, end - start), change.Text.Value);
+            }
+
+            if (result.NewPosition is { } position)
+            {
+                session.Editor.TextArea.Caret.Offset = Offset(session.Editor, position);
+            }
+            else if (result.Changes.LastOrDefault() is { } last)
+            {
+                session.Editor.TextArea.Caret.Offset =
+                    Offset(session.Editor, last.Range.Start) + last.Text.Value.Length;
+            }
+
+            if (commitCharacter is { } value && value is not '\t' and not '\n' &&
+                (session.Editor.TextArea.Caret.Offset >= session.Editor.Document.TextLength ||
+                 session.Editor.Document.GetCharAt(session.Editor.TextArea.Caret.Offset) != value))
+            {
+                session.Editor.Document.Insert(session.Editor.TextArea.Caret.Offset, value.ToString());
+                session.Editor.TextArea.Caret.Offset++;
+            }
+
+            session.SetStatus($"Completed {item.DisplayText.Value} with Roslyn.");
+            session.Editor.Focus();
+            if (commitCharacter == '(')
+            {
+                await ShowSignatureHelpAsync(session);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+    }
+
+    private async Task ShowQuickInfoOnHoverAsync(
+        SourceDocumentSession session,
+        WorkbenchCodePosition position,
+        CancellationToken hoverToken)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(600), hoverToken);
+            if (session.CompletionWindow?.IsVisible is true)
+            {
+                return;
+            }
+            await ShowQuickInfoAsync(session, position);
+        }
+        catch (OperationCanceledException) when (hoverToken.IsCancellationRequested)
+        {
+        }
+    }
+
+    private async ValueTask ShowQuickInfoAsync(
+        SourceDocumentSession session,
+        WorkbenchCodePosition? requestedPosition = null)
+    {
+        if (!CanUseSemanticAssistance(session))
+        {
+            return;
+        }
+
+        session.CompletionWindow?.Hide();
+        session.CompletionWindow = null;
+
+        (WorkbenchCodeBufferVersion version, CancellationToken token) =
+            session.BeginInteraction(cancellationToken);
+        try
+        {
+            WorkbenchCodeSessionId? codeSession = await EnsureCodeSessionAsync(session, token);
+            if (codeSession is null)
+            {
+                return;
+            }
+
+            WorkbenchCodeQuickInfoView result = await codeIntelligenceService.GetQuickInfoAsync(
+                InteractiveSnapshot(session, codeSession, version, requestedPosition), token);
+            if (!session.IsCurrentInteraction(version) || result.Sections.Count == 0)
+            {
+                session.SetStatus("No symbol information is available at the caret.");
+                return;
+            }
+
+            session.QuickInfoWindow?.Hide();
+            StackPanel content = new() { Spacing = 6, MaxWidth = 760 };
+            foreach (WorkbenchCodeMessage section in result.Sections)
+            {
+                content.Children.Add(new TextBlock
+                {
+                    Text = section.Value,
+                    TextWrapping = TextWrapping.Wrap,
+                    FontFamily = new("Cascadia Code,JetBrains Mono,Consolas,Menlo,monospace"),
+                });
+            }
+
+            Border card = new() { Child = content, Padding = new(10) };
+            card.Classes.Add("semantic-insight");
+            AutomationProperties.SetName(card,
+                $"Quick info for {session.View.Path.Value}: " +
+                string.Join(" ", result.Sections.Select(section => section.Value)));
+            InsightWindow window = new(session.Editor.TextArea)
+            {
+                Child = card,
+                StartOffset = result.ApplicableRange is null
+                    ? session.Editor.TextArea.Caret.Offset
+                    : Offset(session.Editor, result.ApplicableRange.Start),
+                EndOffset = result.ApplicableRange is null
+                    ? session.Editor.TextArea.Caret.Offset
+                    : Offset(session.Editor, result.ApplicableRange.End),
+            };
+            session.QuickInfoWindow = window;
+            window.Show();
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+        }
+    }
+
+    private async ValueTask ShowSignatureHelpAsync(SourceDocumentSession session)
+    {
+        if (!CanUseSemanticAssistance(session))
+        {
+            return;
+        }
+
+        session.CompletionWindow?.Hide();
+        session.CompletionWindow = null;
+
+        (WorkbenchCodeBufferVersion version, CancellationToken token) =
+            session.BeginInteraction(cancellationToken);
+        try
+        {
+            WorkbenchCodeSessionId? codeSession = await EnsureCodeSessionAsync(session, token);
+            if (codeSession is null)
+            {
+                return;
+            }
+
+            WorkbenchCodeSignatureHelpView result =
+                await codeIntelligenceService.GetSignatureHelpAsync(
+                    InteractiveSnapshot(session, codeSession, version), token);
+            if (!session.IsCurrentInteraction(version) || result.Signatures.Count == 0)
+            {
+                return;
+            }
+
+            session.SignatureWindow?.Hide();
+            OverloadInsightWindow window = new(session.Editor.TextArea)
+            {
+                Provider = new RoslynOverloadProvider(result),
+                StartOffset = Math.Max(0, session.Editor.TextArea.Caret.Offset - 1),
+                EndOffset = session.Editor.Document.TextLength,
+            };
+            session.SignatureWindow = window;
+            window.Show();
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+        }
+    }
+
+    private async ValueTask NavigateSymbolAsync(
+        SourceDocumentSession session,
+        bool references)
+    {
+        if (!CanUseSemanticAssistance(session))
+        {
+            return;
+        }
+
+        session.CloseInteractiveWindows();
+
+        (WorkbenchCodeBufferVersion version, CancellationToken token) =
+            session.BeginInteraction(cancellationToken);
+        try
+        {
+            WorkbenchCodeSessionId? codeSession = await EnsureCodeSessionAsync(session, token);
+            if (codeSession is null)
+            {
+                return;
+            }
+
+            WorkbenchCodeInteractiveSnapshot snapshot = InteractiveSnapshot(
+                session, codeSession, version);
+            WorkbenchCodeNavigationView result = references
+                ? await codeIntelligenceService.FindReferencesAsync(snapshot, token)
+                : await codeIntelligenceService.FindDefinitionAsync(snapshot, token);
+            if (!session.IsCurrentInteraction(version))
+            {
+                return;
+            }
+
+            WorkbenchCodeSymbolDestination[] source = result.Destinations
+                .Where(destination => destination.Kind is WorkbenchCodeDestinationKind.Source &&
+                    destination.Path is not null && destination.Range is not null)
+                .ToArray();
+            if (!references && source.FirstOrDefault() is { } definition)
+            {
+                await NavigateToSymbolAsync(definition, session.View.GoalId);
+                return;
+            }
+
+            if (source.Length == 0)
+            {
+                session.SetStatus(result.Destinations.FirstOrDefault()?.Display.Value ??
+                    "No editable source destination is available for this symbol.");
+                return;
+            }
+
+            ListBox list = new()
+            {
+                ItemsSource = source.Select(destination => new SymbolDestinationChoice(destination))
+                    .ToArray(),
+                MaxHeight = 320,
+                MinWidth = 420,
+            };
+            AutomationProperties.SetName(list,
+                $"{source.Length} source reference destinations for {session.View.Path.Value}");
+            InsightWindow window = new(session.Editor.TextArea)
+            {
+                Child = list,
+                StartOffset = session.Editor.TextArea.Caret.Offset,
+                EndOffset = session.Editor.TextArea.Caret.Offset,
+            };
+            list.SelectionChanged += async (_, _) =>
+            {
+                if (list.SelectedItem is SymbolDestinationChoice choice)
+                {
+                    window.Hide();
+                    await NavigateToSymbolAsync(choice.Destination, session.View.GoalId);
+                }
+            };
+            session.QuickInfoWindow?.Hide();
+            session.QuickInfoWindow = window;
+            window.Show();
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+        }
+    }
+
+    private async ValueTask NavigateToSymbolAsync(
+        WorkbenchCodeSymbolDestination destination,
+        GoalId? goalId)
+    {
+        if (destination.Path is null || destination.Range is null)
+        {
+            return;
+        }
+
+        await OpenFileAsync(destination.Path.Value, goalId);
+        SourceDocumentSession? target = sourceDocuments.Values.FirstOrDefault(value =>
+            value.View.GoalId == goalId &&
+            value.View.Path.Value.Equals(destination.Path.Value, StringComparison.Ordinal));
+        if (target is null)
+        {
+            return;
+        }
+
+        SetActiveDocument(target.Document);
+        int line = destination.Range.Start.Line + 1;
+        int column = destination.Range.Start.Character + 1;
+        target.Editor.TextArea.Caret.Line = Math.Clamp(line, 1, target.Editor.Document.LineCount);
+        target.Editor.TextArea.Caret.Column = Math.Max(1, column);
+        target.Editor.ScrollTo(line, column);
+        target.Editor.Focus();
+    }
+
+    private static WorkbenchCodeInteractiveSnapshot InteractiveSnapshot(
+        SourceDocumentSession session,
+        WorkbenchCodeSessionId codeSession,
+        WorkbenchCodeBufferVersion version,
+        WorkbenchCodePosition? requestedPosition = null) => new(
+        codeSession,
+        new(session.View.Path.Value),
+        new(session.View.Sha256!.Value),
+        version,
+        new(session.Editor.Text),
+        requestedPosition ?? new(
+            session.Editor.TextArea.Caret.Line - 1,
+            session.Editor.TextArea.Caret.Column - 1));
+
+    private static bool CanUseSemanticAssistance(SourceDocumentSession session) =>
+        session.View.Sha256 is not null && !session.View.IsTruncated &&
+        IsDotNetSource(session.View.Path.Value);
+
+    private static int Offset(TextEditor editor, WorkbenchCodePosition position)
+    {
+        int line = Math.Clamp(position.Line + 1, 1, editor.Document.LineCount);
+        var documentLine = editor.Document.GetLineByNumber(line);
+        int character = Math.Clamp(position.Character, 0, documentLine.Length);
+        return documentLine.Offset + character;
     }
 
     private async ValueTask<bool> SaveSourceDocumentAsync(
@@ -2623,6 +3087,16 @@ internal sealed class WorkbenchDockHost
             int column = Diagnostic.Range.Start.Character + 1;
             return $"{Diagnostic.Severity} {Diagnostic.Id.Value}  " +
                    $"{Diagnostic.Path.Value}:{line}:{column}  {Diagnostic.Message.Value}";
+        }
+    }
+
+    private sealed record SymbolDestinationChoice(
+        WorkbenchCodeSymbolDestination Destination)
+    {
+        public override string ToString()
+        {
+            int line = Destination.Range?.Start.Line + 1 ?? 0;
+            return $"{Destination.Path?.Value}:{line}  {Destination.Display.Value}";
         }
     }
 

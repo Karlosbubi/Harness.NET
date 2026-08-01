@@ -285,6 +285,14 @@
     <Setter Property="FontSize" Value="11" />
     <Setter Property="Foreground" Value="{DynamicResource Harness.TextMuted}" />
   </Style>
+  <Style Selector="Border.semantic-insight">
+    <Setter Property="Padding" Value="10" />
+    <Setter Property="CornerRadius" Value="7" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Harness.BorderStrong}" />
+    <Setter Property="Background" Value="{DynamicResource Harness.Panel}" />
+    <Setter Property="BoxShadow" Value="0 8 24 0 #48000000" />
+  </Style>
 
   <!-- Application identity mark in the header bar. -->
   <Style Selector="Border.app-mark">

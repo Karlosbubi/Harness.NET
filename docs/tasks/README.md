@@ -77,7 +77,7 @@ but the end-user workflow is not complete.
 | 040 | Done | Collaborate through chat instead of a chain of pop-ups | 035 | - | Conversation is the primary goal surface; typed inline cards expose plans, cost/capability decisions, progress, validation, evidence, Restore, commit, and handoff. Plan, spending, Restore, destructive, budget-extension, and exact-commit authority remain explicit typed actions. Ordinary role/model/output defaults move to one searchable Settings surface, goal overrides use progressive disclosure, and obsolete dialog paths are removed. Production wide/compact and AT-SPI acceptance is recorded in `docs/acceptance/chat-first-workflow-2026-07-29.md`. |
 | 041 | Planned | Recover application state without the verifier script | 026 | Operations can only create a backup; restoring one into a fresh install is proven solely by `eng/verify-v1-release.sh` and is not available to a user in either Avalonia or the TUI. | A user can restore a private-state backup into a fresh or existing install from Avalonia/TUI Operations, with the same integrity verification the release gate already performs, gated by an explicit confirmation given the sensitivity of the archive. |
 | 042 | Done | Validate every edit, model or manual, before it is trusted | 017, 018, 032 | - | An in-process Roslyn implementation behind implementation-neutral Data Access and Business Logic contracts loads only trusted source contexts without implicit restore. Versioned live buffers show syntax/compiler/analyzer diagnostics inline and in a Problems tool. Every model-authored candidate is compared with baseline diagnostics, is rejected before disk when it introduces a compiler Error, records warnings/findings as evidence, applies through an atomic baseline-protected boundary, and is verified again after apply. |
-| 043 | Planned | Get semantic assistance while editing | 042 | The editor has no completion, quick info, signature help, definition/reference navigation, or semantic symbol awareness. | Warm, cancellable completion, quick info, signature help, go-to-definition, and find-references operate on the exact active Roslyn source context; stale responses are discarded, keyboard and pointer interactions are accessible, and detailed targets plus degraded states follow ADR 012. |
+| 043 | Done | Get semantic assistance while editing | 042 | - | Warm, cancellable completion, quick info, signature help, go-to-definition, and find-references operate on the exact active Roslyn source context; stale responses are discarded, keyboard and pointer interactions are accessible, and detailed targets plus degraded states follow ADR 012. Production-control and real-workspace evidence is recorded in `docs/acceptance/roslyn-interactive-assistance-2026-07-31.md`. |
 | 044 | Planned | Use deterministic Roslyn transformations for deterministic work | 042 | Humans and agents can only request textual edits, so a rename can miss references, alter unrelated text, or cross a delegated path grant. | Semantic rename resolves a symbol through Roslyn, previews every affected file and conflict with exact baselines and a fingerprint, enforces goal/task path grants, applies all files atomically or none, and records post-apply diagnostics and diff evidence. The editor and agent tool use the same typed operation; no model-authored text-search rename path exists. |
 
 ### Prepared delivery slices for Tasks 040 and 042-044
@@ -210,6 +210,16 @@ merely to complete the final visual design at once.
    honestly.
 4. Run the representative small/large-workspace latency and memory checks from ADR
    012 and complete a hands-on editing pass.
+
+Complete: implementation-neutral Data Access and Business Logic contracts keep every
+interactive result tied to its source context, path, baseline, buffer version, and
+caret. AvaloniaEdit now provides accessible caret-anchored completion with filtering,
+keyboard/pointer selection, Enter/Tab and item-specific punctuation commits; hover and
+Ctrl+K quick info; parameter-highlighted signature help on `(` and `,`; F12 definition;
+and Shift+F12 source-reference selection. Generated, metadata, unavailable, cancelled,
+degraded, and stale destinations remain explicit. Real Harness measurements and the
+production-control editing pass are recorded in
+`docs/acceptance/roslyn-interactive-assistance-2026-07-31.md`.
 
 #### Task 044: deterministic transformations
 

@@ -13,6 +13,8 @@ using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using AvaloniaEdit;
+using AvaloniaEdit.CodeCompletion;
+using AvaloniaEdit.Document;
 using Dock.Avalonia.Controls;
 using Dock.Model.Controls;
 using Dock.Model.Core;
@@ -974,6 +976,181 @@ public sealed class PresentationControlTests
     }
 
     [Fact]
+    public async Task Source_editor_opens_accessible_roslyn_completion_and_quick_info_from_keyboard()
+    {
+        using HeadlessUnitTestSession testSession =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await testSession.Dispatch(() =>
+        {
+            CodeIntelligenceService codeIntelligence = new()
+            {
+                Completions = request => new(
+                    request.Snapshot.SessionId,
+                    request.Snapshot.Path,
+                    request.Snapshot.BufferVersion,
+                    WorkbenchCodeResultState.Ready,
+                    new("list-1"),
+                    new(request.Snapshot.Position, request.Snapshot.Position),
+                    [new(
+                        new("item-1"),
+                        new("Example"),
+                        new("Example"),
+                        new("Example"),
+                        new("namespace"),
+                        WorkbenchCodeSymbolKind.Namespace,
+                        ['\t', '\n', '('],
+                        IsRecommended: false)],
+                    []),
+                CompletionCommit = request => new(
+                    request.Snapshot.SessionId,
+                    request.Snapshot.Path,
+                    request.Snapshot.BufferVersion,
+                    WorkbenchCodeResultState.Ready,
+                    [new(
+                        new(request.Snapshot.Position, request.Snapshot.Position),
+                        new("Example"))],
+                    new(
+                        request.Snapshot.Position.Line,
+                        request.Snapshot.Position.Character + "Example".Length),
+                    []),
+                QuickInfo = snapshot => new(
+                    snapshot.SessionId,
+                    snapshot.Path,
+                    snapshot.BufferVersion,
+                    WorkbenchCodeResultState.Ready,
+                    new(snapshot.Position, snapshot.Position),
+                    [new("namespace Example")],
+                    []),
+            };
+            WorkbenchDockHost workbench = CreateWorkbench(
+                TrustedShell(), new(), codeIntelligence: codeIntelligence);
+            Window window = new() { Width = 1280, Height = 800, Content = workbench.Control };
+            window.Show();
+            workbench.OpenFileAsync("src/App.cs").AsTask().GetAwaiter().GetResult();
+            TextEditor editor = workbench.ActiveSourceEditor!;
+            editor.CaretOffset = editor.Text.Length;
+
+            editor.RaiseEvent(new KeyEventArgs
+            {
+                RoutedEvent = InputElement.KeyDownEvent,
+                Key = Key.Space,
+                KeyModifiers = KeyModifiers.Control,
+            });
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.Equal(1, workbench.ActiveCompletionItemCount);
+            CompletionWindow completionWindow = workbench.ActiveCompletionWindow!;
+            completionWindow.CompletionList.CompletionData[0].Complete(
+                editor.TextArea,
+                new SimpleSegment(editor.CaretOffset, 0),
+                EventArgs.Empty);
+            Dispatcher.UIThread.RunJobs();
+            Assert.EndsWith("Example", editor.Text, StringComparison.Ordinal);
+            RoslynCompletionData completion = new(
+                codeIntelligence.Completions(new(
+                    new(
+                        new("session-1"),
+                        new("src/App.cs"),
+                        new("7755c09dd3d9f796fe7f9d6225f6f71309e31eba460d4c0517cbde6ba34488f4"),
+                        new(1),
+                        new(editor.Text),
+                        new(0, 0)),
+                    WorkbenchCodeCompletionTriggerKind.Invoke,
+                    null)).Items[0],
+                (_, _) => { });
+            Assert.Contains(
+                "Namespace Example namespace",
+                AutomationProperties.GetName(Assert.IsAssignableFrom<Control>(completion.Content)),
+                StringComparison.Ordinal);
+            char? committedWith = null;
+            RoslynCompletionData commitData = new(
+                codeIntelligence.Completions(new(
+                    new(
+                        new("session-1"),
+                        new("src/App.cs"),
+                        new("7755c09dd3d9f796fe7f9d6225f6f71309e31eba460d4c0517cbde6ba34488f4"),
+                        new(1),
+                        new(editor.Text),
+                        new(0, 0)),
+                    WorkbenchCodeCompletionTriggerKind.Invoke,
+                    null)).Items[0],
+                (_, character) => committedWith = character);
+            commitData.CompleteWithCharacter('(');
+            Assert.Equal('(', committedWith);
+            RoslynOverloadProvider overloads = new(new(
+                new("session-1"),
+                new("src/App.cs"),
+                new(1),
+                WorkbenchCodeResultState.Ready,
+                [new(
+                    new("void Run(string text, int count)"),
+                    new("Runs the operation."),
+                    [new(new("text"), new("string text"), new(string.Empty)),
+                     new(new("count"), new("int count"), new(string.Empty))])],
+                0,
+                1,
+                []));
+            Assert.Contains(
+                "parameter 2",
+                AutomationProperties.GetName(
+                    Assert.IsAssignableFrom<Control>(overloads.CurrentHeader)),
+                StringComparison.OrdinalIgnoreCase);
+
+            editor.RaiseEvent(new KeyEventArgs
+            {
+                RoutedEvent = InputElement.KeyDownEvent,
+                Key = Key.K,
+                KeyModifiers = KeyModifiers.Control,
+            });
+            Dispatcher.UIThread.RunJobs();
+            Assert.True(workbench.ActiveQuickInfoIsOpen);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task F12_definition_navigation_moves_to_the_exact_source_range()
+    {
+        using HeadlessUnitTestSession testSession =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await testSession.Dispatch(() =>
+        {
+            CodeIntelligenceService codeIntelligence = new()
+            {
+                Definition = snapshot => new(
+                    snapshot.SessionId,
+                    snapshot.Path,
+                    snapshot.BufferVersion,
+                    WorkbenchCodeResultState.Ready,
+                    [new(
+                        WorkbenchCodeDestinationKind.Source,
+                        new("Example"),
+                        snapshot.Path,
+                        new(new(0, 2), new(0, 9)))],
+                    []),
+            };
+            WorkbenchDockHost workbench = CreateWorkbench(
+                TrustedShell(), new(), codeIntelligence: codeIntelligence);
+            Window window = new() { Width = 1280, Height = 800, Content = workbench.Control };
+            window.Show();
+            workbench.OpenFileAsync("src/App.cs").AsTask().GetAwaiter().GetResult();
+            TextEditor editor = workbench.ActiveSourceEditor!;
+
+            editor.RaiseEvent(new KeyEventArgs
+            {
+                RoutedEvent = InputElement.KeyDownEvent,
+                Key = Key.F12,
+                KeyModifiers = KeyModifiers.None,
+            });
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.Equal(1, workbench.ActiveSourceEditor?.TextArea.Caret.Line);
+            Assert.Equal(3, workbench.ActiveSourceEditor?.TextArea.Caret.Column);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
     public async Task Floating_tools_use_the_originating_dock_window_as_owner()
     {
         using HeadlessUnitTestSession session =
@@ -1696,6 +1873,33 @@ public sealed class PresentationControlTests
         }
 
         internal List<WorkbenchCodeDocumentSnapshot> Snapshots { get; } = [];
+        internal Func<WorkbenchCodeCompletionRequest, WorkbenchCodeCompletionView>? Completions
+        {
+            get;
+            init;
+        }
+        internal Func<WorkbenchCodeCompletionCommitRequest,
+            WorkbenchCodeCompletionCommitView>? CompletionCommit { get; init; }
+        internal Func<WorkbenchCodeInteractiveSnapshot, WorkbenchCodeQuickInfoView>? QuickInfo
+        {
+            get;
+            init;
+        }
+        internal Func<WorkbenchCodeInteractiveSnapshot, WorkbenchCodeSignatureHelpView>? Signatures
+        {
+            get;
+            init;
+        }
+        internal Func<WorkbenchCodeInteractiveSnapshot, WorkbenchCodeNavigationView>? Definition
+        {
+            get;
+            init;
+        }
+        internal Func<WorkbenchCodeInteractiveSnapshot, WorkbenchCodeNavigationView>? References
+        {
+            get;
+            init;
+        }
 
         public ValueTask<WorkbenchCodeSessionView> StartAsync(
             WorkbenchCodeSessionRequest request,
@@ -1730,6 +1934,54 @@ public sealed class PresentationControlTests
             WorkbenchCodeValidationDisposition.NotApplicable,
             [],
             []));
+
+        public ValueTask<WorkbenchCodeCompletionView> GetCompletionsAsync(
+            WorkbenchCodeCompletionRequest request,
+            CancellationToken cancellationToken = default) => ValueTask.FromResult(
+                Completions?.Invoke(request) ?? new(
+                    request.Snapshot.SessionId,
+                    request.Snapshot.Path,
+                    request.Snapshot.BufferVersion,
+                    WorkbenchCodeResultState.Ready,
+                    null,
+                    new(request.Snapshot.Position, request.Snapshot.Position),
+                    [],
+                    []));
+        public ValueTask<WorkbenchCodeCompletionCommitView> CommitCompletionAsync(
+            WorkbenchCodeCompletionCommitRequest request,
+            CancellationToken cancellationToken = default) => ValueTask.FromResult(
+                CompletionCommit?.Invoke(request) ?? new(
+                    request.Snapshot.SessionId,
+                    request.Snapshot.Path,
+                    request.Snapshot.BufferVersion,
+                    WorkbenchCodeResultState.Stale,
+                    [],
+                    null,
+                    [new(new("completion_unavailable"), new("Completion is unavailable."))]));
+        public ValueTask<WorkbenchCodeQuickInfoView> GetQuickInfoAsync(
+            WorkbenchCodeInteractiveSnapshot snapshot,
+            CancellationToken cancellationToken = default) => ValueTask.FromResult(
+                QuickInfo?.Invoke(snapshot) ?? new(
+                    snapshot.SessionId, snapshot.Path, snapshot.BufferVersion,
+                    WorkbenchCodeResultState.Ready, null, [], []));
+        public ValueTask<WorkbenchCodeSignatureHelpView> GetSignatureHelpAsync(
+            WorkbenchCodeInteractiveSnapshot snapshot,
+            CancellationToken cancellationToken = default) => ValueTask.FromResult(
+                Signatures?.Invoke(snapshot) ?? new(
+                    snapshot.SessionId, snapshot.Path, snapshot.BufferVersion,
+                    WorkbenchCodeResultState.Ready, [], 0, 0, []));
+        public ValueTask<WorkbenchCodeNavigationView> FindDefinitionAsync(
+            WorkbenchCodeInteractiveSnapshot snapshot,
+            CancellationToken cancellationToken = default) => ValueTask.FromResult(
+                Definition?.Invoke(snapshot) ?? new(
+                    snapshot.SessionId, snapshot.Path, snapshot.BufferVersion,
+                    WorkbenchCodeResultState.Ready, [], []));
+        public ValueTask<WorkbenchCodeNavigationView> FindReferencesAsync(
+            WorkbenchCodeInteractiveSnapshot snapshot,
+            CancellationToken cancellationToken = default) => ValueTask.FromResult(
+                References?.Invoke(snapshot) ?? new(
+                    snapshot.SessionId, snapshot.Path, snapshot.BufferVersion,
+                    WorkbenchCodeResultState.Ready, [], []));
 
         public ValueTask StopAsync(
             WorkbenchCodeSessionId sessionId,

@@ -1,6 +1,7 @@
 using Avalonia.Automation;
 using Avalonia.Controls;
 using AvaloniaEdit;
+using AvaloniaEdit.CodeCompletion;
 using Dock.Model.Avalonia.Controls;
 using Harness.BusinessLogic.CodeIntelligence;
 using Harness.BusinessLogic.Documents;
@@ -19,6 +20,8 @@ internal sealed class SourceDocumentSession : IDisposable
     private bool suppressChanges;
     private bool isBusy;
     private CancellationTokenSource? diagnosticsCancellation;
+    private CancellationTokenSource? interactionCancellation;
+    private CancellationTokenSource? hoverCancellation;
     private long bufferVersion;
 
     internal SourceDocumentSession(
@@ -42,6 +45,10 @@ internal sealed class SourceDocumentSession : IDisposable
     internal bool IsDirty { get; private set; }
     internal bool AllowClose { get; set; }
     internal bool IgnoreNextActivationChange { get; set; }
+    internal long CurrentBufferVersion => bufferVersion;
+    internal CompletionWindow? CompletionWindow { get; set; }
+    internal InsightWindow? QuickInfoWindow { get; set; }
+    internal OverloadInsightWindow? SignatureWindow { get; set; }
 
     internal (WorkbenchCodeBufferVersion Version, CancellationToken Token) BeginDiagnostics(
         CancellationToken parentCancellation)
@@ -54,6 +61,38 @@ internal sealed class SourceDocumentSession : IDisposable
 
     internal bool IsCurrentDiagnostics(WorkbenchCodeBufferVersion version) =>
         bufferVersion == version.Value && diagnosticsCancellation?.IsCancellationRequested is false;
+
+    internal (WorkbenchCodeBufferVersion Version, CancellationToken Token) BeginInteraction(
+        CancellationToken parentCancellation)
+    {
+        interactionCancellation?.Cancel();
+        interactionCancellation?.Dispose();
+        interactionCancellation = CancellationTokenSource.CreateLinkedTokenSource(parentCancellation);
+        return (new(Math.Max(1, bufferVersion)), interactionCancellation.Token);
+    }
+
+    internal bool IsCurrentInteraction(WorkbenchCodeBufferVersion version) =>
+        bufferVersion == version.Value && interactionCancellation?.IsCancellationRequested is false;
+
+    internal CancellationToken BeginHover(CancellationToken parentCancellation)
+    {
+        hoverCancellation?.Cancel();
+        hoverCancellation?.Dispose();
+        hoverCancellation = CancellationTokenSource.CreateLinkedTokenSource(parentCancellation);
+        return hoverCancellation.Token;
+    }
+
+    internal void CancelHover() => hoverCancellation?.Cancel();
+
+    internal void CloseInteractiveWindows()
+    {
+        CompletionWindow?.Hide();
+        QuickInfoWindow?.Hide();
+        SignatureWindow?.Hide();
+        CompletionWindow = null;
+        QuickInfoWindow = null;
+        SignatureWindow = null;
+    }
 
     internal void SynchronizeDirtyState()
     {
@@ -157,6 +196,11 @@ internal sealed class SourceDocumentSession : IDisposable
     {
         diagnosticsCancellation?.Cancel();
         diagnosticsCancellation?.Dispose();
+        interactionCancellation?.Cancel();
+        interactionCancellation?.Dispose();
+        hoverCancellation?.Cancel();
+        hoverCancellation?.Dispose();
+        CloseInteractiveWindows();
         Document.CloseRequested = null;
         Surface.Dispose();
     }

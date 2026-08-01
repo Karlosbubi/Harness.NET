@@ -15,6 +15,30 @@ public interface IWorkbenchCodeIntelligenceService
         WorkbenchCodeValidationRequest request,
         CancellationToken cancellationToken = default);
 
+    ValueTask<WorkbenchCodeCompletionView> GetCompletionsAsync(
+        WorkbenchCodeCompletionRequest request,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<WorkbenchCodeCompletionCommitView> CommitCompletionAsync(
+        WorkbenchCodeCompletionCommitRequest request,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<WorkbenchCodeQuickInfoView> GetQuickInfoAsync(
+        WorkbenchCodeInteractiveSnapshot snapshot,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<WorkbenchCodeSignatureHelpView> GetSignatureHelpAsync(
+        WorkbenchCodeInteractiveSnapshot snapshot,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<WorkbenchCodeNavigationView> FindDefinitionAsync(
+        WorkbenchCodeInteractiveSnapshot snapshot,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<WorkbenchCodeNavigationView> FindReferencesAsync(
+        WorkbenchCodeInteractiveSnapshot snapshot,
+        CancellationToken cancellationToken = default);
+
     ValueTask StopAsync(
         WorkbenchCodeSessionId sessionId,
         CancellationToken cancellationToken = default);

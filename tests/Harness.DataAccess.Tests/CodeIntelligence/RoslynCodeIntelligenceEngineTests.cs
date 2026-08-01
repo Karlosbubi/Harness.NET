@@ -198,6 +198,106 @@ public sealed class RoslynCodeIntelligenceEngineTests(ITestOutputHelper output) 
     }
 
     [Fact]
+    public async Task Completion_is_local_committable_and_bound_to_the_exact_buffer()
+    {
+        const string source = """
+            class Widget { public int Value { get; } }
+            class Use { void Run() { var widget = new Widget(); widget.Va } }
+            """;
+        await CreateProjectAsync(source);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("context-1");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+        CodeIntelligenceInteractiveSnapshot snapshot = InteractiveSnapshot(
+            contextId, session.SessionId!, source, source.IndexOf("Va }", StringComparison.Ordinal) + 2);
+
+        CodeIntelligenceCompletionResult completions = await engine.GetCompletionsAsync(new(
+            snapshot,
+            CodeIntelligenceCompletionTriggerKind.Invoke,
+            TriggerCharacter: null));
+        CodeIntelligenceCompletionItem value = Assert.Single(
+            completions.Items,
+            item => item.DisplayText.Value == "Value");
+        CodeIntelligenceCompletionCommitResult committed = await engine.CommitCompletionAsync(new(
+            snapshot,
+            completions.ListId!,
+            value.Id,
+            CommitCharacter: null));
+
+        Assert.Equal(CodeIntelligenceResultState.Ready, completions.State);
+        Assert.Contains(committed.Changes, change => change.Text.Value.Contains("Value", StringComparison.Ordinal));
+        Assert.Equal(source, await File.ReadAllTextAsync(Path.Combine(root, "Sample.cs")));
+    }
+
+    [Fact]
+    public async Task Quick_info_signature_definition_and_references_resolve_source_symbols()
+    {
+        const string source = """
+            class Widget
+            {
+                public int Value { get; }
+                /// <summary>Runs one operation.</summary>
+                /// <param name="text">The input text.</param>
+                /// <param name="count">The repeat count.</param>
+                public void Run(string text, int count) { }
+            }
+            class Use
+            {
+                void Test()
+                {
+                    var widget = new Widget();
+                    var value = widget.Value;
+                    widget.Run("x", 1);
+                }
+            }
+            """;
+        await CreateProjectAsync(source);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("context-1");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+        int valueUse = source.LastIndexOf("Value", StringComparison.Ordinal);
+        CodeIntelligenceInteractiveSnapshot valueSnapshot = InteractiveSnapshot(
+            contextId, session.SessionId!, source, valueUse + 2);
+        int callStart = source.IndexOf("Run(\"x\"", StringComparison.Ordinal);
+        CodeIntelligenceInteractiveSnapshot callSnapshot = InteractiveSnapshot(
+            contextId, session.SessionId!, source, callStart + 4);
+
+        CodeIntelligenceQuickInfoResult quickInfo = await engine.GetQuickInfoAsync(valueSnapshot);
+        CodeIntelligenceNavigationResult definition = await engine.FindDefinitionAsync(valueSnapshot);
+        CodeIntelligenceNavigationResult references = await engine.FindReferencesAsync(valueSnapshot);
+        CodeIntelligenceSignatureHelpResult signatures =
+            await engine.GetSignatureHelpAsync(callSnapshot);
+        int comma = source.IndexOf(", 1", callStart, StringComparison.Ordinal);
+        CodeIntelligenceSignatureHelpResult secondParameter =
+            await engine.GetSignatureHelpAsync(InteractiveSnapshot(
+                contextId, session.SessionId!, source, comma + 1));
+        int stringType = source.IndexOf("string text", StringComparison.Ordinal) + 2;
+        CodeIntelligenceNavigationResult metadata = await engine.FindDefinitionAsync(
+            InteractiveSnapshot(contextId, session.SessionId!, source, stringType));
+        CodeIntelligenceNavigationResult unavailable = await engine.FindDefinitionAsync(
+            InteractiveSnapshot(contextId, session.SessionId!, source, source.Length));
+
+        Assert.Contains(quickInfo.Sections, section =>
+            section.Value.Contains("Value", StringComparison.Ordinal));
+        Assert.Contains(definition.Destinations, destination =>
+            destination.Kind is CodeIntelligenceDestinationKind.Source &&
+            destination.Path?.Value == "Sample.cs");
+        Assert.Contains(references.Destinations, destination =>
+            destination.Kind is CodeIntelligenceDestinationKind.Source);
+        CodeIntelligenceSignatureItem signature = Assert.Single(signatures.Signatures);
+        Assert.Contains("Run", signature.Display.Value, StringComparison.Ordinal);
+        Assert.Equal("Runs one operation.", signature.Documentation.Value);
+        Assert.Equal(2, signature.Parameters.Count);
+        Assert.Equal("The repeat count.", signature.Parameters[1].Documentation.Value);
+        Assert.Equal(0, signatures.SelectedParameter);
+        Assert.Equal(1, secondParameter.SelectedParameter);
+        Assert.Contains(metadata.Destinations, destination =>
+            destination.Kind is CodeIntelligenceDestinationKind.Metadata);
+        Assert.Contains(unavailable.Destinations, destination =>
+            destination.Kind is CodeIntelligenceDestinationKind.Unavailable);
+    }
+
+    [Fact]
     public async Task Invalid_project_returns_an_actionable_degraded_state()
     {
         await CreateProjectAsync("class Sample { }\n");
@@ -250,6 +350,50 @@ public sealed class RoslynCodeIntelligenceEngineTests(ITestOutputHelper output) 
             });
         warm.Stop();
 
+        string completionPrefix = source +
+            "\ninternal sealed class CompletionProbe { void Run() { " +
+            "var path = new WorkbenchDocumentPath(\"x\"); path.Va";
+        string completionSource = completionPrefix + " } }\n";
+        CodeIntelligenceInteractiveSnapshot interactive = InteractiveSnapshot(
+            contextId,
+            session.SessionId!,
+            source,
+            completionSource,
+            completionPrefix.Length,
+            relativePath);
+        CodeIntelligenceCompletionResult warmedCompletion = await engine.GetCompletionsAsync(new(
+            interactive,
+            CodeIntelligenceCompletionTriggerKind.Invoke,
+            TriggerCharacter: null));
+        List<double> completionMilliseconds = [];
+        for (int index = 0; index < 20; index++)
+        {
+            Stopwatch completion = Stopwatch.StartNew();
+            _ = await engine.GetCompletionsAsync(new(
+                interactive,
+                CodeIntelligenceCompletionTriggerKind.Invoke,
+                TriggerCharacter: null));
+            completion.Stop();
+            completionMilliseconds.Add(completion.Elapsed.TotalMilliseconds);
+        }
+
+        completionMilliseconds.Sort();
+        double completionP95 = completionMilliseconds[18];
+        string navigationSource = source +
+            "\ninternal sealed class NavigationProbe { WorkbenchDocumentPath? Value { get; } }\n";
+        int symbolOffset = navigationSource.LastIndexOf(
+            "WorkbenchDocumentPath", StringComparison.Ordinal) + 5;
+        Stopwatch navigation = Stopwatch.StartNew();
+        CodeIntelligenceNavigationResult definition = await engine.FindDefinitionAsync(
+            InteractiveSnapshot(
+                contextId,
+                session.SessionId!,
+                source,
+                navigationSource,
+                symbolOffset,
+                relativePath));
+        navigation.Stop();
+
         using CancellationTokenSource cancellation = new();
         cancellation.Cancel();
         Stopwatch cancelled = Stopwatch.StartNew();
@@ -263,6 +407,13 @@ public sealed class RoslynCodeIntelligenceEngineTests(ITestOutputHelper output) 
         output.WriteLine($"warm_update_ms={warm.Elapsed.TotalMilliseconds:F0}");
         output.WriteLine($"retained_memory_mib={retainedBytes / 1024d / 1024d:F1}");
         output.WriteLine($"cancellation_ms={cancelled.Elapsed.TotalMilliseconds:F1}");
+        output.WriteLine($"completion_p95_ms={completionP95:F1}");
+        output.WriteLine($"navigation_ms={navigation.Elapsed.TotalMilliseconds:F1}");
+        output.WriteLine($"completion_state={warmedCompletion.State}");
+        output.WriteLine($"completion_items={warmedCompletion.Items.Count}");
+        output.WriteLine("completion_issues=" + string.Join(" | ",
+            warmedCompletion.Issues.Select(issue =>
+                $"{issue.Code.Value}:{issue.Message.Value}")));
         Assert.NotEqual(CodeIntelligenceResultState.Failed, updated.State);
         Assert.True(cold.Elapsed < TimeSpan.FromSeconds(60), $"Cold load took {cold.Elapsed}.");
         Assert.True(warm.Elapsed < TimeSpan.FromSeconds(15), $"Warm update took {warm.Elapsed}.");
@@ -270,6 +421,13 @@ public sealed class RoslynCodeIntelligenceEngineTests(ITestOutputHelper output) 
             $"Foreground session retained {retainedBytes / 1024d / 1024d:F1} MiB.");
         Assert.True(cancelled.Elapsed < TimeSpan.FromSeconds(1),
             $"Cancellation took {cancelled.Elapsed}.");
+        Assert.True(completionP95 < 200,
+            $"Warm completion p95 was {completionP95:F1} ms (target < 200 ms).");
+        Assert.Contains(warmedCompletion.Items, item =>
+            item.DisplayText.Value == "Value");
+        Assert.NotEmpty(definition.Destinations);
+        Assert.True(navigation.Elapsed < TimeSpan.FromSeconds(2),
+            $"Warm definition navigation took {navigation.Elapsed}.");
     }
 
     private async ValueTask CreateProjectAsync(string source)
@@ -306,6 +464,35 @@ public sealed class RoslynCodeIntelligenceEngineTests(ITestOutputHelper output) 
         new(root),
         new("Sample.csproj"),
         CodeIntelligenceSourceKind.ApprovedGoalWorktree);
+
+    private static CodeIntelligenceInteractiveSnapshot InteractiveSnapshot(
+        CodeIntelligenceContextId contextId,
+        CodeIntelligenceSessionId sessionId,
+        string source,
+        int offset)
+        => InteractiveSnapshot(contextId, sessionId, source, source, offset);
+
+    private static CodeIntelligenceInteractiveSnapshot InteractiveSnapshot(
+        CodeIntelligenceContextId contextId,
+        CodeIntelligenceSessionId sessionId,
+        string baselineSource,
+        string source,
+        int offset,
+        string path = "Sample.cs")
+    {
+        string before = source[..offset];
+        int line = before.Count(character => character == '\n');
+        int lastBreak = before.LastIndexOf('\n');
+        int character = lastBreak < 0 ? before.Length : before.Length - lastBreak - 1;
+        return new(
+            contextId,
+            sessionId,
+            new(path),
+            new(Hash(baselineSource)),
+            new(1),
+            new(source),
+            new(line, character));
+    }
 
     private static string Hash(string content) => Convert.ToHexStringLower(
         SHA256.HashData(Utf8WithoutBom.GetBytes(content)));

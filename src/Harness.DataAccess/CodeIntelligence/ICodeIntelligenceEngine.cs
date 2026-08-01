@@ -15,6 +15,30 @@ public interface ICodeIntelligenceEngine
         CodeIntelligenceValidationRequest request,
         CancellationToken cancellationToken = default);
 
+    ValueTask<CodeIntelligenceCompletionResult> GetCompletionsAsync(
+        CodeIntelligenceCompletionRequest request,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<CodeIntelligenceCompletionCommitResult> CommitCompletionAsync(
+        CodeIntelligenceCompletionCommitRequest request,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<CodeIntelligenceQuickInfoResult> GetQuickInfoAsync(
+        CodeIntelligenceInteractiveSnapshot snapshot,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<CodeIntelligenceSignatureHelpResult> GetSignatureHelpAsync(
+        CodeIntelligenceInteractiveSnapshot snapshot,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<CodeIntelligenceNavigationResult> FindDefinitionAsync(
+        CodeIntelligenceInteractiveSnapshot snapshot,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<CodeIntelligenceNavigationResult> FindReferencesAsync(
+        CodeIntelligenceInteractiveSnapshot snapshot,
+        CancellationToken cancellationToken = default);
+
     ValueTask CloseAsync(
         CodeIntelligenceSessionId sessionId,
         CancellationToken cancellationToken = default);
