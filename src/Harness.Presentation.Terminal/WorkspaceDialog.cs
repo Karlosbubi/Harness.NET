@@ -46,9 +46,7 @@ internal sealed class WorkspaceDialog : Dialog<WorkspaceView>
             Height = 4,
         };
         registeredList.SetSource(new ObservableCollection<string>(registeredWorkspaces
-            .Select(workspace =>
-                $"{(workspace.IsActive ? "*" : " ")} {workspace.Name} | " +
-                $"{(workspace.IsTrusted ? "trusted" : "untrusted")} | {workspace.Branch}")
+            .Select(FormatWorkspace)
             .ToArray()));
         int activeIndex = registeredWorkspaces
             .Select((workspace, index) => (workspace, index))
@@ -148,6 +146,11 @@ internal sealed class WorkspaceDialog : Dialog<WorkspaceView>
             status);
         AddButton(new Button { Title = "_Close" });
     }
+
+    internal static string FormatWorkspace(WorkspaceView workspace) =>
+        $"{(workspace.IsActive ? "[ACTIVE]" : "        ")} {workspace.Name} | " +
+        $"{(workspace.IsTrusted ? "trusted" : "untrusted")} | {workspace.Branch} | " +
+        workspace.RootPath;
 
     private async Task InspectAsync()
     {

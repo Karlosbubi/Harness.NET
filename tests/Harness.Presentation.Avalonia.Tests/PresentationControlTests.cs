@@ -1399,6 +1399,43 @@ public sealed class PresentationControlTests
     }
 
     [Fact]
+    public async Task Workspace_switch_is_blocked_until_dirty_documents_are_resolved()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            DocumentPrompt prompt = new();
+            WorkbenchDockHost workbench = CreateWorkbench(
+                ApprovedGoalShell(),
+                new(),
+                new() { Editable = true },
+                prompt);
+            Window window = new() { Content = workbench.Control };
+            window.Show();
+            workbench.OpenFileAsync("src/App.cs").AsTask().GetAwaiter().GetResult();
+            workbench.ActiveSourceEditor!.Text = "unsaved workspace-specific content";
+
+            prompt.UnsavedDecisions.Enqueue(WorkbenchUnsavedDecision.Cancel);
+            bool cancelled = workbench.PrepareForWorkspaceChangeAsync()
+                .AsTask().GetAwaiter().GetResult();
+
+            Assert.False(cancelled);
+            Assert.Equal(1, workbench.SourceDocumentCount);
+            Assert.Equal("unsaved workspace-specific content", workbench.ActiveSourceEditor?.Text);
+            Assert.Equal(WorkbenchDocumentTransition.Switch,
+                Assert.Single(prompt.UnsavedPrompts).Transition);
+
+            prompt.UnsavedDecisions.Enqueue(WorkbenchUnsavedDecision.Discard);
+            bool accepted = workbench.PrepareForWorkspaceChangeAsync()
+                .AsTask().GetAwaiter().GetResult();
+            Assert.True(accepted);
+            Assert.Equal(0, workbench.SourceDocumentCount);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
     public async Task Layout_reset_keeps_durable_controls_in_the_rendered_tree()
     {
         using HeadlessUnitTestSession session =

@@ -189,6 +189,53 @@ public sealed class AvaloniaPresentationStoreTests
     }
 
     [Fact]
+    public async Task Switching_workspaces_restores_each_selected_goal_context()
+    {
+        WorkspaceView first = new(
+            "workspace-1", "/work/first", "First", "/work/first/First.slnx",
+            IsTrusted: true, IsActive: true, "main", IsDirty: false);
+        WorkspaceView second = new(
+            "workspace-2", "/work/second", "Second", "/work/second/Second.slnx",
+            IsTrusted: true, IsActive: false, "feature", IsDirty: false);
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        GoalView firstGoal = new(
+            new("goal-first"), first.Id, "First goal", "First objective", new(3), null,
+            GoalState.Draft, now, now);
+        GoalView secondGoal = new(
+            new("goal-second"), second.Id, "Second goal", "Second objective", new(3), null,
+            GoalState.Draft, now, now);
+        MultiWorkspaceService workspaces = new([first, second]);
+        MultiGoalService goals = new([firstGoal, secondGoal]);
+        using AvaloniaPresentationStore store = new(
+            new DashboardService(),
+            new AppearanceService(),
+            workspaces,
+            goals,
+            new GoalModelService(),
+            new AgentDefaultsService(),
+            new RemoteCostService(),
+            new GoalWorkflowService(),
+            new SemanticIndexService(),
+            new GoalAcceptanceService(),
+            new ApplicationOperationsService(),
+            new CapabilityApprovalService(),
+            new FrameworkService(),
+            NullLogger<AvaloniaPresentationStore>.Instance);
+        await store.LoadAsync(CancellationToken.None);
+        await store.SelectGoalAsync(firstGoal.Id, CancellationToken.None);
+
+        await store.SelectWorkspaceAsync(second.Id, CancellationToken.None);
+        Assert.Null(store.Current.Goals.SelectedGoalId);
+        await store.SelectGoalAsync(secondGoal.Id, CancellationToken.None);
+        await store.SelectWorkspaceAsync(first.Id, CancellationToken.None);
+
+        Assert.Equal(firstGoal.Id, store.Current.Goals.SelectedGoalId);
+        Assert.Equal(firstGoal, store.Current.Goals.SelectedGoal);
+        await store.SelectWorkspaceAsync(second.Id, CancellationToken.None);
+        Assert.Equal(secondGoal.Id, store.Current.Goals.SelectedGoalId);
+    }
+
+    [Fact]
     public async Task Discovers_and_persists_agent_defaults_through_typed_boundary()
     {
         AgentDefaultsService defaults = new();
@@ -818,6 +865,73 @@ public sealed class AvaloniaPresentationStoreTests
             workspace = (workspace ?? throw new InvalidOperationException()) with { IsActive = true };
             return ValueTask.FromResult(workspace);
         }
+    }
+
+    private sealed class MultiWorkspaceService(IReadOnlyList<WorkspaceView> initial)
+        : IWorkspaceService
+    {
+        private IReadOnlyList<WorkspaceView> workspaces = initial;
+
+        public ValueTask<IReadOnlyList<WorkspaceView>> ListAsync(
+            CancellationToken cancellationToken = default) => ValueTask.FromResult(workspaces);
+
+        public ValueTask<WorkspaceView?> GetActiveAsync(
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(workspaces.FirstOrDefault(item => item.IsActive));
+
+        public ValueTask<WorkspaceView> SelectAsync(
+            string workspaceId,
+            CancellationToken cancellationToken = default)
+        {
+            workspaces = workspaces.Select(item => item with
+            {
+                IsActive = item.Id.Equals(workspaceId, StringComparison.Ordinal),
+            }).ToArray();
+            return ValueTask.FromResult(workspaces.Single(item => item.IsActive));
+        }
+
+        public ValueTask<WorkspaceResult> InspectAsync(
+            string path,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<WorkspaceResult> RegisterAsync(
+            string path,
+            string entryPoint,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<WorkspaceResult> SetTrustAsync(
+            string workspaceId,
+            bool isTrusted,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private sealed class MultiGoalService(IReadOnlyList<GoalView> goals) : IGoalService
+    {
+        public ValueTask<GoalView?> GetAsync(
+            GoalId goalId,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(goals.FirstOrDefault(goal => goal.Id == goalId));
+
+        public ValueTask<IReadOnlyList<GoalView>> ListAsync(
+            string workspaceId,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<IReadOnlyList<GoalView>>(
+                goals.Where(goal => goal.WorkspaceId == workspaceId).ToArray());
+
+        public ValueTask<PlanView?> GetCurrentPlanAsync(
+            GoalId goalId,
+            CancellationToken cancellationToken = default) => ValueTask.FromResult<PlanView?>(null);
+
+        public ValueTask<GoalResult> CreateAsync(
+            GoalCreateRequest request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<GoalResult> UpdateSettingsAsync(
+            GoalSettingsUpdateRequest request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<PlanResult> ProposePlanAsync(
+            PlanProposalRequest request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<PlanResult> DecidePlanAsync(
+            PlanDecisionRequest request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     private sealed class FrameworkService : IFrameworkService

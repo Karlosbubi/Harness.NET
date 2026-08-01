@@ -292,6 +292,7 @@ internal sealed class HarnessWindow : Window
     {
         if (activeWorkspace is null)
         {
+            workspaceFrame.Title = "Workspace";
             workspaceText.Text = string.Join('\n',
                 "No workspace selected",
                 "Use Workspace > Manage to register a repository.");
@@ -300,6 +301,7 @@ internal sealed class HarnessWindow : Window
             return;
         }
 
+        workspaceFrame.Title = $"Active · {activeWorkspace.Name}";
         workspaceText.Text = string.Join('\n',
             activeWorkspace.Name,
             activeWorkspace.RootPath,

@@ -34,6 +34,7 @@ internal sealed class AvaloniaPresentationStore(
 {
     private readonly BehaviorSubject<AvaloniaShellState> states = new(AvaloniaShellState.Initial);
     private readonly SemaphoreSlim commandGate = new(1, 1);
+    private readonly Dictionary<string, GoalId> selectedGoalsByWorkspace = new(StringComparer.Ordinal);
     private CancellationTokenSource? submission;
     private CancellationTokenSource? workflowExecution;
     private CancellationTokenSource? semanticExecution;
@@ -492,6 +493,12 @@ internal sealed class AvaloniaPresentationStore(
         await RunGoalCommandAsync(async () =>
         {
             GoalDetails details = await LoadGoalDetailsAsync(goalId, cancellationToken);
+            WorkspaceView? active = ActiveWorkspace(Current.Workspaces.Registered);
+            if (active is not null)
+            {
+                selectedGoalsByWorkspace[active.Id] = goalId;
+            }
+
             Publish(Current with
             {
                 Goals = Current.Goals with
@@ -1074,9 +1081,24 @@ internal sealed class AvaloniaPresentationStore(
         string status,
         CancellationToken cancellationToken)
     {
+        WorkspaceView? previous = ActiveWorkspace(Current.Workspaces.Registered);
+        if (previous is not null && Current.Goals.SelectedGoalId is { } previousGoal)
+        {
+            selectedGoalsByWorkspace[previous.Id] = previousGoal;
+        }
+
         IReadOnlyList<WorkspaceView> workspaces = await workspaceService.ListAsync(cancellationToken);
         DashboardSnapshot dashboard = await dashboardService.GetSnapshotAsync(cancellationToken);
         IReadOnlyList<GoalView> goals = await LoadGoalsAsync(workspaces, cancellationToken);
+        WorkspaceView? active = ActiveWorkspace(workspaces);
+        GoalId? selectedGoal = active is not null &&
+            selectedGoalsByWorkspace.TryGetValue(active.Id, out GoalId? remembered) &&
+            goals.Any(goal => goal.Id == remembered)
+                ? remembered
+                : null;
+        GoalDetails details = selectedGoal is null
+            ? GoalDetails.Empty
+            : await LoadGoalDetailsAsync(selectedGoal, cancellationToken);
         Publish(Current with
         {
             Dashboard = dashboard,
@@ -1086,7 +1108,17 @@ internal sealed class AvaloniaPresentationStore(
                 EntryPoints = [],
                 Status = status,
             },
-            Goals = GoalManagementState.Initial with { Items = goals },
+            Goals = GoalManagementState.Initial with
+            {
+                Items = goals,
+                SelectedGoalId = selectedGoal,
+                CurrentPlan = details.Plan,
+                ModelSelections = details.Selections,
+                Cost = details.Cost,
+                Workflow = details.Workflow,
+                CommitApproval = details.CommitApproval,
+                CapabilityApprovals = details.CapabilityApprovals,
+            },
             Framework = FrameworkManagementState.Initial,
         });
     }

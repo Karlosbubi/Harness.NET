@@ -631,9 +631,13 @@ internal sealed class MainWindow : Window
         WorkspaceDialog dialog = new(
             store,
             cancellationToken,
-            browseOnOpen: browseImmediately);
+            browseOnOpen: browseImmediately,
+            prepareWorkspaceChange: PrepareWorkspaceChangeAsync);
         await dialog.ShowDialog(this);
     }
+
+    private async Task<bool> PrepareWorkspaceChangeAsync() =>
+        workbench is null || await workbench.PrepareForWorkspaceChangeAsync();
 
     private async void OnClosing(object? sender, WindowClosingEventArgs eventArgs)
     {

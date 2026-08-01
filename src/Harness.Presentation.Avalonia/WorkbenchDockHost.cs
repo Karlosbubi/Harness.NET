@@ -467,6 +467,9 @@ internal sealed class WorkbenchDockHost
         return true;
     }
 
+    internal ValueTask<bool> PrepareForWorkspaceChangeAsync() =>
+        CloseAllSourceDocumentsAsync(WorkbenchDocumentTransition.Switch);
+
     internal void Update(AvaloniaShellState snapshot)
     {
         foreach (SourceDocumentSession session in sourceDocuments.Values)

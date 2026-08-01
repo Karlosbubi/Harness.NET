@@ -16,6 +16,7 @@ internal sealed class WorkspaceDialog : Window
     private readonly CancellationToken cancellationToken;
     private readonly IWorkspaceFolderPicker folderPicker;
     private readonly bool browseOnOpen;
+    private readonly Func<Task<bool>> prepareWorkspaceChange;
     private readonly IDisposable subscription;
     private readonly ListBox registered = new();
     private readonly TextBox repositoryPath = new();
@@ -32,12 +33,14 @@ internal sealed class WorkspaceDialog : Window
         AvaloniaPresentationStore store,
         CancellationToken cancellationToken,
         IWorkspaceFolderPicker? folderPicker = null,
-        bool browseOnOpen = false)
+        bool browseOnOpen = false,
+        Func<Task<bool>>? prepareWorkspaceChange = null)
     {
         this.store = store;
         this.cancellationToken = cancellationToken;
         this.folderPicker = folderPicker ?? new AvaloniaWorkspaceFolderPicker();
         this.browseOnOpen = browseOnOpen;
+        this.prepareWorkspaceChange = prepareWorkspaceChange ?? (() => Task.FromResult(true));
         Title = "Manage workspaces";
         Width = 900;
         Height = 640;
@@ -222,15 +225,24 @@ internal sealed class WorkspaceDialog : Window
         browse.Click += async (_, _) => await BrowseRepositoryAsync();
         registered.SelectionChanged += (_, _) =>
         {
-            if (registered.SelectedItem is WorkspaceChoice choice)
-            {
-                trust.Content = choice.Workspace.IsTrusted ? "Revoke trust" : "Trust…";
-            }
+            UpdateSelectedWorkspaceActions(store.Current.Workspaces);
         };
         register.Click += async (_, _) =>
         {
             if (entryPoints.SelectedItem is EntryPointChoice choice)
             {
+                WorkspaceView? active = store.Current.Workspaces.Registered
+                    .FirstOrDefault(workspace => workspace.IsActive);
+                string candidateRoot = repositoryPath.Text?.Trim() ?? string.Empty;
+                if (active is null || !WorkspaceRootsMatch(candidateRoot, active.RootPath))
+                {
+                    if (!await this.prepareWorkspaceChange())
+                    {
+                        store.SetWorkspaceStatus("Workspace switch cancelled; unsaved documents remain open.");
+                        return;
+                    }
+                }
+
                 await store.RegisterWorkspaceAsync(choice.Path, cancellationToken);
             }
         };
@@ -238,6 +250,12 @@ internal sealed class WorkspaceDialog : Window
         {
             if (registered.SelectedItem is WorkspaceChoice choice)
             {
+                if (!choice.Workspace.IsActive && !await this.prepareWorkspaceChange())
+                {
+                    store.SetWorkspaceStatus("Workspace switch cancelled; unsaved documents remain open.");
+                    return;
+                }
+
                 await store.SelectWorkspaceAsync(choice.Workspace.Id, cancellationToken);
             }
         };
@@ -285,12 +303,7 @@ internal sealed class WorkspaceDialog : Window
                 entryPoints.SelectedIndex = 0;
             }
 
-            bool hasWorkspace = registered.SelectedItem is WorkspaceChoice;
-            useSelected.IsEnabled = !state.IsBusy && hasWorkspace;
-            trust.IsEnabled = !state.IsBusy && hasWorkspace;
-            trust.Content = (registered.SelectedItem as WorkspaceChoice)?.Workspace.IsTrusted is true
-                ? "Revoke trust"
-                : "Trust…";
+            UpdateSelectedWorkspaceActions(state);
             inspect.IsEnabled = !state.IsBusy;
             browse.IsEnabled = !state.IsBusy;
             register.IsEnabled = !state.IsBusy && entries.Length > 0;
@@ -300,6 +313,31 @@ internal sealed class WorkspaceDialog : Window
         {
             rendering = false;
         }
+    }
+
+    private static bool WorkspaceRootsMatch(string candidateRoot, string activeRoot)
+    {
+        try
+        {
+            return Path.GetFullPath(candidateRoot)
+                .Equals(Path.GetFullPath(activeRoot), StringComparison.Ordinal);
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return false;
+        }
+    }
+
+    private void UpdateSelectedWorkspaceActions(WorkspaceManagementState state)
+    {
+        WorkspaceView? selected = (registered.SelectedItem as WorkspaceChoice)?.Workspace;
+        useSelected.Content = selected?.IsActive is true ? "Active workspace" : "Switch to selected";
+        useSelected.IsEnabled = !state.IsBusy && selected is { IsActive: false };
+        trust.IsEnabled = !state.IsBusy && selected is not null;
+        trust.Content = selected?.IsTrusted is true ? "Revoke trust" : "Trust…";
+        AutomationProperties.SetName(useSelected,
+            selected?.IsActive is true ? "Selected workspace is active" : "Switch to selected workspace");
     }
 
     internal async Task BrowseRepositoryAsync()
@@ -347,8 +385,9 @@ internal sealed class WorkspaceDialog : Window
     private sealed record WorkspaceChoice(WorkspaceView Workspace)
     {
         public override string ToString() =>
-            $"{(Workspace.IsActive ? "●" : "○")} {Workspace.Name} — " +
-            $"{(Workspace.IsTrusted ? "trusted" : "untrusted")} — {Workspace.Branch}";
+            $"{(Workspace.IsActive ? "● ACTIVE" : "○")} · {Workspace.Name} — " +
+            $"{Workspace.Branch} — {(Workspace.IsTrusted ? "trusted" : "untrusted")}\n" +
+            Workspace.RootPath;
     }
 
     private sealed record EntryPointChoice(string Path, string DisplayName)
