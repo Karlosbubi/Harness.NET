@@ -95,6 +95,68 @@ internal sealed class SqliteGoalStore(IApplicationPaths applicationPaths) : IGoa
         return row?.ToRecord();
     }
 
+    public async ValueTask<StoredGoalBudgetExtensionSnapshot?> ExtendRemoteBudgetAsync(
+        string extensionId,
+        string goalId,
+        long? expectedBudgetMicrousd,
+        long newBudgetMicrousd,
+        string reason,
+        DateTimeOffset approvedAt,
+        CancellationToken cancellationToken = default)
+    {
+        await using SqliteConnection connection = await OpenAsync(cancellationToken);
+        await using SqliteTransaction transaction =
+            (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        GoalRow? row = await connection.QuerySingleOrDefaultAsync<GoalRow>(new CommandDefinition("""
+            UPDATE goals
+            SET remote_budget_microusd = @newBudgetMicrousd,
+                updated_at = @approvedAt
+            WHERE id = @goalId
+              AND ((remote_budget_microusd IS NULL AND @expectedBudgetMicrousd IS NULL)
+                   OR remote_budget_microusd = @expectedBudgetMicrousd)
+              AND COALESCE(remote_budget_microusd, 0) < @newBudgetMicrousd
+            RETURNING id, workspace_id AS WorkspaceId, title, objective,
+                      review_cycle_limit AS ReviewCycleLimit,
+                      remote_budget_microusd AS RemoteBudgetMicrousd,
+                      state, created_at AS CreatedAt, updated_at AS UpdatedAt;
+            """, new
+        {
+            extensionId,
+            goalId,
+            expectedBudgetMicrousd,
+            newBudgetMicrousd,
+            reason,
+            approvedAt = Format(approvedAt),
+        }, transaction, cancellationToken: cancellationToken));
+        if (row is null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return null;
+        }
+
+        await connection.ExecuteAsync(new CommandDefinition("""
+            INSERT INTO goal_budget_extensions (
+                id, goal_id, previous_budget_microusd, new_budget_microusd,
+                reason, approved_at)
+            VALUES (
+                @extensionId, @goalId, @expectedBudgetMicrousd, @newBudgetMicrousd,
+                @reason, @approvedAt);
+            """, new
+        {
+            extensionId,
+            goalId,
+            expectedBudgetMicrousd,
+            newBudgetMicrousd,
+            reason,
+            approvedAt = Format(approvedAt),
+        }, transaction, cancellationToken: cancellationToken));
+        await transaction.CommitAsync(cancellationToken);
+        return new(
+            row.ToRecord(),
+            new(extensionId, goalId, expectedBudgetMicrousd, newBudgetMicrousd,
+                reason, approvedAt));
+    }
+
     public async ValueTask<StoredPlan?> GetCurrentPlanAsync(
         string goalId,
         CancellationToken cancellationToken = default)

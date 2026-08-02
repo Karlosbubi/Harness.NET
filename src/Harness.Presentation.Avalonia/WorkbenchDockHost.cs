@@ -681,14 +681,20 @@ internal sealed class WorkbenchDockHost
                 return;
             }
 
+            int conflictCount = git.Changes.Count(change =>
+                change.Status.Contains("Conflicted", StringComparison.OrdinalIgnoreCase));
             gitSummary.Text = $"{inspected.Context.Description}\nBranch {git.Branch}\n" +
                               $"HEAD {git.HeadSha ?? "unborn"}\n" +
                               $"{git.Changes.Count} change(s)" +
+                              (conflictCount > 0 ? $" · {conflictCount} conflict(s)" : string.Empty) +
                               (git.IsTruncated ? " · truncated" : string.Empty);
             changes.ItemsSource = git.Changes
                 .Select(change => new ChangeChoice(change, inspected.Context.GoalId))
                 .ToArray();
-            gitStatus.Text = "Git state refreshed.";
+            gitStatus.Text = conflictCount > 0
+                ? $"{conflictCount} unresolved Git conflict(s) block commit approval. " +
+                  "Resolve and stage them with Git, then refresh this view."
+                : "Git state refreshed.";
         });
     }
 
@@ -2914,6 +2920,10 @@ internal sealed class WorkbenchDockHost
 
     /// <summary>Activates the Git panel, the same path as its keyboard shortcut.</summary>
     internal bool ShowGit() => ActivateTool(WorkbenchDockIds.GitTool);
+
+    internal string GitStatusText => gitStatus.Text ?? string.Empty;
+
+    internal string GitSummaryText => gitSummary.Text ?? string.Empty;
 
     /// <summary>Activates the Run output panel, the same path as its keyboard shortcut.</summary>
     internal bool ShowRunOutput() => ActivateTool(WorkbenchDockIds.RunOutputTool);

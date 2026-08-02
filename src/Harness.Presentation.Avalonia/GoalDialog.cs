@@ -1862,6 +1862,17 @@ internal static class GoalPresentationFormatter
             FormatCostSummary(state));
     }
 
+    internal static string RetryDisclosure(
+        GoalWorkflowRetryRole retryRole,
+        GoalManagementState state) => string.Join(
+        '\n',
+        $"This explicitly starts a new {retryRole} call from the last durable safe boundary.",
+        "The prior call is not replayed automatically and may already have incurred remote cost. " +
+        "Inspect its recovery notice and durable tool evidence before retrying.",
+        "Typed mutation baselines still reject stale repository writes; the aggregate goal cap always applies.",
+        FormatSelections(state.ModelSelections),
+        FormatCostSummary(state));
+
     internal static string ToUsd(long microUsd) =>
         (microUsd / 1_000_000m).ToString("0.######", CultureInfo.InvariantCulture);
 

@@ -422,6 +422,82 @@ internal sealed class GoalDialog : Dialog
 
         GoalWorkflowSnapshot? current = await workflowService.GetLatestAsync(
             goal.Id, cancellationToken);
+        if (current?.RetryRole is { } retryRole)
+        {
+            AgentRole agentRole = retryRole switch
+            {
+                GoalWorkflowRetryRole.Lead => AgentRole.Lead,
+                GoalWorkflowRetryRole.Implementer => AgentRole.Implementer,
+                GoalWorkflowRetryRole.Reviewer => AgentRole.Reviewer,
+                _ => throw new ArgumentOutOfRangeException(nameof(retryRole)),
+            };
+            IReadOnlyList<GoalModelSelectionView> selections =
+                await modelService.GetSelectionsAsync(goal.Id, cancellationToken);
+            bool remote = selections.Any(selection =>
+                selection.Role == agentRole && selection.Access is ModelAccess.Remote);
+            if (remote)
+            {
+                int? recovery = MessageBox.Query(
+                    application,
+                    $"Recover failed {retryRole} call",
+                    "Review the recovery notice and cost evidence first. Retrying starts a " +
+                    "new role call; increasing the cap is a separate durable authorization.",
+                    "_Retry",
+                    "_Increase cap",
+                    "_Cancel");
+                if (recovery == 1)
+                {
+                    GoalBudgetExtensionRequest? extension = await CollectBudgetExtensionAsync(goal);
+                    if (extension is not null)
+                    {
+                        GoalBudgetExtensionResult extended =
+                            await goalService.ExtendRemoteBudgetAsync(extension, cancellationToken);
+                        await ReloadAsync();
+                        status.Text = extended.Error ??
+                            $"Remote cap increased to " +
+                            $"${GoalTextFormatter.FormatUsd(extended.Extension!.NewBudget.Value)}; " +
+                            "retry remains explicit.";
+                    }
+
+                    return;
+                }
+
+                if (recovery != 0)
+                {
+                    return;
+                }
+            }
+
+            MaximumAgentOutputTokens[]? retryMaximum = await CollectOutputMaximaAsync(
+                $"Retry failed {retryRole} call",
+                goal,
+                [agentRole],
+                [$"{retryRole} maximum output tokens"],
+                $"This explicitly starts a new {retryRole} call from the last durable safe " +
+                "boundary. The prior call is not replayed automatically and may already " +
+                "have incurred remote cost. Inspect the recovery notice and durable tool " +
+                "evidence before retrying; the aggregate goal cap still applies.");
+            if (retryMaximum is null)
+            {
+                return;
+            }
+
+            GoalWorkflowSnapshot? retried = null;
+            await foreach (GoalWorkflowSnapshot snapshot in workflowService.RetryAsync(
+                               new(goal.Id, retryRole, retryMaximum[0]), cancellationToken))
+            {
+                retried = snapshot;
+                status.Text = $"Run {snapshot.State} | {snapshot.Activities[^1].Kind}";
+            }
+
+            if (retried is not null)
+            {
+                await ShowRunAsync(retried);
+            }
+
+            return;
+        }
+
         int pendingTasks = current?.Tasks.Count(task => task.State is GoalTaskState.Pending) ?? 0;
         int remainingReviews = Math.Max(
             0,
@@ -455,6 +531,59 @@ internal sealed class GoalDialog : Dialog
         {
             await ShowRunAsync(latest);
         }
+    }
+
+    private async Task<GoalBudgetExtensionRequest?> CollectBudgetExtensionAsync(GoalView goal)
+    {
+        using Dialog dialog = new()
+        {
+            Title = "Increase remote cap",
+            Width = Dim.Percent(75),
+            Height = 15,
+        };
+        TextField newBudget = Field(dialog, "New total cap (USD)", 0, string.Empty);
+        Editor reason = new()
+        {
+            X = 0,
+            Y = 4,
+            Width = Dim.Fill(),
+            Height = 5,
+            ViewportSettings = ViewportSettingsFlags.HasVerticalScrollBar,
+        };
+        dialog.Add(new Label { Text = "Required reason", X = 0, Y = 3 }, reason);
+        Label validation = new() { X = 0, Y = 9, Width = Dim.Fill(), Height = 2 };
+        GoalBudgetExtensionRequest? result = null;
+        Button approve = new() { Title = "_Increase cap" };
+        approve.Accepting += (_, args) =>
+        {
+            args.Handled = true;
+            if (!GoalTextFormatter.TryParseUsd(
+                    newBudget.Text?.ToString() ?? string.Empty, out long parsedBudget) ||
+                parsedBudget <= (goal.RemoteBudget?.Value ?? 0))
+            {
+                validation.Text = "The new total cap must be a valid USD amount above the current cap.";
+                return;
+            }
+
+            string explanation = reason.Text?.ToString()?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(explanation) || explanation.Length > 2_000)
+            {
+                validation.Text = "A 1-2000 character reason is required.";
+                return;
+            }
+
+            result = new(
+                goal.Id,
+                goal.RemoteBudget,
+                new(parsedBudget),
+                new(explanation));
+            dialog.RequestStop();
+        };
+        dialog.Add(validation);
+        dialog.AddButton(approve);
+        dialog.AddButton(new Button { Title = "_Cancel" });
+        await application.RunAsync(dialog, cancellationToken);
+        return result;
     }
 
     private async Task InspectRunAsync()

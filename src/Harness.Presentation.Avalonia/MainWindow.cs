@@ -926,6 +926,12 @@ internal sealed class MainWindow : Window
             case ConversationWorkflowActionKind.ContinueRun:
                 await ContinueRunAsync(goal);
                 break;
+            case ConversationWorkflowActionKind.RetryRun:
+                await RetryRunAsync(goal);
+                break;
+            case ConversationWorkflowActionKind.ExtendBudget:
+                await new BudgetExtensionDialog(store, goal, cancellationToken).ShowDialog(this);
+                break;
             case ConversationWorkflowActionKind.CancelRun:
                 store.CancelGoalWorkflow();
                 break;
@@ -1037,6 +1043,36 @@ internal sealed class MainWindow : Window
                 goal.Id,
                 new(limits[0]),
                 new(limits[1]),
+                cancellationToken);
+        }
+    }
+
+    private async Task RetryRunAsync(GoalView goal)
+    {
+        if (store.Current.Goals.Workflow?.RetryRole is not { } retryRole)
+        {
+            return;
+        }
+
+        AgentRole role = retryRole switch
+        {
+            GoalWorkflowRetryRole.Lead => AgentRole.Lead,
+            GoalWorkflowRetryRole.Implementer => AgentRole.Implementer,
+            GoalWorkflowRetryRole.Reviewer => AgentRole.Reviewer,
+            _ => throw new ArgumentOutOfRangeException(nameof(retryRole)),
+        };
+        OutputLimitsDialog dialog = new(
+            $"Retry failed {retryRole} call",
+            [$"{retryRole} maximum output tokens"],
+            GoalPresentationFormatter.RetryDisclosure(retryRole, store.Current.Goals),
+            [DefaultOutputMaximum(role)]);
+        await dialog.ShowDialog(this);
+        if (dialog.Result is { Length: 1 } limits)
+        {
+            await store.RetryGoalWorkflowAsync(
+                goal.Id,
+                retryRole,
+                new(limits[0]),
                 cancellationToken);
         }
     }

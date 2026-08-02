@@ -86,6 +86,9 @@ public sealed class GoalContextServiceTests
         public ValueTask<GoalResult> UpdateSettingsAsync(
             GoalSettingsUpdateRequest request,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<GoalBudgetExtensionResult> ExtendRemoteBudgetAsync(
+            GoalBudgetExtensionRequest request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
         public ValueTask<PlanView?> GetCurrentPlanAsync(
             GoalId goalId,

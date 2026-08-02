@@ -36,7 +36,7 @@ public sealed class SqliteApplicationBackupTests : IDisposable
         ApplicationBackupResult result = await backup.CreateAsync(new(new(destination)));
 
         Assert.Null(result.Error);
-        Assert.Equal(20, result.SchemaVersion?.Value);
+        Assert.Equal(21, result.SchemaVersion?.Value);
         Assert.True(File.Exists(destination));
         Assert.Equal(await HashAsync(destination), result.ArchiveSha256?.Value);
         using ZipArchive archive = ZipFile.OpenRead(destination);
@@ -47,7 +47,7 @@ public sealed class SqliteApplicationBackupTests : IDisposable
         using JsonDocument manifest = await JsonDocument.ParseAsync(manifestEntry.Open());
         Assert.Equal("harness-backup-v2",
             manifest.RootElement.GetProperty("Format").GetString());
-        Assert.Equal(20, manifest.RootElement.GetProperty("SchemaVersion").GetInt32());
+        Assert.Equal(21, manifest.RootElement.GetProperty("SchemaVersion").GetInt32());
         Assert.Equal(result.DatabaseSha256?.Value,
             manifest.RootElement.GetProperty("DatabaseSha256").GetString());
         JsonElement layoutManifest = manifest.RootElement.GetProperty("WorkbenchLayout");
@@ -103,10 +103,12 @@ public sealed class SqliteApplicationBackupTests : IDisposable
             await connection.ExecuteAsync("""
                 DROP TABLE appearance_preferences;
                 DROP TABLE agent_role_defaults;
+                DROP TABLE goal_budget_extensions;
                 DELETE FROM SchemaVersions
                 WHERE ScriptName LIKE '%018_AppearancePreferences.sql'
                    OR ScriptName LIKE '%019_AgentRoleDefaults.sql'
-                   OR ScriptName LIKE '%020_RenameEvidence.sql';
+                   OR ScriptName LIKE '%020_RenameEvidence.sql'
+                   OR ScriptName LIKE '%021_GoalBudgetExtensions.sql';
                 UPDATE application_metadata SET value = '17' WHERE key = 'schema_version';
                 """);
         }
@@ -114,7 +116,7 @@ public sealed class SqliteApplicationBackupTests : IDisposable
         DatabaseInitializationResult upgraded = await new SqliteDatabaseInitializer(
             applicationPaths, new FixedTimeProvider()).InitializeAsync();
 
-        Assert.Equal(20, upgraded.SchemaVersion.Value);
+        Assert.Equal(21, upgraded.SchemaVersion.Value);
         Assert.NotNull(upgraded.PreUpgradeBackup);
         Assert.True(File.Exists(upgraded.PreUpgradeBackup.Value));
         using ZipArchive archive = ZipFile.OpenRead(upgraded.PreUpgradeBackup.Value);
@@ -129,6 +131,9 @@ public sealed class SqliteApplicationBackupTests : IDisposable
         Assert.Equal(1, await current.ExecuteScalarAsync<int>(
             "SELECT COUNT(*) FROM sqlite_master WHERE type='table' " +
             "AND name='agent_role_defaults';"));
+        Assert.Equal(1, await current.ExecuteScalarAsync<int>(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' " +
+            "AND name='goal_budget_extensions';"));
     }
 
     private (ApplicationPaths Paths, StubApplicationPaths ApplicationPaths) Paths()

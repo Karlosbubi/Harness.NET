@@ -65,6 +65,42 @@ public sealed class SqliteGoalWorkflowStoreTests : IDisposable
                 Checkpoint(second, 1, GoalWorkflowCheckpointKind.Started, now)));
     }
 
+    [Theory]
+    [InlineData(GoalWorkflowCheckpointKind.LeadCallStarted)]
+    [InlineData(GoalWorkflowCheckpointKind.ImplementerCallStarted)]
+    [InlineData(GoalWorkflowCheckpointKind.ReviewerCallStarted)]
+    public async Task Explicit_retry_reopens_only_a_durable_user_direction_boundary(
+        GoalWorkflowCheckpointKind retryKind)
+    {
+        (SqliteGoalWorkflowStore store, string goalId) = await CreateStoreAsync();
+        GoalWorkflowRunId runId = new(Guid.NewGuid().ToString("N"));
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-31T12:00:00Z");
+        await store.StartAsync(
+            new(runId, new(goalId), GoalWorkflowRunState.Running, new(0), now, now),
+            Checkpoint(runId, 1, GoalWorkflowCheckpointKind.Started, now));
+        await store.AppendAsync(
+            Checkpoint(runId, 0, GoalWorkflowCheckpointKind.LeadCallStarted, now.AddSeconds(1)),
+            GoalWorkflowCheckpointKind.Started,
+            GoalWorkflowRunState.Running,
+            GoalWorkflowRunState.Running);
+        StoredGoalWorkflowSnapshot failed = await store.AppendAsync(
+            Checkpoint(runId, 0, GoalWorkflowCheckpointKind.UserDirectionRequired,
+                now.AddSeconds(2)),
+            GoalWorkflowCheckpointKind.LeadCallStarted,
+            GoalWorkflowRunState.Running,
+            GoalWorkflowRunState.NeedsDirection);
+
+        StoredGoalWorkflowSnapshot retried = await store.AppendAsync(
+            Checkpoint(runId, 0, retryKind, now.AddSeconds(3)),
+            GoalWorkflowCheckpointKind.UserDirectionRequired,
+            GoalWorkflowRunState.NeedsDirection,
+            GoalWorkflowRunState.Running);
+
+        Assert.Equal(GoalWorkflowRunState.NeedsDirection, failed.Run.State);
+        Assert.Equal(GoalWorkflowRunState.Running, retried.Run.State);
+        Assert.Equal(retryKind, retried.Checkpoints[^1].Kind);
+    }
+
     [Fact]
     public async Task Review_completion_atomically_advances_the_semantic_cycle()
     {

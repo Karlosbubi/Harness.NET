@@ -1,4 +1,5 @@
 using Harness.DataAccess.Configuration;
+using Harness.DataAccess.Goals;
 using Harness.DataAccess.Models;
 using Harness.DataAccess.Persistence;
 using Microsoft.Data.Sqlite;
@@ -92,6 +93,34 @@ public sealed class SqliteRemoteCostStoreTests : IDisposable
             wrongRole.Failure);
     }
 
+    [Fact]
+    public async Task Durable_budget_extension_unblocks_only_future_reservations()
+    {
+        (SqliteRemoteCostStore costs, _) = await CreateStoreAsync(
+            goalState: "Approved",
+            budgetMicrousd: 100);
+        RemoteCostReservationResult initial = await costs.ReserveAsync(Request(100));
+        RemoteCostReservationResult exhausted = await costs.ReserveAsync(Request(1));
+        StubApplicationPaths paths = new(CreatePaths());
+        SqliteGoalStore goals = new(paths);
+
+        StoredGoalBudgetExtensionSnapshot? extension = await goals.ExtendRemoteBudgetAsync(
+            "extension-1",
+            "goal-1",
+            100,
+            200,
+            "Explicit retry authorization.",
+            DateTimeOffset.UtcNow);
+        RemoteCostReservationResult retried = await costs.ReserveAsync(Request(1));
+
+        Assert.NotNull(initial.Reservation);
+        Assert.Equal(RemoteCostReservationFailure.CostCapExceeded, exhausted.Failure);
+        Assert.Equal(200, extension?.Goal.RemoteBudgetMicrousd);
+        Assert.NotNull(retried.Reservation);
+        Assert.Equal(new MicroUsd(99),
+            (await costs.GetLedgerAsync("goal-1"))?.RemainingCost);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(root))
@@ -104,15 +133,8 @@ public sealed class SqliteRemoteCostStoreTests : IDisposable
         string goalState,
         long? budgetMicrousd)
     {
-        string databasePath = Path.Combine(root, "data", "harness.db");
-        ApplicationPaths paths = new(
-            Path.Combine(root, "config"),
-            Path.Combine(root, "data"),
-            Path.Combine(root, "state"),
-            Path.Combine(root, "cache"),
-            databasePath,
-            Path.Combine(root, "state", "logs"),
-            Path.Combine(root, "state", "worktrees"));
+        ApplicationPaths paths = CreatePaths();
+        string databasePath = paths.DatabasePath;
         StubApplicationPaths applicationPaths = new(paths);
         await new SqliteDatabaseInitializer(applicationPaths).InitializeAsync();
 
@@ -138,6 +160,15 @@ public sealed class SqliteRemoteCostStoreTests : IDisposable
         command.ExecuteNonQuery();
         return (new(applicationPaths), databasePath);
     }
+
+    private ApplicationPaths CreatePaths() => new(
+            Path.Combine(root, "config"),
+            Path.Combine(root, "data"),
+            Path.Combine(root, "state"),
+            Path.Combine(root, "cache"),
+            Path.Combine(root, "data", "harness.db"),
+            Path.Combine(root, "state", "logs"),
+            Path.Combine(root, "state", "worktrees"));
 
     private static RemoteCostReservationRequest Request(long estimatedMicrousd) =>
         new(

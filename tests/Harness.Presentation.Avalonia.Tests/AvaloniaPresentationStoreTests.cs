@@ -140,6 +140,17 @@ public sealed class AvaloniaPresentationStoreTests
         Assert.Equal(new ReviewCycleLimit(5), store.Current.Goals.SelectedGoal?.ReviewCycleLimit);
         Assert.Equal(new MicroUsdAmount(2_000_000), store.Current.Goals.SelectedGoal?.RemoteBudget);
         Assert.Null(dashboard.LastInstruction);
+
+        await store.ExtendGoalBudgetAsync(new(
+            goal.Id,
+            new(2_000_000),
+            new(3_000_000),
+            new("Explicit recovery increase.")), CancellationToken.None);
+
+        Assert.Equal(new MicroUsdAmount(3_000_000),
+            store.Current.Goals.SelectedGoal?.RemoteBudget);
+        Assert.Contains("does not retry", store.Current.Goals.Status,
+            StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -926,6 +937,9 @@ public sealed class AvaloniaPresentationStoreTests
         public ValueTask<GoalResult> UpdateSettingsAsync(
             GoalSettingsUpdateRequest request,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<GoalBudgetExtensionResult> ExtendRemoteBudgetAsync(
+            GoalBudgetExtensionRequest request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public ValueTask<PlanResult> ProposePlanAsync(
             PlanProposalRequest request,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
@@ -1032,6 +1046,32 @@ public sealed class AvaloniaPresentationStoreTests
                 UpdatedAt = goal.UpdatedAt.AddSeconds(1),
             };
             return ValueTask.FromResult(new GoalResult(goal, null, null));
+        }
+
+        public ValueTask<GoalBudgetExtensionResult> ExtendRemoteBudgetAsync(
+            GoalBudgetExtensionRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            if (goal is null || goal.Id != request.GoalId ||
+                goal.RemoteBudget != request.ExpectedBudget ||
+                request.NewBudget.Value <= (goal.RemoteBudget?.Value ?? 0))
+            {
+                return ValueTask.FromResult(new GoalBudgetExtensionResult(
+                    null, null, "stale_budget_extension", "The cap changed."));
+            }
+
+            GoalView previous = goal;
+            goal = goal with
+            {
+                RemoteBudget = request.NewBudget,
+                UpdatedAt = goal.UpdatedAt.AddSeconds(1),
+            };
+            return ValueTask.FromResult(new GoalBudgetExtensionResult(
+                goal,
+                new(new("extension-1"), goal.Id, previous.RemoteBudget,
+                    request.NewBudget, request.Reason, goal.UpdatedAt),
+                ErrorCode: null,
+                Error: null));
         }
 
         public ValueTask<PlanView?> GetCurrentPlanAsync(
@@ -1237,6 +1277,7 @@ public sealed class AvaloniaPresentationStoreTests
         internal int? LeadMaximum { get; private set; }
         internal int? ImplementerMaximum { get; private set; }
         internal int? ReviewerMaximum { get; private set; }
+        internal GoalWorkflowRetryRole? RetriedRole { get; private set; }
 
         public ValueTask<GoalWorkflowSnapshot?> GetLatestAsync(
             GoalId goalId,
@@ -1270,6 +1311,16 @@ public sealed class AvaloniaPresentationStoreTests
             await Task.Yield();
             latest = Snapshot(request.GoalId, GoalWorkflowState.Completed, "Accepted", false);
             yield return latest;
+        }
+
+        public async IAsyncEnumerable<GoalWorkflowSnapshot> RetryAsync(
+            GoalWorkflowRetryRequest request,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            RetriedRole = request.Role;
+            latest = Snapshot(request.GoalId, GoalWorkflowState.Running, "Explicit retry", true);
+            yield return latest;
+            await Task.Yield();
         }
 
         private static GoalWorkflowSnapshot Snapshot(

@@ -75,6 +75,41 @@ public sealed class SqliteSemanticIndexStoreTests : IDisposable
         Assert.Equal(ready.Id, (await store.GetCurrentAsync(key))?.Id);
     }
 
+    [Fact]
+    public async Task Interrupted_large_rebuild_keeps_the_ready_generation_searchable()
+    {
+        (SqliteSemanticIndexStore store, _) = await CreateStoreAsync();
+        SemanticIndexPartitionKey key = new(
+            "workspace-1", new("Provider"), new("model"), new(2), new("load-v1"));
+        SemanticIndexBuildHandle ready = await store.BeginRebuildAsync(key);
+        await store.AddAsync(ready, [Chunk("ready", "ready.md", [1f, 0f])]);
+        await store.CompleteAsync(ready, 1, 1);
+        SemanticIndexBuildHandle rebuilding = await store.BeginRebuildAsync(key);
+
+        for (int batch = 0; batch < 10; batch++)
+        {
+            SemanticChunkVector[] chunks = Enumerable.Range(batch * 100, 100)
+                .Select(index => Chunk(
+                    $"load-{index}",
+                    $"src/generated/File{index:D4}.cs",
+                    [index % 2, (index + 1) % 2]))
+                .ToArray();
+            await store.AddAsync(rebuilding, chunks);
+            IReadOnlyList<SemanticVectorMatch> current = await store.SearchAsync(
+                key, [1f, 0f], 1);
+            Assert.Equal("ready.md", Assert.Single(current).Path);
+        }
+
+        await store.AbortAsync(rebuilding);
+
+        SemanticIndexPartition currentPartition = Assert.IsType<SemanticIndexPartition>(
+            await store.GetCurrentAsync(key));
+        IReadOnlyList<SemanticVectorMatch> afterAbort = await store.SearchAsync(
+            key, [1f, 0f], 10);
+        Assert.Equal(ready.Id, currentPartition.Id);
+        Assert.Equal("ready.md", Assert.Single(afterAbort).Path);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(root))

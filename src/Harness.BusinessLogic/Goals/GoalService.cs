@@ -100,6 +100,77 @@ internal sealed class GoalService(
             : new(updated.ToView(), ErrorCode: null, Error: null);
     }
 
+    public async ValueTask<GoalBudgetExtensionResult> ExtendRemoteBudgetAsync(
+        GoalBudgetExtensionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (request?.GoalId is null || string.IsNullOrWhiteSpace(request.GoalId.Value) ||
+            request.NewBudget is null || request.NewBudget.Value <= 0 ||
+            request.ExpectedBudget?.Value <= 0 || request.Reason is null ||
+            string.IsNullOrWhiteSpace(request.Reason.Value) || request.Reason.Value.Length > 2_000)
+        {
+            return new(null, null, "invalid_budget_extension",
+                "A goal, larger positive remote cap, and a 1-2000 character reason are required.");
+        }
+
+        StoredGoal? goal = await goalStore.GetAsync(request.GoalId.Value, cancellationToken);
+        if (goal is null)
+        {
+            return new(null, null, "goal_missing", "The goal does not exist.");
+        }
+
+        RegisteredWorkspace? workspace = await workspaceStore.GetActiveAsync(cancellationToken);
+        if (workspace is null || !workspace.Id.Equals(goal.WorkspaceId, StringComparison.Ordinal))
+        {
+            return new(null, null, "workspace_not_active",
+                "The goal workspace must be active.");
+        }
+
+        if (!workspace.IsTrusted)
+        {
+            return new(null, null, "workspace_not_trusted",
+                "Trust the workspace before increasing remote spending authority.");
+        }
+
+        if (goal.RemoteBudgetMicrousd != request.ExpectedBudget?.Value ||
+            request.NewBudget.Value <= (goal.RemoteBudgetMicrousd ?? 0))
+        {
+            return new(null, null, "stale_budget_extension",
+                "The remote cap changed or the requested cap is not an increase.");
+        }
+
+        string reason = request.Reason.Value.Trim();
+        DateTimeOffset approvedAt = DateTimeOffset.UtcNow;
+        StoredGoalBudgetExtensionSnapshot? stored = await goalStore.ExtendRemoteBudgetAsync(
+            Guid.NewGuid().ToString("N"),
+            goal.Id,
+            goal.RemoteBudgetMicrousd,
+            request.NewBudget.Value,
+            reason,
+            approvedAt,
+            cancellationToken);
+        if (stored is null)
+        {
+            return new(null, null, "stale_budget_extension",
+                "The remote cap changed before the increase was recorded.");
+        }
+
+        StoredGoalBudgetExtension extension = stored.Extension;
+        return new(
+            stored.Goal.ToView(),
+            new(
+                new(extension.Id),
+                new(extension.GoalId),
+                extension.PreviousBudgetMicrousd is null
+                    ? null
+                    : new(extension.PreviousBudgetMicrousd.Value),
+                new(extension.NewBudgetMicrousd),
+                new(extension.Reason),
+                extension.ApprovedAt),
+            ErrorCode: null,
+            Error: null);
+    }
+
     public async ValueTask<PlanView?> GetCurrentPlanAsync(
         GoalId goalId,
         CancellationToken cancellationToken = default) =>

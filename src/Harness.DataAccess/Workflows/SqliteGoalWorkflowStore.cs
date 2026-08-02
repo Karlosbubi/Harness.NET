@@ -188,6 +188,12 @@ internal sealed class SqliteGoalWorkflowStore(IApplicationPaths applicationPaths
             GoalWorkflowCheckpointKind.UserDirectionRequired,
             GoalWorkflowRunState.Running,
             GoalWorkflowRunState.NeedsDirection) => true,
+        (GoalWorkflowCheckpointKind.UserDirectionRequired,
+            GoalWorkflowCheckpointKind.LeadCallStarted or
+            GoalWorkflowCheckpointKind.ImplementerCallStarted or
+            GoalWorkflowCheckpointKind.ReviewerCallStarted,
+            GoalWorkflowRunState.NeedsDirection,
+            GoalWorkflowRunState.Running) => true,
         _ => false,
     };
 

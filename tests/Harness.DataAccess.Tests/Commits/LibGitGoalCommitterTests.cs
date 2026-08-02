@@ -62,6 +62,50 @@ public sealed class LibGitGoalCommitterTests : IDisposable
         Assert.Equal(initialSha, repository.Head.Tip?.Sha);
     }
 
+    [Fact]
+    public async Task Conflict_is_blocked_until_the_user_resolves_and_stages_it()
+    {
+        (string branch, _) = CreateRepository();
+        Signature signature = new("Test", "test@example.test", DateTimeOffset.UtcNow);
+        using (Repository repository = new(root))
+        {
+            Branch incoming = repository.CreateBranch("incoming");
+            Commands.Checkout(repository, incoming);
+            File.WriteAllText(Path.Combine(root, "tracked.txt"), "incoming change\n");
+            Commands.Stage(repository, "tracked.txt");
+            repository.Commit("incoming", signature, signature);
+
+            Commands.Checkout(repository, branch);
+            File.WriteAllText(Path.Combine(root, "tracked.txt"), "goal change\n");
+            Commands.Stage(repository, "tracked.txt");
+            repository.Commit("goal", signature, signature);
+            MergeResult merge = repository.Merge(incoming, signature);
+            Assert.Equal(MergeStatus.Conflicts, merge.Status);
+        }
+
+        LibGitGoalCommitter committer = new();
+        GoalCommitInspection conflicted = await committer.InspectAsync(new(
+            new(root), new(branch)));
+
+        Assert.Equal("conflicts_present", conflicted.ErrorCode);
+        Assert.Contains("Resolve all Git conflicts", conflicted.Error,
+            StringComparison.Ordinal);
+
+        File.WriteAllText(Path.Combine(root, "tracked.txt"), "resolved goal and incoming\n");
+        using (Repository repository = new(root))
+        {
+            Commands.Stage(repository, "tracked.txt");
+        }
+
+        GoalCommitInspection resolved = await committer.InspectAsync(new(
+            new(root), new(branch)));
+
+        Assert.Null(resolved.Error);
+        Assert.NotNull(resolved.DiffSha256);
+        Assert.Contains("resolved goal and incoming", resolved.Diff.Value,
+            StringComparison.Ordinal);
+    }
+
     private (string Branch, string InitialSha) CreateRepository()
     {
         Directory.CreateDirectory(root);

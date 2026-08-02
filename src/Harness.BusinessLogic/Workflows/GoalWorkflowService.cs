@@ -241,7 +241,8 @@ internal sealed class GoalWorkflowService(
             latest = snapshot.Checkpoints[^1];
         }
 
-        if (latest.Kind is not (StoredKind.PlanApproved or StoredKind.ImplementationProduced))
+        if (latest.Kind is not (StoredKind.PlanApproved or StoredKind.ImplementationProduced or
+            StoredKind.ReviewCompleted))
         {
             yield return await ToViewAsync(snapshot, cancellationToken);
             yield break;
@@ -257,6 +258,69 @@ internal sealed class GoalWorkflowService(
                 cancellationToken);
             yield return await ToViewAsync(snapshot, cancellationToken);
             yield break;
+        }
+
+        AgentOutput? resumedImplementationOutput = null;
+        if (latest.Kind is StoredKind.ReviewCompleted &&
+            snapshot.Run.State is StoredState.Running)
+        {
+            string reviewOutput = latest.EvidenceContent?.Value ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(reviewOutput))
+            {
+                snapshot = await MarkDirectionAsync(snapshot,
+                    "The pending correction has no durable Reviewer findings.",
+                    cancellationToken);
+                yield return await ToViewAsync(snapshot, cancellationToken);
+                yield break;
+            }
+
+            string revisionTask = RevisionTask(goal, plan, new(reviewOutput));
+            snapshot = await AppendAsync(snapshot, StoredKind.ImplementerCallStarted,
+                StoredActor.Implementer,
+                $"Implementer correction pass started for review cycle " +
+                $"{snapshot.Run.ReviewCycle.Value}.",
+                "Implementer revision prompt", revisionTask,
+                StoredKind.ReviewCompleted, StoredState.Running,
+                StoredState.Running, cancellationToken);
+            yield return await ToViewAsync(snapshot, cancellationToken);
+
+            AgentRunResult revision;
+            try
+            {
+                revision = await agentRunner.RunAsync(new(
+                    goal.Id,
+                    AgentRole.Implementer,
+                    new(revisionTask),
+                    request.ImplementerMaximumOutputTokens,
+                    FileAreas(delegatedTasks)), cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                await MarkUncertainAsync(snapshot,
+                    "Implementer correction call was cancelled after it started; " +
+                    "completed tool evidence must be inspected.");
+                throw;
+            }
+
+            if (revision.Output is null)
+            {
+                snapshot = await MarkDirectionAsync(snapshot,
+                    $"Implementer correction failed and was not replayed: {revision.Error?.Value}",
+                    cancellationToken);
+                yield return await ToViewAsync(snapshot, cancellationToken);
+                yield break;
+            }
+
+            snapshot = await AppendAsync(snapshot, StoredKind.ImplementationProduced,
+                StoredActor.Implementer,
+                $"Implementer completed the correction requested after review cycle " +
+                $"{snapshot.Run.ReviewCycle.Value}.",
+                "Implementation correction report", revision.Output.Value,
+                StoredKind.ImplementerCallStarted, StoredState.Running,
+                StoredState.Running, cancellationToken);
+            yield return await ToViewAsync(snapshot, cancellationToken);
+            latest = snapshot.Checkpoints[^1];
+            resumedImplementationOutput = revision.Output;
         }
 
         while (delegatedTasks.FirstOrDefault(task =>
@@ -320,18 +384,279 @@ internal sealed class GoalWorkflowService(
             delegatedTasks = await taskStore.ListAsync(snapshot.Run.Id, cancellationToken);
         }
 
-        AgentOutput implementationOutput = new(ImplementationSummary(delegatedTasks));
+        await foreach (GoalWorkflowSnapshot reviewSnapshot in RunReviewCyclesAsync(
+                           goal,
+                           plan,
+                           delegatedTasks,
+                           snapshot,
+                           request.ImplementerMaximumOutputTokens,
+                           request.ReviewerMaximumOutputTokens,
+                           reviewerCallAlreadyStarted: false,
+                           stopAfterReview: false,
+                           initialImplementationOutput: resumedImplementationOutput,
+                           cancellationToken))
+        {
+            yield return reviewSnapshot;
+        }
+    }
+
+    public async IAsyncEnumerable<GoalWorkflowSnapshot> RetryAsync(
+        GoalWorkflowRetryRequest request,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        ValidateRetry(request);
+        GoalView goal = await RequireGoalAsync(request.GoalId, cancellationToken);
+        StoredGoalWorkflowSnapshot snapshot = await store.GetLatestAsync(
+            new(request.GoalId.Value), cancellationToken) ??
+            throw new InvalidOperationException("The goal has no production workflow run.");
+        IReadOnlyList<StoredGoalWorkflowTask> retryTasks = await taskStore.ListAsync(
+            snapshot.Run.Id, cancellationToken);
+        GoalWorkflowRetryRole? availableRole = RetryRole(snapshot, retryTasks);
+        if (snapshot.Run.State is not StoredState.NeedsDirection ||
+            availableRole is null || availableRole != request.Role)
+        {
+            throw new InvalidOperationException(
+                "The failed workflow step is stale or is not available for explicit retry.");
+        }
+
+        StoredKind callKind = request.Role switch
+        {
+            GoalWorkflowRetryRole.Lead => StoredKind.LeadCallStarted,
+            GoalWorkflowRetryRole.Implementer => StoredKind.ImplementerCallStarted,
+            GoalWorkflowRetryRole.Reviewer => StoredKind.ReviewerCallStarted,
+            _ => throw new ArgumentOutOfRangeException(nameof(request)),
+        };
+        snapshot = await AppendAsync(snapshot, callKind, StoredActor.System,
+            $"User explicitly retried the failed {request.Role} call after reviewing its recovery notice.",
+            "Explicit retry",
+            $"Retried {request.Role} with a maximum output of " +
+            $"{request.MaximumOutputTokens.Value} tokens. The prior call was not replayed automatically.",
+            StoredKind.UserDirectionRequired, StoredState.NeedsDirection,
+            StoredState.Running, cancellationToken);
+        yield return await ToViewAsync(snapshot, cancellationToken);
+
+        if (request.Role is GoalWorkflowRetryRole.Lead)
+        {
+            await foreach (GoalWorkflowSnapshot result in RetryLeadAsync(
+                               goal, snapshot, request.MaximumOutputTokens, cancellationToken))
+            {
+                yield return result;
+            }
+
+            yield break;
+        }
+
+        PlanView? plan = await goalService.GetCurrentPlanAsync(goal.Id, cancellationToken);
+        if (goal.State is not GoalState.Approved || plan?.State is not PlanState.Approved)
+        {
+            snapshot = await MarkDirectionAsync(snapshot,
+                "The approved plan changed before the failed role could be retried.",
+                cancellationToken);
+            yield return await ToViewAsync(snapshot, cancellationToken);
+            yield break;
+        }
+
+        IReadOnlyList<StoredGoalWorkflowTask> delegatedTasks = retryTasks;
+        if (request.Role is GoalWorkflowRetryRole.Implementer)
+        {
+            StoredGoalWorkflowTask? task = delegatedTasks.SingleOrDefault(item =>
+                item.State is GoalWorkflowTaskState.InProgress);
+            if (task is null)
+            {
+                snapshot = await MarkDirectionAsync(snapshot,
+                    "The failed Implementer task is no longer the single durable in-progress task.",
+                    cancellationToken);
+                yield return await ToViewAsync(snapshot, cancellationToken);
+                yield break;
+            }
+
+            string implementerTask = ImplementerTask(goal, plan, task, delegatedTasks.Count);
+            AgentRunResult implementation;
+            try
+            {
+                implementation = await agentRunner.RunAsync(new(
+                    goal.Id,
+                    AgentRole.Implementer,
+                    new(implementerTask),
+                    request.MaximumOutputTokens,
+                    FileAreas(task)), cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                await MarkUncertainAsync(snapshot,
+                    "Retried Implementer call was cancelled after it started; completed tool evidence must be inspected.");
+                throw;
+            }
+
+            if (implementation.Output is null)
+            {
+                snapshot = await MarkDirectionAsync(snapshot,
+                    $"Retried delegated task {task.Sequence.Value} failed and was not replayed: " +
+                    implementation.Error?.Value,
+                    cancellationToken);
+                yield return await ToViewAsync(snapshot, cancellationToken);
+                yield break;
+            }
+
+            StoredGoalWorkflowTask completedTask = await taskStore.CompleteAsync(
+                task.Id,
+                new(implementation.Output.Value),
+                timeProvider.GetUtcNow(),
+                CancellationToken.None);
+            snapshot = await AppendAsync(snapshot, StoredKind.ImplementationProduced,
+                StoredActor.Implementer,
+                $"Implementer completed retried delegated task {completedTask.Sequence.Value}/" +
+                $"{delegatedTasks.Count}: {completedTask.Title.Value}",
+                $"Retried delegated task {completedTask.Sequence.Value} report",
+                completedTask.Report!.Value,
+                StoredKind.ImplementerCallStarted, StoredState.Running,
+                StoredState.Running, CancellationToken.None);
+            yield return await ToViewAsync(snapshot, cancellationToken);
+            yield break;
+        }
+
+        if (delegatedTasks.Count is 0 ||
+            delegatedTasks.Any(task => task.State is not GoalWorkflowTaskState.Completed))
+        {
+            snapshot = await MarkDirectionAsync(snapshot,
+                "The failed Reviewer call no longer has a complete, consistent task set.",
+                cancellationToken);
+            yield return await ToViewAsync(snapshot, cancellationToken);
+            yield break;
+        }
+
+        await foreach (GoalWorkflowSnapshot result in RunReviewCyclesAsync(
+                           goal,
+                           plan,
+                           delegatedTasks,
+                           snapshot,
+                           request.MaximumOutputTokens,
+                           request.MaximumOutputTokens,
+                           reviewerCallAlreadyStarted: true,
+                           stopAfterReview: true,
+                           initialImplementationOutput: null,
+                           cancellationToken))
+        {
+            yield return result;
+        }
+    }
+
+    private async IAsyncEnumerable<GoalWorkflowSnapshot> RetryLeadAsync(
+        GoalView goal,
+        StoredGoalWorkflowSnapshot snapshot,
+        MaximumAgentOutputTokens maximumOutputTokens,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        if (goal.State is not GoalState.Draft and not GoalState.NeedsPlanRevision)
+        {
+            snapshot = await MarkDirectionAsync(snapshot,
+                "The goal changed before the failed Lead call could be retried.",
+                cancellationToken);
+            yield return await ToViewAsync(snapshot, cancellationToken);
+            yield break;
+        }
+
+        AgentRunResult result;
+        try
+        {
+            result = await agentRunner.RunAsync(new(
+                goal.Id,
+                AgentRole.Lead,
+                new(LeadTask(goal)),
+                maximumOutputTokens), cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            await MarkUncertainAsync(snapshot,
+                "Retried Lead call was cancelled after it started; inspect provider and cost evidence before continuing.");
+            throw;
+        }
+
+        if (result.Output is null)
+        {
+            snapshot = await MarkDirectionAsync(snapshot,
+                $"Retried Lead call did not produce a plan: {result.Error?.Value ?? "unknown failure"}",
+                cancellationToken);
+            yield return await ToViewAsync(snapshot, cancellationToken);
+            yield break;
+        }
+
+        GoalDelegation delegation = GoalDelegationParser.Parse(result.Output.Value);
+        if (delegation.Error is not null)
+        {
+            snapshot = await MarkDirectionAsync(snapshot,
+                $"Retried Lead call did not produce a bounded delegation: {delegation.Error}",
+                cancellationToken);
+            yield return await ToViewAsync(snapshot, cancellationToken);
+            yield break;
+        }
+
+        DateTimeOffset delegatedAt = timeProvider.GetUtcNow();
+        await taskStore.CreateAsync(
+            snapshot.Run.Id,
+            delegation.Tasks.Select((task, index) => new StoredGoalWorkflowTask(
+                new(Guid.NewGuid().ToString("N")),
+                snapshot.Run.Id,
+                new(index + 1),
+                new(task.Title.Value),
+                new(task.Objective.Value),
+                new(task.FileAreas.Value),
+                new(task.AcceptanceCriteria.Value),
+                GoalWorkflowTaskState.Pending,
+                Report: null,
+                delegatedAt,
+                StartedAt: null,
+                CompletedAt: null)).ToArray(),
+            cancellationToken);
+        PlanResult plan = await goalService.ProposePlanAsync(
+            new(goal.Id, delegation.Plan!), cancellationToken);
+        if (plan.Plan is null)
+        {
+            snapshot = await MarkDirectionAsync(snapshot,
+                $"The retried Lead output could not be persisted as a plan: {plan.Error}",
+                cancellationToken);
+            yield return await ToViewAsync(snapshot, cancellationToken);
+            yield break;
+        }
+
+        snapshot = await AppendAsync(snapshot, StoredKind.PlanProposed, StoredActor.Lead,
+            $"Retried Lead call proposed plan revision {plan.Plan.Revision.Value}.",
+            "Proposed plan", plan.Plan.Content,
+            StoredKind.LeadCallStarted, StoredState.Running,
+            StoredState.AwaitingPlanApproval, cancellationToken);
+        yield return await ToViewAsync(snapshot, cancellationToken);
+    }
+
+    private async IAsyncEnumerable<GoalWorkflowSnapshot> RunReviewCyclesAsync(
+        GoalView goal,
+        PlanView plan,
+        IReadOnlyList<StoredGoalWorkflowTask> delegatedTasks,
+        StoredGoalWorkflowSnapshot snapshot,
+        MaximumAgentOutputTokens implementerMaximumOutputTokens,
+        MaximumAgentOutputTokens reviewerMaximumOutputTokens,
+        bool reviewerCallAlreadyStarted,
+        bool stopAfterReview,
+        AgentOutput? initialImplementationOutput,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        AgentOutput implementationOutput = initialImplementationOutput ??
+            new(ImplementationSummary(delegatedTasks));
 
         while (true)
         {
             string reviewerTask = ReviewerTask(goal, plan, implementationOutput);
-            snapshot = await AppendAsync(snapshot, StoredKind.ReviewerCallStarted,
-                StoredActor.Reviewer,
-                "Independent reviewer model call started against diff and durable evidence.",
-                "Reviewer prompt", reviewerTask,
-                StoredKind.ImplementationProduced, StoredState.Running,
-                StoredState.Running, cancellationToken);
-            yield return await ToViewAsync(snapshot, cancellationToken);
+            if (!reviewerCallAlreadyStarted)
+            {
+                snapshot = await AppendAsync(snapshot, StoredKind.ReviewerCallStarted,
+                    StoredActor.Reviewer,
+                    "Independent reviewer model call started against diff and durable evidence.",
+                    "Reviewer prompt", reviewerTask,
+                    StoredKind.ImplementationProduced, StoredState.Running,
+                    StoredState.Running, cancellationToken);
+                yield return await ToViewAsync(snapshot, cancellationToken);
+            }
+
+            reviewerCallAlreadyStarted = false;
 
             AgentRunResult review;
             try
@@ -340,7 +665,7 @@ internal sealed class GoalWorkflowService(
                     goal.Id,
                     AgentRole.Reviewer,
                     new(reviewerTask),
-                    request.ReviewerMaximumOutputTokens), cancellationToken);
+                    reviewerMaximumOutputTokens), cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -391,6 +716,11 @@ internal sealed class GoalWorkflowService(
                 yield break;
             }
 
+            if (stopAfterReview)
+            {
+                yield break;
+            }
+
             string revisionTask = RevisionTask(goal, plan, review.Output);
             snapshot = await AppendAsync(snapshot, StoredKind.ImplementerCallStarted,
                 StoredActor.Implementer,
@@ -407,7 +737,7 @@ internal sealed class GoalWorkflowService(
                     goal.Id,
                     AgentRole.Implementer,
                     new(revisionTask),
-                    request.ImplementerMaximumOutputTokens,
+                    implementerMaximumOutputTokens,
                     FileAreas(delegatedTasks)), cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -624,6 +954,17 @@ internal sealed class GoalWorkflowService(
         }
     }
 
+    private static void ValidateRetry(GoalWorkflowRetryRequest request)
+    {
+        if (request is null || !ValidGoalId(request.GoalId) ||
+            !ValidMaximum(request.MaximumOutputTokens) ||
+            !Enum.IsDefined(request.Role))
+        {
+            throw new ArgumentException(
+                $"A valid goal, failed role, and output maximum of 1-{MaximumOutputTokens} tokens are required.");
+        }
+    }
+
     private static bool ValidGoalId(GoalId? goalId) =>
         goalId is not null && Guid.TryParseExact(goalId.Value, "N", out _);
 
@@ -637,6 +978,7 @@ internal sealed class GoalWorkflowService(
         StoredGoalWorkflowCheckpoint latest = snapshot.Checkpoints[^1];
         IReadOnlyList<StoredGoalWorkflowTask> tasks = await taskStore.ListAsync(
             snapshot.Run.Id, cancellationToken);
+        GoalWorkflowRetryRole? retryRole = RetryRole(snapshot, tasks);
         return new(
             new(snapshot.Run.Id.Value),
             new(snapshot.Run.GoalId.Value),
@@ -702,7 +1044,34 @@ internal sealed class GoalWorkflowService(
             CanResume: latest.Kind is StoredKind.PlanProposed or
                 StoredKind.PlanApproved or StoredKind.ImplementationProduced or
                 StoredKind.LeadCallStarted or StoredKind.ImplementerCallStarted or
-                StoredKind.ReviewerCallStarted,
-            RequiresUserDirection: snapshot.Run.State is StoredState.NeedsDirection);
+                StoredKind.ReviewerCallStarted ||
+                (latest.Kind is StoredKind.ReviewCompleted &&
+                 snapshot.Run.State is StoredState.Running),
+            RequiresUserDirection: snapshot.Run.State is StoredState.NeedsDirection,
+            RetryRole: retryRole);
+    }
+
+    private static GoalWorkflowRetryRole? RetryRole(
+        StoredGoalWorkflowSnapshot snapshot,
+        IReadOnlyList<StoredGoalWorkflowTask> tasks)
+    {
+        if (snapshot.Run.State is not StoredState.NeedsDirection ||
+            snapshot.Checkpoints.Count < 2 ||
+            snapshot.Checkpoints[^1].Kind is not StoredKind.UserDirectionRequired)
+        {
+            return null;
+        }
+
+        return snapshot.Checkpoints[^2].Kind switch
+        {
+            StoredKind.LeadCallStarted when tasks.Count is 0 => GoalWorkflowRetryRole.Lead,
+            StoredKind.ImplementerCallStarted when
+                tasks.Count(task => task.State is GoalWorkflowTaskState.InProgress) is 1 =>
+                GoalWorkflowRetryRole.Implementer,
+            StoredKind.ReviewerCallStarted when tasks.Count > 0 &&
+                tasks.All(task => task.State is GoalWorkflowTaskState.Completed) =>
+                GoalWorkflowRetryRole.Reviewer,
+            _ => null,
+        };
     }
 }

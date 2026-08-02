@@ -1,4 +1,5 @@
 using Harness.BusinessLogic.Acceptance;
+using Harness.BusinessLogic.Agents;
 using Harness.BusinessLogic.Approvals;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Workflows;
@@ -49,6 +50,8 @@ internal enum ConversationWorkflowActionKind
     ApprovePlan,
     RequestPlanChanges,
     ContinueRun,
+    RetryRun,
+    ExtendBudget,
     CancelRun,
     ReviewAcceptedChanges,
     ApproveRestore,
@@ -107,13 +110,39 @@ internal static class ConversationWorkflowActionProjector
         {
             if (workflow.State is GoalWorkflowState.Running)
             {
-                return [new(ConversationWorkflowActionKind.CancelRun, "Cancel run", false)];
+                return goals.IsWorkflowRunning
+                    ? [new(ConversationWorkflowActionKind.CancelRun, "Cancel run", false)]
+                    : workflow.CanResume
+                        ? [new(ConversationWorkflowActionKind.ContinueRun, "Continue run", true)]
+                        : [];
             }
 
             if (workflow.State is GoalWorkflowState.AwaitingPlanApproval &&
                 goal.State is GoalState.Approved)
             {
                 return [new(ConversationWorkflowActionKind.ContinueRun, "Continue run", true)];
+            }
+
+            if (workflow.State is GoalWorkflowState.NeedsDirection &&
+                workflow.RetryRole is { } retryRole)
+            {
+                ConversationWorkflowAction retry = new(
+                    ConversationWorkflowActionKind.RetryRun,
+                    $"Retry {retryRole}",
+                    true);
+                AgentRole? agentRole = retryRole switch
+                {
+                    GoalWorkflowRetryRole.Lead => AgentRole.Lead,
+                    GoalWorkflowRetryRole.Implementer => AgentRole.Implementer,
+                    GoalWorkflowRetryRole.Reviewer => AgentRole.Reviewer,
+                    _ => null,
+                };
+                bool remote = agentRole is not null && goals.ModelSelections.Any(selection =>
+                    selection.Role == agentRole && selection.Access is ModelAccess.Remote);
+                return remote
+                    ? [retry, new(ConversationWorkflowActionKind.ExtendBudget,
+                        "Increase remote cap", false)]
+                    : [retry];
             }
 
             if (workflow.State is GoalWorkflowState.AwaitingAcceptance or GoalWorkflowState.Completed &&
@@ -217,7 +246,9 @@ internal static class ConversationWorkflowProjector
                 $"Agent run · cycle {workflow.ReviewCycle.Value}",
                 RunSummary(workflow),
                 workflow.RequiresUserDirection
-                    ? "The run is paused until the user supplies direction."
+                    ? workflow.RetryRole is { } retryRole
+                        ? $"The run is paused. Review the recovery notice before explicitly retrying {retryRole}."
+                        : "The run is paused until the user supplies direction."
                     : null,
                 Order: 200));
             cards.AddRange(workflow.Activities.Select(activity => new ConversationWorkflowCard(

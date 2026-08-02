@@ -195,17 +195,16 @@ of Stage 3 below.
   baselines. The editor and agents share the same typed operation; text-search rename
   is not an accepted agent behavior. (Task 044)
 
-### Workflow friction
+### Workflow friction (delivered)
 
-- Let a user move between more than one trusted workspace without re-registration
-  overhead; only one workspace is active at a time today. (Task 036)
+- Users can retain multiple trusted workspaces, switch through a dirty-document
+  preflight, and restore each workspace's selected goal context. (Task 036)
+- Large/messy repository recovery is proven for dirty bases, mid-goal conflicts,
+  index rebuilds under load, provider outages, budget exhaustion, and
+  corrupted/interrupted state outside the representative-repo gate. (Task 037)
 
 ### Missing core capability
 
-- Prove the workflow on large, real, messy repositories: dirty bases, mid-goal
-  conflicts, index rebuilds under load, provider outages, budget exhaustion, and
-  corrupted/interrupted state, not only the single scripted representative-repo
-  gate. (Task 037)
 - Add an in-app restore-from-backup flow: Operations can only create a backup
   today; recovery into a fresh install is proven solely by
   `eng/verify-v1-release.sh`, not available to a user without the script.

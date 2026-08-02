@@ -128,6 +128,10 @@ public sealed class GoalWorkspaceInspectionServiceTests
             string goalId, DateTimeOffset expectedUpdatedAt, int reviewCycleLimit,
             long? remoteBudgetMicrousd, DateTimeOffset updatedAt,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<StoredGoalBudgetExtensionSnapshot?> ExtendRemoteBudgetAsync(
+            string extensionId, string goalId, long? expectedBudgetMicrousd,
+            long newBudgetMicrousd, string reason, DateTimeOffset approvedAt,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
         public ValueTask<StoredPlan?> GetCurrentPlanAsync(
             string goalId,

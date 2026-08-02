@@ -10,14 +10,12 @@ repository.
 The current build is the `1.0.0` Linux x64 release: a scripted acceptance gate
 proves one complete, representative repository workflow end to end. That gate
 passing does not yet mean the application is productive for real day-to-day .NET
-development — see `docs/roadmap.md` Stage 3 and `docs/tasks/README.md` tasks
-036-037 and 039-044 for the concrete gaps (no Roslyn validation, semantic editing,
-or intellisense, a 14-dialog goal workflow, single-workspace-at-a-time,
-unproven large/messy-repository behavior, no post-commit handoff guidance, and no
-in-app restore) still being closed. Tasks 040 and 042-044 are the current
-priority: match a professional editing and Git baseline before further
-unique features. Task 038 (agent-quality feedback loop) is deferred until the
-rest close.
+development — see `docs/roadmap.md` Stage 3 and `docs/tasks/README.md` for the
+remaining concrete gaps. Chat-first orchestration, multi-workspace use, Roslyn
+validation/intellisense/refactoring, and messy-repository recovery are now delivered;
+the remaining daily-use work is clear post-commit handoff guidance (Task 039) and
+in-app backup restore (Task 041). Task 038 (agent-quality feedback loop) remains
+deferred until those close.
 
 Framework discovery, the production service slices, and the default docked desktop
 workflow are implemented. The application has

@@ -207,3 +207,150 @@ internal sealed class GoalSettingsDialog : Window
         return control;
     }
 }
+
+internal sealed class BudgetExtensionDialog : Window
+{
+    private readonly AvaloniaPresentationStore store;
+    private readonly GoalView goal;
+    private readonly CancellationToken cancellationToken;
+    private readonly TextBox remoteUsd = new() { PlaceholderText = "New total cap in USD" };
+    private readonly TextBox reason = new()
+    {
+        AcceptsReturn = true,
+        TextWrapping = TextWrapping.Wrap,
+        MinHeight = 90,
+        MaxLength = 2_000,
+    };
+    private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap };
+
+    internal BudgetExtensionDialog(
+        AvaloniaPresentationStore store,
+        GoalView goal,
+        CancellationToken cancellationToken)
+    {
+        this.store = store;
+        this.goal = goal;
+        this.cancellationToken = cancellationToken;
+        Title = "Increase remote cap";
+        Width = 570;
+        Height = 430;
+        MinWidth = 500;
+        MinHeight = 390;
+        WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        Content = BuildContent();
+    }
+
+    private Control BuildContent()
+    {
+        AutomationProperties.SetName(remoteUsd, "New total remote spending cap in US dollars");
+        AutomationProperties.SetName(reason, "Required budget extension reason");
+        Button approve = new() { Content = "Increase cap", Classes = { "primary" } };
+        AutomationProperties.SetName(approve, "Approve remote budget increase");
+        approve.Click += async (_, _) => await ApproveAsync();
+        Button cancel = new() { Content = "Cancel" };
+        cancel.Click += (_, _) => Close();
+        Grid actions = new() { ColumnDefinitions = new("*,Auto,Auto"), ColumnSpacing = 8 };
+        actions.Children.Add(status);
+        Grid.SetColumn(approve, 1);
+        actions.Children.Add(approve);
+        Grid.SetColumn(cancel, 2);
+        actions.Children.Add(cancel);
+        return new Grid
+        {
+            RowDefinitions = new("Auto,Auto,Auto,Auto,*,Auto"),
+            RowSpacing = 10,
+            Margin = new Thickness(20),
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = "Increase remote spending authority",
+                    FontSize = 18,
+                    FontWeight = FontWeight.SemiBold,
+                },
+                AtRow(new TextBlock
+                {
+                    Text = $"Current cap: " + (goal.RemoteBudget is null
+                        ? "$0 (local-only)"
+                        : $"${GoalPresentationFormatter.ToUsd(goal.RemoteBudget.Value)}"),
+                    Classes = { "muted" },
+                }, 1),
+                AtRow(new StackPanel
+                {
+                    Spacing = 6,
+                    Children =
+                    {
+                        new TextBlock { Text = "New total cap (USD)" },
+                        remoteUsd,
+                    },
+                }, 2),
+                AtRow(new TextBlock
+                {
+                    Text = "This increase is durable and auditable. It does not retry a failed " +
+                           "model call; use the retry action separately after reviewing cost evidence.",
+                    TextWrapping = TextWrapping.Wrap,
+                    Classes = { "muted" },
+                }, 3),
+                AtRow(new StackPanel
+                {
+                    Spacing = 6,
+                    Children =
+                    {
+                        new TextBlock { Text = "Required reason" },
+                        reason,
+                    },
+                }, 4),
+                AtRow(actions, 5),
+            },
+        };
+    }
+
+    private async Task ApproveAsync()
+    {
+        if (!decimal.TryParse(remoteUsd.Text, NumberStyles.Number,
+                CultureInfo.InvariantCulture, out decimal usd) || usd <= 0 ||
+            usd > long.MaxValue / 1_000_000m)
+        {
+            status.Text = "Enter a positive USD cap using a decimal point.";
+            return;
+        }
+
+        MicroUsdAmount newBudget = new(decimal.ToInt64(decimal.Round(
+            usd * 1_000_000m,
+            0,
+            MidpointRounding.AwayFromZero)));
+        if (newBudget.Value <= (goal.RemoteBudget?.Value ?? 0))
+        {
+            status.Text = "The new total cap must be larger than the current cap.";
+            return;
+        }
+
+        string extensionReason = reason.Text?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(extensionReason))
+        {
+            status.Text = "Enter why this additional remote spend is needed.";
+            return;
+        }
+
+        await store.ExtendGoalBudgetAsync(new(
+            goal.Id,
+            goal.RemoteBudget,
+            newBudget,
+            new(extensionReason)), cancellationToken);
+        if (store.Current.Goals.SelectedGoal?.RemoteBudget == newBudget)
+        {
+            Close();
+        }
+        else
+        {
+            status.Text = store.Current.Goals.Status ?? "The cap was not increased.";
+        }
+    }
+
+    private static T AtRow<T>(T control, int row)
+        where T : Control
+    {
+        Grid.SetRow(control, row);
+        return control;
+    }
+}

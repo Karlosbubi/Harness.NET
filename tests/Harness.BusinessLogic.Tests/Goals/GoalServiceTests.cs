@@ -107,6 +107,48 @@ public sealed class GoalServiceTests
     }
 
     [Fact]
+    public async Task Explicitly_extends_an_approved_goal_budget_and_records_the_reason()
+    {
+        StoredGoal goal = CreateGoal("Approved") with { RemoteBudgetMicrousd = 1_000_000 };
+        FakeGoalStore store = new(goal);
+        GoalService service = CreateService(store, CreateWorkspace(isTrusted: true));
+
+        GoalBudgetExtensionResult result = await service.ExtendRemoteBudgetAsync(new(
+            new(goal.Id),
+            new(1_000_000),
+            new(2_500_000),
+            new(" Retry after the bounded provider estimate exhausted the cap. ")));
+
+        Assert.Null(result.Error);
+        Assert.Equal(new MicroUsdAmount(2_500_000), result.Goal?.RemoteBudget);
+        Assert.Equal(new MicroUsdAmount(1_000_000), result.Extension?.PreviousBudget);
+        Assert.Equal(
+            "Retry after the bounded provider estimate exhausted the cap.",
+            result.Extension?.Reason.Value);
+    }
+
+    [Fact]
+    public async Task Budget_extension_rejects_decrease_stale_cap_and_untrusted_workspace()
+    {
+        StoredGoal goal = CreateGoal("Approved") with { RemoteBudgetMicrousd = 2_000_000 };
+        FakeGoalStore store = new(goal);
+        GoalService trusted = CreateService(store, CreateWorkspace(isTrusted: true));
+
+        GoalBudgetExtensionResult decrease = await trusted.ExtendRemoteBudgetAsync(new(
+            new(goal.Id), new(2_000_000), new(1_000_000), new("Decrease")));
+        GoalBudgetExtensionResult stale = await trusted.ExtendRemoteBudgetAsync(new(
+            new(goal.Id), new(1_000_000), new(3_000_000), new("Stale")));
+        GoalBudgetExtensionResult untrusted = await CreateService(
+            store, CreateWorkspace(isTrusted: false)).ExtendRemoteBudgetAsync(new(
+            new(goal.Id), new(2_000_000), new(3_000_000), new("Untrusted")));
+
+        Assert.Equal("stale_budget_extension", decrease.ErrorCode);
+        Assert.Equal("stale_budget_extension", stale.ErrorCode);
+        Assert.Equal("workspace_not_trusted", untrusted.ErrorCode);
+        Assert.Equal(2_000_000, store.Created?.RemoteBudgetMicrousd);
+    }
+
+    [Fact]
     public async Task Proposes_a_versioned_plan_and_waits_for_approval()
     {
         StoredGoal goal = CreateGoal("Draft");
@@ -316,6 +358,29 @@ public sealed class GoalServiceTests
             string goalId,
             CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(CurrentPlan?.GoalId == goalId ? CurrentPlan : null);
+
+        public ValueTask<StoredGoalBudgetExtensionSnapshot?> ExtendRemoteBudgetAsync(
+            string extensionId, string goalId, long? expectedBudgetMicrousd,
+            long newBudgetMicrousd, string reason, DateTimeOffset approvedAt,
+            CancellationToken cancellationToken = default)
+        {
+            if (Created is null || Created.Id != goalId ||
+                Created.RemoteBudgetMicrousd != expectedBudgetMicrousd ||
+                newBudgetMicrousd <= (Created.RemoteBudgetMicrousd ?? 0))
+            {
+                return ValueTask.FromResult<StoredGoalBudgetExtensionSnapshot?>(null);
+            }
+
+            Created = Created with
+            {
+                RemoteBudgetMicrousd = newBudgetMicrousd,
+                UpdatedAt = approvedAt,
+            };
+            return ValueTask.FromResult<StoredGoalBudgetExtensionSnapshot?>(new(
+                Created,
+                new(extensionId, goalId, expectedBudgetMicrousd, newBudgetMicrousd,
+                    reason, approvedAt)));
+        }
 
         public ValueTask<StoredPlanSnapshot> SavePlanAsync(
             StoredPlan plan,

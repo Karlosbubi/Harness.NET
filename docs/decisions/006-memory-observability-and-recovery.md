@@ -32,6 +32,21 @@ default. Store provider secrets in Linux Secret Service with environment fallbac
 - Normal tests use deterministic fakes; opt-in Ollama evaluations protect behavioral
   planning, tool-selection, and review expectations.
 
+### Explicit role retry and budget recovery amendment (2026-07-31)
+
+A role call that fails or becomes uncertain remains a durable `NeedsDirection`
+boundary. Harness.NET identifies the exact failed role but never restarts it merely
+because the application, provider, or network recovered. After inspecting the recovery
+notice, cost ledger, and tool evidence, the user may explicitly retry that exact role
+from the last durable checkpoint. The retry itself is another checkpoint and is subject
+to the same typed mutation baselines and aggregate cost cap.
+
+Remote-cap recovery is a separate authority decision. An active trusted goal may receive
+an increase-only compare-and-swap budget extension with a required reason. The old cap,
+new cap, reason, and approval time are durable audit state. Extending a cap does not retry
+a model call, and retrying does not extend a cap. Decreases and stale extensions fail
+closed.
+
 ## Alternatives considered
 
 - Curated-only history was rejected because it weakens audit and recovery.

@@ -559,6 +559,27 @@ internal sealed class AvaloniaPresentationStore(
                 cancellationToken);
         }, "Goal settings update");
 
+    internal async ValueTask ExtendGoalBudgetAsync(
+        GoalBudgetExtensionRequest request,
+        CancellationToken cancellationToken) =>
+        await RunGoalCommandAsync(async () =>
+        {
+            GoalBudgetExtensionResult result = await goalService.ExtendRemoteBudgetAsync(
+                request, cancellationToken);
+            if (result.Goal is null || result.Extension is null)
+            {
+                PublishGoalStatus(result.Error ?? "Remote budget extension failed.");
+                return;
+            }
+
+            await ReloadGoalsAsync(
+                result.Goal.Id,
+                $"Increased the explicit remote cap to $" +
+                $"{GoalPresentationFormatter.ToUsd(result.Extension.NewBudget.Value)}. " +
+                "The extension is durable and does not retry a model call automatically.",
+                cancellationToken);
+        }, "Remote budget extension");
+
     internal async ValueTask ProposePlanAsync(
         GoalId goalId,
         string content,
@@ -686,6 +707,19 @@ internal sealed class AvaloniaPresentationStore(
                 token),
             cancellationToken,
             "Production workflow");
+
+    internal async ValueTask RetryGoalWorkflowAsync(
+        GoalId goalId,
+        GoalWorkflowRetryRole role,
+        MaximumAgentOutputTokens maximumOutputTokens,
+        CancellationToken cancellationToken) =>
+        await RunWorkflowAsync(
+            goalId,
+            token => goalWorkflowService.RetryAsync(
+                new(goalId, role, maximumOutputTokens),
+                token),
+            cancellationToken,
+            $"{role} retry");
 
     internal void CancelGoalWorkflow() => workflowExecution?.Cancel();
 

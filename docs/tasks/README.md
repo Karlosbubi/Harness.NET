@@ -71,7 +71,7 @@ but the end-user workflow is not complete.
 | 034 | Done | Open a workspace through a familiar first-run journey | 027 | - | The primary shell and centered empty state open Avalonia's native single-folder picker, retain a manual-path fallback, scan the selected Git repository through the existing typed boundary, and present discovered solutions/projects before registration or trust. The workspace manager separates existing workspaces from adding one, and headless plus production AT-SPI checks cover the route. |
 | 035 | Done | Make the workbench's daily surfaces feel like a professional IDE, not a prototype | 016, 026, 029, 032 | - | Framework rules/issues are scannable and filterable; Operations uses a native backup picker; Files is a bounded hierarchy with quick open; the header exposes command search; and Git diff has contrast-validated inline and side-by-side views. Source documents add theme-aware legible syntax colors, breadcrumb/branch/access chrome, compact save/reload/close actions, current-line and selection behavior, and caret/UTF-8/line-ending status without weakening exact-baseline saves. Real wide/compact approved-goal captures and production AT-SPI evidence are recorded in `docs/acceptance/source-editor-2026-07-29.md`. |
 | 036 | Done | Work across more than one trusted repository | 015 | Only one workspace can be active at a time; switching real projects requires re-registration/re-selection overhead. | A user can maintain multiple trusted workspaces and move between them without losing goal/context state, with clear active-workspace indication throughout Avalonia and the TUI. See `docs/acceptance/multi-workspace-2026-07-31.md`. |
-| 037 | Planned | Trust the app on real, messy repositories | 013-033 | Large-repository scale, dirty bases, mid-goal conflicts, index rebuilds under load, provider outages, budget exhaustion, and corrupted/interrupted state are exercised only through the single scripted representative-repo gate. | Large real repositories, dirty working trees, merge conflicts mid-goal, provider outages, budget exhaustion, and corrupted/interrupted state are exercised and demonstrably recoverable, not just the scripted gate scenario. |
+| 037 | Done | Trust the app on real, messy repositories | 013-033 | Large-repository scale, dirty bases, mid-goal conflicts, index rebuilds under load, provider outages, budget exhaustion, and corrupted/interrupted state are exercised only through the single scripted representative-repo gate. | Large real repositories, dirty working trees, merge conflicts mid-goal, provider outages, budget exhaustion, and corrupted/interrupted state are exercised and demonstrably recoverable, not just the scripted gate scenario. See `docs/acceptance/messy-repository-recovery-2026-07-31.md`. |
 | 038 | Deferred | See whether agent output can be trusted | 021 | No opt-in behavioral evaluation or regression data exists yet, so plan quality, tool-selection quality, and review quality have no measurable baseline over time or across model changes. Parked below Tasks 035-037 and 039-044 per 2026-07-29 prioritization. | Opt-in Ollama behavioral evaluation datasets exist and regressions in planning, tool selection, and review are detectable before they reach a user's repository. |
 | 039 | Planned | Know what to do with an accepted goal branch | 023 | After exact-commit approval the goal branch sits in the repository with no in-app guidance; the user must already know to push, open a PR, or merge outside the app. | The app clearly surfaces the accepted branch's state and the deliberately manual next step (push/PR/merge) without automating merge or PR creation. |
 | 040 | Done | Collaborate through chat instead of a chain of pop-ups | 035 | - | Conversation is the primary goal surface; typed inline cards expose plans, cost/capability decisions, progress, validation, evidence, Restore, commit, and handoff. Plan, spending, Restore, destructive, budget-extension, and exact-commit authority remain explicit typed actions. Ordinary role/model/output defaults move to one searchable Settings surface, goal overrides use progressive disclosure, and obsolete dialog paths are removed. Production wide/compact and AT-SPI acceptance is recorded in `docs/acceptance/chat-first-workflow-2026-07-29.md`. |
@@ -251,16 +251,13 @@ Tasks 013-033 are all **Done**, and a release candidate completes a representati
 survives an injected interruption, and leaves both the user repository and private
 Harness.NET state auditable. That gate defines version `1.0.0`.
 
-Passing this gate proves the mechanics of the first complete workflow; it does not
-by itself mean the application is productive for real day-to-day use. As of
-2026-07-29 it is not yet: no edit is validated against a compiler workspace, the editor has no semantic
-assistance or deterministic refactorings, a single goal still walks through up to 14
-modal dialogs, only one workspace can be active at a time, and the workflow has only
-been proven against the single scripted representative repository rather than large
-or messy real ones. Tasks 035-037 and 039-044 track closing that gap; Task 038 is
-deferred until those close. Tasks 040 and 042-044 are the current top priority:
-matching a professional editing, Git, and agent-collaboration baseline before further
-unique features.
+Passing this gate proves the mechanics of the first complete workflow; it does not by
+itself prove day-to-day productivity. Tasks 035-037, 040, and 042-044 have since added
+the professional editor/Git surfaces, chat-first orchestration, multi-workspace use,
+Roslyn validation and semantic editing, deterministic rename, and messy-repository
+recovery. The remaining Stage 3 daily-use gaps are post-commit handoff guidance
+(Task 039) and in-app backup restore (Task 041). Task 038 remains deferred until those
+close.
 
 `eng/verify-v1-release.sh` is the executable gate. Its deterministic suite covers
 provider outages, budget failures, cancellation, interruption reconciliation, and

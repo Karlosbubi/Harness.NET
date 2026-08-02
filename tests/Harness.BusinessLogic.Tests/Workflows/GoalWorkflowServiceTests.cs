@@ -299,6 +299,128 @@ public sealed class GoalWorkflowServiceTests
         Assert.Equal(StoredKind.UserDirectionRequired, store.Snapshot.Checkpoints[^1].Kind);
     }
 
+    [Fact]
+    public async Task Explicit_retry_recovers_a_definitive_lead_provider_outage()
+    {
+        FakeGoalService goals = new();
+        FakeAgentRunner agents = new();
+        agents.Failures.Enqueue((AgentRole.Lead, "provider_unavailable", "Provider unavailable"));
+        InMemoryGoalWorkflowStore store = new();
+        GoalWorkflowService service = CreateService(store, goals, agents);
+
+        GoalWorkflowSnapshot failed = (await CollectAsync(
+            service.StartPlanningAsync(new(goals.Goal.Id, new(512)))))[^1];
+
+        Assert.Equal(GoalWorkflowState.NeedsDirection, failed.State);
+        Assert.Equal(GoalWorkflowRetryRole.Lead, failed.RetryRole);
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await CollectAsync(service.RetryAsync(new(
+                goals.Goal.Id,
+                GoalWorkflowRetryRole.Reviewer,
+                new(768)))));
+        GoalWorkflowSnapshot recovered = (await CollectAsync(service.RetryAsync(new(
+            goals.Goal.Id,
+            GoalWorkflowRetryRole.Lead,
+            new(768)))))[^1];
+
+        Assert.Equal(GoalWorkflowState.AwaitingPlanApproval, recovered.State);
+        Assert.Null(recovered.RetryRole);
+        Assert.Contains(recovered.Evidence, item =>
+            item.Title.Value == "Explicit retry" &&
+            item.Content.Value.Contains("768 tokens", StringComparison.Ordinal));
+        Assert.Equal([AgentRole.Lead, AgentRole.Lead],
+            agents.Requests.Select(request => request.Role));
+    }
+
+    [Fact]
+    public async Task Explicit_retry_recovers_an_implementer_budget_failure_at_safe_boundary()
+    {
+        FakeGoalService goals = new();
+        FakeAgentRunner agents = new();
+        InMemoryGoalWorkflowStore store = new();
+        GoalWorkflowService service = CreateService(store, goals, agents);
+        await CollectAsync(service.StartPlanningAsync(new(goals.Goal.Id, new(512))));
+        goals.Approve();
+        agents.Failures.Enqueue((AgentRole.Implementer, "budget_exhausted", "Budget exhausted"));
+
+        GoalWorkflowSnapshot failed = (await CollectAsync(service.ResumeAsync(new(
+            goals.Goal.Id, new(512), new(512)))))[^1];
+
+        Assert.Equal(GoalWorkflowState.NeedsDirection, failed.State);
+        Assert.Equal(GoalWorkflowRetryRole.Implementer, failed.RetryRole);
+        Assert.Equal(GoalTaskState.InProgress, Assert.Single(failed.Tasks).State);
+        GoalWorkflowSnapshot retried = (await CollectAsync(service.RetryAsync(new(
+            goals.Goal.Id,
+            GoalWorkflowRetryRole.Implementer,
+            new(1024)))))[^1];
+
+        Assert.Equal(GoalWorkflowState.Running, retried.State);
+        Assert.True(retried.CanResume);
+        Assert.Equal(GoalTaskState.Completed, Assert.Single(retried.Tasks).State);
+        GoalWorkflowSnapshot completed = (await CollectAsync(service.ResumeAsync(new(
+            goals.Goal.Id, new(512), new(512)))))[^1];
+        Assert.Equal(GoalWorkflowState.AwaitingAcceptance, completed.State);
+    }
+
+    [Fact]
+    public async Task Explicit_retry_reenters_the_normal_reviewer_cycle()
+    {
+        FakeGoalService goals = new();
+        FakeAgentRunner agents = new();
+        InMemoryGoalWorkflowStore store = new();
+        GoalWorkflowService service = CreateService(store, goals, agents);
+        await CollectAsync(service.StartPlanningAsync(new(goals.Goal.Id, new(512))));
+        goals.Approve();
+        agents.Failures.Enqueue((AgentRole.Reviewer, "provider_unavailable", "Provider unavailable"));
+        GoalWorkflowSnapshot failed = (await CollectAsync(service.ResumeAsync(new(
+            goals.Goal.Id, new(512), new(512)))))[^1];
+
+        GoalWorkflowSnapshot recovered = (await CollectAsync(service.RetryAsync(new(
+            goals.Goal.Id,
+            GoalWorkflowRetryRole.Reviewer,
+            new(768)))))[^1];
+
+        Assert.Equal(GoalWorkflowRetryRole.Reviewer, failed.RetryRole);
+        Assert.Equal(GoalWorkflowState.AwaitingAcceptance, recovered.State);
+        Assert.Equal(1, recovered.ReviewCycle.Value);
+        Assert.Equal([AgentRole.Lead, AgentRole.Implementer, AgentRole.Reviewer, AgentRole.Reviewer],
+            agents.Requests.Select(request => request.Role));
+    }
+
+    [Fact]
+    public async Task Retried_reviewer_revision_stops_before_a_separately_authorized_correction()
+    {
+        FakeGoalService goals = new();
+        FakeAgentRunner agents = new();
+        InMemoryGoalWorkflowStore store = new();
+        GoalWorkflowService service = CreateService(store, goals, agents);
+        await CollectAsync(service.StartPlanningAsync(new(goals.Goal.Id, new(512))));
+        goals.Approve();
+        agents.Failures.Enqueue((AgentRole.Reviewer, "provider_unavailable", "Provider unavailable"));
+        await CollectAsync(service.ResumeAsync(new(goals.Goal.Id, new(512), new(512))));
+        agents.ReviewerOutputs.Enqueue(
+            "{\"decision\":\"revise\",\"summary\":\"Add the boundary case.\"}");
+
+        GoalWorkflowSnapshot reviewed = (await CollectAsync(service.RetryAsync(new(
+            goals.Goal.Id,
+            GoalWorkflowRetryRole.Reviewer,
+            new(768)))))[^1];
+
+        Assert.Equal(GoalWorkflowState.Running, reviewed.State);
+        Assert.True(reviewed.CanResume);
+        Assert.Equal(AgentRole.Reviewer, agents.Requests[^1].Role);
+        Assert.Equal(4, agents.Requests.Count);
+        GoalWorkflowSnapshot completed = (await CollectAsync(service.ResumeAsync(new(
+            goals.Goal.Id, new(640), new(896)))))[^1];
+        Assert.Equal(GoalWorkflowState.AwaitingAcceptance, completed.State);
+        Assert.Equal(AgentRole.Implementer, agents.Requests[^2].Role);
+        Assert.Equal(640, agents.Requests[^2].MaximumOutputTokens?.Value);
+        Assert.Contains("Add the boundary case", agents.Requests[^2].Task.Value,
+            StringComparison.Ordinal);
+        Assert.Equal(AgentRole.Reviewer, agents.Requests[^1].Role);
+        Assert.Equal(896, agents.Requests[^1].MaximumOutputTokens?.Value);
+    }
+
     private static GoalWorkflowService CreateService(
         InMemoryGoalWorkflowStore store,
         IGoalService goals,
@@ -336,6 +458,7 @@ public sealed class GoalWorkflowServiceTests
     private sealed class FakeAgentRunner : IAgentRoleRunner
     {
         internal List<AgentRunRequest> Requests { get; } = [];
+        internal Queue<(AgentRole Role, string Code, string Message)> Failures { get; } = new();
         internal string LeadOutput { get; init; } = """
             {"plan":"Inspect, implement, build, test, and review.","tasks":[{"title":"Implement change","objective":"Implement the approved bounded change.","fileAreas":["src/"],"acceptanceCriteria":["Build and focused tests pass."]}]}
             """;
@@ -350,6 +473,16 @@ public sealed class GoalWorkflowServiceTests
             CancellationToken cancellationToken = default)
         {
             Requests.Add(request);
+            if (Failures.TryPeek(out var failure) && failure.Role == request.Role)
+            {
+                Failures.Dequeue();
+                return ValueTask.FromResult(new AgentRunResult(
+                    request.Role,
+                    Output: null,
+                    ErrorCode: new(failure.Code),
+                    Error: new(failure.Message)));
+            }
+
             if (request.Role == CancelRole)
             {
                 Cancellation!.Cancel();
@@ -428,6 +561,9 @@ public sealed class GoalWorkflowServiceTests
 
         public ValueTask<GoalResult> UpdateSettingsAsync(
             GoalSettingsUpdateRequest request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<GoalBudgetExtensionResult> ExtendRemoteBudgetAsync(
+            GoalBudgetExtensionRequest request,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
         public ValueTask<PlanResult> DecidePlanAsync(

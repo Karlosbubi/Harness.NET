@@ -24,6 +24,15 @@ public interface IGoalStore
         DateTimeOffset updatedAt,
         CancellationToken cancellationToken = default);
 
+    ValueTask<StoredGoalBudgetExtensionSnapshot?> ExtendRemoteBudgetAsync(
+        string extensionId,
+        string goalId,
+        long? expectedBudgetMicrousd,
+        long newBudgetMicrousd,
+        string reason,
+        DateTimeOffset approvedAt,
+        CancellationToken cancellationToken = default);
+
     ValueTask<StoredPlan?> GetCurrentPlanAsync(
         string goalId,
         CancellationToken cancellationToken = default);

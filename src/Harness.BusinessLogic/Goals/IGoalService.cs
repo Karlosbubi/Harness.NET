@@ -18,6 +18,10 @@ public interface IGoalService
         GoalSettingsUpdateRequest request,
         CancellationToken cancellationToken = default);
 
+    ValueTask<GoalBudgetExtensionResult> ExtendRemoteBudgetAsync(
+        GoalBudgetExtensionRequest request,
+        CancellationToken cancellationToken = default);
+
     ValueTask<PlanView?> GetCurrentPlanAsync(
         GoalId goalId,
         CancellationToken cancellationToken = default);

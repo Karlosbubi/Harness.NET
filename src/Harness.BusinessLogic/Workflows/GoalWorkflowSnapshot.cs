@@ -11,4 +11,5 @@ public sealed record GoalWorkflowSnapshot(
     IReadOnlyList<GoalWorkflowActivityView> Activities,
     IReadOnlyList<WorkflowEvidenceView> Evidence,
     bool CanResume,
-    bool RequiresUserDirection);
+    bool RequiresUserDirection,
+    GoalWorkflowRetryRole? RetryRole = null);

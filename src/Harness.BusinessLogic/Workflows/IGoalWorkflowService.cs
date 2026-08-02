@@ -15,4 +15,8 @@ public interface IGoalWorkflowService
     IAsyncEnumerable<GoalWorkflowSnapshot> ResumeAsync(
         GoalWorkflowResumeRequest request,
         CancellationToken cancellationToken = default);
+
+    IAsyncEnumerable<GoalWorkflowSnapshot> RetryAsync(
+        GoalWorkflowRetryRequest request,
+        CancellationToken cancellationToken = default);
 }

@@ -11,7 +11,7 @@ internal static class GoalTextFormatter
         $"{goal.Title} | {goal.State} | review {goal.ReviewCycleLimit.Value}" +
         (goal.RemoteBudget is null
             ? " | local only"
-            : $" | ${ToUsd(goal.RemoteBudget.Value)} remote cap");
+            : $" | ${FormatUsd(goal.RemoteBudget.Value)} remote cap");
 
     internal static string FormatDetails(
         GoalView goal,
@@ -27,7 +27,7 @@ internal static class GoalTextFormatter
         $"Review-cycle limit: {goal.ReviewCycleLimit.Value}",
         goal.RemoteBudget is null
             ? "Remote models: not authorized"
-            : $"Remote-model cap: ${ToUsd(goal.RemoteBudget.Value)}",
+            : $"Remote-model cap: ${FormatUsd(goal.RemoteBudget.Value)}",
         $"Created: {goal.CreatedAt:O}",
         string.Empty,
         plan is null
@@ -64,18 +64,18 @@ internal static class GoalTextFormatter
 
         if (report is null)
         {
-            return "REMOTE COST\nAuthorized cap: $" + ToUsd(goal.RemoteBudget.Value) +
+            return "REMOTE COST\nAuthorized cap: $" + FormatUsd(goal.RemoteBudget.Value) +
                    "\nNo reservations or charges recorded.";
         }
 
         string totals = string.Join(
             '\n',
             "REMOTE COST",
-            $"Cap:        ${ToUsd(report.CostCap.Value)}",
-            $"Reserved:   ${ToUsd(report.ReservedCost.Value)}",
-            $"Reconciled: ${ToUsd(report.ReconciledCost.Value)}",
-            $"Remaining:  ${ToUsd(report.RemainingCost.Value)}",
-            $"Overage:    ${ToUsd(report.Overage.Value)}");
+            $"Cap:        ${FormatUsd(report.CostCap.Value)}",
+            $"Reserved:   ${FormatUsd(report.ReservedCost.Value)}",
+            $"Reconciled: ${FormatUsd(report.ReconciledCost.Value)}",
+            $"Remaining:  ${FormatUsd(report.RemainingCost.Value)}",
+            $"Overage:    ${FormatUsd(report.Overage.Value)}");
         if (report.Items.Count == 0)
         {
             return totals + "\nNo reservations or charges recorded.";
@@ -83,21 +83,21 @@ internal static class GoalTextFormatter
 
         return totals + "\n\nATTRIBUTION\n" + string.Join('\n', report.Items.Select(item =>
             $"{item.State} | {item.Kind} | {item.Provider}/{item.Model} | " +
-            $"estimated ${ToUsd(item.EstimatedCost.Value)} | " +
+            $"estimated ${FormatUsd(item.EstimatedCost.Value)} | " +
             (item.ActualCost is null
                 ? "actual pending"
-                : $"actual ${ToUsd(item.ActualCost.Value)}")));
+                : $"actual ${FormatUsd(item.ActualCost.Value)}")));
     }
 
     internal static string FormatCostStatus(GoalView goal, RemoteCostReport? report) =>
         goal.RemoteBudget is null
             ? "Remote spend: not authorized (local-only goal)."
             : report is null
-                ? $"Remote cap ${ToUsd(goal.RemoteBudget.Value)} | no spend recorded"
-                : $"Remote cap ${ToUsd(report.CostCap.Value)} | " +
-                  $"reserved ${ToUsd(report.ReservedCost.Value)} | " +
-                  $"spent ${ToUsd(report.ReconciledCost.Value)} | " +
-                  $"remaining ${ToUsd(report.RemainingCost.Value)}";
+                ? $"Remote cap ${FormatUsd(goal.RemoteBudget.Value)} | no spend recorded"
+                : $"Remote cap ${FormatUsd(report.CostCap.Value)} | " +
+                  $"reserved ${FormatUsd(report.ReservedCost.Value)} | " +
+                  $"spent ${FormatUsd(report.ReconciledCost.Value)} | " +
+                  $"remaining ${FormatUsd(report.RemainingCost.Value)}";
 
     internal static string FormatCompact(IReadOnlyList<GoalView> goals) => goals.Count == 0
         ? "GOALS\nNone"
@@ -116,7 +116,7 @@ internal static class GoalTextFormatter
                TryConvert(usd, out microUsd);
     }
 
-    private static string ToUsd(long microUsd) =>
+    internal static string FormatUsd(long microUsd) =>
         (microUsd / 1_000_000m).ToString("0.######", CultureInfo.InvariantCulture);
 
     private static bool TryConvert(decimal usd, out long microUsd)

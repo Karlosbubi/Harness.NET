@@ -77,6 +77,42 @@ public sealed class SqliteGoalStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task Budget_extension_is_increase_only_cas_and_audited_atomically()
+    {
+        StubApplicationPaths paths = new(CreatePaths());
+        await new SqliteDatabaseInitializer(paths).InitializeAsync();
+        string workspaceRoot = Path.Combine(root, "repository");
+        string entryPoint = Path.Combine(workspaceRoot, "Repository.slnx");
+        RegisteredWorkspace workspace = await new SqliteWorkspaceStore(paths).SaveAsync(
+            new(workspaceRoot, "repository", "main", false, [entryPoint], Error: null),
+            entryPoint);
+        SqliteGoalStore store = new(paths);
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-31T13:00:00Z");
+        StoredGoal goal = await store.CreateAsync(new(
+            "goal-id", workspace.Id, "Goal", "Objective", 3, 1_000_000, "Approved",
+            now, now));
+
+        StoredGoalBudgetExtensionSnapshot? extended = await store.ExtendRemoteBudgetAsync(
+            "extension-id", goal.Id, 1_000_000, 2_000_000, "Explicit retry budget.",
+            now.AddMinutes(1));
+        StoredGoalBudgetExtensionSnapshot? stale = await store.ExtendRemoteBudgetAsync(
+            "stale-id", goal.Id, 1_000_000, 3_000_000, "Stale.", now.AddMinutes(2));
+        StoredGoalBudgetExtensionSnapshot? decrease = await store.ExtendRemoteBudgetAsync(
+            "decrease-id", goal.Id, 2_000_000, 1_500_000, "Decrease.", now.AddMinutes(2));
+
+        Assert.Equal(2_000_000, extended?.Goal.RemoteBudgetMicrousd);
+        Assert.Equal(1_000_000, extended?.Extension.PreviousBudgetMicrousd);
+        Assert.Equal("Explicit retry budget.", extended?.Extension.Reason);
+        Assert.Null(stale);
+        Assert.Null(decrease);
+        using SqliteConnection connection = new($"Data Source={paths.Current.DatabasePath}");
+        connection.Open();
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM goal_budget_extensions WHERE goal_id = 'goal-id';";
+        Assert.Equal(1L, (long)command.ExecuteScalar()!);
+    }
+
+    [Fact]
     public async Task Saves_plan_revisions_and_decisions_atomically()
     {
         StubApplicationPaths paths = new(CreatePaths());

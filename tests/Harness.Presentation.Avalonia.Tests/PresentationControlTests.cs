@@ -19,6 +19,7 @@ using Dock.Avalonia.Controls;
 using Dock.Model.Controls;
 using Dock.Model.Core;
 using Harness.BusinessLogic.Documents;
+using Harness.BusinessLogic.Agents;
 using Harness.BusinessLogic.CodeIntelligence;
 using Harness.BusinessLogic.Evidence;
 using Harness.BusinessLogic.Goals;
@@ -26,6 +27,7 @@ using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Layouts;
 using Harness.BusinessLogic.Mutations;
 using Harness.BusinessLogic.Workspaces;
+using Harness.BusinessLogic.Workflows;
 using Harness.UI.Avalonia;
 
 namespace Harness.Presentation.Avalonia.Tests;
@@ -115,6 +117,77 @@ public sealed class PresentationControlTests
             ],
             ConversationWorkflowActionProjector.Project(planCard, pendingState)
                 .Select(action => action.Kind));
+    }
+
+    [Fact]
+    public void Failed_role_card_exposes_only_the_exact_explicit_retry()
+    {
+        AvaloniaShellState shell = ApprovedGoalShell();
+        GoalView goal = shell.Goals.SelectedGoal!;
+        GoalWorkflowSnapshot workflow = new(
+            new("run-retry"),
+            goal.Id,
+            GoalWorkflowState.NeedsDirection,
+            new(0),
+            [],
+            [new(1, GoalWorkflowCheckpointKind.UserDirectionRequired,
+                WorkflowActor.System, new("Provider unavailable; inspect cost evidence."))],
+            [new(1, new("Recovery notice"), new("The prior call was not replayed."))],
+            CanResume: false,
+            RequiresUserDirection: true,
+            RetryRole: GoalWorkflowRetryRole.Reviewer);
+        GoalManagementState state = shell.Goals with
+        {
+            Workflow = workflow,
+            ModelSelections = [],
+        };
+        ConversationWorkflowCard runCard = Assert.Single(
+            ConversationWorkflowProjector.Project(state),
+            card => card.Id == "run.run-retry");
+
+        ConversationWorkflowAction action = Assert.Single(
+            ConversationWorkflowActionProjector.Project(runCard, state));
+
+        Assert.Equal(ConversationWorkflowActionKind.RetryRun, action.Kind);
+        Assert.Equal("Retry Reviewer", action.Label);
+        Assert.Contains("explicitly retrying Reviewer", runCard.Details,
+            StringComparison.Ordinal);
+
+        GoalManagementState remoteState = state with
+        {
+            ModelSelections =
+            [
+                new(goal.Id, AgentRole.Reviewer, new("remote"), new("review-model"),
+                    ModelAccess.Remote, IsExplicit: true, DateTimeOffset.UtcNow),
+            ],
+        };
+        ConversationWorkflowCard remoteRunCard = Assert.Single(
+            ConversationWorkflowProjector.Project(remoteState),
+            card => card.Id == "run.run-retry");
+        Assert.Equal(
+            [ConversationWorkflowActionKind.RetryRun,
+                ConversationWorkflowActionKind.ExtendBudget],
+            ConversationWorkflowActionProjector.Project(remoteRunCard, remoteState)
+                .Select(item => item.Kind));
+
+        GoalManagementState correctionState = state with
+        {
+            Workflow = workflow with
+            {
+                State = GoalWorkflowState.Running,
+                CanResume = true,
+                RequiresUserDirection = false,
+                RetryRole = null,
+            },
+            IsWorkflowRunning = false,
+        };
+        ConversationWorkflowCard correctionCard = Assert.Single(
+            ConversationWorkflowProjector.Project(correctionState),
+            card => card.Id == "run.run-retry");
+        Assert.Equal(
+            ConversationWorkflowActionKind.ContinueRun,
+            Assert.Single(ConversationWorkflowActionProjector.Project(
+                correctionCard, correctionState)).Kind);
     }
 
     [Fact]
@@ -1436,6 +1509,33 @@ public sealed class PresentationControlTests
     }
 
     [Fact]
+    public async Task Git_tool_surfaces_actionable_mid_goal_conflict_recovery()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            InspectionService inspection = new() { Status = "Conflicted" };
+            WorkbenchDockHost workbench = CreateWorkbench(
+                ApprovedGoalShell(),
+                new(),
+                inspection: inspection);
+            Window window = new() { Content = workbench.Control };
+            window.Show();
+
+            workbench.RefreshGitAsync().AsTask().GetAwaiter().GetResult();
+
+            Assert.Contains("1 conflict", workbench.GitSummaryText,
+                StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("block commit approval", workbench.GitStatusText,
+                StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("stage", workbench.GitStatusText,
+                StringComparison.OrdinalIgnoreCase);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
     public async Task Layout_reset_keeps_durable_controls_in_the_rendered_tree()
     {
         using HeadlessUnitTestSession session =
@@ -1786,6 +1886,7 @@ public sealed class PresentationControlTests
     {
         internal List<WorkbenchWorkspaceRequest> Requests { get; } = [];
         internal string Diff { get; set; } = "first diff";
+        internal string Status { get; set; } = "modified";
 
         public ValueTask<WorkbenchFileCatalogResult> ListFilesAsync(
             WorkbenchWorkspaceRequest request,
@@ -1828,7 +1929,7 @@ public sealed class PresentationControlTests
                 new(
                     context.Branch?.Value ?? "main",
                     "abc123",
-                    [new("src/App.cs", "modified")],
+                    [new("src/App.cs", Status)],
                     Diff,
                     IsTruncated: false,
                     ErrorCode: null,
