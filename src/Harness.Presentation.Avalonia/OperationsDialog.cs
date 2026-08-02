@@ -14,6 +14,7 @@ internal sealed class OperationsDialog : Window
     private readonly AvaloniaPresentationStore store;
     private readonly CancellationToken cancellationToken;
     private readonly IBackupFilePicker filePicker;
+    private readonly IRestoreFilePicker restoreFilePicker;
     private readonly IDisposable subscription;
     private readonly TextBox destination = new();
     private readonly Button browse = new() { Content = "Choose…" };
@@ -26,15 +27,28 @@ internal sealed class OperationsDialog : Window
     };
     private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap };
     private readonly Button create = new() { Content = "Create verified backup…" };
+    private readonly TextBox restoreSource = new();
+    private readonly Button restoreBrowse = new() { Content = "Choose…" };
+    private readonly Button inspectRestore = new() { Content = "Inspect and verify archive" };
+    private readonly Button stageRestore = new() { Content = "Stage verified restore…" };
+    private readonly TextBox restoreResult = new()
+    {
+        IsReadOnly = true,
+        AcceptsReturn = true,
+        TextWrapping = TextWrapping.Wrap,
+        MinHeight = 150,
+    };
 
     internal OperationsDialog(
         AvaloniaPresentationStore store,
         CancellationToken cancellationToken,
-        IBackupFilePicker? filePicker = null)
+        IBackupFilePicker? filePicker = null,
+        IRestoreFilePicker? restoreFilePicker = null)
     {
         this.store = store;
         this.cancellationToken = cancellationToken;
         this.filePicker = filePicker ?? new AvaloniaBackupFilePicker();
+        this.restoreFilePicker = restoreFilePicker ?? new AvaloniaRestoreFilePicker();
         Title = "Application operations";
         Width = 760;
         Height = 590;
@@ -44,6 +58,9 @@ internal sealed class OperationsDialog : Window
         Content = BuildContent();
         create.Click += async (_, _) => await ConfirmAndCreateAsync();
         browse.Click += async (_, _) => await ChooseDestinationAsync();
+        restoreBrowse.Click += async (_, _) => await ChooseRestoreAsync();
+        inspectRestore.Click += async (_, _) => await InspectRestoreAsync();
+        stageRestore.Click += async (_, _) => await ConfirmAndStageRestoreAsync();
         subscription = store.States.Subscribe(state =>
             Dispatcher.UIThread.Post(() => Render(state.Operations)));
         Closed += (_, _) => subscription.Dispose();
@@ -53,7 +70,7 @@ internal sealed class OperationsDialog : Window
     {
         Button close = new() { Content = "Close" };
         close.Click += (_, _) => Close();
-        return new StackPanel
+        return new ScrollViewer { Content = new StackPanel
         {
             Margin = new Thickness(20),
             Spacing = 12,
@@ -82,6 +99,31 @@ internal sealed class OperationsDialog : Window
                 create,
                 result,
                 status,
+                new Separator { Margin = new Thickness(0, 8) },
+                new TextBlock
+                {
+                    Text = "Restore application state",
+                    FontSize = 18,
+                    FontWeight = FontWeight.SemiBold,
+                },
+                new TextBlock
+                {
+                    Text = "First inspect a backup. Staging never changes the running app; the " +
+                           "verified archive is rechecked and applied at the next start.",
+                    TextWrapping = TextWrapping.Wrap,
+                },
+                RestoreSourceRow(),
+                inspectRestore,
+                restoreResult,
+                stageRestore,
+                new TextBlock
+                {
+                    Text = "Restore replaces private prompts, conversations, settings, approvals, " +
+                           "cost and index state, and workbench layout. Credentials, repositories, " +
+                           "worktrees, logs, caches, and model blobs are not in the archive. A local " +
+                           "rollback is retained if current state exists.",
+                    TextWrapping = TextWrapping.Wrap,
+                },
                 new StackPanel
                 {
                     Orientation = Orientation.Horizontal,
@@ -89,7 +131,50 @@ internal sealed class OperationsDialog : Window
                     Children = { close },
                 },
             },
-        };
+        }};
+    }
+
+    private Control RestoreSourceRow()
+    {
+        AutomationProperties.SetName(restoreSource, "Restore archive path");
+        Grid row = new() { ColumnDefinitions = new("*,Auto"), ColumnSpacing = 8 };
+        row.Children.Add(restoreSource);
+        restoreBrowse.SetValue(Grid.ColumnProperty, 1);
+        row.Children.Add(restoreBrowse);
+        return row;
+    }
+
+    private async Task ChooseRestoreAsync()
+    {
+        RestoreFilePickerResult picked = await restoreFilePicker.PickAsync(this, cancellationToken);
+        if (picked.Error is not null)
+        {
+            status.Text = picked.Error;
+        }
+        else if (picked.File is not null)
+        {
+            restoreSource.Text = picked.File.Value;
+            await InspectRestoreAsync();
+        }
+    }
+
+    private async Task InspectRestoreAsync() => await store.InspectApplicationRestoreAsync(
+        new(restoreSource.Text?.Trim() ?? string.Empty), cancellationToken);
+
+    private async Task ConfirmAndStageRestoreAsync()
+    {
+        ApplicationRestoreView? restore = store.Current.Operations.InspectedRestore;
+        string source = restoreSource.Text?.Trim() ?? string.Empty;
+        if (restore is null || !restore.Archive.Value.Equals(source, StringComparison.Ordinal))
+        {
+            status.Text = "Inspect this exact archive before staging it.";
+            return;
+        }
+
+        if (await new RestoreConfirmationDialog(restore).ShowDialog<bool>(this))
+        {
+            await store.StageApplicationRestoreAsync(restore, cancellationToken);
+        }
     }
 
     private Control DestinationRow()
@@ -144,10 +229,22 @@ internal sealed class OperationsDialog : Window
     private void Render(ApplicationOperationsState state)
     {
         create.IsEnabled = !state.IsBusy;
+        inspectRestore.IsEnabled = !state.IsBusy;
+        stageRestore.IsEnabled = !state.IsBusy && state.InspectedRestore is not null &&
+            state.PendingRestore is null;
         result.Text = state.LastBackup is null
             ? "No backup has been created in this session."
             : Format(state.LastBackup);
-        status.Text = state.IsBusy ? "Creating verified backup…" : state.Status ?? string.Empty;
+        status.Text = state.Status ?? string.Empty;
+        if (state.InspectedRestore is not null)
+        {
+            restoreSource.Text = state.InspectedRestore.Archive.Value;
+        }
+        restoreResult.Text = state.PendingRestore is not null
+            ? "RESTORE PENDING — restart Harness.NET to apply it.\n\n" + Format(state.PendingRestore)
+            : state.InspectedRestore is null
+                ? "No restore archive has been inspected in this session."
+                : Format(state.InspectedRestore);
     }
 
     private static string Format(ApplicationBackupView backup) => string.Join(
@@ -162,6 +259,52 @@ internal sealed class OperationsDialog : Window
               $"SHA-256 {backup.WorkbenchLayoutSha256.Value}",
         $"Schema version: {backup.SchemaVersion.Value}",
         $"Created: {backup.CreatedAt:O}");
+
+    private static string Format(ApplicationRestoreView restore) => string.Join('\n',
+        $"Archive: {restore.Archive.Value}",
+        $"Archive SHA-256: {restore.ArchiveSha256.Value}",
+        $"Database SHA-256: {restore.DatabaseSha256.Value}",
+        $"Database bytes: {restore.DatabaseBytes.Value}",
+        restore.WorkbenchLayoutSha256 is null
+            ? "Workbench layout: not present (current layout will be removed)"
+            : $"Workbench layout: {restore.WorkbenchLayoutBytes?.Value} bytes · SHA-256 {restore.WorkbenchLayoutSha256.Value}",
+        $"Schema version: {restore.SchemaVersion.Value}",
+        $"Created: {restore.CreatedAt:O}");
+}
+
+internal sealed class RestoreConfirmationDialog : Window
+{
+    internal RestoreConfirmationDialog(ApplicationRestoreView restore)
+    {
+        Title = "Confirm private-state restore";
+        Width = 650;
+        Height = 390;
+        CanResize = false;
+        WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        Button cancel = new() { Content = "Cancel" };
+        cancel.Click += (_, _) => Close(false);
+        Button stage = new() { Content = "Stage restore for next restart" };
+        stage.Click += (_, _) => Close(true);
+        Content = new StackPanel
+        {
+            Margin = new Thickness(20),
+            Spacing = 12,
+            Children =
+            {
+                new TextBlock { Text = "Replace Harness.NET private state?", FontSize = 18,
+                    FontWeight = FontWeight.SemiBold },
+                new TextBlock { Text = $"Schema {restore.SchemaVersion.Value} · created {restore.CreatedAt:O}\n" +
+                    $"Archive SHA-256: {restore.ArchiveSha256.Value}", TextWrapping = TextWrapping.Wrap },
+                new TextBlock { Text = "Changes made after staging will also be replaced on restart. " +
+                    "The app revalidates the staged database and layout before replacement and keeps " +
+                    "the previous local state as rollback material. This action does not restore " +
+                    "credentials or repositories.", TextWrapping = TextWrapping.Wrap },
+                new StackPanel { Orientation = Orientation.Horizontal,
+                    HorizontalAlignment = HorizontalAlignment.Right, Spacing = 8,
+                    Children = { cancel, stage } },
+            },
+        };
+    }
 }
 
 internal sealed class BackupConfirmationDialog : Window

@@ -13,7 +13,7 @@ remote spending or another consequential operation.
 | Appearance & accessibility | Preferred theme and installed user themes | SQLite appearance preference and XDG theme sources through `IAppearanceService` | Delivered; selection is persisted and applies immediately |
 | Models & roles | Provider definitions, default role routes, and output maxima | Host XML supplies fallbacks; schema 19 stores typed application defaults through `IAgentDefaultsService`; per-goal overrides remain in the goal-model selection store | Delivered; model discovery and validated updates do not grant remote authority |
 | Privacy & limits | Goal review cycles, remote cap, and per-run output maxima | Immutable goal/workflow Business Logic contracts and SQLite goal state | Partially delivered; draft goal cards progressively reveal typed review-cycle and explicit remote-cap overrides, while ordinary application defaults remain planned |
-| Storage & recovery | SQLite private state, layout file, backup operation, and future restore | XDG application paths and typed operations/layout services | Planned |
+| Storage & recovery | SQLite private state, layout file, verified backup, and staged next-start restore | XDG application paths and typed operations/layout services | Available |
 | Advanced | OTLP endpoint, semantic-index module configuration, diagnostics | Host configuration and owning Business Logic/Data Access modules | Planned |
 
 ## Delivered shell behavior

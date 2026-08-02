@@ -14,8 +14,8 @@ development — see `docs/roadmap.md` Stage 3 and `docs/tasks/README.md` for the
 remaining concrete gaps. Chat-first orchestration, multi-workspace use, Roslyn
 validation/intellisense/refactoring, and messy-repository recovery are now delivered;
 accepted goal branches now include deliberate manual push/PR/merge guidance. The
-remaining daily-use gap is in-app backup restore (Task 041). Task 038 (agent-quality
-feedback loop) remains deferred until that closes.
+the planned daily-use gaps are closed. Task 038 (agent-quality feedback loop) remains
+explicitly deferred as an optional evaluation track.
 
 Framework discovery, the production service slices, and the default docked desktop
 workflow are implemented. The application has

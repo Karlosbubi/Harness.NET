@@ -140,6 +140,7 @@ internal sealed class HarnessWindow : Window
             new MenuBarItem("_Operations",
             [
                 new MenuItem("Create _backup", Key.Empty, () => _ = CreateBackupAsync()),
+                new MenuItem("_Restore backup", Key.Empty, () => _ = RestoreBackupAsync()),
             ]),
         ]);
         activityFrame = CreateFrame("Activity", activityText);
@@ -487,6 +488,87 @@ internal sealed class HarnessWindow : Window
         catch (Exception exception)
         {
             application.Invoke(() => status.Text = $"Backup failed | {exception.Message}");
+        }
+    }
+
+    private async Task RestoreBackupAsync()
+    {
+        try
+        {
+            using Dialog sourceDialog = new()
+            {
+                Title = "Inspect application-state backup",
+                Width = Dim.Percent(85),
+                Height = 12,
+            };
+            sourceDialog.Add(new Label
+            {
+                X = 0, Y = 0, Width = Dim.Fill(),
+                Text = "Absolute path to an existing Harness.NET .zip backup",
+            });
+            TextField source = new() { X = 0, Y = 1, Width = Dim.Fill() };
+            sourceDialog.Add(source, new Label
+            {
+                X = 0, Y = 3, Width = Dim.Fill(), Height = 4,
+                Text = "Restore replaces private prompts, settings, approvals, costs, index " +
+                       "state, and layout. It does not restore credentials or repositories.",
+            });
+            RestoreSourcePath? selected = null;
+            Button inspect = new() { Title = "_Inspect" };
+            inspect.Accepting += (_, args) =>
+            {
+                args.Handled = true;
+                string value = source.Text?.ToString()?.Trim() ?? string.Empty;
+                if (value.Length > 0)
+                {
+                    selected = new(value);
+                    sourceDialog.RequestStop();
+                }
+            };
+            sourceDialog.AddButton(inspect);
+            sourceDialog.AddButton(new Button { Title = "_Cancel" });
+            await application.RunAsync(sourceDialog, cancellationToken);
+            if (selected is null)
+            {
+                return;
+            }
+
+            status.Text = "Inspecting and verifying restore archive...";
+            ApplicationRestoreInspectionResult inspected =
+                await operationsService.InspectRestoreAsync(selected, cancellationToken);
+            if (inspected.Restore is null)
+            {
+                status.Text = inspected.Error ?? "Restore inspection failed.";
+                return;
+            }
+
+            int? confirmation = MessageBox.Query(
+                application,
+                "Confirm private-state restore",
+                ApplicationRestoreTextFormatter.Format(inspected.Restore) +
+                "\n\nChanges made after staging will be replaced on restart. The archive " +
+                "is revalidated before replacement and current state is retained for rollback.",
+                "_Stage for restart",
+                "_Cancel");
+            if (confirmation != 0)
+            {
+                status.Text = "Restore not staged.";
+                return;
+            }
+
+            ApplicationRestoreStageResult staged =
+                await operationsService.StageRestoreAsync(
+                    new(selected, inspected.Restore.ArchiveSha256), cancellationToken);
+            status.Text = staged.Restore is null
+                ? staged.Error ?? "Restore staging failed."
+                : "Verified restore staged | restart Harness.NET to apply it";
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception)
+        {
+            application.Invoke(() => status.Text = $"Restore failed | {exception.Message}");
         }
     }
 

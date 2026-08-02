@@ -981,6 +981,89 @@ internal sealed class AvaloniaPresentationStore(
         }
     }
 
+    internal async ValueTask InspectApplicationRestoreAsync(
+        RestoreSourcePath source,
+        CancellationToken cancellationToken)
+    {
+        if (Current.Operations.IsBusy)
+        {
+            return;
+        }
+
+        Publish(Current with { Operations = Current.Operations with
+        {
+            IsBusy = true,
+            InspectedRestore = null,
+            Status = "Inspecting archive and verifying hashes, SQLite, schema, and layout…",
+        }});
+        try
+        {
+            ApplicationRestoreInspectionResult result =
+                await applicationOperationsService.InspectRestoreAsync(source, cancellationToken);
+            Publish(Current with { Operations = Current.Operations with
+            {
+                InspectedRestore = result.Restore,
+                Status = result.Error ?? "Archive verified. Review it before staging restore.",
+            }});
+        }
+        catch (OperationCanceledException)
+        {
+            Publish(Current with { Operations = Current.Operations with
+            { Status = "Restore inspection cancelled." }});
+        }
+        catch (Exception exception)
+        {
+            logger.LogError(exception, "Application-state restore inspection failed");
+            Publish(Current with { Operations = Current.Operations with
+            { Status = exception.Message }});
+        }
+        finally
+        {
+            Publish(Current with { Operations = Current.Operations with { IsBusy = false }});
+        }
+    }
+
+    internal async ValueTask StageApplicationRestoreAsync(
+        ApplicationRestoreView restore,
+        CancellationToken cancellationToken)
+    {
+        if (Current.Operations.IsBusy)
+        {
+            return;
+        }
+
+        Publish(Current with { Operations = Current.Operations with
+        { IsBusy = true, Status = "Revalidating and staging restore…" }});
+        try
+        {
+            ApplicationRestoreStageResult result =
+                await applicationOperationsService.StageRestoreAsync(
+                    new(restore.Archive, restore.ArchiveSha256), cancellationToken);
+            Publish(Current with { Operations = Current.Operations with
+            {
+                PendingRestore = result.Restore,
+                Status = result.Error ?? (result.RestartRequired
+                    ? "Verified restore staged. Restart Harness.NET to apply it."
+                    : "Restore was not staged."),
+            }});
+        }
+        catch (OperationCanceledException)
+        {
+            Publish(Current with { Operations = Current.Operations with
+            { Status = "Restore staging cancelled." }});
+        }
+        catch (Exception exception)
+        {
+            logger.LogError(exception, "Application-state restore staging failed");
+            Publish(Current with { Operations = Current.Operations with
+            { Status = exception.Message }});
+        }
+        finally
+        {
+            Publish(Current with { Operations = Current.Operations with { IsBusy = false }});
+        }
+    }
+
     internal async ValueTask RefreshCapabilityApprovalsAsync(
         GoalId goalId,
         CancellationToken cancellationToken) =>

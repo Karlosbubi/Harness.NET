@@ -205,12 +205,11 @@ of Stage 3 below.
 - A committed goal branch surfaces its exact local branch/SHA and deliberate manual
   push, PR, or merge handoff without network or integration automation. (Task 039)
 
-### Missing core capability
+### Continuing product-quality work
 
-- Add an in-app restore-from-backup flow: Operations can only create a backup
-  today; recovery into a fresh install is proven solely by
-  `eng/verify-v1-release.sh`, not available to a user without the script.
-  (Task 041)
+- In-app restore now verifies and stages v1/v2 backups behind explicit confirmation;
+  cold-start publication revalidates integrity and retains rollback material in both
+  Avalonia and the TUI. (Task 041, complete)
 - Continue hands-on Avalonia usability and visual-quality regression review across
   future production workspace, goal, evidence, and recovery changes.
 - Keep the accepted ADR 010 workbench matrix under regression coverage as new

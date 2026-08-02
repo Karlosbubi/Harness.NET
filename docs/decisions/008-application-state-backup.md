@@ -49,6 +49,34 @@ acceptance automates this recovery path. An online
 restore command is intentionally excluded because replacing an active database would
 weaken process and approval safety.
 
+### Staged in-app recovery amendment (2026-07-31)
+
+Avalonia and the TUI may initiate recovery, but the running application still never
+replaces its live database. The Operations surface selects and fully verifies a v1/v2
+archive, shows its schema, creation time, database/layout hashes and sensitivity, and
+requires an explicit restore confirmation. Data Access then extracts verified content
+into a private, bounded pending-restore directory and atomically records one pending
+request. The staging request carries the archive SHA-256 shown at confirmation and
+fails if the path now names different bytes. No live state changes at this point.
+
+On the next process start, before SQLite initialization or any Business Logic service
+can observe state, the Host invokes a focused Data Access restore bootstrapper. It
+revalidates the marker, staged hashes, schema, layout envelope, and SQLite integrity;
+copies any existing database, WAL, shared-memory file, and layout into a private
+rollback directory; publishes the staged
+database and optional layout through temporary siblings; and restores the rollback if
+publication fails. Only then may normal initialization and additive migrations run.
+Successful publication clears the marker but retains the bounded rollback directory
+for manual recovery. A missing optional layout explicitly removes the live layout so
+the restored archive is authoritative.
+
+Staging refuses unknown entries, path traversal, unsupported formats, hash/size/schema
+mismatches, corrupt SQLite, oversized content, an existing pending request, and a
+source archive inside Harness.NET restore staging. Presentation tells the user
+that work performed after staging will be replaced and that a restart is required.
+This amends the earlier exclusion only for verified next-start publication; online
+replacement remains prohibited.
+
 ## Consequences
 
 - Every real schema upgrade has a local recovery point before mutation.
@@ -60,6 +88,8 @@ weaken process and approval safety.
   and backup mechanisms.
 - Backup creation requires additional disk space and can briefly delay startup before
   an upgrade.
+- Restore initiation is available in-app while restore publication remains an offline
+  startup boundary. Existing installs retain a private pre-restore rollback copy.
 
 ## Alternatives considered
 

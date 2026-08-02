@@ -1,0 +1,12 @@
+namespace Harness.DataAccess.Persistence;
+
+public sealed record ApplicationRestoreArchive(
+    BackupArchivePath Archive,
+    BackupSha256 ArchiveSha256,
+    BackupSha256 DatabaseSha256,
+    BackupByteCount DatabaseBytes,
+    BackupSha256? WorkbenchLayoutSha256,
+    BackupByteCount? WorkbenchLayoutBytes,
+    ApplicationSchemaVersion SchemaVersion,
+    DateTimeOffset CreatedAt,
+    ApplicationBackupFormat Format);

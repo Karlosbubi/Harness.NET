@@ -65,6 +65,7 @@ ObservabilityBootstrap.Configure(builder.Services, observabilityOptions);
 builder.Services.AddSingleton<IApplicationPaths>(applicationPaths);
 builder.Services.AddSingleton<IDatabaseInitializer, SqliteDatabaseInitializer>();
 builder.Services.AddSingleton<IApplicationBackup, SqliteApplicationBackup>();
+builder.Services.AddSingleton<IApplicationRestore, SqliteApplicationRestore>();
 builder.Services.AddSingleton<IApplicationOperationsService, ApplicationOperationsService>();
 builder.Services.AddSingleton<IAppearancePreferenceStore, SqliteAppearancePreferenceStore>();
 builder.Services.AddSingleton<IUserThemeSource, XdgUserThemeSource>();
@@ -243,12 +244,28 @@ Console.CancelKeyPress += cancelHandler;
 
 try
 {
+    ApplicationRestoreApplyResult restore = await host.Services
+        .GetRequiredService<IApplicationRestore>()
+        .ApplyPendingAsync(shutdown.Token);
+    if (restore.HadPendingRestore && !restore.Applied)
+    {
+        throw new InvalidOperationException(
+            $"Pending application restore failed safely: {restore.Error}");
+    }
+
     await host.StartAsync(shutdown.Token);
     DatabaseInitializationResult database = await host.Services
         .GetRequiredService<IDatabaseInitializer>()
         .InitializeAsync(shutdown.Token);
 
     ILogger logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
+    if (restore.Applied)
+    {
+        logger.LogInformation(
+            "Applied verified application restore at schema {SchemaVersion}; previous state is at {RollbackDirectory}",
+            restore.RestoredSchemaVersion?.Value,
+            restore.RollbackDirectory);
+    }
     logger.LogInformation(
         "Harness.NET initialized schema {SchemaVersion} at {DatabasePath}",
         database.SchemaVersion.Value,

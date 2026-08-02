@@ -108,11 +108,15 @@ internal sealed record GoalManagementState(
 internal sealed record ApplicationOperationsState(
     bool IsBusy,
     ApplicationBackupView? LastBackup,
+    ApplicationRestoreView? InspectedRestore,
+    ApplicationRestoreView? PendingRestore,
     string? Status)
 {
     internal static ApplicationOperationsState Initial { get; } = new(
         IsBusy: false,
         LastBackup: null,
+        InspectedRestore: null,
+        PendingRestore: null,
         Status: null);
 }
 

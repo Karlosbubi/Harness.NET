@@ -688,6 +688,29 @@ public sealed class AvaloniaPresentationStoreTests
     }
 
     [Fact]
+    public async Task Inspects_then_stages_restore_for_restart()
+    {
+        ApplicationOperationsService operations = new();
+        using AvaloniaPresentationStore store = new(
+            new DashboardService(), new AppearanceService(), new WorkspaceService(),
+            new GoalService(), new GoalModelService(), new AgentDefaultsService(),
+            new RemoteCostService(), new GoalWorkflowService(), new SemanticIndexService(),
+            new GoalAcceptanceService(), operations, new CapabilityApprovalService(),
+            new FrameworkService(), NullLogger<AvaloniaPresentationStore>.Instance);
+
+        RestoreSourcePath source = new("/backups/restore.zip");
+        await store.InspectApplicationRestoreAsync(source, CancellationToken.None);
+        await store.StageApplicationRestoreAsync(
+            store.Current.Operations.InspectedRestore!, CancellationToken.None);
+
+        Assert.Equal(source, operations.LastRestoreSource);
+        Assert.Equal(21, store.Current.Operations.PendingRestore?.SchemaVersion.Value);
+        Assert.Contains("restart", store.Current.Operations.Status,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.False(store.Current.Operations.IsBusy);
+    }
+
+    [Fact]
     public async Task Records_and_separately_approves_correlation_bound_restore()
     {
         WorkspaceService workspaces = new();
@@ -1501,6 +1524,7 @@ public sealed class AvaloniaPresentationStoreTests
     private sealed class ApplicationOperationsService : IApplicationOperationsService
     {
         internal BackupDestinationPath? LastDestination { get; private set; }
+        internal RestoreSourcePath? LastRestoreSource { get; private set; }
 
         public ValueTask<ApplicationBackupResult> CreateBackupAsync(
             BackupDestinationPath destination,
@@ -1517,6 +1541,28 @@ public sealed class AvaloniaPresentationStoreTests
                 new(18),
                 DateTimeOffset.UtcNow), null, null));
         }
+
+        public ValueTask<ApplicationRestoreInspectionResult> InspectRestoreAsync(
+            RestoreSourcePath source,
+            CancellationToken cancellationToken = default)
+        {
+            LastRestoreSource = source;
+            return ValueTask.FromResult(new ApplicationRestoreInspectionResult(
+                Restore(source), null, null));
+        }
+
+        public ValueTask<ApplicationRestoreStageResult> StageRestoreAsync(
+            ApplicationRestoreStageRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            LastRestoreSource = request.Source;
+            return ValueTask.FromResult(new ApplicationRestoreStageResult(
+                Restore(request.Source), true, null, null));
+        }
+
+        private static ApplicationRestoreView Restore(RestoreSourcePath source) => new(
+            source, new(new string('a', 64)), new(new string('b', 64)), new(4096),
+            null, null, new(21), DateTimeOffset.UtcNow, RestoreArchiveFormat.Version2);
     }
 
     private sealed class CapabilityApprovalService : ICapabilityApprovalService
