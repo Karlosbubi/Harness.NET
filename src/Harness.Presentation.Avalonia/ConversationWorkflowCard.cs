@@ -15,6 +15,7 @@ internal enum ConversationWorkflowCardKind
     Evidence,
     CapabilityApproval,
     CommitApproval,
+    Handoff,
     Status,
 }
 
@@ -60,6 +61,7 @@ internal enum ConversationWorkflowActionKind
     ApproveCommit,
     DenyCommit,
     ResumeCommit,
+    ReviewBranchHandoff,
 }
 
 internal sealed record ConversationWorkflowAction(
@@ -184,6 +186,12 @@ internal static class ConversationWorkflowActionProjector
             };
         }
 
+        if (card.Kind is ConversationWorkflowCardKind.Handoff)
+        {
+            return [new(ConversationWorkflowActionKind.ReviewBranchHandoff,
+                "Review branch in Git", true)];
+        }
+
         return [];
     }
 }
@@ -296,6 +304,22 @@ internal static class ConversationWorkflowProjector
                 $"{commit.ChangedFileCount.Value} file(s) · {commit.Branch.Value}",
                 $"Diff {commit.DiffHash.Value} · expected head {commit.ExpectedHead.Value}",
                 Order: 900));
+
+            if (commit.State is GoalCommitApprovalState.Committed &&
+                commit.CommitSha is { } commitSha)
+            {
+                cards.Add(new(
+                    $"handoff.{commit.Id.Value}",
+                    ConversationWorkflowCardKind.Handoff,
+                    ConversationWorkflowCardState.Completed,
+                    "Goal branch ready",
+                    $"{commit.Branch.Value} · commit {ShortSha(commitSha.Value)} · local only",
+                    "The exact approved commit is complete in the isolated goal worktree. " +
+                    "Next, deliberately push this branch and open a PR, or inspect and merge " +
+                    "it with your normal Git workflow. Harness.NET will not push, open a PR, " +
+                    "merge, rebase, or change the original branch automatically.",
+                    Order: 950));
+            }
         }
         else if (goals.CommitPreview is { } preview)
         {
@@ -333,6 +357,8 @@ internal static class ConversationWorkflowProjector
     private static string FirstLine(string value) =>
         value.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .FirstOrDefault() ?? "No details recorded.";
+
+    private static string ShortSha(string value) => value.Length <= 12 ? value : value[..12];
 
     private static string RunSummary(GoalWorkflowSnapshot workflow) =>
         $"{workflow.State} · {workflow.Tasks.Count} task(s) · " +

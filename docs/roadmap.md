@@ -202,6 +202,8 @@ of Stage 3 below.
 - Large/messy repository recovery is proven for dirty bases, mid-goal conflicts,
   index rebuilds under load, provider outages, budget exhaustion, and
   corrupted/interrupted state outside the representative-repo gate. (Task 037)
+- A committed goal branch surfaces its exact local branch/SHA and deliberate manual
+  push, PR, or merge handoff without network or integration automation. (Task 039)
 
 ### Missing core capability
 
@@ -209,9 +211,6 @@ of Stage 3 below.
   today; recovery into a fresh install is proven solely by
   `eng/verify-v1-release.sh`, not available to a user without the script.
   (Task 041)
-- Make the handoff after an approved commit explicit: the app deliberately does not
-  push, open a PR, or merge, but it also does not yet tell the user what to do next
-  with the accepted goal branch. (Task 039)
 - Continue hands-on Avalonia usability and visual-quality regression review across
   future production workspace, goal, evidence, and recovery changes.
 - Keep the accepted ADR 010 workbench matrix under regression coverage as new

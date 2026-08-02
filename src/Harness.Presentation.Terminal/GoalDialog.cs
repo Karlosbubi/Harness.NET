@@ -697,8 +697,18 @@ internal sealed class GoalDialog : Dialog
 
         GoalCommitApprovalResult committed = await acceptanceService.DecideAsync(new(
             approval.Id, GoalCommitDecision.Approve, Reason: null), cancellationToken);
-        status.Text = committed.Error ??
-            $"Committed exact approved diff | {committed.Approval?.CommitSha?.Value}";
+        if (committed.Error is not null || committed.Approval is null)
+        {
+            status.Text = committed.Error ?? "The exact commit did not complete.";
+            return;
+        }
+
+        status.Text = $"Goal branch ready | {committed.Approval.Branch.Value} | " +
+                      committed.Approval.CommitSha?.Value;
+        using Dialog handoff = ReadOnlyDialog(
+            "Goal branch ready",
+            GoalCommitTextFormatter.FormatHandoff(committed.Approval));
+        await application.RunAsync(handoff, cancellationToken);
     }
 
     private async Task<GoalCommitDecision?> CollectCommitDecisionAsync(

@@ -601,6 +601,16 @@ public sealed class AvaloniaPresentationStoreTests
         Assert.Equal(GoalCommitApprovalState.Committed, store.Current.Goals.CommitApproval?.State);
         Assert.Equal(new GoalCommitHead(new string('b', 40)),
             store.Current.Goals.CommitApproval?.CommitSha);
+        ConversationWorkflowCard handoff = Assert.Single(
+            ConversationWorkflowProjector.Project(store.Current.Goals),
+            card => card.Kind is ConversationWorkflowCardKind.Handoff);
+        Assert.Contains("harness/goal", handoff.Summary, StringComparison.Ordinal);
+        Assert.Contains("local only", handoff.Summary, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("will not push", handoff.Details, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(
+            ConversationWorkflowActionKind.ReviewBranchHandoff,
+            Assert.Single(ConversationWorkflowActionProjector.Project(
+                handoff, store.Current.Goals)).Kind);
     }
 
     [Fact]

@@ -956,6 +956,9 @@ internal sealed class MainWindow : Window
             case ConversationWorkflowActionKind.ResumeCommit:
                 await DecideCommitAsync(resuming: true);
                 break;
+            case ConversationWorkflowActionKind.ReviewBranchHandoff:
+                await ReviewBranchHandoffAsync();
+                break;
         }
     }
 
@@ -1075,6 +1078,16 @@ internal sealed class MainWindow : Window
                 new(limits[0]),
                 cancellationToken);
         }
+    }
+
+    private async Task ReviewBranchHandoffAsync()
+    {
+        if (workbench is null || !workbench.ShowGit())
+        {
+            return;
+        }
+
+        await workbench.RefreshGitAsync();
     }
 
     private int DefaultOutputMaximum(AgentRole role) =>

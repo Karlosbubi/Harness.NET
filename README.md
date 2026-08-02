@@ -13,9 +13,9 @@ passing does not yet mean the application is productive for real day-to-day .NET
 development — see `docs/roadmap.md` Stage 3 and `docs/tasks/README.md` for the
 remaining concrete gaps. Chat-first orchestration, multi-workspace use, Roslyn
 validation/intellisense/refactoring, and messy-repository recovery are now delivered;
-the remaining daily-use work is clear post-commit handoff guidance (Task 039) and
-in-app backup restore (Task 041). Task 038 (agent-quality feedback loop) remains
-deferred until those close.
+accepted goal branches now include deliberate manual push/PR/merge guidance. The
+remaining daily-use gap is in-app backup restore (Task 041). Task 038 (agent-quality
+feedback loop) remains deferred until that closes.
 
 Framework discovery, the production service slices, and the default docked desktop
 workflow are implemented. The application has
