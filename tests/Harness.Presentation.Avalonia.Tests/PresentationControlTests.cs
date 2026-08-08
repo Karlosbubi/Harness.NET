@@ -1952,14 +1952,19 @@ public sealed class PresentationControlTests
 
             IToolDock left = Find<IToolDock>(first.Root, WorkbenchDockIds.Left);
             IToolDock right = Find<IToolDock>(first.Root, WorkbenchDockIds.Right);
+            IToolDock bottom = Find<IToolDock>(first.Root, WorkbenchDockIds.Bottom);
             IDockable navigation = Find<IDockable>(first.Root, WorkbenchDockIds.NavigationTool);
             IDockable files = Find<IDockable>(first.Root, WorkbenchDockIds.FilesTool);
             IDockable git = Find<IDockable>(first.Root, WorkbenchDockIds.GitTool);
+            IDockable conversation = Find<IDockable>(
+                first.Root, WorkbenchDockIds.ConversationTool);
             left.VisibleDockables!.Remove(navigation);
             right.VisibleDockables!.Add(navigation);
             left.VisibleDockables.Remove(files);
             first.Root.HiddenDockables ??= first.Factory.CreateList<IDockable>();
             first.Root.HiddenDockables.Add(files);
+            bottom.VisibleDockables!.Remove(conversation);
+            first.Root.HiddenDockables.Add(conversation);
             right.VisibleDockables.Remove(git);
             IToolDock floatingTools = first.Factory.CreateToolDock();
             floatingTools.Id = "dock.floating.git";
@@ -1995,6 +2000,13 @@ public sealed class PresentationControlTests
                 item.Id == WorkbenchDockIds.NavigationTool && item.Context is TextBlock);
             Assert.Contains(restored.Root.HiddenDockables!, item =>
                 item.Id == WorkbenchDockIds.FilesTool && item.Context is not null);
+            Assert.Contains(restored.Root.HiddenDockables!, item =>
+                item.Id == WorkbenchDockIds.ConversationTool && item.Context is not null);
+            Assert.True(restored.ShowConversation());
+            IToolDock restoredBottom = Find<IToolDock>(restored.Root, WorkbenchDockIds.Bottom);
+            Assert.Contains(restoredBottom.VisibleDockables!, item =>
+                item.Id == WorkbenchDockIds.ConversationTool);
+            Assert.Equal(WorkbenchDockIds.ConversationTool, restoredBottom.ActiveDockable?.Id);
             Assert.Equal(0.5, restoredLeft.Proportion);
             Assert.Equal(0.37, restoredRight.Proportion);
             Assert.Single(restored.Documents.VisibleDockables!);

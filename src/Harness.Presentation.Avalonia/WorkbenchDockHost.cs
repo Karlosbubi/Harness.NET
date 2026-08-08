@@ -2953,6 +2953,14 @@ internal sealed class WorkbenchDockHost
             return false;
         }
 
+        visibleInOwner = tool.Owner is IDock restoredOwner &&
+                         restoredOwner.VisibleDockables?.Contains(tool) is true;
+        if (!visibleInOwner && DefaultToolDock(id) is { } defaultOwner)
+        {
+            RemoveFromRootSpecialCollections(tool);
+            factory.AddDockable(defaultOwner, tool);
+        }
+
         if (tool.Owner is IToolDock owner)
         {
             RestoreAdaptiveProportion(owner);
@@ -2962,6 +2970,24 @@ internal sealed class WorkbenchDockHost
         factory.SetActiveDockable(tool);
         FocusContext(tool);
         return true;
+    }
+
+    private IToolDock? DefaultToolDock(string id) => id switch
+    {
+        WorkbenchDockIds.NavigationTool or WorkbenchDockIds.FilesTool => leftTools,
+        WorkbenchDockIds.ContextTool or WorkbenchDockIds.GitTool => rightTools,
+        WorkbenchDockIds.ConversationTool or WorkbenchDockIds.RunOutputTool or
+            WorkbenchDockIds.ProblemsTool => bottomTools,
+        _ => null,
+    };
+
+    private void RemoveFromRootSpecialCollections(IDockable tool)
+    {
+        root.HiddenDockables?.Remove(tool);
+        root.LeftPinnedDockables?.Remove(tool);
+        root.RightPinnedDockables?.Remove(tool);
+        root.TopPinnedDockables?.Remove(tool);
+        root.BottomPinnedDockables?.Remove(tool);
     }
 
     private void RestoreAdaptiveProportion(IToolDock owner)
