@@ -183,7 +183,9 @@ internal sealed class GoalDialog : Window
                 return;
             }
 
-            NewGoalDialog dialog = new(workspace.Id);
+            NewGoalDialog dialog = new(
+                workspace.Id,
+                store.Current.Settings.RemoteSpendPreference);
             await dialog.ShowDialog(this);
             if (dialog.Result is not null)
             {
@@ -315,20 +317,48 @@ internal sealed class GoalDialog : Window
                 return;
             }
 
-            string disclosure = GoalPresentationFormatter.StartDisclosure(store.Current.Goals);
-            OutputLimitsDialog dialog = new(
-                "Start Lead planning",
-                ["Lead maximum output tokens"],
-                disclosure,
-                [DefaultOutputMaximum(AgentRole.Lead)]);
-            await dialog.ShowDialog(this);
-            if (dialog.Result is { Length: 1 } limits)
+            if (store.Current.Settings.AgentDefaults is not { Models.Count: > 0 })
             {
-                await store.StartGoalWorkflowAsync(
-                    selected.Id,
-                    new(limits[0]),
-                    cancellationToken);
+                await store.DiscoverAgentDefaultsAsync(cancellationToken);
             }
+
+            AgentDefaultsSnapshot? defaults = store.Current.Settings.AgentDefaults;
+            GoalModelCandidate[] candidates = ModelSelectionCatalog.ForRole(
+                defaults?.Models ?? [], AgentRole.Lead);
+            GoalModelSelectionView? effective = store.Current.Goals.ModelSelections
+                .FirstOrDefault(selection => selection.Role is AgentRole.Lead);
+            AgentRoleDefault? configured = defaults?.Roles
+                .FirstOrDefault(roleDefault => roleDefault.Role is AgentRole.Lead);
+            GoalModelCandidate? preferred = candidates.FirstOrDefault(candidate =>
+                candidate.Provider == effective?.Provider && candidate.Model == effective?.Model) ??
+                candidates.FirstOrDefault(candidate =>
+                    candidate.Provider == configured?.Provider && candidate.Model == configured?.Model);
+            PlanGenerationDialog dialog = new(
+                candidates,
+                preferred,
+                DefaultOutputMaximum(AgentRole.Lead),
+                GoalPresentationFormatter.StartDisclosure(store.Current.Goals));
+            await dialog.ShowDialog(this);
+            if (dialog.Result is not { } result)
+            {
+                return;
+            }
+
+            if (result.LeadModel.Access is ModelAccess.Remote &&
+                !await new RemoteModelAuthorizationDialog(
+                        selected,
+                        result.LeadModel,
+                        AgentRole.Lead)
+                    .ShowDialog<bool>(this))
+            {
+                return;
+            }
+
+            await store.StartGoalWorkflowAsync(
+                selected.Id,
+                result.LeadModel,
+                new(result.MaximumOutputTokens),
+                cancellationToken);
         };
         resumeRun.Click += async (_, _) =>
         {
@@ -430,9 +460,14 @@ internal sealed class GoalDialog : Window
 
     private static string FormatGoal(GoalView goal)
     {
-        string budget = goal.RemoteBudget is null
-            ? "Local models only"
-            : $"Remote cap: {(goal.RemoteBudget.Value / 1_000_000m):C6}";
+        RemoteSpendPreference spend = RemoteSpendPreference.FromGoalBudget(goal.RemoteBudget);
+        string budget = spend.Mode switch
+        {
+            RemoteSpendMode.Unlimited => "Remote spend: Unlimited",
+            RemoteSpendMode.Capped => $"Remote cap: {(spend.Cap!.Value / 1_000_000m):C6}",
+            RemoteSpendMode.LocalOnly => "Local models only",
+            _ => throw new ArgumentOutOfRangeException(),
+        };
         return $"{goal.Title}\nState: {goal.State}\nReview-cycle limit: " +
                $"{goal.ReviewCycleLimit.Value}\n{budget}\n\n{goal.Objective}";
     }
@@ -461,12 +496,28 @@ internal sealed class NewGoalDialog : Window
         MinHeight = 140,
     };
     private readonly TextBox reviewLimit = new() { Text = "3" };
-    private readonly TextBox remoteBudget = new();
+    private readonly ComboBox remoteMode = new();
+    private readonly TextBox remoteBudget = new() { PlaceholderText = "USD, for example 10.00" };
     private readonly TextBlock validation = new() { TextWrapping = TextWrapping.Wrap };
 
-    internal NewGoalDialog(string workspaceId)
+    internal NewGoalDialog(
+        string workspaceId,
+        RemoteSpendPreference? remoteSpendPreference = null)
     {
         this.workspaceId = workspaceId;
+        RemoteSpendPreference preference = remoteSpendPreference ?? RemoteSpendPreference.Default;
+        RemoteSpendChoice[] choices =
+        [
+            new(RemoteSpendMode.Unlimited, "Unlimited remote spend (default)"),
+            new(RemoteSpendMode.Capped, "Set an aggregate spending cap"),
+            new(RemoteSpendMode.LocalOnly, "Local models only"),
+        ];
+        remoteMode.ItemsSource = choices;
+        remoteMode.SelectedItem = choices.First(choice => choice.Mode == preference.Mode);
+        remoteBudget.Text = preference.Cap is null
+            ? string.Empty
+            : GoalPresentationFormatter.ToUsd(preference.Cap.Value);
+        remoteBudget.IsEnabled = preference.Mode is RemoteSpendMode.Capped;
         Title = "New goal";
         Width = 680;
         Height = 560;
@@ -483,6 +534,7 @@ internal sealed class NewGoalDialog : Window
         AutomationProperties.SetName(title, "Goal title");
         AutomationProperties.SetName(objective, "Goal objective");
         AutomationProperties.SetName(reviewLimit, "Review-cycle limit");
+        AutomationProperties.SetName(remoteMode, "Remote spending mode");
         AutomationProperties.SetName(remoteBudget, "Remote budget in USD");
         AutomationProperties.SetName(validation, "New goal validation");
         StackPanel panel = new() { Margin = new Thickness(20), Spacing = 8 };
@@ -492,7 +544,18 @@ internal sealed class NewGoalDialog : Window
         panel.Children.Add(objective);
         panel.Children.Add(new TextBlock { Text = "Review-cycle limit (1–20)" });
         panel.Children.Add(reviewLimit);
-        panel.Children.Add(new TextBlock { Text = "Remote budget USD (blank means local only)" });
+        panel.Children.Add(new Border
+        {
+            Classes = { "card", "attention" },
+            Child = new TextBlock
+            {
+                Text = "Unlimited remote spend is selected for convenience. Provider charges still apply. Opt into a hard cap or local-only execution for this goal below.",
+                TextWrapping = TextWrapping.Wrap,
+            },
+        });
+        panel.Children.Add(new TextBlock { Text = "Remote spending" });
+        panel.Children.Add(remoteMode);
+        panel.Children.Add(new TextBlock { Text = "Aggregate cap USD" });
         panel.Children.Add(remoteBudget);
         panel.Children.Add(validation);
 
@@ -507,6 +570,8 @@ internal sealed class NewGoalDialog : Window
             Spacing = 8,
             Children = { cancel, save },
         });
+        remoteMode.SelectionChanged += (_, _) => remoteBudget.IsEnabled =
+            remoteMode.SelectedItem is RemoteSpendChoice { Mode: RemoteSpendMode.Capped };
         return panel;
     }
 
@@ -519,11 +584,23 @@ internal sealed class NewGoalDialog : Window
             return;
         }
 
-        if (!TryParseBudget(remoteBudget.Text, out MicroUsdAmount? budget, out string? error))
+        if (remoteMode.SelectedItem is not RemoteSpendChoice spendChoice)
         {
-            validation.Text = error;
+            validation.Text = "Choose a remote-spending mode.";
             return;
         }
+
+        MicroUsdAmount? cap = null;
+        if (spendChoice.Mode is RemoteSpendMode.Capped &&
+            (!TryParseBudget(remoteBudget.Text, out cap, out string? error) || cap is null))
+        {
+            validation.Text = error ?? "Enter a positive USD cap.";
+            return;
+        }
+
+        MicroUsdAmount? budget = new RemoteSpendPreference(
+            spendChoice.Mode,
+            cap).ToGoalBudget();
 
         Result = new(
             workspaceId,
@@ -532,6 +609,11 @@ internal sealed class NewGoalDialog : Window
             new(cycles),
             budget);
         Close();
+    }
+
+    private sealed record RemoteSpendChoice(RemoteSpendMode Mode, string Name)
+    {
+        public override string ToString() => Name;
     }
 
     private static bool TryParseBudget(
@@ -692,7 +774,7 @@ internal sealed class ModelRoutingDialog : Window
     private readonly GoalView goal;
     private readonly CancellationToken cancellationToken;
     private readonly IDisposable subscription;
-    private readonly ListBox candidates = new();
+    private readonly SearchableModelPicker candidates = new();
     private readonly TextBox selections = new()
     {
         IsReadOnly = true,
@@ -728,6 +810,7 @@ internal sealed class ModelRoutingDialog : Window
 
     private Control BuildContent()
     {
+        candidates.SetAutomationName("Available goal model");
         Button close = new() { Content = "Close" };
         close.Click += (_, _) => Close();
         return new Grid
@@ -768,6 +851,7 @@ internal sealed class ModelRoutingDialog : Window
 
     private void WireInteractions()
     {
+        candidates.SelectionChanged += (_, _) => UpdateRoleButtons();
         lead.Click += async (_, _) => await SelectAsync(AgentRole.Lead);
         implementer.Click += async (_, _) => await SelectAsync(AgentRole.Implementer);
         reviewer.Click += async (_, _) => await SelectAsync(AgentRole.Reviewer);
@@ -775,18 +859,16 @@ internal sealed class ModelRoutingDialog : Window
 
     private async Task SelectAsync(AgentRole role)
     {
-        if (candidates.SelectedItem is not ModelChoice choice)
+        if (candidates.SelectedCandidate is not { } candidate)
         {
             status.Text = "Select a model.";
             return;
         }
-
-        GoalModelCandidate candidate = choice.Candidate;
         if (candidate.Access is ModelAccess.Remote)
         {
             if (goal.RemoteBudget is null)
             {
-                status.Text = "This goal is local-only. Create a capped goal to authorize remote models.";
+                status.Text = "This goal is local-only. Choose unlimited or capped remote spend to authorize remote models.";
                 return;
             }
 
@@ -803,18 +885,22 @@ internal sealed class ModelRoutingDialog : Window
     private void Render(GoalManagementState state)
     {
         GoalModelCatalog? catalog = state.ModelCatalog;
-        ModelChoice[] items = catalog?.Models.Select(model => new ModelChoice(model)).ToArray() ?? [];
-        string? selectedKey = (candidates.SelectedItem as ModelChoice)?.Key;
-        candidates.ItemsSource = items;
-        candidates.SelectedItem = items.FirstOrDefault(item => item.Key == selectedKey) ?? items.FirstOrDefault();
+        candidates.SetCandidates(catalog?.Models ?? []);
         selections.Text = GoalPresentationFormatter.FormatSelections(state.ModelSelections);
-        bool enabled = !state.IsBusy && items.Length > 0;
-        lead.IsEnabled = enabled;
-        implementer.IsEnabled = enabled;
-        reviewer.IsEnabled = enabled;
+        UpdateRoleButtons();
         status.Text = state.IsBusy
             ? "Working…"
             : state.Status ?? catalog?.Error ?? string.Empty;
+    }
+
+    private void UpdateRoleButtons()
+    {
+        GoalModelCandidate? selected = candidates.SelectedCandidate;
+        bool enabled = !store.Current.Goals.IsBusy && selected is not null;
+        lead.IsEnabled = enabled && selected?.SupportedRoles.Contains(AgentRole.Lead) is true;
+        implementer.IsEnabled = enabled &&
+            selected?.SupportedRoles.Contains(AgentRole.Implementer) is true;
+        reviewer.IsEnabled = enabled && selected?.SupportedRoles.Contains(AgentRole.Reviewer) is true;
     }
 
     private static T AtRow<T>(T control, int row) where T : Control
@@ -829,12 +915,6 @@ internal sealed class ModelRoutingDialog : Window
         return control;
     }
 
-    private sealed record ModelChoice(GoalModelCandidate Candidate)
-    {
-        internal string Key => $"{Candidate.Provider.Value}/{Candidate.Model.Value}";
-
-        public override string ToString() => GoalPresentationFormatter.FormatCandidate(Candidate);
-    }
 }
 
 internal sealed class RemoteModelAuthorizationDialog : Window
@@ -858,7 +938,13 @@ internal sealed class RemoteModelAuthorizationDialog : Window
                   : ".");
         Button cancel = new() { Content = "Cancel" };
         cancel.Click += (_, _) => Close(false);
-        Button authorize = new() { Content = "Authorize selection" };
+        RemoteSpendPreference spend = RemoteSpendPreference.FromGoalBudget(goal.RemoteBudget);
+        bool remoteAuthorized = spend.Mode is not RemoteSpendMode.LocalOnly;
+        Button authorize = new()
+        {
+            Content = remoteAuthorized ? "Use remote model" : "Enable remote spend first",
+            IsEnabled = remoteAuthorized,
+        };
         authorize.Click += (_, _) => Close(true);
         Content = new StackPanel
         {
@@ -875,13 +961,18 @@ internal sealed class RemoteModelAuthorizationDialog : Window
                 },
                 new TextBlock
                 {
-                    Text = $"Goal cap: ${GoalPresentationFormatter.ToUsd(goal.RemoteBudget!.Value)}. " + pricing,
+                    Text = spend.Mode switch
+                    {
+                        RemoteSpendMode.Unlimited => "Goal spend mode: Unlimited. " + pricing,
+                        RemoteSpendMode.Capped => $"Goal cap: ${GoalPresentationFormatter.ToUsd(spend.Cap!.Value)}. " + pricing,
+                        _ => "This goal is currently local-only. Choose unlimited or capped remote spend in Goal settings before selecting this route. " + pricing,
+                    },
                     TextWrapping = TextWrapping.Wrap,
                 },
                 new TextBlock
                 {
                     Text = "Every request reserves a conservative maximum before inference, is " +
-                           "attributed to this goal, and fails closed when budget or pricing is unavailable.",
+                           "attributed to this goal, and fails closed when pricing or the selected spend policy disallows it.",
                     TextWrapping = TextWrapping.Wrap,
                 },
                 new StackPanel
@@ -894,6 +985,294 @@ internal sealed class RemoteModelAuthorizationDialog : Window
             },
         };
     }
+}
+
+internal sealed record PlanGenerationResult(
+    GoalModelCandidate LeadModel,
+    int MaximumOutputTokens);
+
+internal sealed class PlanGenerationDialog : Window
+{
+    private readonly SearchableModelPicker models = new() { MinWidth = 380 };
+    private readonly TextBox maximum = new();
+    private readonly TextBlock validation = new() { TextWrapping = TextWrapping.Wrap };
+
+    internal PlanGenerationDialog(
+        IReadOnlyList<GoalModelCandidate> candidates,
+        GoalModelCandidate? selected,
+        int initialMaximum,
+        string disclosure)
+    {
+        Title = "Generate goal plan";
+        Width = 760;
+        Height = 570;
+        MinWidth = 620;
+        MinHeight = 500;
+        WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        GoalModelCandidate[] choices = ModelSelectionCatalog.ForRole(
+            candidates, AgentRole.Lead);
+        models.SetCandidates(choices, selected);
+        maximum.Text = initialMaximum.ToString(CultureInfo.InvariantCulture);
+        models.SetAutomationName("Lead model for plan generation");
+        AutomationProperties.SetName(maximum, "Lead maximum output tokens");
+        AutomationProperties.SetName(validation, "Plan generation validation");
+        Button cancel = new() { Content = "Cancel" };
+        cancel.Click += (_, _) => Close();
+        Button run = new() { Content = "Generate plan" };
+        run.Classes.Add("primary");
+        run.IsEnabled = choices.Length > 0;
+        run.Click += (_, _) => Save();
+        Content = new ScrollViewer
+        {
+            Content = new StackPanel
+            {
+                Margin = new Thickness(20),
+                Spacing = 10,
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = "Lead plan generation",
+                        FontSize = 18,
+                        FontWeight = FontWeight.SemiBold,
+                    },
+                    new TextBlock { Text = disclosure, TextWrapping = TextWrapping.Wrap },
+                    new TextBlock { Text = "Lead model", FontWeight = FontWeight.SemiBold },
+                    models,
+                    new TextBlock
+                    {
+                        Text = "Only chat models declaring every Lead capability are shown. " +
+                               "The configured Lead route is selected by default.",
+                        TextWrapping = TextWrapping.Wrap,
+                        Classes = { "muted" },
+                    },
+                    new TextBlock { Text = "Maximum output tokens (1–8192)" },
+                    maximum,
+                    validation,
+                    new StackPanel
+                    {
+                        Orientation = Orientation.Horizontal,
+                        HorizontalAlignment = HorizontalAlignment.Right,
+                        Spacing = 8,
+                        Children = { cancel, run },
+                    },
+                },
+            },
+        };
+    }
+
+    internal PlanGenerationResult? Result { get; private set; }
+
+    private void Save()
+    {
+        if (models.SelectedCandidate is not { } candidate)
+        {
+            validation.Text = "No fully compatible Lead model is available.";
+            return;
+        }
+
+        if (!int.TryParse(maximum.Text, NumberStyles.None,
+                CultureInfo.InvariantCulture, out int value) || value is < 1 or > 8192)
+        {
+            validation.Text = "The output maximum must be an integer from 1 through 8192 tokens.";
+            return;
+        }
+
+        Result = new(candidate, value);
+        Close();
+    }
+}
+
+internal sealed record WorkflowRetryResult(
+    GoalModelCandidate Model,
+    int MaximumOutputTokens,
+    string Guidance);
+
+internal sealed class WorkflowRetryDialog : Window
+{
+    private readonly SearchableModelPicker models = new() { MinWidth = 420 };
+    private readonly TextBox maximum = new();
+    private readonly TextBox guidance = new()
+    {
+        AcceptsReturn = true,
+        TextWrapping = TextWrapping.Wrap,
+        MinHeight = 110,
+        PlaceholderText = "Explain what should change on this retry",
+    };
+    private readonly TextBlock validation = new() { TextWrapping = TextWrapping.Wrap };
+
+    internal WorkflowRetryDialog(
+        GoalWorkflowRetryRole role,
+        IReadOnlyList<GoalModelCandidate> candidates,
+        GoalModelCandidate? selected,
+        int initialMaximum,
+        string disclosure)
+    {
+        Title = $"Retry {role} with changes";
+        Width = 780;
+        Height = 660;
+        MinWidth = 640;
+        MinHeight = 560;
+        WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        AgentRole agentRole = role switch
+        {
+            GoalWorkflowRetryRole.Lead => AgentRole.Lead,
+            GoalWorkflowRetryRole.Implementer => AgentRole.Implementer,
+            GoalWorkflowRetryRole.Reviewer => AgentRole.Reviewer,
+            _ => throw new ArgumentOutOfRangeException(nameof(role)),
+        };
+        GoalModelCandidate[] choices = ModelSelectionCatalog.ForRole(candidates, agentRole);
+        models.SetCandidates(choices, selected);
+        maximum.Text = initialMaximum.ToString(CultureInfo.InvariantCulture);
+        models.SetAutomationName($"Replacement model for {role} retry");
+        AutomationProperties.SetName(maximum, $"{role} retry maximum output tokens");
+        AutomationProperties.SetName(guidance, $"Guidance for {role} retry");
+        AutomationProperties.SetName(validation, "Retry validation");
+        Button cancel = new() { Content = "Cancel" };
+        cancel.Click += (_, _) => Close();
+        Button retry = new() { Content = "Retry with changes", IsEnabled = choices.Length > 0 };
+        retry.Classes.Add("primary");
+        retry.Click += (_, _) => Save();
+        Content = new ScrollViewer
+        {
+            Content = new StackPanel
+            {
+                Margin = new Thickness(20),
+                Spacing = 10,
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = $"Retry failed {role} call",
+                        FontSize = 18,
+                        FontWeight = FontWeight.SemiBold,
+                    },
+                    new Border
+                    {
+                        Classes = { "card", "attention" },
+                        Child = new TextBlock { Text = disclosure, TextWrapping = TextWrapping.Wrap },
+                    },
+                    new TextBlock { Text = "Replacement model", FontWeight = FontWeight.SemiBold },
+                    models,
+                    new TextBlock
+                    {
+                        Text = "Only models that fully support this role are shown. The current route is selected when it remains available.",
+                        Classes = { "muted" },
+                        TextWrapping = TextWrapping.Wrap,
+                    },
+                    new TextBlock { Text = "What should change?", FontWeight = FontWeight.SemiBold },
+                    guidance,
+                    new TextBlock { Text = "Maximum output tokens (1–8192)" },
+                    maximum,
+                    validation,
+                    new StackPanel
+                    {
+                        Orientation = Orientation.Horizontal,
+                        HorizontalAlignment = HorizontalAlignment.Right,
+                        Spacing = 8,
+                        Children = { cancel, retry },
+                    },
+                },
+            },
+        };
+        Opened += (_, _) => guidance.Focus();
+    }
+
+    internal WorkflowRetryResult? Result { get; private set; }
+
+    private void Save()
+    {
+        if (models.SelectedCandidate is not { } candidate)
+        {
+            validation.Text = "No compatible replacement model is available.";
+            return;
+        }
+
+        string direction = guidance.Text?.Trim() ?? string.Empty;
+        if (direction.Length is < 1 or > 16 * 1024)
+        {
+            validation.Text = "Describe what should change using 1–16384 characters.";
+            return;
+        }
+
+        if (!int.TryParse(maximum.Text, NumberStyles.None,
+                CultureInfo.InvariantCulture, out int value) || value is < 1 or > 8192)
+        {
+            validation.Text = "The output maximum must be an integer from 1 through 8192 tokens.";
+            return;
+        }
+
+        Result = new(candidate, value, direction);
+        Close();
+    }
+}
+
+internal sealed class AbortGoalDialog : Window
+{
+    private readonly TextBox reason = new()
+    {
+        AcceptsReturn = true,
+        TextWrapping = TextWrapping.Wrap,
+        MinHeight = 90,
+        PlaceholderText = "Optional note for the audit trail",
+    };
+
+    internal AbortGoalDialog(GoalView goal)
+    {
+        Title = "Abort goal";
+        Width = 620;
+        Height = 390;
+        MinWidth = 520;
+        MinHeight = 340;
+        WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        AutomationProperties.SetName(reason, "Goal abort reason");
+        Button cancel = new() { Content = "Keep goal" };
+        cancel.Click += (_, _) => Close();
+        Button abort = new() { Content = "Abort & start new goal" };
+        abort.Classes.Add("danger");
+        AutomationProperties.SetName(abort, $"Confirm abort goal {goal.Title}");
+        abort.Click += (_, _) =>
+        {
+            string value = string.IsNullOrWhiteSpace(reason.Text)
+                ? "Stopped by user to start a different goal."
+                : reason.Text.Trim();
+            if (value.Length <= 16 * 1024)
+            {
+                Result = new(value);
+                Close();
+            }
+        };
+        Content = new StackPanel
+        {
+            Margin = new Thickness(20),
+            Spacing = 12,
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = $"Abort “{goal.Title}”?",
+                    FontSize = 18,
+                    FontWeight = FontWeight.SemiBold,
+                    TextWrapping = TextWrapping.Wrap,
+                },
+                new TextBlock
+                {
+                    Text = "This closes the goal and any paused run, keeps its durable history and worktree, and returns the composer to new-goal mode. It does not delete files or undo changes.",
+                    TextWrapping = TextWrapping.Wrap,
+                },
+                reason,
+                new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    Spacing = 8,
+                    Children = { cancel, abort },
+                },
+            },
+        };
+    }
+
+    internal GoalAbortReason? Result { get; private set; }
 }
 
 internal sealed class OutputLimitsDialog : Window
@@ -1768,25 +2147,35 @@ internal static class GoalPresentationFormatter
         }
 
         string costText;
-        if (goal.RemoteBudget is null)
+        RemoteSpendPreference spend = RemoteSpendPreference.FromGoalBudget(goal.RemoteBudget);
+        if (spend.Mode is RemoteSpendMode.LocalOnly)
         {
             costText = "REMOTE COST\nNot authorized; no remote-model spend is permitted.";
         }
         else if (cost is null)
         {
-            costText = $"REMOTE COST\nCap: ${ToUsd(goal.RemoteBudget.Value)}\n" +
+            costText = spend.Mode is RemoteSpendMode.Unlimited
+                ? "REMOTE COST\nLimit: Unlimited\nNo reservations or charges recorded."
+                : $"REMOTE COST\nCap: ${ToUsd(spend.Cap!.Value)}\n" +
                        "No reservations or charges recorded.";
         }
         else
         {
-            costText = string.Join(
-                '\n',
+            List<string> costLines =
+            [
                 "REMOTE COST",
-                $"Cap:        ${ToUsd(cost.CostCap.Value)}",
+                spend.Mode is RemoteSpendMode.Unlimited
+                    ? "Limit:      Unlimited"
+                    : $"Cap:        ${ToUsd(cost.CostCap.Value)}",
                 $"Reserved:   ${ToUsd(cost.ReservedCost.Value)}",
                 $"Reconciled: ${ToUsd(cost.ReconciledCost.Value)}",
-                $"Remaining:  ${ToUsd(cost.RemainingCost.Value)}",
-                $"Overage:    ${ToUsd(cost.Overage.Value)}");
+            ];
+            if (spend.Mode is RemoteSpendMode.Capped)
+            {
+                costLines.Add($"Remaining:  ${ToUsd(cost.RemainingCost.Value)}");
+            }
+            costLines.Add($"Overage:    ${ToUsd(cost.Overage.Value)}");
+            costText = string.Join('\n', costLines);
             if (cost.Items.Count > 0)
             {
                 costText += "\n\nATTRIBUTION\n" + string.Join('\n', cost.Items.Select(item =>
@@ -1965,29 +2354,49 @@ internal static class GoalPresentationFormatter
     private static string FormatCostSummary(GoalManagementState state)
     {
         GoalView? goal = state.SelectedGoal;
-        if (goal?.RemoteBudget is null)
+        if (goal is null)
+        {
+            return "Remote spend: no goal selected.";
+        }
+
+        RemoteSpendPreference spend = RemoteSpendPreference.FromGoalBudget(goal.RemoteBudget);
+        if (spend.Mode is RemoteSpendMode.LocalOnly)
         {
             return "Remote spend: not authorized (local-only goal).";
         }
 
         RemoteCostReport? cost = state.Cost;
+        string limit = spend.Mode is RemoteSpendMode.Unlimited
+            ? "Remote spend unlimited"
+            : $"Remote cap ${ToUsd(spend.Cap!.Value)}";
         return cost is null
-            ? $"Remote cap ${ToUsd(goal.RemoteBudget.Value)} | no spend recorded"
-            : $"Remote cap ${ToUsd(cost.CostCap.Value)} | " +
-              $"reserved ${ToUsd(cost.ReservedCost.Value)} | " +
-              $"spent ${ToUsd(cost.ReconciledCost.Value)} | " +
-              $"remaining ${ToUsd(cost.RemainingCost.Value)}";
+            ? $"{limit} | no spend recorded"
+            : $"{limit} | reserved ${ToUsd(cost.ReservedCost.Value)} | " +
+              $"spent ${ToUsd(cost.ReconciledCost.Value)}" +
+              (spend.Mode is RemoteSpendMode.Capped
+                  ? $" | remaining ${ToUsd(cost.RemainingCost.Value)}"
+                  : string.Empty);
     }
 
-    internal static string FormatCostSummary(GoalView goal, RemoteCostReport? cost) =>
-        goal.RemoteBudget is null
-            ? "Remote spend: not authorized (local-only goal)."
-            : cost is null
-                ? $"Remote cap ${ToUsd(goal.RemoteBudget.Value)} | no spend recorded"
-                : $"Remote cap ${ToUsd(cost.CostCap.Value)} | " +
-                  $"reserved ${ToUsd(cost.ReservedCost.Value)} | " +
-                  $"spent ${ToUsd(cost.ReconciledCost.Value)} | " +
-                  $"remaining ${ToUsd(cost.RemainingCost.Value)}";
+    internal static string FormatCostSummary(GoalView goal, RemoteCostReport? cost)
+    {
+        RemoteSpendPreference spend = RemoteSpendPreference.FromGoalBudget(goal.RemoteBudget);
+        if (spend.Mode is RemoteSpendMode.LocalOnly)
+        {
+            return "Remote spend: not authorized (local-only goal).";
+        }
+
+        string limit = spend.Mode is RemoteSpendMode.Unlimited
+            ? "Remote spend unlimited"
+            : $"Remote cap ${ToUsd(spend.Cap!.Value)}";
+        return cost is null
+            ? $"{limit} | no spend recorded"
+            : $"{limit} | reserved ${ToUsd(cost.ReservedCost.Value)} | " +
+              $"spent ${ToUsd(cost.ReconciledCost.Value)}" +
+              (spend.Mode is RemoteSpendMode.Capped
+                  ? $" | remaining ${ToUsd(cost.RemainingCost.Value)}"
+                  : string.Empty);
+    }
 
     private static string FormatEmbeddingCost(EmbeddingUsageView usage) => usage.Cost is null
         ? "$0.000000"

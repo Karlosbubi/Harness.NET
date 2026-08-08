@@ -21,6 +21,7 @@ internal sealed class GoalModelDialog : Dialog
     private readonly Button implementer;
     private readonly Button reviewer;
     private IReadOnlyList<GoalModelSelectionView> selections;
+    private IReadOnlyList<GoalModelCandidate> visibleModels;
 
     internal GoalModelDialog(
         IApplication application,
@@ -35,6 +36,7 @@ internal sealed class GoalModelDialog : Dialog
         this.goal = goal;
         this.catalog = catalog;
         this.selections = selections;
+        visibleModels = catalog.Models;
         this.cancellationToken = cancellationToken;
 
         Title = "Goal role models";
@@ -48,16 +50,42 @@ internal sealed class GoalModelDialog : Dialog
             Height = 4,
             Text = GoalTextFormatter.FormatSelections(selections),
         };
-        modelList = new()
+        TextField search = new()
         {
             X = 0,
             Y = 5,
             Width = Dim.Fill(),
-            Height = Dim.Fill(6),
+            Text = string.Empty,
         };
-        modelList.SetSource(new ObservableCollection<string>(catalog.Models
+        Label searchLabel = new()
+        {
+            X = 0,
+            Y = 4,
+            Text = "Search provider/model (Enter to filter)",
+        };
+        modelList = new()
+        {
+            X = 0,
+            Y = 6,
+            Width = Dim.Fill(),
+            Height = Dim.Fill(7),
+        };
+        modelList.SetSource(new ObservableCollection<string>(visibleModels
             .Select(GoalTextFormatter.FormatModelCandidate)
             .ToArray()));
+        search.Accepting += (_, args) =>
+        {
+            args.Handled = true;
+            string value = search.Text?.ToString()?.Trim() ?? string.Empty;
+            visibleModels = catalog.Models.Where(candidate => value.Length == 0 ||
+                $"{candidate.Provider.Value} {candidate.Model.Value} {candidate.Access}"
+                    .Contains(value, StringComparison.OrdinalIgnoreCase)).ToArray();
+            modelList.SetSource(new ObservableCollection<string>(visibleModels
+                .Select(GoalTextFormatter.FormatModelCandidate)
+                .ToArray()));
+            modelList.SelectedItem = visibleModels.Count > 0 ? 0 : null;
+            SetButtonsEnabled(visibleModels.Count > 0);
+        };
         lead = RoleButton("_Lead", 0, AgentRole.Lead);
         implementer = RoleButton("_Implementer", Pos.Right(lead) + 1, AgentRole.Implementer);
         reviewer = RoleButton("_Reviewer", Pos.Right(implementer) + 1, AgentRole.Reviewer);
@@ -70,7 +98,7 @@ internal sealed class GoalModelDialog : Dialog
             Text = StatusText(catalog),
         };
         SetButtonsEnabled(catalog.Models.Count > 0);
-        Add(selectionsText, modelList, lead, implementer, reviewer, status);
+        Add(selectionsText, searchLabel, search, modelList, lead, implementer, reviewer, status);
         AddButton(new Button { Title = "_Close" });
     }
 
@@ -95,18 +123,18 @@ internal sealed class GoalModelDialog : Dialog
     private async Task SelectAsync(AgentRole role)
     {
         int selectedIndex = modelList.SelectedItem ?? -1;
-        if (selectedIndex < 0 || selectedIndex >= catalog.Models.Count)
+        if (selectedIndex < 0 || selectedIndex >= visibleModels.Count)
         {
             status.Text = "Select a model.";
             return;
         }
 
-        GoalModelCandidate candidate = catalog.Models[selectedIndex];
+        GoalModelCandidate candidate = visibleModels[selectedIndex];
         if (candidate.Access is ModelAccess.Remote)
         {
             if (goal.RemoteBudget is null)
             {
-                status.Text = "This goal is local-only; create a capped goal to authorize remote models.";
+                status.Text = "This goal is local-only; choose unlimited or capped remote spend to authorize remote models.";
                 return;
             }
 
@@ -118,7 +146,7 @@ internal sealed class GoalModelDialog : Dialog
                 application,
                 "Authorize remote model",
                 $"Select {candidate.Provider.Value}/{candidate.Model.Value} for {role}?\n\n" +
-                $"Goal cap: ${goal.RemoteBudget.Value / 1_000_000m:0.######}. {pricing}\n\n" +
+                $"{GoalTextFormatter.FormatCostStatus(goal, report: null)}. {pricing}\n\n" +
                 "Every request reserves a conservative maximum and remains attributed to this goal.",
                 "_Authorize",
                 "_Cancel");

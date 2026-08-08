@@ -52,6 +52,7 @@ internal enum ConversationWorkflowActionKind
     RequestPlanChanges,
     ContinueRun,
     RetryRun,
+    AbortGoal,
     ExtendBudget,
     CancelRun,
     ReviewAcceptedChanges,
@@ -81,9 +82,23 @@ internal static class ConversationWorkflowActionProjector
             return [];
         }
 
-        if (card.Kind is ConversationWorkflowCardKind.Goal && goal.State is GoalState.Draft)
+        if (card.Kind is ConversationWorkflowCardKind.Goal)
         {
-            return [new(ConversationWorkflowActionKind.ConfigureGoal, "Goal settings", false)];
+            bool canAbort = goals.Workflow?.State is not GoalWorkflowState.Completed and
+                not GoalWorkflowState.Aborted;
+            if (goal.State is GoalState.Draft)
+            {
+                return canAbort
+                    ? [
+                        new(ConversationWorkflowActionKind.ConfigureGoal, "Goal settings", false),
+                        new(ConversationWorkflowActionKind.AbortGoal, "Abort & start new", false),
+                    ]
+                    : [new(ConversationWorkflowActionKind.ConfigureGoal, "Goal settings", false)];
+            }
+
+            return canAbort
+                ? [new(ConversationWorkflowActionKind.AbortGoal, "Abort & start new", false)]
+                : [];
         }
 
         if (card.Kind is ConversationWorkflowCardKind.Plan)
@@ -130,7 +145,7 @@ internal static class ConversationWorkflowActionProjector
             {
                 ConversationWorkflowAction retry = new(
                     ConversationWorkflowActionKind.RetryRun,
-                    $"Retry {retryRole}",
+                    $"Retry {retryRole} with changes",
                     true);
                 AgentRole? agentRole = retryRole switch
                 {
@@ -141,10 +156,14 @@ internal static class ConversationWorkflowActionProjector
                 };
                 bool remote = agentRole is not null && goals.ModelSelections.Any(selection =>
                     selection.Role == agentRole && selection.Access is ModelAccess.Remote);
+                ConversationWorkflowAction abort = new(
+                    ConversationWorkflowActionKind.AbortGoal,
+                    "Abort & start new",
+                    false);
                 return remote
                     ? [retry, new(ConversationWorkflowActionKind.ExtendBudget,
-                        "Increase remote cap", false)]
-                    : [retry];
+                        "Increase remote cap", false), abort]
+                    : [retry, abort];
             }
 
             if (workflow.State is GoalWorkflowState.AwaitingAcceptance or GoalWorkflowState.Completed &&
@@ -247,18 +266,6 @@ internal static class ConversationWorkflowProjector
 
         if (goals.Workflow is { } workflow)
         {
-            cards.Add(new(
-                $"run.{workflow.Id.Value}",
-                ConversationWorkflowCardKind.Run,
-                WorkflowState(workflow.State),
-                $"Agent run · cycle {workflow.ReviewCycle.Value}",
-                RunSummary(workflow),
-                workflow.RequiresUserDirection
-                    ? workflow.RetryRole is { } retryRole
-                        ? $"The run is paused. Review the recovery notice before explicitly retrying {retryRole}."
-                        : "The run is paused until the user supplies direction."
-                    : null,
-                Order: 200));
             cards.AddRange(workflow.Activities.Select(activity => new ConversationWorkflowCard(
                 $"run.{workflow.Id.Value}.activity.{activity.Sequence}",
                 ConversationWorkflowCardKind.Run,
@@ -283,6 +290,14 @@ internal static class ConversationWorkflowProjector
                 FirstLine(item.Content.Value),
                 item.Content.Value,
                 700 + item.Sequence)));
+            cards.Add(new(
+                $"run.{workflow.Id.Value}",
+                ConversationWorkflowCardKind.Run,
+                WorkflowState(workflow.State),
+                $"Current run · {CurrentPhase(workflow)}",
+                RunSummary(workflow),
+                RunDetails(workflow),
+                Order: 790));
         }
 
         cards.AddRange(goals.CapabilityApprovals.Select((approval, index) => new ConversationWorkflowCard(
@@ -360,9 +375,118 @@ internal static class ConversationWorkflowProjector
 
     private static string ShortSha(string value) => value.Length <= 12 ? value : value[..12];
 
-    private static string RunSummary(GoalWorkflowSnapshot workflow) =>
-        $"{workflow.State} · {workflow.Tasks.Count} task(s) · " +
-        $"{workflow.Evidence.Count} evidence item(s)";
+    private static string RunSummary(GoalWorkflowSnapshot workflow) => string.Join(
+        '\n',
+        $"Now: {CurrentWork(workflow)}",
+        $"Result so far: {CurrentResult(workflow)}",
+        $"Next: {NextStep(workflow)}");
+
+    private static string RunDetails(GoalWorkflowSnapshot workflow)
+    {
+        string progress = $"Cycle {workflow.ReviewCycle.Value} · " +
+            $"{workflow.Tasks.Count(task => task.State is GoalTaskState.Completed)}/" +
+            $"{workflow.Tasks.Count} tasks completed · {workflow.Evidence.Count} evidence item(s).";
+        if (!workflow.RequiresUserDirection)
+        {
+            return progress;
+        }
+
+        return workflow.RetryRole is { } retryRole
+            ? $"{progress} The run is paused. Review the recovery notice before explicitly retrying {retryRole}."
+            : $"{progress} The run is paused until you supply direction.";
+    }
+
+    private static GoalWorkflowCheckpointKind? LatestCheckpoint(GoalWorkflowSnapshot workflow) =>
+        workflow.Activities.OrderBy(activity => activity.Sequence).LastOrDefault()?.Kind;
+
+    private static string CurrentPhase(GoalWorkflowSnapshot workflow)
+    {
+        if (workflow.State is GoalWorkflowState.NeedsDirection)
+        {
+            return "Needs your direction";
+        }
+
+        return LatestCheckpoint(workflow) switch
+        {
+            GoalWorkflowCheckpointKind.LeadCallStarted => "Lead planning",
+            GoalWorkflowCheckpointKind.PlanProposed => "Plan ready",
+            GoalWorkflowCheckpointKind.PlanApproved => "Preparing implementation",
+            GoalWorkflowCheckpointKind.ImplementerCallStarted => "Implementing",
+            GoalWorkflowCheckpointKind.ImplementationProduced => "Implementation ready",
+            GoalWorkflowCheckpointKind.ReviewerCallStarted => "Reviewing",
+            GoalWorkflowCheckpointKind.ReviewCompleted => "Review complete",
+            GoalWorkflowCheckpointKind.Accepted => "Accepted",
+            _ => workflow.State switch
+            {
+                GoalWorkflowState.AwaitingPlanApproval => "Plan ready",
+                GoalWorkflowState.AwaitingAcceptance => "Ready for acceptance",
+                GoalWorkflowState.Completed => "Completed",
+                GoalWorkflowState.Aborted => "Aborted",
+                _ => "Starting",
+            },
+        };
+    }
+
+    private static string CurrentWork(GoalWorkflowSnapshot workflow) => workflow.State switch
+    {
+        GoalWorkflowState.NeedsDirection => "The agent run is paused and waiting for your decision.",
+        GoalWorkflowState.AwaitingPlanApproval => "The proposed plan is waiting for your review.",
+        GoalWorkflowState.AwaitingAcceptance => "The reviewed result is waiting for your acceptance.",
+        GoalWorkflowState.Completed => "The agent run has completed.",
+        GoalWorkflowState.Aborted => "The goal was aborted; no agent work is running.",
+        _ => LatestCheckpoint(workflow) switch
+        {
+            GoalWorkflowCheckpointKind.LeadCallStarted => "The Lead is inspecting the workspace and generating a plan.",
+            GoalWorkflowCheckpointKind.PlanApproved => "The approved plan is being prepared for implementation.",
+            GoalWorkflowCheckpointKind.ImplementerCallStarted => "The Implementer is working on the current delegated task.",
+            GoalWorkflowCheckpointKind.ImplementationProduced => "The implementation is being prepared for independent review.",
+            GoalWorkflowCheckpointKind.ReviewerCallStarted => "The Reviewer is checking the implementation and evidence.",
+            _ => "Harness is advancing the goal from its last durable checkpoint.",
+        },
+    };
+
+    private static string CurrentResult(GoalWorkflowSnapshot workflow)
+    {
+        int completed = workflow.Tasks.Count(task => task.State is GoalTaskState.Completed);
+        return LatestCheckpoint(workflow) switch
+        {
+            null or GoalWorkflowCheckpointKind.Started or GoalWorkflowCheckpointKind.LeadCallStarted =>
+                "No durable plan has been produced yet.",
+            GoalWorkflowCheckpointKind.PlanProposed =>
+                $"A durable plan with {workflow.Tasks.Count} delegated task(s) is available.",
+            GoalWorkflowCheckpointKind.PlanApproved =>
+                $"The plan is approved; {completed}/{workflow.Tasks.Count} tasks are complete.",
+            GoalWorkflowCheckpointKind.ImplementerCallStarted =>
+                $"{completed}/{workflow.Tasks.Count} delegated tasks are complete.",
+            GoalWorkflowCheckpointKind.ImplementationProduced or
+                GoalWorkflowCheckpointKind.ReviewerCallStarted or
+                GoalWorkflowCheckpointKind.ReviewCompleted =>
+                $"{completed}/{workflow.Tasks.Count} tasks and {workflow.Evidence.Count} evidence item(s) are durable.",
+            GoalWorkflowCheckpointKind.UserDirectionRequired =>
+                "The last safe checkpoint and recovery evidence were preserved.",
+            GoalWorkflowCheckpointKind.Accepted =>
+                $"The result was accepted with {workflow.Evidence.Count} evidence item(s).",
+            _ => "The latest durable checkpoint is preserved.",
+        };
+    }
+
+    private static string NextStep(GoalWorkflowSnapshot workflow) => workflow.State switch
+    {
+        GoalWorkflowState.NeedsDirection when workflow.RetryRole is { } role =>
+            $"Retry {role} with a different model or guidance, or abort and start a new goal.",
+        GoalWorkflowState.NeedsDirection => "Choose whether to retry or abort this goal.",
+        GoalWorkflowState.AwaitingPlanApproval => "Approve the plan or request changes.",
+        GoalWorkflowState.AwaitingAcceptance => "Review the accepted changes and continue the Git workflow.",
+        GoalWorkflowState.Completed => "Review the result and continue with the exact-diff commit flow.",
+        GoalWorkflowState.Aborted => "Start a new goal when you are ready.",
+        _ => LatestCheckpoint(workflow) switch
+        {
+            GoalWorkflowCheckpointKind.LeadCallStarted => "When planning finishes, review the durable plan before any repository mutation.",
+            GoalWorkflowCheckpointKind.ImplementerCallStarted => "The completed task will be recorded, then independent review begins.",
+            GoalWorkflowCheckpointKind.ReviewerCallStarted => "The review will either accept the result or start a bounded correction cycle.",
+            _ => "Harness will advance to the next durable workflow checkpoint.",
+        },
+    };
 
     private static ConversationWorkflowCardState MapGoalState(GoalState state) => state switch
     {
@@ -388,6 +512,7 @@ internal static class ConversationWorkflowProjector
         GoalWorkflowState.AwaitingAcceptance => ConversationWorkflowCardState.Pending,
         GoalWorkflowState.NeedsDirection => ConversationWorkflowCardState.Denied,
         GoalWorkflowState.Completed => ConversationWorkflowCardState.Completed,
+        GoalWorkflowState.Aborted => ConversationWorkflowCardState.Cancelled,
         _ => ConversationWorkflowCardState.Stale,
     };
 

@@ -30,6 +30,7 @@ using Harness.DataAccess.Goals;
 using Harness.DataAccess.Inspection;
 using Harness.DataAccess.Layouts;
 using Harness.DataAccess.Models;
+using Harness.DataAccess.Models.Configuration;
 using Harness.DataAccess.Models.Ollama;
 using Harness.DataAccess.Models.OpenRouter;
 using Harness.DataAccess.Mutations;
@@ -68,8 +69,25 @@ builder.Services.AddSingleton<IApplicationBackup, SqliteApplicationBackup>();
 builder.Services.AddSingleton<IApplicationRestore, SqliteApplicationRestore>();
 builder.Services.AddSingleton<IApplicationOperationsService, ApplicationOperationsService>();
 builder.Services.AddSingleton<IAppearancePreferenceStore, SqliteAppearancePreferenceStore>();
+builder.Services.AddSingleton<IRemoteSpendPreferenceStore, SqliteRemoteSpendPreferenceStore>();
 builder.Services.AddSingleton<IUserThemeSource, XdgUserThemeSource>();
 builder.Services.AddSingleton<ISecretStore, SecretServiceSecretStore>();
+builder.Services.AddSingleton(new ModelProviderConfigurationOptions(
+    configuration.Providers.Values.Select(provider => new StoredModelProviderConfiguration(
+        new(provider.Name),
+        provider.Kind is ModelProviderKind.Ollama
+            ? StoredModelProviderKind.Ollama
+            : StoredModelProviderKind.OpenRouter,
+        new(provider.Endpoint),
+        new(provider.ChatModel),
+        new(provider.EmbeddingModel),
+        new(provider.EmbeddingDimensions),
+        new(provider.ConnectTimeout),
+        new(provider.RequestTimeout),
+        provider.ApiKeyReference,
+        RequiresRestart: false)).ToArray()));
+builder.Services.AddSingleton<IModelProviderConfigurationStore, XdgModelProviderConfigurationStore>();
+builder.Services.AddSingleton<IModelProviderSettingsService, ModelProviderSettingsService>();
 builder.Services.AddSingleton<IConversationStore, SqliteConversationStore>();
 builder.Services.AddSingleton<IFrameworkSourceReader, FileFrameworkSourceReader>();
 builder.Services.AddSingleton<IFrameworkOverlayStore, SqliteFrameworkOverlayStore>();
@@ -225,6 +243,7 @@ builder.Services.AddSingleton(new AppearanceOptions(HarnessThemeCatalog.BuiltIns
         }))
     .ToArray()));
 builder.Services.AddSingleton<IAppearanceService, AppearanceService>();
+builder.Services.AddSingleton<IRemoteSpendPreferenceService, RemoteSpendPreferenceService>();
 builder.Services.AddSingleton<AvaloniaPresentationStore>();
 builder.Services.AddSingleton<HarnessThemeController>();
 builder.Services.AddSingleton<IAvaloniaShell, AvaloniaShell>();

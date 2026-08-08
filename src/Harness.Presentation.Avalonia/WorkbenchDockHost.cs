@@ -2447,13 +2447,16 @@ internal sealed class WorkbenchDockHost
         SourceDocumentSession session,
         WorkbenchDocumentSha256? overrideBaseline = null)
     {
-        if (session.View.Access is not WorkbenchDocumentAccess.Editable ||
-            session.View.GoalId is null || !session.IsDirty)
+        if (session.View.Access is not WorkbenchDocumentAccess.Editable || !session.IsDirty)
         {
             return !session.IsDirty;
         }
 
-        session.SetBusy(true, "Saving through the approved goal worktree…");
+        session.SetBusy(
+            true,
+            session.View.GoalId is null
+                ? "Saving to the active trusted workspace…"
+                : "Saving through the approved goal worktree…");
         try
         {
             WorkbenchDocumentSha256? baseline = overrideBaseline ?? session.View.Sha256;
@@ -2461,6 +2464,7 @@ internal sealed class WorkbenchDockHost
             {
                 WorkbenchDocumentSaveResult result = await documentService.SaveAsync(
                     new(
+                        session.View.WorkspaceId,
                         session.View.GoalId,
                         NewEditCorrelation(),
                         session.View.Path,

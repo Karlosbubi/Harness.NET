@@ -5,6 +5,7 @@ public sealed record GoalModelCandidate(
     AgentModel Model,
     ModelAccess Access,
     IReadOnlyList<ModelCapability> Capabilities,
+    IReadOnlyList<AgentRole> SupportedRoles,
     ModelContextLength? ContextLength,
     UsdPerMillionTokens? InputPrice,
     UsdPerMillionTokens? OutputPrice,

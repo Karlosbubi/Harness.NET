@@ -76,7 +76,7 @@ internal sealed class WorkbenchWorkspaceContextResolver(
                 null,
                 new(workspace.Branch),
                 WorkbenchWorkspaceScope.OriginalWorkspace,
-                "Original workspace · read-only source context"),
+                "Original workspace · user-editable source context"),
             workspace.RootPath,
             ErrorCode: null,
             Error: null);

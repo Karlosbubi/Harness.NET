@@ -46,6 +46,23 @@ public sealed class SqliteRemoteCostStoreTests : IDisposable
         Assert.Equal(60L, (long)command.ExecuteScalar()!);
     }
 
+    [Fact]
+    public async Task Unlimited_goal_still_reserves_and_reconciles_remote_cost()
+    {
+        (SqliteRemoteCostStore store, _) = await CreateStoreAsync(
+            goalState: "Approved",
+            budgetMicrousd: long.MaxValue);
+
+        RemoteCostReservationResult result = await store.ReserveAsync(Request(250));
+        Assert.NotNull(result.Reservation);
+        await store.ReconcileAsync(result.Reservation.Id, new(125));
+
+        RemoteCostLedger ledger = Assert.IsType<RemoteCostLedger>(
+            await store.GetLedgerAsync("goal-1"));
+        Assert.Equal(new MicroUsd(long.MaxValue), ledger.CostCap);
+        Assert.Equal(new MicroUsd(125), ledger.ReconciledCost);
+    }
+
     [Theory]
     [InlineData("Draft", 100L)]
     [InlineData("Approved", null)]

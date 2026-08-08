@@ -36,7 +36,7 @@ public sealed class SqliteApplicationBackupTests : IDisposable
         ApplicationBackupResult result = await backup.CreateAsync(new(new(destination)));
 
         Assert.Null(result.Error);
-        Assert.Equal(21, result.SchemaVersion?.Value);
+        Assert.Equal(22, result.SchemaVersion?.Value);
         Assert.True(File.Exists(destination));
         Assert.Equal(await HashAsync(destination), result.ArchiveSha256?.Value);
         using ZipArchive archive = ZipFile.OpenRead(destination);
@@ -47,7 +47,7 @@ public sealed class SqliteApplicationBackupTests : IDisposable
         using JsonDocument manifest = await JsonDocument.ParseAsync(manifestEntry.Open());
         Assert.Equal("harness-backup-v2",
             manifest.RootElement.GetProperty("Format").GetString());
-        Assert.Equal(21, manifest.RootElement.GetProperty("SchemaVersion").GetInt32());
+        Assert.Equal(22, manifest.RootElement.GetProperty("SchemaVersion").GetInt32());
         Assert.Equal(result.DatabaseSha256?.Value,
             manifest.RootElement.GetProperty("DatabaseSha256").GetString());
         JsonElement layoutManifest = manifest.RootElement.GetProperty("WorkbenchLayout");
@@ -101,14 +101,29 @@ public sealed class SqliteApplicationBackupTests : IDisposable
         {
             await connection.OpenAsync();
             await connection.ExecuteAsync("""
+                INSERT INTO workspaces (
+                    id, root_path, name, entry_point, is_trusted, branch, is_dirty,
+                    created_at, updated_at, is_active)
+                VALUES ('workspace-spend', '/tmp/spend', 'Spend', '/tmp/spend/Spend.slnx',
+                    1, 'main', 0, '2026-08-08T00:00:00Z', '2026-08-08T00:00:00Z', 1);
+                INSERT INTO goals (
+                    id, workspace_id, title, objective, review_cycle_limit,
+                    remote_budget_microusd, state, created_at, updated_at)
+                VALUES
+                    ('draft-spend', 'workspace-spend', 'Draft', 'Draft', 2, NULL,
+                     'Draft', '2026-08-08T00:00:00Z', '2026-08-08T00:00:00Z'),
+                    ('approved-spend', 'workspace-spend', 'Approved', 'Approved', 2, NULL,
+                     'Approved', '2026-08-08T00:00:00Z', '2026-08-08T00:00:00Z');
                 DROP TABLE appearance_preferences;
                 DROP TABLE agent_role_defaults;
                 DROP TABLE goal_budget_extensions;
+                DROP TABLE remote_spend_preferences;
                 DELETE FROM SchemaVersions
                 WHERE ScriptName LIKE '%018_AppearancePreferences.sql'
                    OR ScriptName LIKE '%019_AgentRoleDefaults.sql'
                    OR ScriptName LIKE '%020_RenameEvidence.sql'
-                   OR ScriptName LIKE '%021_GoalBudgetExtensions.sql';
+                   OR ScriptName LIKE '%021_GoalBudgetExtensions.sql'
+                   OR ScriptName LIKE '%022_RemoteSpendPreferences.sql';
                 UPDATE application_metadata SET value = '17' WHERE key = 'schema_version';
                 """);
         }
@@ -116,7 +131,7 @@ public sealed class SqliteApplicationBackupTests : IDisposable
         DatabaseInitializationResult upgraded = await new SqliteDatabaseInitializer(
             applicationPaths, new FixedTimeProvider()).InitializeAsync();
 
-        Assert.Equal(21, upgraded.SchemaVersion.Value);
+        Assert.Equal(22, upgraded.SchemaVersion.Value);
         Assert.NotNull(upgraded.PreUpgradeBackup);
         Assert.True(File.Exists(upgraded.PreUpgradeBackup.Value));
         using ZipArchive archive = ZipFile.OpenRead(upgraded.PreUpgradeBackup.Value);
@@ -128,6 +143,10 @@ public sealed class SqliteApplicationBackupTests : IDisposable
         Assert.Equal(1, await current.ExecuteScalarAsync<int>(
             "SELECT COUNT(*) FROM sqlite_master WHERE type='table' " +
             "AND name='appearance_preferences';"));
+        Assert.Equal(long.MaxValue, await current.ExecuteScalarAsync<long>(
+            "SELECT remote_budget_microusd FROM goals WHERE id='draft-spend';"));
+        Assert.Null(await current.ExecuteScalarAsync<long?>(
+            "SELECT remote_budget_microusd FROM goals WHERE id='approved-spend';"));
         Assert.Equal(1, await current.ExecuteScalarAsync<int>(
             "SELECT COUNT(*) FROM sqlite_master WHERE type='table' " +
             "AND name='agent_role_defaults';"));

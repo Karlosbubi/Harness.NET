@@ -103,6 +103,7 @@ public sealed class GoalTextFormatterTests
             new("provider/model"),
             ModelAccess.Remote,
             [new("tools")],
+            Enum.GetValues<AgentRole>(),
             new(128_000),
             new(1.25m),
             new(2.5m),

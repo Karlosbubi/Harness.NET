@@ -317,11 +317,13 @@ public sealed class GoalWorkflowServiceTests
             await CollectAsync(service.RetryAsync(new(
                 goals.Goal.Id,
                 GoalWorkflowRetryRole.Reviewer,
-                new(768)))));
+                new(768),
+                new("Use a different approach.")))));
         GoalWorkflowSnapshot recovered = (await CollectAsync(service.RetryAsync(new(
             goals.Goal.Id,
             GoalWorkflowRetryRole.Lead,
-            new(768)))))[^1];
+            new(768),
+            new("Inspect the actual workspace before planning.")))))[^1];
 
         Assert.Equal(GoalWorkflowState.AwaitingPlanApproval, recovered.State);
         Assert.Null(recovered.RetryRole);
@@ -330,6 +332,27 @@ public sealed class GoalWorkflowServiceTests
             item.Content.Value.Contains("768 tokens", StringComparison.Ordinal));
         Assert.Equal([AgentRole.Lead, AgentRole.Lead],
             agents.Requests.Select(request => request.Role));
+        Assert.Contains("Inspect the actual workspace before planning.",
+            agents.Requests[^1].Task.Value, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Abort_without_an_existing_run_is_durable_and_prevents_restart()
+    {
+        FakeGoalService goals = new();
+        InMemoryGoalWorkflowStore store = new();
+        GoalWorkflowService service = CreateService(store, goals, new FakeAgentRunner());
+
+        GoalWorkflowSnapshot aborted = await service.AbortAsync(new(
+            goals.Goal.Id,
+            new("The objective is obsolete; start over with corrected input.")));
+
+        Assert.Equal(GoalWorkflowState.Aborted, aborted.State);
+        Assert.Contains(aborted.Evidence, evidence =>
+            evidence.Title.Value == "Goal aborted" &&
+            evidence.Content.Value.Contains("objective is obsolete", StringComparison.Ordinal));
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await CollectAsync(service.StartPlanningAsync(new(goals.Goal.Id, new(512)))));
     }
 
     [Fact]
@@ -352,7 +375,8 @@ public sealed class GoalWorkflowServiceTests
         GoalWorkflowSnapshot retried = (await CollectAsync(service.RetryAsync(new(
             goals.Goal.Id,
             GoalWorkflowRetryRole.Implementer,
-            new(1024)))))[^1];
+            new(1024),
+            new("Apply the bounded task without repeating the failed call.")))))[^1];
 
         Assert.Equal(GoalWorkflowState.Running, retried.State);
         Assert.True(retried.CanResume);
@@ -378,7 +402,8 @@ public sealed class GoalWorkflowServiceTests
         GoalWorkflowSnapshot recovered = (await CollectAsync(service.RetryAsync(new(
             goals.Goal.Id,
             GoalWorkflowRetryRole.Reviewer,
-            new(768)))))[^1];
+            new(768),
+            new("Re-review the durable diff and evidence.")))))[^1];
 
         Assert.Equal(GoalWorkflowRetryRole.Reviewer, failed.RetryRole);
         Assert.Equal(GoalWorkflowState.AwaitingAcceptance, recovered.State);
@@ -404,7 +429,8 @@ public sealed class GoalWorkflowServiceTests
         GoalWorkflowSnapshot reviewed = (await CollectAsync(service.RetryAsync(new(
             goals.Goal.Id,
             GoalWorkflowRetryRole.Reviewer,
-            new(768)))))[^1];
+            new(768),
+            new("Focus on the missing boundary case.")))))[^1];
 
         Assert.Equal(GoalWorkflowState.Running, reviewed.State);
         Assert.True(reviewed.CanResume);
@@ -615,6 +641,30 @@ public sealed class GoalWorkflowServiceTests
                     UpdatedAt = checkpoint.CreatedAt,
                 },
                 [.. Snapshot.Checkpoints, appended]);
+            return ValueTask.FromResult(Snapshot);
+        }
+
+        public ValueTask<StoredGoalWorkflowSnapshot> AbortAsync(
+            GoalWorkflowGoalId goalId,
+            WorkflowCheckpointSummary reason,
+            DateTimeOffset abortedAt,
+            CancellationToken cancellationToken = default)
+        {
+            StoredRunId runId = Snapshot?.Run.Id ?? new(Guid.NewGuid().ToString("N"));
+            StoredGoalWorkflowCheckpoint checkpoint = new(
+                Guid.NewGuid().ToString("N"), runId,
+                (Snapshot?.Checkpoints.Count ?? 0) + 1,
+                StoredKind.UserDirectionRequired,
+                Harness.DataAccess.Workflows.WorkflowActor.System,
+                new("User aborted the goal."),
+                new("Goal aborted"),
+                new(reason.Value),
+                abortedAt);
+            StoredGoalWorkflowRun run = Snapshot is null
+                ? new(runId, goalId, StoredState.Completed, new(0), abortedAt, abortedAt)
+                : Snapshot.Run with { State = StoredState.Completed, UpdatedAt = abortedAt };
+            Snapshot = new(run,
+                Snapshot is null ? [checkpoint] : [.. Snapshot.Checkpoints, checkpoint]);
             return ValueTask.FromResult(Snapshot);
         }
 

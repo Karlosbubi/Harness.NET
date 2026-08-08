@@ -3,6 +3,7 @@ using Harness.DataAccess.Goals;
 using Harness.DataAccess.Persistence;
 using Harness.DataAccess.Workspaces;
 using Harness.DataAccess.Worktrees;
+using Harness.DataAccess.Workflows;
 using Microsoft.Data.Sqlite;
 
 namespace Harness.DataAccess.Tests.Goals;
@@ -183,6 +184,29 @@ public sealed class SqliteGoalStoreTests : IDisposable
         using SqliteCommand command = connection.CreateCommand();
         command.CommandText = "SELECT COUNT(*) FROM approvals WHERE plan_id = 'plan-id';";
         Assert.Equal(1L, (long)command.ExecuteScalar()!);
+    }
+
+    [Fact]
+    public async Task Aborted_goals_are_hidden_from_resumable_list_but_remain_auditable()
+    {
+        StubApplicationPaths paths = new(CreatePaths());
+        await new SqliteDatabaseInitializer(paths).InitializeAsync();
+        string workspaceRoot = Path.Combine(root, "repository");
+        string entryPoint = Path.Combine(workspaceRoot, "Repository.slnx");
+        RegisteredWorkspace workspace = await new SqliteWorkspaceStore(paths).SaveAsync(
+            new(workspaceRoot, "repository", "main", false, [entryPoint], Error: null),
+            entryPoint);
+        SqliteGoalStore goalStore = new(paths);
+        DateTimeOffset now = DateTimeOffset.Parse("2026-08-08T12:00:00Z");
+        string goalId = Guid.NewGuid().ToString("N");
+        StoredGoal goal = await goalStore.CreateAsync(new(
+            goalId, workspace.Id, "Goal", "Objective", 3, null, "Draft", now, now));
+
+        await new SqliteGoalWorkflowStore(paths).AbortAsync(
+            new(goal.Id), new("Stopped by user."), now.AddMinutes(1));
+
+        Assert.Empty(await goalStore.ListAsync(workspace.Id));
+        Assert.Equal(goal.Id, (await goalStore.GetAsync(goal.Id))?.Id);
     }
 
     public void Dispose()

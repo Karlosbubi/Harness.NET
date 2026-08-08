@@ -61,11 +61,10 @@ Data Access -> Business Logic -> Presentation
 - Each goal requires a review-cycle limit. Reaching it pauses the run for user input.
 - Local inference, elapsed time, and typed tool calls have no automatic quota but
   remain visible and cancellable.
-- OpenRouter goals require an aggregate monetary cap. The connector reserves an
-  estimated maximum before each request and reconciles it with returned usage cost.
-- Goals are local-only by default. Harness.NET never treats a configured credential
-  as spending authorization, never permits an uncapped remote request, and requires
-  an explicit per-goal cap before remote inference.
+- OpenRouter goals use an explicit spend mode. New goals default to unlimited remote
+  spend; users can prominently opt into an aggregate monetary cap or local-only mode
+  globally and per goal. The connector reserves an estimated maximum before each
+  request and reconciles it with returned usage cost.
 - Remote-cost evidence distinguishes active reservations, reconciled charges, and
   released reservations. The goal cost report exposes the cap, reserved exposure,
   actual spend, remaining budget, and any overage, with provider, model, operation,
@@ -131,6 +130,12 @@ overlay, `AGENTS.md`, or a suitable existing documentation file.
   abstractions; Microsoft types do not cross into Presentation.
 - Data Access provides Ollama and OpenRouter chat and embedding connectors.
 - Models are configurable per role through provider-neutral Business Logic records.
+- Interactive startup discovers every configured provider catalog without inference,
+  validates persisted role defaults, and exposes an immutable availability snapshot
+  to both interactive adapters. Explicit refresh replaces that snapshot.
+- Business Logic, not Presentation, qualifies models for roles. All current production
+  roles require a chat model declaring `tools`; typed default and goal-selection
+  commands reject incompatible models even when invoked outside the UI.
 - Provider instances are named XML modules. Global routing selects a configured
   module for the main, reviewer, and tool roles without coupling upper layers to an
   implementation type.
@@ -198,6 +203,14 @@ overlay, `AGENTS.md`, or a suitable existing documentation file.
   editor, appearance, accessibility, model/role defaults, privacy, storage, and
   advanced module configuration. Goal-specific overrides use progressive disclosure;
   saved routes or credentials never authorize remote spending.
+- Settings exposes Ollama and OpenRouter provider availability, discovered model and
+  compatibility counts, remote pricing readiness, and failures without displaying
+  credentials. Role pickers contain only models qualified for that respective role.
+- Named provider endpoint, chat/embedding defaults, embedding dimensions, timeouts,
+  and OpenRouter secret references are editable through typed commands. They persist
+  to the private XDG XML override and explicitly require restart because active
+  provider instances and embedding partition identity are immutable. OpenRouter keys
+  are write-only and go directly to Linux Secret Service.
 
 - Avalonia is the default interactive adapter. It currently provides the durable
   conversation stream, provider/model selection, persisted semantic themes, safe
@@ -205,7 +218,8 @@ overlay, `AGENTS.md`, or a suitable existing documentation file.
   durable goal creation, optional remote caps, versioned plan proposal/denial,
   trust-gated plan approval with isolated worktree provisioning, and an adaptive
   accessible desktop shell. It also discovers and selects goal-bound role models,
-  renders attributed remote-cost state, starts and cancels bounded Lead planning,
+  renders attributed remote-cost state, starts bounded Lead planning with an explicit
+  compatible model defaulted from the effective Lead route, cancels active planning,
   continues approved Implementer/Reviewer work, and exposes durable task, activity,
   and evidence snapshots. Goal-scoped semantic status, confirmed rebuild, cancellable
   search, source matches, embedding usage, and attributed cost are available without
@@ -219,9 +233,11 @@ overlay, `AGENTS.md`, or a suitable existing documentation file.
   grant general network access. Its framework dialog resolves effective rules and
   guidance with locks, provenance, privacy, and validation issues, and edits only the
   private workspace overlay in Harness.NET storage.
-- The docked source editor reads the original trusted workspace in read-only mode by
-  default. A selected approved goal switches new source documents to its isolated
-  worktree and enables edits with an exact UTF-8 baseline. Tracked-text search, Git
+- The docked source editor opens user-selected files from the active trusted original
+  workspace as editable by default. A selected approved goal switches new source
+  documents to its isolated worktree. Both use confined exact-baseline saves, while
+  agent/model mutation authority remains restricted to approved goal worktrees.
+  Tracked-text search, Git
   state, and diff resolve through the same Business Logic-owned context so adjacent
   panels cannot describe a different tree than the active editor. Saves use the
   durable typed mutation/evidence boundary and compare-and-swap; dirty close, switch,
@@ -253,6 +269,15 @@ overlay, `AGENTS.md`, or a suitable existing documentation file.
   evaluations cover planning, tool selection, and review behavior.
 - Configured credentials never authorize test spending. Paid-provider checks require
   explicit user authorization and use the smallest practical bounded request.
+- Model selectors search the complete discovered catalog across configured providers,
+  while showing only models compatible with the selected role. Remote models remain
+  visible for local-only goals, but visibility never bypasses the goal spend mode and
+  explicit-confirmation requirements.
+- A provider or budget failure pauses only the exact failed role. Recovery requires an
+  explicit compatible model, bounded output ceiling, and fresh user guidance before a
+  retry. Any non-terminal goal can instead be aborted and removed from continuation;
+  abort preserves its durable history, evidence, tasks, and worktree and grants no
+  cleanup authority.
 - Deliberate application-state backup creates a non-overwriting, integrity-checked
   version-2 archive with a consistent SQLite snapshot and optional validated private
   workbench-layout state, each with size and hash evidence, while excluding

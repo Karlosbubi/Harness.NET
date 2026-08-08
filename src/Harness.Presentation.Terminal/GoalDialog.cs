@@ -21,6 +21,7 @@ internal sealed class GoalDialog : Dialog
     private readonly IGoalWorkflowService workflowService;
     private readonly IGoalAcceptanceService acceptanceService;
     private readonly ISemanticIndexService semanticIndexService;
+    private readonly AgentDefaultsSnapshot agentDefaults;
     private readonly string workspaceId;
     private readonly CancellationToken cancellationToken;
     private readonly ListView goalList;
@@ -35,6 +36,7 @@ internal sealed class GoalDialog : Dialog
     private readonly Button resumeRun;
     private readonly Button inspectRun;
     private readonly Button manageCommit;
+    private readonly Button abortGoal;
     private readonly Label status;
     private IReadOnlyList<GoalView> goals;
 
@@ -46,6 +48,7 @@ internal sealed class GoalDialog : Dialog
         IGoalWorkflowService workflowService,
         IGoalAcceptanceService acceptanceService,
         ISemanticIndexService semanticIndexService,
+        AgentDefaultsSnapshot agentDefaults,
         string workspaceId,
         IReadOnlyList<GoalView> goals,
         CancellationToken cancellationToken)
@@ -57,6 +60,7 @@ internal sealed class GoalDialog : Dialog
         this.workflowService = workflowService;
         this.acceptanceService = acceptanceService;
         this.semanticIndexService = semanticIndexService;
+        this.agentDefaults = agentDefaults;
         this.workspaceId = workspaceId;
         this.goals = goals;
         this.cancellationToken = cancellationToken;
@@ -121,6 +125,11 @@ internal sealed class GoalDialog : Dialog
             Pos.Right(inspectRun) + 1,
             Pos.AnchorEnd(4),
             () => ManageCommitAsync());
+        abortGoal = CommandButton(
+            "_Abort goal",
+            Pos.Right(manageCommit) + 1,
+            Pos.AnchorEnd(4),
+            () => AbortGoalAsync());
         goalList.ValueChanged += (_, _) => SetCommandsEnabled(enabled: true);
         SetGoalSource();
         status = new()
@@ -144,6 +153,7 @@ internal sealed class GoalDialog : Dialog
             resumeRun,
             inspectRun,
             manageCommit,
+            abortGoal,
             status);
         AddButton(new Button { Title = "_Close" });
     }
@@ -385,20 +395,49 @@ internal sealed class GoalDialog : Dialog
             return;
         }
 
-        MaximumAgentOutputTokens[]? maxima = await CollectOutputMaximaAsync(
-            "Start lead planning",
-            goal,
-            [AgentRole.Lead],
-            ["Lead maximum output tokens"],
-            "This starts one bounded Lead call; no repository mutation is authorized.");
-        if (maxima is null)
+        TerminalPlanGeneration? generation = await CollectPlanGenerationAsync(goal);
+        if (generation is null)
         {
+            return;
+        }
+
+        if (generation.Model.Access is ModelAccess.Remote)
+        {
+            if (goal.RemoteBudget is null)
+            {
+                status.Text = "This goal is local-only. Choose unlimited or capped remote spend before using this route.";
+                return;
+            }
+
+            RemoteCostReport? cost = await remoteCostService.GetAsync(goal.Id, cancellationToken);
+            int? confirmation = MessageBox.Query(
+                application,
+                "Authorize remote Lead model",
+                $"Use {generation.Model.Provider.Value}/{generation.Model.Model.Value} for plan generation?\n" +
+                $"{GoalTextFormatter.FormatCostStatus(goal, cost)}\n" +
+                "This selection remains governed by the goal spend policy.",
+                "_Authorize",
+                "_Cancel");
+            if (confirmation != 0)
+            {
+                return;
+            }
+        }
+
+        GoalModelSelectionResult selected = await modelService.SelectAsync(new(
+            goal.Id,
+            AgentRole.Lead,
+            generation.Model.Provider,
+            generation.Model.Model), cancellationToken);
+        if (selected.Selection is null)
+        {
+            status.Text = selected.Error ?? "Lead model selection failed.";
             return;
         }
 
         GoalWorkflowSnapshot? latest = null;
         await foreach (GoalWorkflowSnapshot snapshot in workflowService.StartPlanningAsync(
-                           new(goal.Id, maxima[0]), cancellationToken))
+                           new(goal.Id, generation.MaximumOutputTokens), cancellationToken))
         {
             latest = snapshot;
             status.Text = $"Run {snapshot.State} | {snapshot.Activities[^1].Kind}";
@@ -431,60 +470,47 @@ internal sealed class GoalDialog : Dialog
                 GoalWorkflowRetryRole.Reviewer => AgentRole.Reviewer,
                 _ => throw new ArgumentOutOfRangeException(nameof(retryRole)),
             };
-            IReadOnlyList<GoalModelSelectionView> selections =
-                await modelService.GetSelectionsAsync(goal.Id, cancellationToken);
-            bool remote = selections.Any(selection =>
-                selection.Role == agentRole && selection.Access is ModelAccess.Remote);
-            if (remote)
+            TerminalRetry? retry = await CollectRetryAsync(goal, retryRole, agentRole);
+            if (retry is null)
             {
-                int? recovery = MessageBox.Query(
-                    application,
-                    $"Recover failed {retryRole} call",
-                    "Review the recovery notice and cost evidence first. Retrying starts a " +
-                    "new role call; increasing the cap is a separate durable authorization.",
-                    "_Retry",
-                    "_Increase cap",
-                    "_Cancel");
-                if (recovery == 1)
-                {
-                    GoalBudgetExtensionRequest? extension = await CollectBudgetExtensionAsync(goal);
-                    if (extension is not null)
-                    {
-                        GoalBudgetExtensionResult extended =
-                            await goalService.ExtendRemoteBudgetAsync(extension, cancellationToken);
-                        await ReloadAsync();
-                        status.Text = extended.Error ??
-                            $"Remote cap increased to " +
-                            $"${GoalTextFormatter.FormatUsd(extended.Extension!.NewBudget.Value)}; " +
-                            "retry remains explicit.";
-                    }
+                return;
+            }
 
+            if (retry.Model.Access is ModelAccess.Remote)
+            {
+                if (goal.RemoteBudget is null)
+                {
+                    status.Text = "This goal is local-only. Choose unlimited or capped remote spend before using this route.";
                     return;
                 }
 
-                if (recovery != 0)
+                RemoteCostReport? cost = await remoteCostService.GetAsync(goal.Id, cancellationToken);
+                int? confirmation = MessageBox.Query(
+                    application,
+                    $"Authorize remote {retryRole} retry",
+                    $"Use {retry.Model.Provider.Value}/{retry.Model.Model.Value} for this retry?\n" +
+                    $"{GoalTextFormatter.FormatCostStatus(goal, cost)}\n" +
+                    "The prior call is not replayed and the goal spend policy still applies.",
+                    "_Authorize",
+                    "_Cancel");
+                if (confirmation != 0)
                 {
                     return;
                 }
             }
 
-            MaximumAgentOutputTokens[]? retryMaximum = await CollectOutputMaximaAsync(
-                $"Retry failed {retryRole} call",
-                goal,
-                [agentRole],
-                [$"{retryRole} maximum output tokens"],
-                $"This explicitly starts a new {retryRole} call from the last durable safe " +
-                "boundary. The prior call is not replayed automatically and may already " +
-                "have incurred remote cost. Inspect the recovery notice and durable tool " +
-                "evidence before retrying; the aggregate goal cap still applies.");
-            if (retryMaximum is null)
+            GoalModelSelectionResult selected = await modelService.SelectAsync(new(
+                goal.Id, agentRole, retry.Model.Provider, retry.Model.Model), cancellationToken);
+            if (selected.Selection is null)
             {
+                status.Text = selected.Error ?? "Retry model selection failed.";
                 return;
             }
 
             GoalWorkflowSnapshot? retried = null;
             await foreach (GoalWorkflowSnapshot snapshot in workflowService.RetryAsync(
-                               new(goal.Id, retryRole, retryMaximum[0]), cancellationToken))
+                               new(goal.Id, retryRole, retry.MaximumOutputTokens,
+                                   retry.Guidance), cancellationToken))
             {
                 retried = snapshot;
                 status.Text = $"Run {snapshot.State} | {snapshot.Activities[^1].Kind}";
@@ -816,6 +842,202 @@ internal sealed class GoalDialog : Dialog
         await application.RunAsync(dialog, cancellationToken);
     }
 
+    private async Task<TerminalPlanGeneration?> CollectPlanGenerationAsync(GoalView goal)
+    {
+        GoalModelCandidate[] candidates = agentDefaults.Models
+            .Where(candidate => candidate.SupportedRoles.Contains(AgentRole.Lead))
+            .ToArray();
+        IReadOnlyList<GoalModelSelectionView> selections =
+            await modelService.GetSelectionsAsync(goal.Id, cancellationToken);
+        GoalModelSelectionView? effective = selections.FirstOrDefault(selection =>
+            selection.Role is AgentRole.Lead);
+        AgentRoleDefault? configured = agentDefaults.Roles.FirstOrDefault(roleDefault =>
+            roleDefault.Role is AgentRole.Lead);
+        int preferred = Array.FindIndex(candidates, candidate =>
+            candidate.Provider == effective?.Provider && candidate.Model == effective?.Model);
+        if (preferred < 0)
+        {
+            preferred = Array.FindIndex(candidates, candidate =>
+                candidate.Provider == configured?.Provider && candidate.Model == configured?.Model);
+        }
+
+        using Dialog dialog = new()
+        {
+            Title = "Generate goal plan",
+            Width = Dim.Percent(80),
+            Height = 20,
+        };
+        dialog.Add(new Label
+        {
+            X = 0,
+            Y = 0,
+            Width = Dim.Fill(),
+            Text = "Lead model — search provider/model below and press Enter (role-compatible only)",
+        });
+        TextField search = new()
+        {
+            X = 0,
+            Y = 1,
+            Width = Dim.Fill(),
+            Text = string.Empty,
+        };
+        GoalModelCandidate[] visibleCandidates = candidates;
+        ListView models = new()
+        {
+            X = 0,
+            Y = 2,
+            Width = Dim.Fill(),
+            Height = 6,
+            SelectedItem = preferred >= 0 ? preferred : 0,
+        };
+        models.SetSource(new ObservableCollection<string>(visibleCandidates.Select(candidate =>
+            $"{candidate.Access} {candidate.Provider.Value}/{candidate.Model.Value}")));
+        search.Accepting += (_, args) =>
+        {
+            args.Handled = true;
+            visibleCandidates = FilterModels(candidates, search.Text?.ToString());
+            models.SetSource(new ObservableCollection<string>(visibleCandidates.Select(candidate =>
+                $"{candidate.Access} {candidate.Provider.Value}/{candidate.Model.Value}")));
+            models.SelectedItem = visibleCandidates.Length > 0 ? 0 : null;
+        };
+        TextField maximum = Field(dialog, "Lead maximum output tokens", 9, "2048");
+        Label validation = new() { X = 0, Y = 12, Width = Dim.Fill(), Height = 2 };
+        TerminalPlanGeneration? result = null;
+        Button run = new() { Title = "_Generate", Enabled = candidates.Length > 0 };
+        run.Accepting += (_, args) =>
+        {
+            args.Handled = true;
+            int index = models.SelectedItem ?? -1;
+            if (index < 0 || index >= visibleCandidates.Length)
+            {
+                validation.Text = "No fully compatible Lead model is available.";
+                return;
+            }
+
+            if (!int.TryParse(maximum.Text?.ToString(), out int value) ||
+                value is < 1 or > 8192)
+            {
+                validation.Text = "The output maximum must be between 1 and 8192 tokens.";
+                return;
+            }
+
+            result = new(visibleCandidates[index], new(value));
+            dialog.RequestStop();
+        };
+        dialog.Add(search, models, validation);
+        dialog.AddButton(run);
+        dialog.AddButton(new Button { Title = "_Cancel" });
+        await application.RunAsync(dialog, cancellationToken);
+        return result;
+    }
+
+    private async Task<TerminalRetry?> CollectRetryAsync(
+        GoalView goal,
+        GoalWorkflowRetryRole retryRole,
+        AgentRole role)
+    {
+        GoalModelCandidate[] candidates = agentDefaults.Models
+            .Where(candidate => candidate.SupportedRoles.Contains(role))
+            .ToArray();
+        IReadOnlyList<GoalModelSelectionView> selections =
+            await modelService.GetSelectionsAsync(goal.Id, cancellationToken);
+        GoalModelSelectionView? effective = selections.FirstOrDefault(selection =>
+            selection.Role == role);
+        AgentRoleDefault? configured = agentDefaults.Roles.FirstOrDefault(roleDefault =>
+            roleDefault.Role == role);
+        int preferred = Array.FindIndex(candidates, candidate =>
+            candidate.Provider == effective?.Provider && candidate.Model == effective?.Model);
+        if (preferred < 0)
+        {
+            preferred = Array.FindIndex(candidates, candidate =>
+                candidate.Provider == configured?.Provider && candidate.Model == configured?.Model);
+        }
+
+        using Dialog dialog = new()
+        {
+            Title = $"Retry {retryRole} with changes",
+            Width = Dim.Percent(80),
+            Height = 24,
+        };
+        dialog.Add(new Label
+        {
+            X = 0,
+            Y = 0,
+            Width = Dim.Fill(),
+            Text = "Replacement model — search provider/model below and press Enter (role-compatible only)",
+        });
+        TextField search = new()
+        {
+            X = 0,
+            Y = 1,
+            Width = Dim.Fill(),
+            Text = string.Empty,
+        };
+        GoalModelCandidate[] visibleCandidates = candidates;
+        ListView models = new()
+        {
+            X = 0,
+            Y = 2,
+            Width = Dim.Fill(),
+            Height = 5,
+            SelectedItem = preferred >= 0 ? preferred : 0,
+        };
+        models.SetSource(new ObservableCollection<string>(visibleCandidates.Select(candidate =>
+            $"{candidate.Access} {candidate.Provider.Value}/{candidate.Model.Value}")));
+        search.Accepting += (_, args) =>
+        {
+            args.Handled = true;
+            visibleCandidates = FilterModels(candidates, search.Text?.ToString());
+            models.SetSource(new ObservableCollection<string>(visibleCandidates.Select(candidate =>
+                $"{candidate.Access} {candidate.Provider.Value}/{candidate.Model.Value}")));
+            models.SelectedItem = visibleCandidates.Length > 0 ? 0 : null;
+        };
+        dialog.Add(new Label { X = 0, Y = 8, Text = "What should change?" });
+        Editor guidance = new()
+        {
+            X = 0,
+            Y = 9,
+            Width = Dim.Fill(),
+            Height = 5,
+            ViewportSettings = ViewportSettingsFlags.HasVerticalScrollBar,
+        };
+        TextField maximum = Field(dialog, $"{retryRole} maximum output tokens", 15, "2048");
+        Label validation = new() { X = 0, Y = 18, Width = Dim.Fill(), Height = 2 };
+        TerminalRetry? result = null;
+        Button run = new() { Title = "_Retry with changes", Enabled = candidates.Length > 0 };
+        run.Accepting += (_, args) =>
+        {
+            args.Handled = true;
+            int index = models.SelectedItem ?? -1;
+            string direction = guidance.Text?.ToString()?.Trim() ?? string.Empty;
+            if (index < 0 || index >= visibleCandidates.Length)
+            {
+                validation.Text = "No fully compatible replacement model is available.";
+                return;
+            }
+
+            if (direction.Length is < 1 or > 16 * 1024)
+            {
+                validation.Text = "Retry guidance must contain 1-16384 characters.";
+                return;
+            }
+
+            if (!int.TryParse(maximum.Text?.ToString(), out int value) || value is < 1 or > 8192)
+            {
+                validation.Text = "The output maximum must be between 1 and 8192 tokens.";
+                return;
+            }
+
+            result = new(visibleCandidates[index], new(value), new(direction));
+            dialog.RequestStop();
+        };
+        dialog.Add(search, models, guidance, validation);
+        dialog.AddButton(run);
+        dialog.AddButton(new Button { Title = "_Cancel" });
+        await application.RunAsync(dialog, cancellationToken);
+        return result;
+    }
+
     private async Task<MaximumAgentOutputTokens[]?> CollectOutputMaximaAsync(
         string title,
         GoalView goal,
@@ -903,9 +1125,9 @@ internal sealed class GoalDialog : Dialog
         TextField reviewLimit = Field(dialog, "Review-cycle limit (1-20)", 10, "3");
         TextField remoteBudget = Field(
             dialog,
-            "Remote budget USD (blank = local only)",
+            "Remote spend (unlimited, local, or USD cap)",
             12,
-            string.Empty);
+            "unlimited");
         Label validation = new() { X = 0, Y = 14, Width = Dim.Fill(), Height = 1 };
         GoalCreateRequest? result = null;
         Button create = new() { Title = "_Create" };
@@ -919,12 +1141,20 @@ internal sealed class GoalDialog : Dialog
             }
 
             string budgetText = remoteBudget.Text?.ToString()?.Trim() ?? string.Empty;
-            MicroUsdAmount? budget = null;
-            if (budgetText.Length > 0)
+            MicroUsdAmount? budget;
+            if (budgetText.Equals("unlimited", StringComparison.OrdinalIgnoreCase))
+            {
+                budget = RemoteSpendPreference.Default.ToGoalBudget();
+            }
+            else if (budgetText.Equals("local", StringComparison.OrdinalIgnoreCase))
+            {
+                budget = null;
+            }
+            else
             {
                 if (!GoalTextFormatter.TryParseUsd(budgetText, out long parsedBudget))
                 {
-                    validation.Text = "Remote budget must be a positive USD amount.";
+                    validation.Text = "Enter unlimited, local, or a positive USD cap.";
                     return;
                 }
 
@@ -995,6 +1225,34 @@ internal sealed class GoalDialog : Dialog
         application.Invoke(SetGoalSource);
     }
 
+    private async Task AbortGoalAsync()
+    {
+        GoalView? goal = SelectedGoal();
+        if (goal is null)
+        {
+            status.Text = "Select a goal.";
+            return;
+        }
+
+        int? choice = MessageBox.Query(
+            application,
+            "Abort goal",
+            $"Abort '{goal.Title}' and return to new-goal creation?\n\n" +
+            "History, evidence, and worktree changes are preserved. No files are deleted or undone.",
+            "Abort & start new",
+            "Keep goal");
+        if (choice != 0)
+        {
+            return;
+        }
+
+        await workflowService.AbortAsync(new(
+            goal.Id,
+            new("Stopped by user to start a different goal.")), cancellationToken);
+        await ReloadAsync();
+        status.Text = "Goal aborted. Create a new goal when ready.";
+    }
+
     private void SetGoalSource()
     {
         goalList.SetSource(new ObservableCollection<string>(goals
@@ -1047,6 +1305,26 @@ internal sealed class GoalDialog : Dialog
         resumeRun.Enabled = enabled && state is not null;
         inspectRun.Enabled = enabled && state is not null;
         manageCommit.Enabled = enabled && state is GoalState.Approved;
+        abortGoal.Enabled = enabled && state is not null;
+    }
+
+    private sealed record TerminalPlanGeneration(
+        GoalModelCandidate Model,
+        MaximumAgentOutputTokens MaximumOutputTokens);
+
+    private sealed record TerminalRetry(
+        GoalModelCandidate Model,
+        MaximumAgentOutputTokens MaximumOutputTokens,
+        GoalRetryGuidance Guidance);
+
+    private static GoalModelCandidate[] FilterModels(
+        IEnumerable<GoalModelCandidate> candidates,
+        string? search)
+    {
+        string value = search?.Trim() ?? string.Empty;
+        return candidates.Where(candidate => value.Length == 0 ||
+            $"{candidate.Provider.Value} {candidate.Model.Value} {candidate.Access}"
+                .Contains(value, StringComparison.OrdinalIgnoreCase)).ToArray();
     }
 
     private static TextField Field(Dialog dialog, string label, Pos y, string value)

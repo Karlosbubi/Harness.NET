@@ -120,7 +120,7 @@ public sealed class PresentationControlTests
     }
 
     [Fact]
-    public void Failed_role_card_exposes_only_the_exact_explicit_retry()
+    public void Failed_role_card_exposes_exact_retry_and_abort_recovery()
     {
         AvaloniaShellState shell = ApprovedGoalShell();
         GoalView goal = shell.Goals.SelectedGoal!;
@@ -145,11 +145,18 @@ public sealed class PresentationControlTests
             ConversationWorkflowProjector.Project(state),
             card => card.Id == "run.run-retry");
 
-        ConversationWorkflowAction action = Assert.Single(
-            ConversationWorkflowActionProjector.Project(runCard, state));
+        ConversationWorkflowAction[] actions =
+            ConversationWorkflowActionProjector.Project(runCard, state).ToArray();
 
-        Assert.Equal(ConversationWorkflowActionKind.RetryRun, action.Kind);
-        Assert.Equal("Retry Reviewer", action.Label);
+        Assert.Equal(
+            [ConversationWorkflowActionKind.RetryRun,
+                ConversationWorkflowActionKind.AbortGoal],
+            actions.Select(action => action.Kind));
+        Assert.Equal("Retry Reviewer with changes", actions[0].Label);
+        Assert.Equal("Current run · Needs your direction", runCard.Title);
+        Assert.Contains("Now:", runCard.Summary, StringComparison.Ordinal);
+        Assert.Contains("Result so far:", runCard.Summary, StringComparison.Ordinal);
+        Assert.Contains("Next: Retry Reviewer", runCard.Summary, StringComparison.Ordinal);
         Assert.Contains("explicitly retrying Reviewer", runCard.Details,
             StringComparison.Ordinal);
 
@@ -166,7 +173,8 @@ public sealed class PresentationControlTests
             card => card.Id == "run.run-retry");
         Assert.Equal(
             [ConversationWorkflowActionKind.RetryRun,
-                ConversationWorkflowActionKind.ExtendBudget],
+                ConversationWorkflowActionKind.ExtendBudget,
+                ConversationWorkflowActionKind.AbortGoal],
             ConversationWorkflowActionProjector.Project(remoteRunCard, remoteState)
                 .Select(item => item.Kind));
 
@@ -193,7 +201,7 @@ public sealed class PresentationControlTests
     [Fact]
     public void Settings_search_matches_stable_categories_and_related_terms()
     {
-        Assert.Equal(7, SettingsCatalog.All.Count);
+        Assert.Equal(8, SettingsCatalog.All.Count);
         Assert.Equal(
             SettingsCategoryId.Appearance,
             Assert.Single(SettingsCatalog.Filter("contrast")).Id);
@@ -201,10 +209,187 @@ public sealed class PresentationControlTests
             SettingsCategoryId.ModelsAndRoles,
             Assert.Single(SettingsCatalog.Filter("reviewer")).Id);
         Assert.Equal(
+            SettingsCategoryId.ModelProviders,
+            Assert.Single(SettingsCatalog.Filter("openrouter")).Id);
+        Assert.Equal(
             SettingsCategoryId.StorageAndRecovery,
             Assert.Single(SettingsCatalog.Filter("backup")).Id);
         Assert.Empty(SettingsCatalog.Filter("not-a-real-setting"));
-        Assert.Equal(2, SettingsCatalog.All.Count(category => category.IsAvailable));
+        Assert.Equal(4, SettingsCatalog.All.Count(category => category.IsAvailable));
+    }
+
+    [Fact]
+    public async Task Privacy_settings_make_unlimited_default_and_cost_control_opt_ins_prominent()
+    {
+        using AvaloniaPresentationStore store = AvaloniaPresentationStoreTests.CreateStore();
+        await store.LoadAsync(CancellationToken.None);
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            SettingsWindow window = new(store, CancellationToken.None);
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            ListBox categories = Assert.Single(window.GetLogicalDescendants().OfType<ListBox>());
+            categories.SelectedItem = SettingsCatalog.All.Single(category =>
+                category.Id is SettingsCategoryId.PrivacyAndLimits);
+            Dispatcher.UIThread.RunJobs();
+
+            ComboBox mode = Assert.Single(window.GetLogicalDescendants().OfType<ComboBox>(),
+                item => AutomationProperties.GetName(item) == "Default remote spending mode");
+            Assert.Equal(3, mode.ItemsSource!.Cast<object>().Count());
+            Assert.Contains("Unlimited", mode.SelectedItem?.ToString(), StringComparison.Ordinal);
+            Assert.Contains("Opt into a cap or local-only", string.Join('\n', window
+                .GetLogicalDescendants().OfType<TextBlock>().Select(block => block.Text)),
+                StringComparison.Ordinal);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Plan_generation_shows_only_lead_compatible_models_and_prefers_configured_lead()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            GoalModelCandidate configuredLead = Candidate(
+                "OpenRouter", "lead", ModelAccess.Remote, [AgentRole.Lead]);
+            PlanGenerationDialog dialog = new(
+                [
+                    Candidate("Ollama", "plain", ModelAccess.Local, []),
+                    Candidate("Ollama", "review", ModelAccess.Local, [AgentRole.Reviewer]),
+                    configuredLead,
+                ],
+                configuredLead,
+                4096,
+                "Disclosure");
+            dialog.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            AutoCompleteBox models = Assert.Single(
+                dialog.GetLogicalDescendants().OfType<AutoCompleteBox>());
+            Assert.True(models.IsVisible);
+            Assert.True(models.Bounds.Height > 0);
+            object model = Assert.Single(models.ItemsSource!.Cast<object>());
+            Assert.Contains("OpenRouter/lead", models.SelectedItem?.ToString(),
+                StringComparison.Ordinal);
+            Assert.Contains("OpenRouter/lead", models.Text, StringComparison.Ordinal);
+            Assert.Equal("Search provider or model", models.PlaceholderText);
+            Assert.True(models.ItemFilter!("openrouter", model));
+            Assert.False(models.ItemFilter!("ollama", model));
+            Assert.Equal(
+                "4096",
+                Assert.Single(dialog.GetLogicalDescendants().OfType<TextBox>()).Text);
+            dialog.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public void Role_catalog_keeps_compatible_models_from_every_provider_and_access_class()
+    {
+        GoalModelCandidate local = Candidate(
+            "Ollama", "local-lead", ModelAccess.Local, [AgentRole.Lead]);
+        GoalModelCandidate remote = Candidate(
+            "OpenRouter", "remote-lead", ModelAccess.Remote, [AgentRole.Lead]);
+        GoalModelCandidate incompatible = Candidate(
+            "OpenRouter", "reviewer", ModelAccess.Remote, [AgentRole.Reviewer]);
+
+        Assert.Equal(
+            [local, remote],
+            ModelSelectionCatalog.ForRole([local, remote, incompatible], AgentRole.Lead));
+    }
+
+    [Fact]
+    public async Task Remote_model_remains_visible_but_cannot_be_authorized_for_local_only_goal()
+    {
+        GoalView localOnly = ApprovedGoalShell().Goals.SelectedGoal! with
+        {
+            RemoteBudget = null,
+        };
+        GoalModelCandidate remote = Candidate(
+            "OpenRouter", "remote-lead", ModelAccess.Remote, [AgentRole.Lead]);
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            RemoteModelAuthorizationDialog dialog = new(localOnly, remote, AgentRole.Lead);
+            dialog.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            Button authorize = Assert.Single(
+                dialog.GetLogicalDescendants().OfType<Button>(),
+                button => Equals(button.Content, "Enable remote spend first"));
+            Assert.False(authorize.IsEnabled);
+            Assert.Contains("currently local-only", string.Join('\n', dialog
+                .GetLogicalDescendants().OfType<TextBlock>().Select(block => block.Text)),
+                StringComparison.Ordinal);
+            dialog.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Unlimited_goal_can_authorize_a_remote_model_without_adding_a_cap()
+    {
+        GoalView unlimited = ApprovedGoalShell().Goals.SelectedGoal! with
+        {
+            RemoteBudget = RemoteSpendPreference.Default.ToGoalBudget(),
+        };
+        GoalModelCandidate remote = Candidate(
+            "OpenRouter", "remote-lead", ModelAccess.Remote, [AgentRole.Lead]);
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            RemoteModelAuthorizationDialog dialog = new(unlimited, remote, AgentRole.Lead);
+            dialog.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            Button authorize = Assert.Single(
+                dialog.GetLogicalDescendants().OfType<Button>(),
+                button => Equals(button.Content, "Use remote model"));
+            Assert.True(authorize.IsEnabled);
+            Assert.Contains("Unlimited", string.Join('\n', dialog
+                .GetLogicalDescendants().OfType<TextBlock>().Select(block => block.Text)),
+                StringComparison.Ordinal);
+            dialog.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Provider_settings_exposes_configuration_and_a_write_only_OpenRouter_key()
+    {
+        using ProviderSettingsService providers = new();
+        using AvaloniaPresentationStore store = AvaloniaPresentationStoreTests.CreateStore(providers);
+        await store.LoadAsync(CancellationToken.None);
+        Assert.Single(store.Current.Settings.ProviderSettings!.Providers);
+
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            SettingsWindow window = new(store, CancellationToken.None);
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            ListBox categories = Assert.Single(window.GetLogicalDescendants().OfType<ListBox>());
+            categories.SelectedItem = SettingsCatalog.All.Single(category =>
+                category.Id is SettingsCategoryId.ModelProviders);
+            Dispatcher.UIThread.RunJobs();
+
+            TextBox endpoint = Assert.Single(window.GetLogicalDescendants().OfType<TextBox>(), field =>
+                AutomationProperties.GetName(field) == "OpenRouter endpoint");
+            TextBox credential = Assert.Single(window.GetLogicalDescendants().OfType<TextBox>(), field =>
+                AutomationProperties.GetName(field) == "OpenRouter API key");
+            Assert.Equal("https://openrouter.ai", endpoint.Text);
+            Assert.Equal('●', credential.PasswordChar);
+            Assert.Contains(window.GetLogicalDescendants().OfType<Button>(), button =>
+                Equals(button.Content, "Save provider configuration"));
+            Assert.Contains(window.GetLogicalDescendants().OfType<Button>(), button =>
+                Equals(button.Content, "Replace API key"));
+            Assert.DoesNotContain("sk-private", string.Join('\n', window.GetLogicalDescendants()
+                .OfType<TextBlock>().Select(block => block.Text)), StringComparison.Ordinal);
+            window.Close();
+        }, CancellationToken.None);
     }
 
     [Fact]
@@ -227,6 +412,97 @@ public sealed class PresentationControlTests
                     .ToArray());
             dialog.Close();
         }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Workflow_retry_requires_guidance_and_filters_models_to_the_failed_role()
+    {
+        GoalModelCandidate reviewer = Candidate(
+            "local", "reviewer", ModelAccess.Local, [AgentRole.Reviewer]);
+        GoalModelCandidate leadOnly = Candidate(
+            "local", "lead", ModelAccess.Local, [AgentRole.Lead]);
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            WorkflowRetryDialog dialog = new(
+                GoalWorkflowRetryRole.Reviewer,
+                [leadOnly, reviewer],
+                reviewer,
+                3072,
+                "The prior call was not replayed.");
+            dialog.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            AutoCompleteBox models = Assert.Single(
+                dialog.GetLogicalDescendants().OfType<AutoCompleteBox>());
+            Assert.Single(models.ItemsSource!.Cast<object>());
+            TextBox guidance = Assert.Single(
+                dialog.GetLogicalDescendants().OfType<TextBox>(),
+                field => AutomationProperties.GetName(field) == "Guidance for Reviewer retry");
+            guidance.Text = "Re-check the deterministic rename before reviewing again.";
+            Button retry = Assert.Single(
+                dialog.GetLogicalDescendants().OfType<Button>(),
+                button => Equals(button.Content, "Retry with changes"));
+            retry.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+
+            Assert.Equal(reviewer, dialog.Result?.Model);
+            Assert.Equal(3072, dialog.Result?.MaximumOutputTokens);
+            Assert.Contains("deterministic rename", dialog.Result?.Guidance,
+                StringComparison.Ordinal);
+        }, CancellationToken.None);
+    }
+
+    private static GoalModelCandidate Candidate(
+        string provider,
+        string model,
+        ModelAccess access,
+        IReadOnlyList<AgentRole> supportedRoles) => new(
+        new(provider),
+        new(model),
+        access,
+        [new("tools")],
+        supportedRoles,
+        null,
+        null,
+        null,
+        null);
+
+    private sealed class ProviderSettingsService : IModelProviderSettingsService, IDisposable
+    {
+        private readonly ModelProviderSettingsSnapshot snapshot = new([
+            new(
+                new("OpenRouter"),
+                AgentModelProviderKind.OpenRouter,
+                new("https://openrouter.ai"),
+                new("openai/gpt-5-mini"),
+                new("openai/text-embedding-3-small"),
+                new(1536),
+                new(10),
+                new(600),
+                new("openrouter-api-key"),
+                new("OPENROUTER_API_KEY"),
+                ModelProviderCredentialState.Configured,
+                CredentialMessage: null,
+                RequiresRestart: false),
+        ]);
+
+        public ValueTask<ModelProviderSettingsSnapshot> GetAsync(
+            CancellationToken cancellationToken = default) => ValueTask.FromResult(snapshot);
+
+        public ValueTask<ModelProviderSettingsResult> UpdateAsync(
+            ModelProviderSettingsUpdate request,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new ModelProviderSettingsResult(snapshot, null, null));
+
+        public ValueTask<ModelProviderSettingsResult> SetCredentialAsync(
+            ModelProviderCredentialUpdate request,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new ModelProviderSettingsResult(snapshot, null, null));
+
+        public void Dispose()
+        {
+        }
     }
 
     [Fact]
@@ -380,10 +656,11 @@ public sealed class PresentationControlTests
                 Workspaces = WorkspaceManagementState.Initial with { Registered = [workspace] },
                 IsLoading = false,
             };
+            DocumentService documents = new();
             WorkbenchDockHost workbench = new(
                 new RunOutputService(),
                 new InspectionService(),
-                new DocumentService(),
+                documents,
                 new CodeIntelligenceService(),
                 new LayoutService(),
                 new DocumentPrompt(),
@@ -440,14 +717,21 @@ public sealed class PresentationControlTests
                 documentContent.GetVisualDescendants().OfType<TextEditor>());
             Assert.Contains(editor, window.GetVisualDescendants().OfType<TextEditor>());
             Assert.Equal("namespace Example;", editor.Text);
-            Assert.True(editor.IsReadOnly);
+            Assert.False(editor.IsReadOnly);
             string sourceChrome = string.Join('\n', documentContent.GetLogicalDescendants()
                 .OfType<TextBlock>()
                 .Select(item => item.Text));
             Assert.Contains("src › App.cs", sourceChrome, StringComparison.Ordinal);
             Assert.Contains("Original workspace", sourceChrome, StringComparison.Ordinal);
-            Assert.Contains("READ ONLY", sourceChrome, StringComparison.Ordinal);
+            Assert.Contains("EDITABLE", sourceChrome, StringComparison.Ordinal);
             Assert.Contains("Ln 1, Col 1 · UTF-8 · No line break", sourceChrome, StringComparison.Ordinal);
+            editor.Text = "namespace UserEdited;";
+            Assert.True(workbench.SaveActiveSourceDocumentAsync().AsTask().GetAwaiter().GetResult());
+            WorkbenchDocumentSaveRequest save = Assert.Single(documents.SaveRequests);
+            Assert.Equal("workspace-1", save.WorkspaceId.Value);
+            Assert.Null(save.GoalId);
+            Assert.Equal("src/App.cs", save.Path.Value);
+            Assert.Equal("namespace UserEdited;", save.Content.Value);
             Assert.NotNull(workbench.Control.Template);
             window.Close();
         }, CancellationToken.None);
@@ -546,7 +830,7 @@ public sealed class PresentationControlTests
             });
 
             WorkbenchDocumentSaveRequest request = Assert.Single(documents.SaveRequests);
-            Assert.Equal("goal-1", request.GoalId.Value);
+            Assert.Equal("goal-1", request.GoalId!.Value);
             Assert.Equal("src/App.cs", request.Path.Value);
             Assert.Equal("namespace Changed;", request.Content.Value);
             Assert.Equal(
@@ -636,6 +920,7 @@ public sealed class PresentationControlTests
             DocumentService documents = new() { Editable = true };
             string current = new('c', 64);
             documents.SaveResults.Enqueue(new(
+                new("workspace-1"),
                 new("goal-1"),
                 new("ignored-1"),
                 new("src/App.cs"),
@@ -647,6 +932,7 @@ public sealed class PresentationControlTests
                 "content_changed",
                 "The file changed."));
             documents.SaveResults.Enqueue(new(
+                new("workspace-1"),
                 new("goal-1"),
                 new("ignored-2"),
                 new("src/App.cs"),
@@ -1968,7 +2254,7 @@ public sealed class PresentationControlTests
 
     private sealed class DocumentService : IWorkbenchDocumentService
     {
-        internal bool Editable { get; init; }
+        internal bool Editable { get; init; } = true;
         internal string Content { get; set; } = "namespace Example;";
         internal List<WorkbenchDocumentSaveRequest> SaveRequests { get; } = [];
         internal Queue<WorkbenchDocumentSaveResult> SaveResults { get; } = [];
@@ -1979,14 +2265,18 @@ public sealed class PresentationControlTests
             ValueTask.FromResult(new WorkbenchDocumentView(
                 request.WorkspaceId,
                 Editable ? request.GoalId : null,
-                Editable ? new("harness/goal-1") : null,
+                Editable && request.GoalId is not null ? new("harness/goal-1") : null,
                 request.Path,
                 new(Content),
                 new("7755c09dd3d9f796fe7f9d6225f6f71309e31eba460d4c0517cbde6ba34488f4"),
                 new(Content.Length),
                 IsTruncated: false,
                 Editable ? WorkbenchDocumentAccess.Editable : WorkbenchDocumentAccess.ReadOnly,
-                Editable ? "Editing isolated branch harness/goal-1." : "Read-only original workspace.",
+                Editable
+                    ? request.GoalId is null
+                        ? "Editing the active trusted workspace."
+                        : "Editing isolated branch harness/goal-1."
+                    : "Read-only source.",
                 ErrorCode: null,
                 Error: null));
 
@@ -1998,6 +2288,7 @@ public sealed class PresentationControlTests
             return ValueTask.FromResult(SaveResults.TryDequeue(out WorkbenchDocumentSaveResult? result)
                 ? result
                 : new WorkbenchDocumentSaveResult(
+                    request.WorkspaceId,
                     request.GoalId,
                     request.CorrelationId,
                     request.Path,

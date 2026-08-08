@@ -57,7 +57,13 @@ internal sealed class SqliteGoalStore(IApplicationPaths applicationPaths) : IGoa
     {
         await using SqliteConnection connection = await OpenAsync(cancellationToken);
         IEnumerable<GoalRow> rows = await connection.QueryAsync<GoalRow>(new CommandDefinition(
-            SelectSql + " WHERE workspace_id = @workspaceId ORDER BY updated_at DESC;",
+            SelectSql + " WHERE workspace_id = @workspaceId " +
+            "AND NOT EXISTS (" +
+            "SELECT 1 FROM goal_workflow_runs AS aborted_run " +
+            "WHERE aborted_run.goal_id = goals.id AND aborted_run.state = 'Completed' " +
+            "AND (SELECT kind FROM goal_workflow_checkpoints " +
+            "WHERE run_id = aborted_run.id ORDER BY sequence DESC LIMIT 1) = " +
+            "'UserDirectionRequired') ORDER BY updated_at DESC;",
             new { workspaceId },
             cancellationToken: cancellationToken));
         return rows.Select(row => row.ToRecord()).ToArray();

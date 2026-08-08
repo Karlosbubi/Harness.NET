@@ -112,6 +112,24 @@ resetting layout, changing workspace, or exiting with a dirty document requires 
 explicit save/discard/cancel decision; external changes require explicit reload,
 overwrite/recreate, or keep-editing conflict resolution.
 
+### User-directed editing amendment (2026-08-08)
+
+Source files explicitly opened by the user from the Files tool, search, command
+palette, or semantic navigation are editable by default when their original workspace
+is active and trusted. Saving is a typed, confined, exact-baseline compare-and-swap
+operation against that registered workspace root; it does not require creating or
+approving an agent goal. Truncated content, failed reads, untrusted or inactive
+workspaces, and paths rejected by the confined file editor remain read-only or fail
+closed. Dirty close, reload, external-change conflict, and exit decisions are
+unchanged.
+
+This does not broaden agent authority. Model-authored and autonomous workflow edits
+still require an approved isolated goal worktree, task path grants, durable evidence,
+and deterministic compiler validation where applicable. If an approved goal
+worktree is selected, user edits continue to target that isolated worktree rather
+than the original workspace. The distinction is explicit user editor interaction,
+not merely which process performs the write.
+
 The Files tool obtains its tree through a typed Business Logic projection over a
 bounded Git-index reader. It uses the same resolved source context as documents,
 search, and Git, lists only existing confined tracked paths, and never becomes an

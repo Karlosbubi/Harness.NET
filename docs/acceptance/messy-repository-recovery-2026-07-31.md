@@ -21,7 +21,10 @@
 - A definitive provider outage or exhausted cost cap moves the exact Lead, Implementer,
   or Reviewer role to durable `NeedsDirection`. Neither restart nor provider recovery
   replays it. Avalonia chat and the TUI expose an explicit retry with the prior recovery
-  notice, possible prior cost, selected output ceiling, and aggregate-cap disclosure.
+  notice, a capability-qualified replacement model, required bounded user guidance,
+  selected output ceiling, possible prior cost, and aggregate-cap disclosure. Every
+  non-terminal goal can instead be explicitly aborted; its evidence and worktree remain
+  auditable while it disappears from the resumable-goal list.
 - A remote cap can only be increased through a separate typed action on an active trusted
   goal. The old cap, new cap, required reason, and approval time are stored atomically in
   schema 21. A stale or decreasing request fails; an extension enables only future cost
@@ -43,7 +46,8 @@
 - `SqliteSemanticIndexStoreTests.Interrupted_large_rebuild_keeps_the_ready_generation_searchable`
   covers load and cancellation without inference.
 - Workflow tests inject provider and budget failures for every role boundary, reject a
-  stale/wrong-role retry, and prove retry resumes from the matching durable state.
+  stale/wrong-role retry, prove retry resumes from the matching durable state with new
+  guidance, and prove abort is durable, idempotent, and excluded from continuation.
   Goal/store/cost-ledger tests prove increase-only CAS, audit persistence, and a future
   reservation after extension.
 - Existing workflow reconciliation, corrupt evidence, corrupt layout, SQLite integrity,

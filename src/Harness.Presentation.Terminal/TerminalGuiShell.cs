@@ -19,6 +19,7 @@ internal sealed class TerminalGuiShell(
     IGoalService goalService,
     IRemoteCostService remoteCostService,
     IGoalModelService goalModelService,
+    IAgentDefaultsService agentDefaultsService,
     IGoalWorkflowService goalWorkflowService,
     IGoalAcceptanceService goalAcceptanceService,
     ISemanticIndexService semanticIndexService,
@@ -27,6 +28,8 @@ internal sealed class TerminalGuiShell(
     public async ValueTask RunAsync(CancellationToken cancellationToken = default)
     {
         DashboardSnapshot snapshot = await dashboardService.RefreshProviderAsync(cancellationToken);
+        AgentDefaultsSnapshot agentDefaults = await agentDefaultsService
+            .DiscoverAvailableAsync(cancellationToken);
         WorkspaceView? activeWorkspace = await workspaceService.GetActiveAsync(cancellationToken);
         IReadOnlyList<GoalView> goals = activeWorkspace is null
             ? []
@@ -45,6 +48,7 @@ internal sealed class TerminalGuiShell(
             goalAcceptanceService,
             semanticIndexService,
             operationsService,
+            agentDefaults,
             snapshot,
             activeWorkspace,
             goals,

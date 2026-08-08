@@ -147,6 +147,117 @@ public sealed class GoalModelServiceTests
         Assert.Equal(3, snapshot.Roles.Count);
         Assert.Equal(2, snapshot.Models.Count);
         Assert.All(snapshot.Roles, item => Assert.Equal(2048, item.MaximumOutputTokens.Value));
+        Assert.Empty(snapshot.DefaultIssues);
+        Assert.All(snapshot.Models, item => Assert.Equal(Enum.GetValues<AgentRole>(), item.SupportedRoles));
+        Assert.Collection(
+            snapshot.Providers,
+            provider =>
+            {
+                Assert.Equal("Ollama", provider.Provider.Value);
+                Assert.Equal(AgentModelProviderAvailability.Available, provider.Availability);
+                Assert.Equal(1, provider.RoleCompatibleModels);
+            },
+            provider =>
+            {
+                Assert.Equal("OpenRouter", provider.Provider.Value);
+                Assert.Equal(AgentModelProviderAvailability.Available, provider.Availability);
+                Assert.True(provider.HasPublishedPricing);
+            });
+    }
+
+    [Fact]
+    public async Task Discovery_qualifies_models_against_each_role_capability_policy()
+    {
+        GoalModelService service = CreateService(
+            Goal(remoteBudget: null),
+            new CatalogProvider([
+                Model("qualified", ModelPurpose.Chat),
+                Model("plain-chat", ModelPurpose.Chat, ["completion"]),
+            ]),
+            new CatalogProvider([]));
+
+        AgentDefaultsSnapshot snapshot = await service.DiscoverAvailableAsync();
+
+        GoalModelCandidate qualified = snapshot.Models.Single(model => model.Model.Value == "qualified");
+        GoalModelCandidate plainChat = snapshot.Models.Single(model => model.Model.Value == "plain-chat");
+        Assert.Equal(Enum.GetValues<AgentRole>(), qualified.SupportedRoles);
+        Assert.Empty(plainChat.SupportedRoles);
+        Assert.Equal(2, snapshot.Providers.Single(provider => provider.Provider.Value == "Ollama")
+            .DiscoveredChatModels);
+        Assert.Equal(1, snapshot.Providers.Single(provider => provider.Provider.Value == "Ollama")
+            .RoleCompatibleModels);
+    }
+
+    [Fact]
+    public async Task Rejects_a_chat_model_that_does_not_fully_support_the_requested_role()
+    {
+        MemorySelectionStore selections = new();
+        MemoryDefaultStore defaults = new();
+        GoalModelService service = CreateService(
+            Goal(remoteBudget: null),
+            new CatalogProvider([Model("plain-chat", ModelPurpose.Chat, ["completion"])]),
+            new CatalogProvider([]),
+            selections,
+            defaults: defaults);
+
+        GoalModelSelectionResult selected = await service.SelectAsync(new(
+            new("goal-1"),
+            AgentRole.Lead,
+            new("Ollama"),
+            new("plain-chat")));
+        AgentRoleDefaultUpdateResult updated = await service.UpdateAsync(new(
+            AgentRole.Reviewer,
+            new("Ollama"),
+            new("plain-chat"),
+            new(2048)));
+
+        Assert.Equal("model_role_unsupported", selected.ErrorCode);
+        Assert.Equal("model_role_unsupported", updated.ErrorCode);
+        Assert.Empty(await selections.ListAsync("goal-1"));
+        Assert.Empty(await defaults.ListAsync());
+    }
+
+    [Fact]
+    public async Task Startup_discovery_reports_incompatible_persisted_defaults()
+    {
+        MemoryDefaultStore defaults = new();
+        await defaults.SaveAsync(new(
+            AgentDefaultRole.Lead,
+            new("Ollama"),
+            new("plain-chat"),
+            new(4096),
+            DateTimeOffset.UtcNow));
+        GoalModelService service = CreateService(
+            Goal(remoteBudget: null),
+            new CatalogProvider([Model("plain-chat", ModelPurpose.Chat, ["completion"])]),
+            new CatalogProvider([]),
+            defaults: defaults);
+
+        AgentDefaultsSnapshot snapshot = await service.DiscoverAvailableAsync();
+
+        AgentRoleDefaultIssue issue = Assert.Single(snapshot.DefaultIssues, candidate =>
+            candidate.Role is AgentRole.Lead);
+        Assert.Equal(AgentRole.Lead, issue.Role);
+        Assert.Equal("default_model_role_unsupported", issue.Code.Value);
+    }
+
+    [Fact]
+    public async Task Selection_reuses_the_startup_catalog_snapshot()
+    {
+        CatalogProvider local = new([Model("local", ModelPurpose.Chat)]);
+        CatalogProvider remote = new([Model("remote", ModelPurpose.Chat)]);
+        GoalModelService service = CreateService(Goal(remoteBudget: null), local, remote);
+
+        await service.DiscoverAvailableAsync();
+        GoalModelSelectionResult result = await service.SelectAsync(new(
+            new("goal-1"),
+            AgentRole.Lead,
+            new("Ollama"),
+            new("local")));
+
+        Assert.NotNull(result.Selection);
+        Assert.Equal(1, local.CallCount);
+        Assert.Equal(1, remote.CallCount);
     }
 
     [Fact]
@@ -197,13 +308,16 @@ public sealed class GoalModelServiceTests
         new(new(2048)),
         TimeProvider.System);
 
-    private static ModelDescriptor Model(string id, ModelPurpose purpose) => new(
+    private static ModelDescriptor Model(
+        string id,
+        ModelPurpose purpose,
+        IReadOnlyList<string>? capabilities = null) => new(
         id,
         "provider",
         Family: null,
         ParameterSize: null,
         Quantization: null,
-        Capabilities: ["tools"],
+        Capabilities: capabilities ?? ["tools"],
         ContextLength: 128_000,
         Pricing: new(0.000001m, 0.000002m, 0m),
         Purposes: [purpose]);
@@ -235,8 +349,13 @@ public sealed class GoalModelServiceTests
         IReadOnlyList<ModelDescriptor> models,
         ProviderError? error = null) : IModelProvider
     {
-        public ValueTask<ModelCatalog> GetModelsAsync(CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(new ModelCatalog(models, error));
+        public int CallCount { get; private set; }
+
+        public ValueTask<ModelCatalog> GetModelsAsync(CancellationToken cancellationToken = default)
+        {
+            CallCount++;
+            return ValueTask.FromResult(new ModelCatalog(models, error));
+        }
 
         public IAsyncEnumerable<ChatStreamEvent> StreamChatAsync(
             ChatRequest request,

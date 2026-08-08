@@ -42,11 +42,15 @@ internal sealed record AvaloniaShellState(
 
 internal sealed record ApplicationSettingsState(
     AgentDefaultsSnapshot? AgentDefaults,
+    ModelProviderSettingsSnapshot? ProviderSettings,
+    RemoteSpendPreference RemoteSpendPreference,
     bool IsBusy,
     string? Status)
 {
     internal static ApplicationSettingsState Initial { get; } = new(
         AgentDefaults: null,
+        ProviderSettings: null,
+        RemoteSpendPreference: RemoteSpendPreference.Default,
         IsBusy: false,
         Status: null);
 }

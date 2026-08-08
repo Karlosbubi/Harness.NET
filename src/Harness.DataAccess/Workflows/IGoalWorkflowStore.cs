@@ -18,4 +18,10 @@ public interface IGoalWorkflowStore
         GoalWorkflowRunState nextState,
         CancellationToken cancellationToken = default,
         GoalWorkflowReviewCycle? nextReviewCycle = null);
+
+    ValueTask<StoredGoalWorkflowSnapshot> AbortAsync(
+        GoalWorkflowGoalId goalId,
+        WorkflowCheckpointSummary reason,
+        DateTimeOffset abortedAt,
+        CancellationToken cancellationToken = default);
 }

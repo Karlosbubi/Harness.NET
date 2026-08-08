@@ -250,6 +250,12 @@ public sealed class GoalAcceptanceServiceTests
             StoredGoalWorkflowRun run,
             StoredGoalWorkflowCheckpoint checkpoint,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public ValueTask<StoredGoalWorkflowSnapshot> AbortAsync(
+            GoalWorkflowGoalId goalId,
+            WorkflowCheckpointSummary reason,
+            DateTimeOffset abortedAt,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     private sealed class StubGoalStore(

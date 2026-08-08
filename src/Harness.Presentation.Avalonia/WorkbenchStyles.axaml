@@ -56,6 +56,9 @@
   <Style Selector="ComboBox.toolbar-input">
     <Setter Property="MinHeight" Value="34" />
   </Style>
+  <Style Selector="AutoCompleteBox.toolbar-input">
+    <Setter Property="MinHeight" Value="34" />
+  </Style>
   <Style Selector="Border.card">
     <Setter Property="Padding" Value="18" />
     <Setter Property="CornerRadius" Value="9" />

@@ -157,6 +157,60 @@ public sealed class SqliteGoalWorkflowStoreTests : IDisposable
         Assert.Equal(1, reloaded.Run.ReviewCycle.Value);
     }
 
+    [Fact]
+    public async Task Abort_is_durable_and_idempotent_without_an_existing_run()
+    {
+        (SqliteGoalWorkflowStore store, string goalId) = await CreateStoreAsync();
+        DateTimeOffset now = DateTimeOffset.Parse("2026-08-08T12:00:00Z");
+        WorkflowCheckpointSummary reason = new("Stopped to pursue a different goal.");
+
+        StoredGoalWorkflowSnapshot first = await store.AbortAsync(
+            new(goalId), reason, now);
+        StoredGoalWorkflowSnapshot second = await store.AbortAsync(
+            new(goalId), reason, now.AddMinutes(1));
+        StoredGoalWorkflowSnapshot reloaded = Assert.IsType<StoredGoalWorkflowSnapshot>(
+            await store.GetLatestAsync(new(goalId)));
+
+        Assert.Equal(GoalWorkflowRunState.Completed, first.Run.State);
+        Assert.Equal(first.Run.Id, second.Run.Id);
+        Assert.Equal(first.Run.Id, reloaded.Run.Id);
+        StoredGoalWorkflowCheckpoint checkpoint = Assert.Single(reloaded.Checkpoints);
+        Assert.Equal(GoalWorkflowCheckpointKind.UserDirectionRequired, checkpoint.Kind);
+        Assert.Equal(reason.Value, checkpoint.EvidenceContent?.Value);
+    }
+
+    [Fact]
+    public async Task Abort_terminally_closes_a_paused_needs_direction_run()
+    {
+        (SqliteGoalWorkflowStore store, string goalId) = await CreateStoreAsync();
+        GoalWorkflowRunId runId = new(Guid.NewGuid().ToString("N"));
+        DateTimeOffset now = DateTimeOffset.Parse("2026-08-08T12:00:00Z");
+        await store.StartAsync(
+            new(runId, new(goalId), GoalWorkflowRunState.Running, new(0), now, now),
+            Checkpoint(runId, 1, GoalWorkflowCheckpointKind.Started, now));
+        await store.AppendAsync(
+            Checkpoint(runId, 0, GoalWorkflowCheckpointKind.LeadCallStarted, now.AddSeconds(1)),
+            GoalWorkflowCheckpointKind.Started,
+            GoalWorkflowRunState.Running,
+            GoalWorkflowRunState.Running);
+        await store.AppendAsync(
+            Checkpoint(runId, 0, GoalWorkflowCheckpointKind.UserDirectionRequired,
+                now.AddSeconds(2)),
+            GoalWorkflowCheckpointKind.LeadCallStarted,
+            GoalWorkflowRunState.Running,
+            GoalWorkflowRunState.NeedsDirection);
+
+        StoredGoalWorkflowSnapshot aborted = await store.AbortAsync(
+            new(goalId), new("Start over with a narrower objective."), now.AddSeconds(3));
+
+        Assert.Equal(runId, aborted.Run.Id);
+        Assert.Equal(GoalWorkflowRunState.Completed, aborted.Run.State);
+        Assert.Equal(GoalWorkflowCheckpointKind.UserDirectionRequired,
+            aborted.Checkpoints[^1].Kind);
+        Assert.Equal("Start over with a narrower objective.",
+            aborted.Checkpoints[^1].EvidenceContent?.Value);
+    }
+
     private async ValueTask<(SqliteGoalWorkflowStore Store, string GoalId)> CreateStoreAsync()
     {
         ApplicationPaths paths = new(

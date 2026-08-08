@@ -9,9 +9,7 @@ internal static class GoalTextFormatter
 {
     internal static string FormatListItem(GoalView goal) =>
         $"{goal.Title} | {goal.State} | review {goal.ReviewCycleLimit.Value}" +
-        (goal.RemoteBudget is null
-            ? " | local only"
-            : $" | ${FormatUsd(goal.RemoteBudget.Value)} remote cap");
+        SpendLabel(goal);
 
     internal static string FormatDetails(
         GoalView goal,
@@ -25,9 +23,7 @@ internal static class GoalTextFormatter
         goal.Objective,
         string.Empty,
         $"Review-cycle limit: {goal.ReviewCycleLimit.Value}",
-        goal.RemoteBudget is null
-            ? "Remote models: not authorized"
-            : $"Remote-model cap: ${FormatUsd(goal.RemoteBudget.Value)}",
+        SpendDetail(goal),
         $"Created: {goal.CreatedAt:O}",
         string.Empty,
         plan is null
@@ -57,21 +53,26 @@ internal static class GoalTextFormatter
 
     internal static string FormatCostReport(GoalView goal, RemoteCostReport? report)
     {
-        if (goal.RemoteBudget is null)
+        RemoteSpendPreference spend = RemoteSpendPreference.FromGoalBudget(goal.RemoteBudget);
+        if (spend.Mode is RemoteSpendMode.LocalOnly)
         {
             return "REMOTE COST\nNot authorized; no remote-model spend is permitted.";
         }
 
         if (report is null)
         {
-            return "REMOTE COST\nAuthorized cap: $" + FormatUsd(goal.RemoteBudget.Value) +
-                   "\nNo reservations or charges recorded.";
+            return spend.Mode is RemoteSpendMode.Unlimited
+                ? "REMOTE COST\nLimit: Unlimited\nNo reservations or charges recorded."
+                : "REMOTE COST\nAuthorized cap: $" + FormatUsd(spend.Cap!.Value) +
+                  "\nNo reservations or charges recorded.";
         }
 
         string totals = string.Join(
             '\n',
             "REMOTE COST",
-            $"Cap:        ${FormatUsd(report.CostCap.Value)}",
+            spend.Mode is RemoteSpendMode.Unlimited
+                ? "Limit:      Unlimited"
+                : $"Cap:        ${FormatUsd(report.CostCap.Value)}",
             $"Reserved:   ${FormatUsd(report.ReservedCost.Value)}",
             $"Reconciled: ${FormatUsd(report.ReconciledCost.Value)}",
             $"Remaining:  ${FormatUsd(report.RemainingCost.Value)}",
@@ -89,15 +90,25 @@ internal static class GoalTextFormatter
                 : $"actual ${FormatUsd(item.ActualCost.Value)}")));
     }
 
-    internal static string FormatCostStatus(GoalView goal, RemoteCostReport? report) =>
-        goal.RemoteBudget is null
-            ? "Remote spend: not authorized (local-only goal)."
-            : report is null
-                ? $"Remote cap ${FormatUsd(goal.RemoteBudget.Value)} | no spend recorded"
-                : $"Remote cap ${FormatUsd(report.CostCap.Value)} | " +
-                  $"reserved ${FormatUsd(report.ReservedCost.Value)} | " +
-                  $"spent ${FormatUsd(report.ReconciledCost.Value)} | " +
-                  $"remaining ${FormatUsd(report.RemainingCost.Value)}";
+    internal static string FormatCostStatus(GoalView goal, RemoteCostReport? report)
+    {
+        RemoteSpendPreference spend = RemoteSpendPreference.FromGoalBudget(goal.RemoteBudget);
+        if (spend.Mode is RemoteSpendMode.LocalOnly)
+        {
+            return "Remote spend: not authorized (local-only goal).";
+        }
+
+        string limit = spend.Mode is RemoteSpendMode.Unlimited
+            ? "Remote spend unlimited"
+            : $"Remote cap ${FormatUsd(spend.Cap!.Value)}";
+        return report is null
+            ? $"{limit} | no spend recorded"
+            : $"{limit} | reserved ${FormatUsd(report.ReservedCost.Value)} | " +
+              $"spent ${FormatUsd(report.ReconciledCost.Value)}" +
+              (spend.Mode is RemoteSpendMode.Capped
+                  ? $" | remaining ${FormatUsd(report.RemainingCost.Value)}"
+                  : string.Empty);
+    }
 
     internal static string FormatCompact(IReadOnlyList<GoalView> goals) => goals.Count == 0
         ? "GOALS\nNone"
@@ -118,6 +129,24 @@ internal static class GoalTextFormatter
 
     internal static string FormatUsd(long microUsd) =>
         (microUsd / 1_000_000m).ToString("0.######", CultureInfo.InvariantCulture);
+
+    private static string SpendLabel(GoalView goal) =>
+        RemoteSpendPreference.FromGoalBudget(goal.RemoteBudget) switch
+        {
+            { Mode: RemoteSpendMode.Unlimited } => " | remote unlimited",
+            { Mode: RemoteSpendMode.Capped, Cap: { } cap } =>
+                $" | ${FormatUsd(cap.Value)} remote cap",
+            _ => " | local only",
+        };
+
+    private static string SpendDetail(GoalView goal) =>
+        RemoteSpendPreference.FromGoalBudget(goal.RemoteBudget) switch
+        {
+            { Mode: RemoteSpendMode.Unlimited } => "Remote models: unlimited spend authorized",
+            { Mode: RemoteSpendMode.Capped, Cap: { } cap } =>
+                $"Remote-model cap: ${FormatUsd(cap.Value)}",
+            _ => "Remote models: not authorized",
+        };
 
     private static bool TryConvert(decimal usd, out long microUsd)
     {

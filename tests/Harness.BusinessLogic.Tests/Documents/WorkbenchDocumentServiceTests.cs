@@ -38,7 +38,7 @@ public sealed class WorkbenchDocumentServiceTests
     }
 
     [Fact]
-    public async Task Goal_without_an_active_approval_opens_only_the_original_read_only_file()
+    public async Task Goal_without_an_active_approval_opens_the_original_file_for_user_editing()
     {
         FileReader reader = new(new("src/App.cs", "content", 7, false, null, null));
         WorkbenchDocumentService service = CreateService(
@@ -53,10 +53,11 @@ public sealed class WorkbenchDocumentServiceTests
             new("goal-id"),
             new("src/App.cs")));
 
-        Assert.Equal(WorkbenchDocumentAccess.ReadOnly, result.Access);
+        Assert.Equal(WorkbenchDocumentAccess.Editable, result.Access);
         Assert.Null(result.GoalId);
         Assert.Equal("/workspace/repository", reader.Root);
-        Assert.Contains("Approve", result.AccessDescription, StringComparison.Ordinal);
+        Assert.Contains("Editing the active trusted workspace", result.AccessDescription,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -105,6 +106,7 @@ public sealed class WorkbenchDocumentServiceTests
             mutations);
 
         WorkbenchDocumentSaveResult result = await service.SaveAsync(new(
+            new("workspace-id"),
             new("goal-id"),
             new("desktop-edit-1"),
             new("src/App.cs"),
@@ -141,11 +143,89 @@ public sealed class WorkbenchDocumentServiceTests
             mutations);
 
         WorkbenchDocumentSaveResult result = await service.SaveAsync(new(
+            new("workspace-id"),
             new("goal-id"),
             new("desktop-edit-2"),
             new("src/App.cs"),
             new(Hash("before")),
             new("after")));
+
+        Assert.Equal(WorkbenchDocumentSaveOutcome.Conflict, result.Outcome);
+        Assert.Equal(Hash("external"), result.CurrentSha256?.Value);
+        Assert.Null(result.SavedSha256);
+    }
+
+    [Fact]
+    public async Task User_save_writes_the_active_trusted_workspace_with_exact_baseline()
+    {
+        FileEditor editor = new()
+        {
+            Result = new(
+                "src/App.cs", Hash("before"), Hash("after"), 5,
+                WasCreated: false, ErrorCode: null, Error: null),
+        };
+        WorkbenchDocumentService service = CreateService(
+            CreateGoal("Draft"),
+            worktree: null,
+            CreateWorkspace(isTrusted: true),
+            new(new("src/App.cs", "before", 6, false, null, null)),
+            new MutationService(),
+            editor);
+
+        WorkbenchDocumentSaveResult result = await service.SaveAsync(new(
+            new("workspace-id"),
+            GoalId: null,
+            new("desktop-user-edit-1"),
+            new("src/App.cs"),
+            new(Hash("before")),
+            new("after")));
+
+        Assert.Equal(WorkbenchDocumentSaveOutcome.Saved, result.Outcome);
+        Assert.Null(result.GoalId);
+        Assert.Equal("/workspace/repository", editor.Root);
+        Assert.Equal("src/App.cs", editor.Edit?.Path);
+        Assert.Equal(Hash("before"), editor.Edit?.ExpectedSha256);
+        Assert.Equal("after", editor.Edit?.Content);
+    }
+
+    [Fact]
+    public async Task User_save_fails_closed_when_workspace_trust_is_revoked()
+    {
+        FileEditor editor = new();
+        WorkbenchDocumentService service = CreateService(
+            CreateGoal("Draft"),
+            worktree: null,
+            CreateWorkspace(isTrusted: false),
+            new(new("src/App.cs", "before", 6, false, null, null)),
+            new MutationService(),
+            editor);
+
+        WorkbenchDocumentSaveResult result = await service.SaveAsync(new(
+            new("workspace-id"), GoalId: null, new("desktop-user-edit-2"),
+            new("src/App.cs"), new(Hash("before")), new("after")));
+
+        Assert.Equal(WorkbenchDocumentSaveOutcome.Rejected, result.Outcome);
+        Assert.Equal("workspace_not_trusted", result.ErrorCode);
+        Assert.Equal(0, editor.CallCount);
+    }
+
+    [Fact]
+    public async Task User_save_maps_an_external_change_to_an_actionable_conflict()
+    {
+        FileEditor editor = new()
+        {
+            Result = new(
+                "src/App.cs", Hash("external"), null, 0,
+                WasCreated: false, "content_changed", "The file changed."),
+        };
+        WorkbenchDocumentService service = CreateService(
+            CreateGoal("Draft"), worktree: null, CreateWorkspace(isTrusted: true),
+            new(new("src/App.cs", "before", 6, false, null, null)),
+            new MutationService(), editor);
+
+        WorkbenchDocumentSaveResult result = await service.SaveAsync(new(
+            new("workspace-id"), GoalId: null, new("desktop-user-edit-3"),
+            new("src/App.cs"), new(Hash("before")), new("after")));
 
         Assert.Equal(WorkbenchDocumentSaveOutcome.Conflict, result.Outcome);
         Assert.Equal(Hash("external"), result.CurrentSha256?.Value);
@@ -177,12 +257,14 @@ public sealed class WorkbenchDocumentServiceTests
         StoredGoalWorktree? worktree,
         RegisteredWorkspace workspace,
         FileReader reader,
-        MutationService mutations) => new(
+        MutationService mutations,
+        FileEditor? editor = null) => new(
         new WorkbenchWorkspaceContextResolver(
             new GoalStore(goal, worktree),
             new WorkspaceStore(workspace)),
         reader,
-        mutations);
+        mutations,
+        editor ?? new());
 
     private static StoredGoal CreateGoal(string state) => new(
         "goal-id",
@@ -260,6 +342,32 @@ public sealed class WorkbenchDocumentServiceTests
         public ValueTask<DotNetOperationView> RunDotNetAsync(
             DotNetOperationRequest request,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private sealed class FileEditor : Harness.DataAccess.Mutations.IWorkspaceFileEditor
+    {
+        internal int CallCount { get; private set; }
+        internal string? Root { get; private set; }
+        internal Harness.DataAccess.Mutations.WorkspaceFileEdit? Edit { get; private set; }
+        internal Harness.DataAccess.Mutations.WorkspaceFileEditResult? Result { get; init; }
+
+        public ValueTask<Harness.DataAccess.Mutations.WorkspaceFileEditResult> ApplyAsync(
+            string worktreeRoot,
+            Harness.DataAccess.Mutations.WorkspaceFileEdit edit,
+            CancellationToken cancellationToken = default)
+        {
+            CallCount++;
+            Root = worktreeRoot;
+            Edit = edit;
+            return ValueTask.FromResult(Result ?? new(
+                edit.Path,
+                edit.ExpectedSha256,
+                Hash(edit.Content),
+                Encoding.UTF8.GetByteCount(edit.Content),
+                WasCreated: false,
+                ErrorCode: null,
+                Error: null));
+        }
     }
 
     private sealed class GoalStore(

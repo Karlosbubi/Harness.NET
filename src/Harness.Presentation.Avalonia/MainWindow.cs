@@ -46,7 +46,15 @@ internal sealed class MainWindow : Window
     private readonly TextBlock workspace = new() { TextWrapping = TextWrapping.Wrap };
     private readonly TextBlock goalContext = new() { TextWrapping = TextWrapping.Wrap };
     private readonly ItemsControl evidence = new();
-    private readonly ComboBox modelPicker = new();
+    private readonly AutoCompleteBox modelPicker = new()
+    {
+        MinimumPrefixLength = 0,
+        MinimumPopulateDelay = TimeSpan.Zero,
+        MaxDropDownHeight = 360,
+        IsTextCompletionEnabled = false,
+        FilterMode = AutoCompleteFilterMode.Contains,
+        PlaceholderText = "Search models",
+    };
     private readonly Button send = new() { Content = "Send" };
     private readonly Button cancel = new() { Content = "Cancel" };
     private readonly Button openWorkspace = new() { Content = "Open workspace" };
@@ -782,7 +790,16 @@ internal sealed class MainWindow : Window
         AutomationProperties.SetName(select, $"Continue goal {goal.Title}");
         select.Click += async (_, _) => await store.SelectGoalAsync(goal.Id, cancellationToken);
 
-        Grid heading = new() { ColumnDefinitions = new("*,Auto"), ColumnSpacing = 10 };
+        Button abort = new()
+        {
+            Content = "Abort",
+            Classes = { "command" },
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        AutomationProperties.SetName(abort, $"Abort goal {goal.Title} and start new");
+        abort.Click += async (_, _) => await AbortGoalAsync(goal);
+
+        Grid heading = new() { ColumnDefinitions = new("*,Auto,Auto"), ColumnSpacing = 10 };
         heading.Children.Add(new TextBlock
         {
             Text = goal.Title,
@@ -791,6 +808,8 @@ internal sealed class MainWindow : Window
         });
         Grid.SetColumn(select, 1);
         heading.Children.Add(select);
+        Grid.SetColumn(abort, 2);
+        heading.Children.Add(abort);
         Border card = new()
         {
             Classes = { "workflow-card" },
@@ -929,6 +948,9 @@ internal sealed class MainWindow : Window
             case ConversationWorkflowActionKind.RetryRun:
                 await RetryRunAsync(goal);
                 break;
+            case ConversationWorkflowActionKind.AbortGoal:
+                await AbortGoalAsync(goal);
+                break;
             case ConversationWorkflowActionKind.ExtendBudget:
                 await new BudgetExtensionDialog(store, goal, cancellationToken).ShowDialog(this);
                 break;
@@ -964,19 +986,48 @@ internal sealed class MainWindow : Window
 
     private async Task StartPlanningAsync(GoalView goal)
     {
-        OutputLimitsDialog dialog = new(
-            "Generate goal plan",
-            ["Lead maximum output tokens"],
-            GoalPresentationFormatter.StartDisclosure(store.Current.Goals),
-            [DefaultOutputMaximum(AgentRole.Lead)]);
-        await dialog.ShowDialog(this);
-        if (dialog.Result is { Length: 1 } limits)
+        if (store.Current.Settings.AgentDefaults is not { Models.Count: > 0 })
         {
-            await store.StartGoalWorkflowAsync(
-                goal.Id,
-                new(limits[0]),
-                cancellationToken);
+            await store.DiscoverAgentDefaultsAsync(cancellationToken);
         }
+
+        AgentDefaultsSnapshot? defaults = store.Current.Settings.AgentDefaults;
+        GoalModelCandidate[] candidates = ModelSelectionCatalog.ForRole(
+            defaults?.Models ?? [], AgentRole.Lead);
+        GoalModelSelectionView? effective = store.Current.Goals.ModelSelections
+            .FirstOrDefault(selection => selection.Role is AgentRole.Lead);
+        AgentRoleDefault? configured = defaults?.Roles
+            .FirstOrDefault(roleDefault => roleDefault.Role is AgentRole.Lead);
+        GoalModelCandidate? preferred = candidates.FirstOrDefault(candidate =>
+            candidate.Provider == effective?.Provider && candidate.Model == effective?.Model) ??
+            candidates.FirstOrDefault(candidate =>
+                candidate.Provider == configured?.Provider && candidate.Model == configured?.Model);
+        PlanGenerationDialog dialog = new(
+            candidates,
+            preferred,
+            DefaultOutputMaximum(AgentRole.Lead),
+            GoalPresentationFormatter.StartDisclosure(store.Current.Goals));
+        await dialog.ShowDialog(this);
+        if (dialog.Result is not { } result)
+        {
+            return;
+        }
+
+        if (result.LeadModel.Access is ModelAccess.Remote &&
+            !await new RemoteModelAuthorizationDialog(
+                    goal,
+                    result.LeadModel,
+                    AgentRole.Lead)
+                .ShowDialog<bool>(this))
+        {
+            return;
+        }
+
+        await store.StartGoalWorkflowAsync(
+            goal.Id,
+            result.LeadModel,
+            new(result.MaximumOutputTokens),
+            cancellationToken);
     }
 
     private async Task WritePlanAsync(GoalView goal)
@@ -1064,19 +1115,63 @@ internal sealed class MainWindow : Window
             GoalWorkflowRetryRole.Reviewer => AgentRole.Reviewer,
             _ => throw new ArgumentOutOfRangeException(nameof(retryRole)),
         };
-        OutputLimitsDialog dialog = new(
-            $"Retry failed {retryRole} call",
-            [$"{retryRole} maximum output tokens"],
-            GoalPresentationFormatter.RetryDisclosure(retryRole, store.Current.Goals),
-            [DefaultOutputMaximum(role)]);
-        await dialog.ShowDialog(this);
-        if (dialog.Result is { Length: 1 } limits)
+        if (store.Current.Settings.AgentDefaults is not { Models.Count: > 0 })
         {
-            await store.RetryGoalWorkflowAsync(
-                goal.Id,
-                retryRole,
-                new(limits[0]),
-                cancellationToken);
+            await store.DiscoverAgentDefaultsAsync(cancellationToken);
+        }
+
+        AgentDefaultsSnapshot? defaults = store.Current.Settings.AgentDefaults;
+        GoalModelCandidate[] candidates = ModelSelectionCatalog.ForRole(
+            defaults?.Models ?? [], role);
+        GoalModelSelectionView? effective = store.Current.Goals.ModelSelections
+            .FirstOrDefault(selection => selection.Role == role);
+        AgentRoleDefault? configured = defaults?.Roles
+            .FirstOrDefault(roleDefault => roleDefault.Role == role);
+        GoalModelCandidate? preferred = candidates.FirstOrDefault(candidate =>
+            candidate.Provider == effective?.Provider && candidate.Model == effective?.Model) ??
+            candidates.FirstOrDefault(candidate =>
+                candidate.Provider == configured?.Provider && candidate.Model == configured?.Model);
+        WorkflowRetryDialog dialog = new(
+            retryRole,
+            candidates,
+            preferred,
+            DefaultOutputMaximum(role),
+            GoalPresentationFormatter.RetryDisclosure(retryRole, store.Current.Goals));
+        await dialog.ShowDialog(this);
+        if (dialog.Result is not { } result)
+        {
+            return;
+        }
+
+        if (result.Model.Access is ModelAccess.Remote &&
+            !await new RemoteModelAuthorizationDialog(goal, result.Model, role)
+                .ShowDialog<bool>(this))
+        {
+            return;
+        }
+
+        await store.RetryGoalWorkflowAsync(
+            goal.Id,
+            retryRole,
+            result.Model,
+            new(result.MaximumOutputTokens),
+            new(result.Guidance),
+            cancellationToken);
+    }
+
+    private async Task AbortGoalAsync(GoalView goal)
+    {
+        AbortGoalDialog dialog = new(goal);
+        await dialog.ShowDialog(this);
+        if (dialog.Result is not { } reason)
+        {
+            return;
+        }
+
+        await store.AbortGoalAsync(goal.Id, reason, cancellationToken);
+        if (store.Current.Goals.SelectedGoalId is null)
+        {
+            composer.Focus();
         }
     }
 

@@ -22,7 +22,8 @@ namespace Harness.Presentation.Avalonia.Tests;
 public sealed class AvaloniaPresentationStoreTests
 {
     /// <summary>Builds a store over the deterministic fakes so other suites can drive real dialogs.</summary>
-    internal static AvaloniaPresentationStore CreateStore() => new(
+    internal static AvaloniaPresentationStore CreateStore(
+        IModelProviderSettingsService? providerSettingsService = null) => new(
         new DashboardService(),
         new AppearanceService(),
         new WorkspaceService(),
@@ -36,7 +37,8 @@ public sealed class AvaloniaPresentationStoreTests
         new ApplicationOperationsService(),
         new CapabilityApprovalService(),
         new FrameworkService(),
-        NullLogger<AvaloniaPresentationStore>.Instance);
+        NullLogger<AvaloniaPresentationStore>.Instance,
+        providerSettingsService);
 
     [Theory]
     [InlineData("I am **Gemma 4** 😊</blockquote>", "I am Gemma 4 😊")]
@@ -117,7 +119,7 @@ public sealed class AvaloniaPresentationStoreTests
             "Build a chat-first goal workflow with deterministic authority…",
             goal.Title);
         Assert.Equal(new ReviewCycleLimit(3), goal.ReviewCycleLimit);
-        Assert.Null(goal.RemoteBudget);
+        Assert.Equal(long.MaxValue, goal.RemoteBudget?.Value);
         Assert.Equal(goal.Id, store.Current.Goals.SelectedGoalId);
         Assert.Equal(string.Empty, store.Current.ComposerText);
         Assert.Null(dashboard.LastInstruction);
@@ -126,10 +128,12 @@ public sealed class AvaloniaPresentationStoreTests
             ConversationWorkflowProjector.Project(store.Current.Goals),
             card => card.Kind is ConversationWorkflowCardKind.Goal);
         Assert.Equal(
-            ConversationWorkflowActionKind.ConfigureGoal,
-            Assert.Single(ConversationWorkflowActionProjector.Project(
-                goalCard,
-                store.Current.Goals)).Kind);
+            [ConversationWorkflowActionKind.ConfigureGoal,
+                ConversationWorkflowActionKind.AbortGoal],
+            ConversationWorkflowActionProjector.Project(
+                    goalCard,
+                    store.Current.Goals)
+                .Select(action => action.Kind));
 
         await store.UpdateGoalSettingsAsync(new(
             goal.Id,
@@ -266,6 +270,9 @@ public sealed class AvaloniaPresentationStoreTests
             new FrameworkService(),
             NullLogger<AvaloniaPresentationStore>.Instance);
         await store.LoadAsync(CancellationToken.None);
+
+        Assert.Equal(1, defaults.DiscoveryCount);
+        Assert.Single(store.Current.Settings.AgentDefaults!.Models);
 
         await store.DiscoverAgentDefaultsAsync(CancellationToken.None);
         GoalModelCandidate candidate = Assert.Single(
@@ -444,13 +451,9 @@ public sealed class AvaloniaPresentationStoreTests
         GoalModelCandidate remote = Assert.Single(
             store.Current.Goals.ModelCatalog!.Models,
             candidate => candidate.Access is ModelAccess.Remote);
-        await store.SelectGoalModelAsync(
-            goal.Id,
-            AgentRole.Lead,
-            remote,
-            CancellationToken.None);
         await store.StartGoalWorkflowAsync(
             goal.Id,
+            remote,
             new(1024),
             CancellationToken.None);
         await store.ResumeGoalWorkflowAsync(
@@ -1173,7 +1176,8 @@ public sealed class AvaloniaPresentationStoreTests
             new("ollama"),
             new("gemma4"),
             ModelAccess.Local,
-            [],
+            [new("tools")],
+            Enum.GetValues<AgentRole>(),
             null,
             null,
             null,
@@ -1182,7 +1186,8 @@ public sealed class AvaloniaPresentationStoreTests
             new("openrouter"),
             new("openai/gpt-5-mini"),
             ModelAccess.Remote,
-            [],
+            [new("tools")],
+            Enum.GetValues<AgentRole>(),
             null,
             new(0.25m),
             new(2m),
@@ -1245,7 +1250,8 @@ public sealed class AvaloniaPresentationStoreTests
             new("ollama"),
             new("gemma4"),
             ModelAccess.Local,
-            [],
+            [new("tools")],
+            Enum.GetValues<AgentRole>(),
             null,
             null,
             null,
@@ -1260,13 +1266,18 @@ public sealed class AvaloniaPresentationStoreTests
                 IsPersisted: false,
                 UpdatedAt: null));
 
+        public int DiscoveryCount { get; private set; }
+
         public ValueTask<AgentDefaultsSnapshot> GetAsync(
             CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(Snapshot(models: []));
 
         public ValueTask<AgentDefaultsSnapshot> DiscoverAvailableAsync(
-            CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(Snapshot([Local]));
+            CancellationToken cancellationToken = default)
+        {
+            DiscoveryCount++;
+            return ValueTask.FromResult(Snapshot([Local]));
+        }
 
         public ValueTask<AgentRoleDefaultUpdateResult> UpdateAsync(
             AgentRoleDefaultUpdate request,
@@ -1285,7 +1296,20 @@ public sealed class AvaloniaPresentationStoreTests
         }
 
         private AgentDefaultsSnapshot Snapshot(IReadOnlyList<GoalModelCandidate> models) =>
-            new(values.Values.OrderBy(item => item.Role).ToArray(), models, []);
+            new(
+                values.Values.OrderBy(item => item.Role).ToArray(),
+                models,
+                [],
+                [new(
+                    Local.Provider,
+                    Local.Access,
+                    Local.Model,
+                    models.Count,
+                    models.Count(model => model.SupportedRoles.Count > 0),
+                    HasPublishedPricing: false,
+                    AgentModelProviderAvailability.Available,
+                    Message: null)],
+                []);
     }
 
     private sealed class RemoteCostService : IRemoteCostService
@@ -1354,6 +1378,14 @@ public sealed class AvaloniaPresentationStoreTests
             latest = Snapshot(request.GoalId, GoalWorkflowState.Running, "Explicit retry", true);
             yield return latest;
             await Task.Yield();
+        }
+
+        public ValueTask<GoalWorkflowSnapshot> AbortAsync(
+            GoalWorkflowAbortRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            latest = Snapshot(request.GoalId, GoalWorkflowState.Aborted, "Goal aborted", false);
+            return ValueTask.FromResult(latest);
         }
 
         private static GoalWorkflowSnapshot Snapshot(

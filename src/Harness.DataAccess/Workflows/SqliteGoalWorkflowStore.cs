@@ -119,6 +119,93 @@ internal sealed class SqliteGoalWorkflowStore(IApplicationPaths applicationPaths
         return snapshot;
     }
 
+    public async ValueTask<StoredGoalWorkflowSnapshot> AbortAsync(
+        GoalWorkflowGoalId goalId,
+        WorkflowCheckpointSummary reason,
+        DateTimeOffset abortedAt,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateGoalId(goalId);
+        if (reason is null || string.IsNullOrWhiteSpace(reason.Value) ||
+            reason.Value.Length > 16 * 1024)
+        {
+            throw new ArgumentException(
+                "An abort reason between 1 and 16384 characters is required.",
+                nameof(reason));
+        }
+
+        await using SqliteConnection connection = await OpenAsync(cancellationToken);
+        await using SqliteTransaction transaction =
+            (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        GoalWorkflowRunRow? latest = await connection.QuerySingleOrDefaultAsync<GoalWorkflowRunRow>(
+            new CommandDefinition(RunSelectSql + " WHERE goal_id = @goalId " +
+                "ORDER BY updated_at DESC, id DESC LIMIT 1;",
+                new { goalId = goalId.Value }, transaction, cancellationToken: cancellationToken));
+        GoalWorkflowRunRow run;
+        int sequence;
+        if (latest is null)
+        {
+            string runId = Guid.NewGuid().ToString("N");
+            run = await connection.QuerySingleAsync<GoalWorkflowRunRow>(new CommandDefinition("""
+                INSERT INTO goal_workflow_runs (
+                    id, goal_id, state, review_cycle, created_at, updated_at)
+                VALUES (@runId, @goalId, 'Completed', 0, @abortedAt, @abortedAt)
+                RETURNING id, goal_id AS GoalId, state, review_cycle AS ReviewCycle,
+                          created_at AS CreatedAt, updated_at AS UpdatedAt;
+                """, new
+            {
+                runId,
+                goalId = goalId.Value,
+                abortedAt = Format(abortedAt),
+            }, transaction, cancellationToken: cancellationToken));
+            sequence = 1;
+        }
+        else
+        {
+            StoredGoalWorkflowSnapshot latestSnapshot = await ReadSnapshotAsync(
+                connection, transaction, latest, cancellationToken);
+            if (latest.ToRecord().State is GoalWorkflowRunState.Completed)
+            {
+                if (latestSnapshot.Checkpoints[^1].Kind is GoalWorkflowCheckpointKind.UserDirectionRequired)
+                {
+                    await transaction.CommitAsync(cancellationToken);
+                    return latestSnapshot;
+                }
+
+                throw new InvalidOperationException("A completed accepted workflow cannot be aborted.");
+            }
+
+            run = await connection.QuerySingleAsync<GoalWorkflowRunRow>(new CommandDefinition("""
+                UPDATE goal_workflow_runs
+                SET state = 'Completed', updated_at = @abortedAt
+                WHERE id = @runId AND state <> 'Completed'
+                RETURNING id, goal_id AS GoalId, state, review_cycle AS ReviewCycle,
+                          created_at AS CreatedAt, updated_at AS UpdatedAt;
+                """, new
+            {
+                runId = latest.Id,
+                abortedAt = Format(abortedAt),
+            }, transaction, cancellationToken: cancellationToken));
+            sequence = latestSnapshot.Checkpoints[^1].Sequence + 1;
+        }
+
+        StoredGoalWorkflowCheckpoint checkpoint = new(
+            Guid.NewGuid().ToString("N"),
+            new(run.Id),
+            sequence,
+            GoalWorkflowCheckpointKind.UserDirectionRequired,
+            WorkflowActor.System,
+            new("User aborted the goal and returned to new-goal composition."),
+            new("Goal aborted"),
+            new(reason.Value.Trim()),
+            abortedAt);
+        await InsertCheckpointAsync(connection, transaction, checkpoint, cancellationToken);
+        StoredGoalWorkflowSnapshot snapshot = await ReadSnapshotAsync(
+            connection, transaction, run, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return snapshot;
+    }
+
     private static bool IsValidTransition(
         GoalWorkflowCheckpointKind expected,
         GoalWorkflowCheckpointKind next,

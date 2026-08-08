@@ -9,6 +9,8 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using Harness.BusinessLogic.Agents;
 using Harness.BusinessLogic.Appearance;
+using Harness.BusinessLogic.Costs;
+using Harness.BusinessLogic.Goals;
 
 namespace Harness.Presentation.Avalonia;
 
@@ -17,6 +19,7 @@ internal enum SettingsCategoryId
     General,
     Editor,
     Appearance,
+    ModelProviders,
     ModelsAndRoles,
     PrivacyAndLimits,
     StorageAndRecovery,
@@ -43,10 +46,12 @@ internal static class SettingsCatalog
             ["font", "code", "roslyn", "completion", "diagnostics"], IsAvailable: false),
         new(SettingsCategoryId.Appearance, "Appearance & accessibility", "Theme and visual preferences",
             ["color", "theme", "contrast", "accessibility"], IsAvailable: true),
+        new(SettingsCategoryId.ModelProviders, "Model providers", "Ollama and OpenRouter availability",
+            ["model", "provider", "ollama", "openrouter", "remote", "local", "pricing"], IsAvailable: true),
         new(SettingsCategoryId.ModelsAndRoles, "Models & roles", "Default routes for agent roles",
             ["model", "provider", "lead", "implementer", "reviewer", "output"], IsAvailable: true),
         new(SettingsCategoryId.PrivacyAndLimits, "Privacy & limits", "Routing and ordinary default limits",
-            ["remote", "local", "privacy", "budget", "tokens", "cost"], IsAvailable: false),
+            ["remote", "local", "privacy", "budget", "tokens", "cost", "spend"], IsAvailable: true),
         new(SettingsCategoryId.StorageAndRecovery, "Storage & recovery", "Private state, backups, and restore",
             ["database", "backup", "restore", "xdg"], IsAvailable: false),
         new(SettingsCategoryId.Advanced, "Advanced", "Diagnostics and experimental modules",
@@ -211,7 +216,8 @@ internal sealed class SettingsWindow : Window
         appearance = snapshot;
         settingsState = applicationSettings;
         if ((categories.SelectedItem as SettingsCategory)?.Id is
-            SettingsCategoryId.Appearance or SettingsCategoryId.ModelsAndRoles)
+            SettingsCategoryId.Appearance or SettingsCategoryId.ModelProviders or
+            SettingsCategoryId.ModelsAndRoles or SettingsCategoryId.PrivacyAndLimits)
         {
             RenderSelectedPage();
         }
@@ -231,7 +237,9 @@ internal sealed class SettingsWindow : Window
         page.Content = category.Id switch
         {
             SettingsCategoryId.Appearance => AppearancePage(),
+            SettingsCategoryId.ModelProviders => ModelProvidersPage(),
             SettingsCategoryId.ModelsAndRoles => ModelsAndRolesPage(),
+            SettingsCategoryId.PrivacyAndLimits => PrivacyAndLimitsPage(),
             _ => PlannedPage(category),
         };
     }
@@ -315,7 +323,10 @@ internal sealed class SettingsWindow : Window
         {
             foreach (AgentRoleDefault roleDefault in snapshot.Roles.OrderBy(item => item.Role))
             {
-                roles.Children.Add(RoleDefaultCard(roleDefault, snapshot.Models));
+                roles.Children.Add(RoleDefaultCard(
+                    roleDefault,
+                    snapshot.Models,
+                    snapshot.DefaultIssues.FirstOrDefault(issue => issue.Role == roleDefault.Role)));
             }
         }
 
@@ -336,7 +347,7 @@ internal sealed class SettingsWindow : Window
                         Classes = { "card", "attention" },
                         Child = new TextBlock
                         {
-                            Text = "A remote default is routing preference only. It never authorizes remote spending; each goal still needs its own positive cap and explicit model selection.",
+                            Text = "Remote role defaults can run immediately for goals using the Unlimited or Capped spend mode. Use Privacy & limits to opt into a hard cap or local-only default.",
                             TextWrapping = TextWrapping.Wrap,
                         },
                     },
@@ -352,23 +363,117 @@ internal sealed class SettingsWindow : Window
             });
     }
 
-    private Control RoleDefaultCard(
-        AgentRoleDefault roleDefault,
-        IReadOnlyList<GoalModelCandidate> candidates)
+    private Control PrivacyAndLimitsPage()
     {
-        ModelChoice[] choices = candidates.Select(candidate => new ModelChoice(candidate)).ToArray();
-        ModelChoice? selected = choices.FirstOrDefault(item =>
-            item.Candidate.Provider == roleDefault.Provider &&
-            item.Candidate.Model == roleDefault.Model);
-        ComboBox model = new()
+        RemoteSpendPreference current = settingsState.RemoteSpendPreference;
+        RemoteSpendChoice[] choices =
+        [
+            new(RemoteSpendMode.Unlimited, "Unlimited remote spend (default)"),
+            new(RemoteSpendMode.Capped, "Set an aggregate spending cap"),
+            new(RemoteSpendMode.LocalOnly, "Local models only"),
+        ];
+        ComboBox mode = new()
         {
             ItemsSource = choices,
-            SelectedItem = selected,
+            SelectedItem = choices.First(choice => choice.Mode == current.Mode),
+            MinWidth = 320,
+            IsEnabled = !settingsState.IsBusy,
+        };
+        AutomationProperties.SetName(mode, "Default remote spending mode");
+        TextBox cap = new()
+        {
+            Text = current.Cap is null
+                ? string.Empty
+                : GoalPresentationFormatter.ToUsd(current.Cap.Value),
+            PlaceholderText = "USD, for example 10.00",
+            MinWidth = 240,
+            IsEnabled = current.Mode is RemoteSpendMode.Capped && !settingsState.IsBusy,
+        };
+        AutomationProperties.SetName(cap, "Default remote spending cap in US dollars");
+        TextBlock validation = new() { TextWrapping = TextWrapping.Wrap };
+        mode.SelectionChanged += (_, _) => cap.IsEnabled =
+            mode.SelectedItem is RemoteSpendChoice { Mode: RemoteSpendMode.Capped } &&
+            !settingsState.IsBusy;
+        Button save = new()
+        {
+            Content = "Save cost-control default",
+            IsEnabled = !settingsState.IsBusy,
+        };
+        save.Classes.Add("primary");
+        AutomationProperties.SetName(save, "Save default remote spending policy");
+        save.Click += async (_, _) =>
+        {
+            if (mode.SelectedItem is not RemoteSpendChoice selected)
+            {
+                validation.Text = "Choose a remote-spending mode.";
+                return;
+            }
+
+            MicroUsdAmount? amount = null;
+            if (selected.Mode is RemoteSpendMode.Capped)
+            {
+                if (!TryParseUsd(cap.Text, out amount))
+                {
+                    validation.Text = "Enter a positive USD cap using a decimal point and at most six decimal places.";
+                    return;
+                }
+            }
+
+            await store.UpdateRemoteSpendPreferenceAsync(
+                new(selected.Mode, amount), cancellationToken);
+        };
+
+        return Page(
+            "Privacy & limits",
+            "Choose the spend policy preselected for newly created goals. Every goal creation surface shows the choice again.",
+            new StackPanel
+            {
+                Spacing = 14,
+                Children =
+                {
+                    new Border
+                    {
+                        Classes = { "card", "attention" },
+                        Child = new TextBlock
+                        {
+                            Text = "Unlimited remote spend is the convenience default. It removes Harness.NET's aggregate dollar ceiling; provider billing and account limits still apply. Opt into a cap or local-only execution here when you want hard cost control.",
+                            TextWrapping = TextWrapping.Wrap,
+                        },
+                    },
+                    new TextBlock { Text = "Default for new goals", FontWeight = FontWeight.SemiBold },
+                    mode,
+                    new TextBlock { Text = "Aggregate cap (USD)", FontWeight = FontWeight.SemiBold },
+                    cap,
+                    validation,
+                    save,
+                    new TextBlock
+                    {
+                        Text = settingsState.Status ?? string.Empty,
+                        Classes = { "muted" },
+                        TextWrapping = TextWrapping.Wrap,
+                    },
+                },
+            });
+    }
+
+    private Control RoleDefaultCard(
+        AgentRoleDefault roleDefault,
+        IReadOnlyList<GoalModelCandidate> candidates,
+        AgentRoleDefaultIssue? defaultIssue)
+    {
+        GoalModelCandidate[] choices = ModelSelectionCatalog.ForRole(
+            candidates, roleDefault.Role);
+        GoalModelCandidate? selected = choices.FirstOrDefault(item =>
+            item.Provider == roleDefault.Provider &&
+            item.Model == roleDefault.Model);
+        SearchableModelPicker model = new()
+        {
             MinWidth = 260,
             IsEnabled = !settingsState.IsBusy && choices.Length > 0,
             IsVisible = choices.Length > 0,
         };
-        AutomationProperties.SetName(model, $"{roleDefault.Role} default model");
+        model.SetCandidates(choices, selected);
+        model.SetAutomationName($"{roleDefault.Role} default model");
         NumericUpDown maximum = new()
         {
             Minimum = 1,
@@ -383,20 +488,20 @@ internal sealed class SettingsWindow : Window
         Button save = new()
         {
             Content = "Save default",
-            IsEnabled = !settingsState.IsBusy && selected is not null,
+            IsEnabled = !settingsState.IsBusy && model.SelectedCandidate is not null,
             IsVisible = choices.Length > 0,
         };
         save.Classes.Add("command");
         AutomationProperties.SetName(save, $"Save {roleDefault.Role} agent defaults");
         model.SelectionChanged += (_, _) => save.IsEnabled =
-            !settingsState.IsBusy && model.SelectedItem is ModelChoice;
+            !settingsState.IsBusy && model.SelectedCandidate is not null;
         save.Click += async (_, _) =>
         {
-            if (model.SelectedItem is ModelChoice choice && maximum.Value is { } value)
+            if (model.SelectedCandidate is { } candidate && maximum.Value is { } value)
             {
                 await store.UpdateAgentDefaultAsync(
                     roleDefault.Role,
-                    choice.Candidate,
+                    candidate,
                     decimal.ToInt32(value),
                     cancellationToken);
             }
@@ -442,8 +547,10 @@ internal sealed class SettingsWindow : Window
                     },
                     new TextBlock
                     {
-                        Text = $"Effective: {roleDefault.Access} · {roleDefault.Provider.Value}/{roleDefault.Model.Value} · {roleDefault.MaximumOutputTokens.Value} tokens" +
-                               (roleDefault.IsPersisted ? " · Saved" : " · Host fallback"),
+                        Text = defaultIssue is null
+                            ? $"Effective: {roleDefault.Access} · {roleDefault.Provider.Value}/{roleDefault.Model.Value} · {roleDefault.MaximumOutputTokens.Value} tokens" +
+                              (roleDefault.IsPersisted ? " · Saved" : " · Host fallback")
+                            : $"Needs attention: {defaultIssue.Message}",
                         Classes = { "muted" },
                         FontSize = 11,
                         TextWrapping = TextWrapping.Wrap,
@@ -454,6 +561,316 @@ internal sealed class SettingsWindow : Window
         };
     }
 
+    private Control ModelProvidersPage()
+    {
+        AgentDefaultsSnapshot? snapshot = settingsState.AgentDefaults;
+        Button refresh = new()
+        {
+            Content = "Refresh provider catalogs",
+            IsEnabled = !settingsState.IsBusy,
+        };
+        refresh.Classes.Add("command");
+        AutomationProperties.SetName(refresh, "Refresh Ollama and OpenRouter model catalogs");
+        refresh.Click += async (_, _) => await store.DiscoverAgentDefaultsAsync(cancellationToken);
+
+        StackPanel providers = new() { Spacing = 12 };
+        if (snapshot is null)
+        {
+            providers.Children.Add(new TextBlock
+            {
+                Text = "Detecting configured model providers…",
+                Classes = { "muted" },
+            });
+        }
+        else
+        {
+            ModelProviderName[] providerNames = snapshot.Providers
+                .Select(item => item.Provider)
+                .Concat(settingsState.ProviderSettings?.Providers.Select(item => item.Provider) ?? [])
+                .GroupBy(item => item.Value, StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First())
+                .OrderBy(item => item.Value, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            foreach (ModelProviderName providerName in providerNames)
+            {
+                ModelProviderSettingsView? configuration = settingsState.ProviderSettings?.Providers
+                    .FirstOrDefault(item => item.Provider.Value.Equals(
+                        providerName.Value,
+                        StringComparison.OrdinalIgnoreCase));
+                AgentModelProviderStatus provider = snapshot.Providers.FirstOrDefault(item =>
+                    item.Provider.Value.Equals(providerName.Value, StringComparison.OrdinalIgnoreCase)) ?? new(
+                    providerName,
+                    configuration?.Kind is AgentModelProviderKind.OpenRouter
+                        ? ModelAccess.Remote
+                        : ModelAccess.Local,
+                    configuration?.ChatModel ?? new("unknown"),
+                    DiscoveredChatModels: 0,
+                    RoleCompatibleModels: 0,
+                    HasPublishedPricing: false,
+                    AgentModelProviderAvailability.Empty,
+                    "No catalog status is available.");
+                providers.Children.Add(ProviderCard(provider, configuration));
+            }
+        }
+
+        return Page(
+            "Model providers",
+            "Configure named Ollama and OpenRouter modules. Catalog discovery runs without inference; endpoint and model changes are written to your private XDG configuration and apply after restart.",
+            new StackPanel
+            {
+                Spacing = 14,
+                Children =
+                {
+                    new Border
+                    {
+                        Classes = { "card", "attention" },
+                        Child = new TextBlock
+                        {
+                            Text = "Saved values update the private XDG override. Environment and command-line overrides retain higher precedence. Provider routes and embedding partition identity change only after restart.",
+                            TextWrapping = TextWrapping.Wrap,
+                        },
+                    },
+                    refresh,
+                    providers,
+                    new TextBlock
+                    {
+                        Text = settingsState.Status ?? string.Empty,
+                        TextWrapping = TextWrapping.Wrap,
+                        Classes = { "muted" },
+                    },
+                },
+            });
+    }
+
+    private Control ProviderCard(
+        AgentModelProviderStatus provider,
+        ModelProviderSettingsView? configuration)
+    {
+        string pricing = provider.Access is ModelAccess.Remote
+            ? provider.HasPublishedPricing
+                ? "Published pricing available for discovered models"
+                : "Published pricing unavailable; remote execution remains fail-closed"
+            : "Local execution; no remote spending authority";
+        StackPanel content = new()
+        {
+            Spacing = 8,
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = provider.Provider.Value,
+                    FontSize = 16,
+                    FontWeight = FontWeight.SemiBold,
+                },
+                new TextBlock
+                {
+                    Text = $"{provider.Access} · {provider.Availability} · configured default {provider.ConfiguredDefaultModel.Value}",
+                    Classes = { "muted" },
+                },
+                new TextBlock
+                {
+                    Text = $"{provider.DiscoveredChatModels} chat model(s) · " +
+                           $"{provider.RoleCompatibleModels} fully role-compatible · {pricing}",
+                    TextWrapping = TextWrapping.Wrap,
+                },
+                new TextBlock
+                {
+                    Text = provider.Message ?? "Catalog ready.",
+                    TextWrapping = TextWrapping.Wrap,
+                    Classes = { "muted" },
+                },
+            },
+        };
+
+        if (configuration is null)
+        {
+            content.Children.Add(new TextBlock
+            {
+                Text = "Configuration controls are unavailable in this host.",
+                Classes = { "muted" },
+            });
+            return new Border { Classes = { "card", "row" }, Child = content };
+        }
+
+        TextBox endpoint = ProviderTextBox(configuration.Endpoint.Value,
+            $"{provider.Provider.Value} endpoint");
+        TextBox chatModel = ProviderTextBox(configuration.ChatModel.Value,
+            $"{provider.Provider.Value} default chat model");
+        TextBox embeddingModel = ProviderTextBox(configuration.EmbeddingModel.Value,
+            $"{provider.Provider.Value} default embedding model");
+        NumericUpDown dimensions = ProviderNumber(
+            configuration.EmbeddingDimensions.Value, 1, 65_536,
+            $"{provider.Provider.Value} embedding dimensions");
+        NumericUpDown connectTimeout = ProviderNumber(
+            configuration.ConnectTimeout.Value, 1, 3_600,
+            $"{provider.Provider.Value} connect timeout seconds");
+        NumericUpDown requestTimeout = ProviderNumber(
+            configuration.RequestTimeout.Value, 1, 3_600,
+            $"{provider.Provider.Value} request timeout seconds");
+        TextBox? secretName = configuration.Kind is AgentModelProviderKind.OpenRouter
+            ? ProviderTextBox(configuration.SecretName?.Value ?? string.Empty,
+                $"{provider.Provider.Value} Secret Service key name")
+            : null;
+        TextBox? environmentVariable = configuration.Kind is AgentModelProviderKind.OpenRouter
+            ? ProviderTextBox(configuration.EnvironmentVariable?.Value ?? string.Empty,
+                $"{provider.Provider.Value} API key environment variable")
+            : null;
+        Button save = new()
+        {
+            Content = "Save provider configuration",
+            IsEnabled = !settingsState.IsBusy,
+        };
+        save.Classes.Add("command");
+        AutomationProperties.SetName(save, $"Save {provider.Provider.Value} provider configuration");
+        save.Click += async (_, _) => await store.UpdateModelProviderAsync(new(
+            configuration.Provider,
+            new(endpoint.Text ?? string.Empty),
+            new(chatModel.Text ?? string.Empty),
+            new(embeddingModel.Text ?? string.Empty),
+            new(decimal.ToInt32(dimensions.Value ?? 0)),
+            new(decimal.ToInt32(connectTimeout.Value ?? 0)),
+            new(decimal.ToInt32(requestTimeout.Value ?? 0)),
+            secretName is null ? null : new(secretName.Text ?? string.Empty),
+            environmentVariable is null || string.IsNullOrWhiteSpace(environmentVariable.Text)
+                ? null
+                : new(environmentVariable.Text)), cancellationToken);
+
+        Grid fields = new()
+        {
+            ColumnDefinitions = new("*,*"),
+            RowDefinitions = new("Auto,Auto,Auto"),
+            ColumnSpacing = 10,
+            RowSpacing = 8,
+        };
+        AddProviderField(fields, 0, 0, "Endpoint", endpoint);
+        AddProviderField(fields, 0, 1, "Default chat model", chatModel);
+        AddProviderField(fields, 1, 0, "Default embedding model", embeddingModel);
+        AddProviderField(fields, 1, 1, "Embedding dimensions", dimensions);
+        AddProviderField(fields, 2, 0, "Connect timeout (seconds)", connectTimeout);
+        AddProviderField(fields, 2, 1, "Request timeout (seconds)", requestTimeout);
+        content.Children.Add(new Separator());
+        content.Children.Add(fields);
+
+        if (secretName is not null && environmentVariable is not null)
+        {
+            Grid secretReferences = new()
+            {
+                ColumnDefinitions = new("*,*"),
+                ColumnSpacing = 10,
+            };
+            AddProviderField(secretReferences, 0, 0, "Secret Service key", secretName);
+            AddProviderField(secretReferences, 0, 1, "Environment fallback", environmentVariable);
+            content.Children.Add(secretReferences);
+
+            TextBox credential = new()
+            {
+                PasswordChar = '●',
+                PlaceholderText = "Paste a new API key",
+                MinWidth = 280,
+                IsEnabled = !settingsState.IsBusy,
+            };
+            AutomationProperties.SetName(credential, $"{provider.Provider.Value} API key");
+            Button saveCredential = new()
+            {
+                Content = configuration.CredentialState is ModelProviderCredentialState.Configured
+                    ? "Replace API key"
+                    : "Save API key",
+                IsEnabled = false,
+            };
+            saveCredential.Classes.Add("command");
+            AutomationProperties.SetName(saveCredential, $"Save {provider.Provider.Value} API key");
+            credential.GetObservable(TextBox.TextProperty).Subscribe(value =>
+                saveCredential.IsEnabled = !settingsState.IsBusy && !string.IsNullOrWhiteSpace(value));
+            saveCredential.Click += async (_, _) =>
+            {
+                await store.SetModelProviderCredentialAsync(new(
+                    configuration.Provider,
+                    new(credential.Text ?? string.Empty)), cancellationToken);
+                credential.Text = string.Empty;
+            };
+            Grid credentialRow = new()
+            {
+                ColumnDefinitions = new("*,Auto"),
+                ColumnSpacing = 10,
+                Children = { credential },
+            };
+            Grid.SetColumn(saveCredential, 1);
+            credentialRow.Children.Add(saveCredential);
+            content.Children.Add(new TextBlock
+            {
+                Text = $"Credential: {configuration.CredentialState}" +
+                       (configuration.CredentialMessage is null
+                           ? string.Empty
+                           : $" · {configuration.CredentialMessage}"),
+                Classes = { "muted" },
+                TextWrapping = TextWrapping.Wrap,
+            });
+            content.Children.Add(credentialRow);
+            content.Children.Add(new TextBlock
+            {
+                Text = "The key is write-only, stored in Linux Secret Service, and never saved in XML or application state. An environment value takes precedence when configured.",
+                Classes = { "muted" },
+                TextWrapping = TextWrapping.Wrap,
+            });
+        }
+
+        content.Children.Add(save);
+        content.Children.Add(new TextBlock
+        {
+            Text = configuration.RequiresRestart
+                ? "Restart required: saved configuration differs from this running process."
+                : "Endpoint, model, dimension, timeout, and secret-reference changes apply after restart.",
+            Classes = { "muted" },
+            TextWrapping = TextWrapping.Wrap,
+        });
+        return new Border { Classes = { "card", "row" }, Child = content };
+    }
+
+    private static TextBox ProviderTextBox(string value, string accessibleName)
+    {
+        TextBox field = new() { Text = value, MinWidth = 220 };
+        AutomationProperties.SetName(field, accessibleName);
+        return field;
+    }
+
+    private NumericUpDown ProviderNumber(
+        int value,
+        int minimum,
+        int maximum,
+        string accessibleName)
+    {
+        NumericUpDown field = new()
+        {
+            Value = value,
+            Minimum = minimum,
+            Maximum = maximum,
+            IsEnabled = !settingsState.IsBusy,
+        };
+        AutomationProperties.SetName(field, accessibleName);
+        return field;
+    }
+
+    private static void AddProviderField(
+        Grid grid,
+        int row,
+        int column,
+        string label,
+        Control field)
+    {
+        StackPanel container = new()
+        {
+            Spacing = 4,
+            Children =
+            {
+                new TextBlock { Text = label, FontWeight = FontWeight.SemiBold },
+                field,
+            },
+        };
+        Grid.SetRow(container, row);
+        Grid.SetColumn(container, column);
+        grid.Children.Add(container);
+    }
+
     private static Control PlannedPage(SettingsCategory category) => Page(
         category.Name,
         category.Summary,
@@ -462,9 +879,7 @@ internal sealed class SettingsWindow : Window
             Classes = { "card" },
             Child = new TextBlock
             {
-                Text = category.Id is SettingsCategoryId.PrivacyAndLimits
-                    ? "This category is not exposed yet. Remote spending will remain a separate, explicit, goal-bound approval; a saved preference or credential will never authorize it."
-                    : "No preferences from this category are exposed in this build yet.",
+                Text = "No preferences from this category are exposed in this build yet.",
                 TextWrapping = TextWrapping.Wrap,
             },
         });
@@ -505,9 +920,28 @@ internal sealed class SettingsWindow : Window
         public override string ToString() => Name;
     }
 
-    private sealed record ModelChoice(GoalModelCandidate Candidate)
+    private sealed record RemoteSpendChoice(RemoteSpendMode Mode, string Name)
     {
-        public override string ToString() =>
-            $"{Candidate.Provider.Value} / {Candidate.Model.Value} ({Candidate.Access})";
+        public override string ToString() => Name;
     }
+
+    private static bool TryParseUsd(string? text, out MicroUsdAmount? amount)
+    {
+        amount = null;
+        if (!decimal.TryParse(text, System.Globalization.NumberStyles.Number,
+                System.Globalization.CultureInfo.InvariantCulture, out decimal usd) || usd <= 0)
+        {
+            return false;
+        }
+
+        decimal microUsd = usd * 1_000_000m;
+        if (microUsd != decimal.Truncate(microUsd) || microUsd >= long.MaxValue)
+        {
+            return false;
+        }
+
+        amount = new((long)microUsd);
+        return true;
+    }
+
 }

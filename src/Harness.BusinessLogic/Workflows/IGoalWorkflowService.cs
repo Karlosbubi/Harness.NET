@@ -19,4 +19,8 @@ public interface IGoalWorkflowService
     IAsyncEnumerable<GoalWorkflowSnapshot> RetryAsync(
         GoalWorkflowRetryRequest request,
         CancellationToken cancellationToken = default);
+
+    ValueTask<GoalWorkflowSnapshot> AbortAsync(
+        GoalWorkflowAbortRequest request,
+        CancellationToken cancellationToken = default);
 }

@@ -14,7 +14,7 @@ development — see `docs/roadmap.md` Stage 3 and `docs/tasks/README.md` for the
 remaining concrete gaps. Chat-first orchestration, multi-workspace use, Roslyn
 validation/intellisense/refactoring, and messy-repository recovery are now delivered;
 accepted goal branches now include deliberate manual push/PR/merge guidance. The
-the planned daily-use gaps are closed. Task 038 (agent-quality feedback loop) remains
+planned daily-use gaps are closed. Task 038 (agent-quality feedback loop) remains
 explicitly deferred as an optional evaluation track.
 
 Framework discovery, the production service slices, and the default docked desktop
@@ -24,11 +24,15 @@ redacted local logs, optional OTLP, adaptive Avalonia and Terminal.Gui shells, a
 Ollama provider adapter. The OpenRouter adapter adds dynamic chat/embedding discovery,
 streaming, strict privacy routing, and fail-closed goal budgets with attributed
 reservation and reconciled-spend reports. The Avalonia goal workspace and TUI Goals
-menu create local-only or explicitly capped goals and manage versioned plan
+menu create unlimited-by-default goals with prominent capped and local-only opt-ins and manage versioned plan
 approval/denial. Both adapters show reserved exposure, reconciled spend, remaining
 budget, overage, and per-request attribution; they discover configured chat catalogs
-and persist an explicit provider/model choice independently for the lead,
-implementer, and reviewer.
+at interactive startup, validate saved role defaults, and persist an explicit
+provider/model choice independently for the lead, implementer, and reviewer. Settings
+shows Ollama and OpenRouter as first-class providers and limits each role picker to
+models that declare every capability required by that role. The provider page edits
+the private XDG endpoint/model/embedding/timeout override and writes OpenRouter keys
+directly to Linux Secret Service without echoing or persisting the credential.
 
 Semantic indexing now reads bounded eligible text directly from the Git index,
 filters generated, binary, sensitive, and oversized content, and creates deterministic
@@ -62,12 +66,12 @@ diff content open in a central document region while real workspace/search, Git,
 goal context, and conversation controls occupy tool regions. Panel movement, hiding,
 floating, explicit save/reset, restart restoration, corrupt-state fallback, and
 private backup/recovery are implemented without persisting transient editor content.
-An approved selected goal opens source from its isolated worktree in an editable
-AvaloniaEdit tab; exact-baseline saves flow through the durable typed mutation
-boundary, and dirty switching/closing plus external-change conflicts require explicit
-decisions. Search, Git state, diff, and source resolve to that same approved worktree;
-without one they identify and inspect the original workspace, whose source remains
-read-only. Truncated source also remains read-only. Bounded run-output separation
+Files explicitly opened by the user from the active trusted workspace are editable
+in AvaloniaEdit by default. If an approved goal is selected, source instead resolves
+to its isolated worktree. Both user save paths use confined exact-baseline writes;
+agent edits still require the approved goal mutation boundary. Dirty switching/closing
+and external-change conflicts require explicit decisions. Search, Git state, diff,
+and source resolve to the same context. Truncated source remains read-only. Bounded run-output separation
 is implemented as a distinct Dock tool over durable typed Build/Test/Restore evidence
 without adding a terminal. The rendered Dock content boundary, minimum-size fallback,
 keyboard restoration, floating ownership, accessible names, and 200% scaling are now
@@ -84,6 +88,11 @@ Avalonia and the TUI create durable goals with review-cycle limits and optional 
 caps, propose and inspect versioned plans, and require confirmation before plan
 approval provisions an isolated worktree. Avalonia disables approval until the active
 workspace is trusted and explains the exact repository-local capabilities granted.
+When a role call needs direction, its run card can retry the exact role with a
+capability-compatible replacement model, a new output limit, and required user
+guidance. Any non-terminal goal can instead be confirmed as aborted and immediately
+return the interface to new-goal composition; its history, evidence, and worktree are
+preserved while it is removed from the continuation list.
 Trusted-workspace tools now provide confined file reads, tracked-text search,
 bounded Git status/diff evidence, non-evaluating .NET metadata, approved atomic file
 edits, and cancellable .NET execution in isolated goal worktrees. Agent role
@@ -101,7 +110,11 @@ role routes,
 output ceilings, aggregate cap, active reservations, reconciled spend, and remaining
 budget before model calls. Both can start bounded Lead planning, continue approved
 Implementer/Reviewer work, cancel an active run, and inspect durable tasks, activity,
-and evidence.
+and evidence. Starting plan generation explicitly selects a compatible Lead model,
+prefilled from the effective configured Lead route; remote selection retains the
+spend-policy and confirmation gates. Model selectors search the complete discovered
+catalog across configured providers; compatible remote routes remain visible on a
+local-only goal but cannot be authorized until that goal switches to unlimited or capped spend.
 All production roles can request 1-8 relevant chunks through a typed semantic-context
 tool tied to the active goal workspace and strict remote privacy. Avalonia and the
 TUI Goals menu can
@@ -211,6 +224,20 @@ Avalonia UI and provider/tool boundaries without external inference with:
 ```bash
 ./eng/verify-avalonia-workflow.py
 ```
+
+For a longer real-model usability exercise, use one local tool-capable Ollama model
+to have Harness generate and independently validate a Tic-Tac-Toe app with an
+unbeatable minimax opponent:
+
+```bash
+./eng/verify-ollama-tictactoe-usability.py \
+  --ollama-endpoint http://127.0.0.1:11434 \
+  --model gemma4:latest
+```
+
+This is opt-in local inference, not a deterministic release check. It configures no
+remote provider and preserves its generated repository, Harness state, logs, timings,
+and exhaustive solver-validation evidence under `artifacts/usability/`.
 
 The complete Linux desktop 1.0 gate combines the deterministic/package gate, Orca
 speech verification, and the production workflow verifier:

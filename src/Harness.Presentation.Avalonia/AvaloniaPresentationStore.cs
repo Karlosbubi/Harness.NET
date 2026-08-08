@@ -30,7 +30,9 @@ internal sealed class AvaloniaPresentationStore(
     IApplicationOperationsService applicationOperationsService,
     ICapabilityApprovalService capabilityApprovalService,
     IFrameworkService frameworkService,
-    ILogger<AvaloniaPresentationStore> logger) : IDisposable
+    ILogger<AvaloniaPresentationStore> logger,
+    IModelProviderSettingsService? modelProviderSettingsService = null,
+    IRemoteSpendPreferenceService? remoteSpendPreferenceService = null) : IDisposable
 {
     private readonly BehaviorSubject<AvaloniaShellState> states = new(AvaloniaShellState.Initial);
     private readonly SemaphoreSlim commandGate = new(1, 1);
@@ -48,14 +50,26 @@ internal sealed class AvaloniaPresentationStore(
         {
             DashboardSnapshot dashboard = await dashboardService.RefreshProviderAsync(cancellationToken);
             AppearanceSnapshot appearance = await appearanceService.GetAsync(cancellationToken);
-            AgentDefaultsSnapshot agentDefaults = await agentDefaultsService.GetAsync(cancellationToken);
+            AgentDefaultsSnapshot agentDefaults = await agentDefaultsService
+                .DiscoverAvailableAsync(cancellationToken);
+            ModelProviderSettingsSnapshot? providerSettings = modelProviderSettingsService is null
+                ? null
+                : await modelProviderSettingsService.GetAsync(cancellationToken);
+            RemoteSpendPreference remoteSpendPreference = remoteSpendPreferenceService is null
+                ? RemoteSpendPreference.Default
+                : await remoteSpendPreferenceService.GetAsync(cancellationToken);
             IReadOnlyList<WorkspaceView> workspaces = await workspaceService.ListAsync(cancellationToken);
             IReadOnlyList<GoalView> goals = await LoadGoalsAsync(workspaces, cancellationToken);
             Publish(Current with
             {
                 Dashboard = dashboard,
                 Appearance = appearance,
-                Settings = Current.Settings with { AgentDefaults = agentDefaults },
+                Settings = Current.Settings with
+                {
+                    AgentDefaults = agentDefaults,
+                    ProviderSettings = providerSettings,
+                    RemoteSpendPreference = remoteSpendPreference,
+                },
                 Workspaces = Current.Workspaces with { Registered = workspaces },
                 Goals = Current.Goals with { Items = goals },
                 IsLoading = false,
@@ -106,7 +120,7 @@ internal sealed class AvaloniaPresentationStore(
                 GoalTitle(objective),
                 objective,
                 new ReviewCycleLimit(3),
-                RemoteBudget: null),
+                Current.Settings.RemoteSpendPreference.ToGoalBudget()),
             cancellationToken);
         if (Current.Goals.SelectedGoal is not null)
         {
@@ -227,6 +241,99 @@ internal sealed class AvaloniaPresentationStore(
         }
     }
 
+    internal async ValueTask UpdateModelProviderAsync(
+        ModelProviderSettingsUpdate request,
+        CancellationToken cancellationToken)
+    {
+        if (modelProviderSettingsService is null)
+        {
+            Publish(Current with
+            {
+                Settings = Current.Settings with { Status = "Provider configuration is unavailable." },
+            });
+            return;
+        }
+
+        Publish(Current with
+        {
+            Settings = Current.Settings with { IsBusy = true, Status = "Saving provider configuration…" },
+        });
+        try
+        {
+            ModelProviderSettingsResult result = await modelProviderSettingsService.UpdateAsync(
+                request,
+                cancellationToken);
+            Publish(Current with
+            {
+                Settings = Current.Settings with
+                {
+                    ProviderSettings = result.Snapshot ?? Current.Settings.ProviderSettings,
+                    IsBusy = false,
+                    Status = result.Error ?? "Provider configuration saved. Restart Harness.NET to apply it.",
+                },
+            });
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            logger.LogError(exception, "Provider configuration update failed");
+            Publish(Current with
+            {
+                Settings = Current.Settings with { IsBusy = false, Status = exception.Message },
+            });
+        }
+    }
+
+    internal async ValueTask SetModelProviderCredentialAsync(
+        ModelProviderCredentialUpdate request,
+        CancellationToken cancellationToken)
+    {
+        if (modelProviderSettingsService is null)
+        {
+            Publish(Current with
+            {
+                Settings = Current.Settings with { Status = "Provider credentials are unavailable." },
+            });
+            return;
+        }
+
+        Publish(Current with
+        {
+            Settings = Current.Settings with { IsBusy = true, Status = "Saving provider credential…" },
+        });
+        try
+        {
+            ModelProviderSettingsResult result = await modelProviderSettingsService.SetCredentialAsync(
+                request,
+                cancellationToken);
+            ModelProviderSettingsView? provider = result.Snapshot?.Providers.FirstOrDefault(item =>
+                item.Provider == request.Provider);
+            bool canRefreshActiveProvider = provider is { RequiresRestart: false };
+            AgentDefaultsSnapshot? defaults = canRefreshActiveProvider
+                ? await agentDefaultsService.DiscoverAvailableAsync(cancellationToken)
+                : Current.Settings.AgentDefaults;
+            Publish(Current with
+            {
+                Settings = Current.Settings with
+                {
+                    ProviderSettings = result.Snapshot ?? Current.Settings.ProviderSettings,
+                    AgentDefaults = defaults,
+                    IsBusy = false,
+                    Status = result.Error ?? (canRefreshActiveProvider
+                        ? "Provider credential saved to Secret Service; catalog refreshed."
+                        : "Provider credential saved to Secret Service. Restart Harness.NET to activate the pending provider configuration."),
+                },
+            });
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            logger.LogError(exception, "Provider credential update failed");
+            Publish(Current with
+            {
+                Settings = Current.Settings with { IsBusy = false, Status = exception.Message },
+            });
+        }
+    }
+
     internal async ValueTask UpdateAgentDefaultAsync(
         AgentRole role,
         GoalModelCandidate candidate,
@@ -255,13 +362,17 @@ internal sealed class AvaloniaPresentationStore(
                 return;
             }
 
-            AgentDefaultsSnapshot current = Current.Settings.AgentDefaults ?? new([], [], []);
+            AgentDefaultsSnapshot current = Current.Settings.AgentDefaults ??
+                new([], [], [], [], []);
             AgentDefaultsSnapshot updated = current with
             {
                 Roles = current.Roles
                     .Where(item => item.Role != role)
                     .Append(result.Value)
                     .OrderBy(item => item.Role)
+                    .ToArray(),
+                DefaultIssues = current.DefaultIssues
+                    .Where(issue => issue.Role != role)
                     .ToArray(),
             };
             Publish(Current with
@@ -283,6 +394,42 @@ internal sealed class AvaloniaPresentationStore(
                 Error = exception.Message,
             });
         }
+    }
+
+    internal async ValueTask UpdateRemoteSpendPreferenceAsync(
+        RemoteSpendPreference preference,
+        CancellationToken cancellationToken)
+    {
+        if (remoteSpendPreferenceService is null)
+        {
+            Publish(Current with
+            {
+                Settings = Current.Settings with { Status = "Remote-spend preferences are unavailable." },
+            });
+            return;
+        }
+
+        Publish(Current with
+        {
+            Settings = Current.Settings with
+            {
+                IsBusy = true,
+                Status = "Saving default remote-spend policy…",
+            },
+        });
+        RemoteSpendPreferenceResult result = await remoteSpendPreferenceService.UpdateAsync(
+            preference,
+            cancellationToken);
+        Publish(Current with
+        {
+            Settings = Current.Settings with
+            {
+                RemoteSpendPreference = result.Preference,
+                IsBusy = false,
+                Status = result.Error ?? "Default remote-spend policy saved.",
+            },
+            Error = result.Error,
+        });
     }
 
     internal void SetRepositoryPath(string value) =>
@@ -553,9 +700,12 @@ internal sealed class AvaloniaPresentationStore(
 
             await ReloadGoalsAsync(
                 result.Goal.Id,
-                result.Goal.RemoteBudget is null
-                    ? "Saved private goal limits with remote spending disabled."
-                    : $"Saved explicit remote cap of ${GoalPresentationFormatter.ToUsd(result.Goal.RemoteBudget.Value)}.",
+                RemoteSpendPreference.FromGoalBudget(result.Goal.RemoteBudget).Mode switch
+                {
+                    RemoteSpendMode.Unlimited => "Saved private goal limits with unlimited remote spending.",
+                    RemoteSpendMode.Capped => $"Saved explicit remote cap of ${GoalPresentationFormatter.ToUsd(result.Goal.RemoteBudget!.Value)}.",
+                    _ => "Saved private goal limits with remote spending disabled.",
+                },
                 cancellationToken);
         }, "Goal settings update");
 
@@ -685,15 +835,45 @@ internal sealed class AvaloniaPresentationStore(
 
     internal async ValueTask StartGoalWorkflowAsync(
         GoalId goalId,
+        GoalModelCandidate leadModel,
         MaximumAgentOutputTokens leadMaximum,
         CancellationToken cancellationToken) =>
         await RunWorkflowAsync(
             goalId,
-            token => goalWorkflowService.StartPlanningAsync(
-                new(goalId, leadMaximum),
-                token),
+            token => StartPlanningWithModelAsync(goalId, leadModel, leadMaximum, token),
             cancellationToken,
             "Lead planning");
+
+    private async IAsyncEnumerable<GoalWorkflowSnapshot> StartPlanningWithModelAsync(
+        GoalId goalId,
+        GoalModelCandidate leadModel,
+        MaximumAgentOutputTokens leadMaximum,
+        [System.Runtime.CompilerServices.EnumeratorCancellation]
+        CancellationToken cancellationToken)
+    {
+        GoalModelSelectionResult selected = await goalModelService.SelectAsync(new(
+            goalId,
+            AgentRole.Lead,
+            leadModel.Provider,
+            leadModel.Model), cancellationToken);
+        if (selected.Selection is null)
+        {
+            throw new InvalidOperationException(selected.Error ?? "Lead model selection failed.");
+        }
+
+        IReadOnlyList<GoalModelSelectionView> selections =
+            await goalModelService.GetSelectionsAsync(goalId, cancellationToken);
+        Publish(Current with
+        {
+            Goals = Current.Goals with { ModelSelections = selections },
+        });
+        await foreach (GoalWorkflowSnapshot snapshot in goalWorkflowService.StartPlanningAsync(
+                           new(goalId, leadMaximum), cancellationToken)
+                           .WithCancellation(cancellationToken))
+        {
+            yield return snapshot;
+        }
+    }
 
     internal async ValueTask ResumeGoalWorkflowAsync(
         GoalId goalId,
@@ -711,15 +891,95 @@ internal sealed class AvaloniaPresentationStore(
     internal async ValueTask RetryGoalWorkflowAsync(
         GoalId goalId,
         GoalWorkflowRetryRole role,
+        GoalModelCandidate model,
         MaximumAgentOutputTokens maximumOutputTokens,
+        GoalRetryGuidance guidance,
         CancellationToken cancellationToken) =>
         await RunWorkflowAsync(
             goalId,
-            token => goalWorkflowService.RetryAsync(
-                new(goalId, role, maximumOutputTokens),
-                token),
+            token => RetryWithModelAsync(
+                goalId, role, model, maximumOutputTokens, guidance, token),
             cancellationToken,
             $"{role} retry");
+
+    private async IAsyncEnumerable<GoalWorkflowSnapshot> RetryWithModelAsync(
+        GoalId goalId,
+        GoalWorkflowRetryRole retryRole,
+        GoalModelCandidate model,
+        MaximumAgentOutputTokens maximumOutputTokens,
+        GoalRetryGuidance guidance,
+        [System.Runtime.CompilerServices.EnumeratorCancellation]
+        CancellationToken cancellationToken)
+    {
+        AgentRole role = retryRole switch
+        {
+            GoalWorkflowRetryRole.Lead => AgentRole.Lead,
+            GoalWorkflowRetryRole.Implementer => AgentRole.Implementer,
+            GoalWorkflowRetryRole.Reviewer => AgentRole.Reviewer,
+            _ => throw new ArgumentOutOfRangeException(nameof(retryRole)),
+        };
+        GoalModelSelectionResult selected = await goalModelService.SelectAsync(new(
+            goalId,
+            role,
+            model.Provider,
+            model.Model), cancellationToken);
+        if (selected.Selection is null)
+        {
+            throw new InvalidOperationException(selected.Error ?? "Retry model selection failed.");
+        }
+
+        IReadOnlyList<GoalModelSelectionView> selections =
+            await goalModelService.GetSelectionsAsync(goalId, cancellationToken);
+        Publish(Current with
+        {
+            Goals = Current.Goals with { ModelSelections = selections },
+        });
+        await foreach (GoalWorkflowSnapshot snapshot in goalWorkflowService.RetryAsync(
+                           new(goalId, retryRole, maximumOutputTokens, guidance),
+                           cancellationToken).WithCancellation(cancellationToken))
+        {
+            yield return snapshot;
+        }
+    }
+
+    internal async ValueTask AbortGoalAsync(
+        GoalId goalId,
+        GoalAbortReason reason,
+        CancellationToken cancellationToken)
+    {
+        await RunGoalCommandAsync(async () =>
+        {
+            await goalWorkflowService.AbortAsync(new(goalId, reason), cancellationToken);
+            WorkspaceView? active = ActiveWorkspace(Current.Workspaces.Registered);
+            if (active is not null)
+            {
+                selectedGoalsByWorkspace.Remove(active.Id);
+            }
+
+            Publish(Current with
+            {
+                Goals = Current.Goals with
+                {
+                    Items = Current.Goals.Items.Where(goal => goal.Id != goalId).ToArray(),
+                    SelectedGoalId = null,
+                    CurrentPlan = null,
+                    ModelCatalog = null,
+                    ModelSelections = [],
+                    Cost = null,
+                    Workflow = null,
+                    SemanticStatus = null,
+                    SemanticRebuild = null,
+                    SemanticSearch = null,
+                    CommitPreview = null,
+                    CommitApproval = null,
+                    CapabilityApprovals = [],
+                    Status = "Goal aborted. Describe a new goal when ready.",
+                },
+                ComposerText = string.Empty,
+                Error = null,
+            });
+        }, "Goal abort");
+    }
 
     internal void CancelGoalWorkflow() => workflowExecution?.Cancel();
 

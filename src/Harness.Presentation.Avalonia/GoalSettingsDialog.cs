@@ -21,10 +21,7 @@ internal sealed class GoalSettingsDialog : Window
         Increment = 1,
         FormatString = "0",
     };
-    private readonly CheckBox enableRemote = new()
-    {
-        Content = "Authorize a goal-wide remote spending cap",
-    };
+    private readonly ComboBox remoteMode = new();
     private readonly TextBox remoteUsd = new() { PlaceholderText = "USD, for example 2.00" };
     private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap };
     private readonly Button save = new() { Content = "Save private limits" };
@@ -44,6 +41,7 @@ internal sealed class GoalSettingsDialog : Window
         MinWidth = 520;
         MinHeight = 440;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        remoteMode.ItemsSource = RemoteSpendChoice.All;
         Content = BuildContent();
         LoadGoal();
         WireInteractions();
@@ -52,7 +50,7 @@ internal sealed class GoalSettingsDialog : Window
     private Control BuildContent()
     {
         AutomationProperties.SetName(reviewCycles, "Maximum review cycles");
-        AutomationProperties.SetName(enableRemote, "Authorize remote spending cap");
+        AutomationProperties.SetName(remoteMode, "Goal remote spending mode");
         AutomationProperties.SetName(remoteUsd, "Remote spending cap in US dollars");
         AutomationProperties.SetName(save, "Save goal settings");
         Button close = new() { Content = "Close" };
@@ -69,11 +67,20 @@ internal sealed class GoalSettingsDialog : Window
                     Classes = { "muted" },
                 },
                 reviewCycles,
-                enableRemote,
+                new Border
+                {
+                    Classes = { "card", "attention" },
+                    Child = new TextBlock
+                    {
+                        Text = "Unlimited remote spend removes Harness.NET's aggregate dollar ceiling. Provider charges still apply. Opt into a cap or local-only execution when desired.",
+                        TextWrapping = TextWrapping.Wrap,
+                    },
+                },
+                remoteMode,
                 remoteUsd,
                 new TextBlock
                 {
-                    Text = "Enabling this cap explicitly authorizes aggregate remote model spend for this goal up to the exact amount. Disabling it keeps the goal local-only.",
+                    Text = "A cap is enforced across all remote calls for this goal. Local-only rejects remote routes entirely.",
                     TextWrapping = TextWrapping.Wrap,
                     Classes = { "muted" },
                 },
@@ -141,17 +148,21 @@ internal sealed class GoalSettingsDialog : Window
     private void LoadGoal()
     {
         reviewCycles.Value = goal.ReviewCycleLimit.Value;
-        enableRemote.IsChecked = goal.RemoteBudget is not null;
-        remoteUsd.Text = goal.RemoteBudget is null
+        RemoteSpendPreference preference = RemoteSpendPreference.FromGoalBudget(goal.RemoteBudget);
+        remoteMode.SelectedItem = RemoteSpendChoice.All.First(choice => choice.Mode == preference.Mode);
+        remoteUsd.Text = preference.Cap is null
             ? string.Empty
-            : GoalPresentationFormatter.ToUsd(goal.RemoteBudget.Value);
-        remoteUsd.IsEnabled = enableRemote.IsChecked is true;
+            : GoalPresentationFormatter.ToUsd(preference.Cap.Value);
+        remoteUsd.IsEnabled = preference.Mode is RemoteSpendMode.Capped;
     }
 
     private void WireInteractions()
     {
-        enableRemote.IsCheckedChanged += (_, _) =>
-            remoteUsd.IsEnabled = enableRemote.IsChecked is true;
+        remoteMode.SelectionChanged += (_, _) =>
+            remoteUsd.IsEnabled = remoteMode.SelectedItem is RemoteSpendChoice
+            {
+                Mode: RemoteSpendMode.Capped,
+            };
         save.Click += async (_, _) => await SaveAsync();
         routes.Click += async (_, _) =>
         {
@@ -166,8 +177,14 @@ internal sealed class GoalSettingsDialog : Window
     private async Task SaveAsync()
     {
         int cycles = decimal.ToInt32(reviewCycles.Value ?? goal.ReviewCycleLimit.Value);
-        MicroUsdAmount? budget = null;
-        if (enableRemote.IsChecked is true)
+        if (remoteMode.SelectedItem is not RemoteSpendChoice choice)
+        {
+            status.Text = "Choose a remote-spending mode.";
+            return;
+        }
+
+        MicroUsdAmount? cap = null;
+        if (choice.Mode is RemoteSpendMode.Capped)
         {
             if (!decimal.TryParse(remoteUsd.Text, NumberStyles.Number,
                     CultureInfo.InvariantCulture, out decimal usd) || usd <= 0 ||
@@ -177,11 +194,13 @@ internal sealed class GoalSettingsDialog : Window
                 return;
             }
 
-            budget = new(decimal.ToInt64(decimal.Round(
+            cap = new(decimal.ToInt64(decimal.Round(
                 usd * 1_000_000m,
                 0,
                 MidpointRounding.AwayFromZero)));
         }
+
+        MicroUsdAmount? budget = new RemoteSpendPreference(choice.Mode, cap).ToGoalBudget();
 
         await store.UpdateGoalSettingsAsync(new(
             goal.Id,
@@ -198,6 +217,18 @@ internal sealed class GoalSettingsDialog : Window
         {
             status.Text = store.Current.Goals.Status ?? "Settings were not saved.";
         }
+    }
+
+    private sealed record RemoteSpendChoice(RemoteSpendMode Mode, string Name)
+    {
+        internal static IReadOnlyList<RemoteSpendChoice> All { get; } =
+        [
+            new(RemoteSpendMode.Unlimited, "Unlimited remote spend"),
+            new(RemoteSpendMode.Capped, "Set an aggregate spending cap"),
+            new(RemoteSpendMode.LocalOnly, "Local models only"),
+        ];
+
+        public override string ToString() => Name;
     }
 
     private static T AtRow<T>(T control, int row)

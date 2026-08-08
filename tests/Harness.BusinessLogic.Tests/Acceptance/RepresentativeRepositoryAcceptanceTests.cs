@@ -67,10 +67,11 @@ public sealed class RepresentativeRepositoryAcceptanceTests : IDisposable
         SqliteCapabilityApprovalStore approvalStore = new(applicationPaths);
         CapabilityApprovalService approvals = new(goalStore, workspaceStore, approvalStore);
         SqliteToolEvidenceStore evidenceStore = new(applicationPaths);
+        AtomicWorkspaceFileEditor fileEditor = new();
         WorkspaceMutationService mutations = new(
             goalStore,
             workspaceStore,
-            new AtomicWorkspaceFileEditor(),
+            fileEditor,
             new DotNetToolRunner(),
             evidenceStore,
             approvalStore);
@@ -78,7 +79,8 @@ public sealed class RepresentativeRepositoryAcceptanceTests : IDisposable
         WorkbenchDocumentService documents = new(
             new WorkbenchWorkspaceContextResolver(goalStore, workspaceStore),
             new WorkspaceFileReader(),
-            mutations);
+            mutations,
+            fileEditor);
         WorkbenchDocumentView source = await documents.OpenAsync(new(
             new(registered.Workspace.Id),
             created.Goal.Id,
@@ -88,6 +90,7 @@ public sealed class RepresentativeRepositoryAcceptanceTests : IDisposable
 
         const string updatedProgram = "Console.WriteLine(\"verified by Harness.NET\");\n";
         WorkbenchDocumentSaveResult edit = await documents.SaveAsync(new(
+            new(registered.Workspace.Id),
             created.Goal.Id,
             new("representative-edit"),
             source.Path,

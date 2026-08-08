@@ -88,8 +88,9 @@ effective-route and cost status, but it does not require users to operate role
 selectors for every goal.
 
 Goal-specific overrides remain available through progressive disclosure when a user
-needs a different model, limit, privacy route, or remote cap. A configured credential,
-default route, or saved preference never authorizes remote spending. The exact
+needs a different model, limit, privacy route, or remote cap. ADR 014 replaces the
+former local-only default: the saved spend-mode preference now authorizes new goals.
+The exact
 goal-bound authorization remains visible and explicit.
 
 Settings are typed application configuration and private state according to their
@@ -139,6 +140,24 @@ known qualities after that judgment: keyboard-only completion of the core loop,
 AT-SPI/Orca semantics, wide and compact rendered screenshots, focus restoration,
 honest loading/error/recovery states, and recorded latency for common editor and chat
 actions. Screenshot assertions do not substitute for hands-on review.
+
+### Stuck-goal recovery amendment (2026-08-08)
+
+A paused `NeedsDirection` run must not reduce recovery to an unexplained Continue
+action. Its inline run card offers **Retry with changes** for the exact failed role.
+The focused recovery sheet includes a capability-qualified replacement model, role
+output ceiling, and bounded user guidance. The chosen goal-role route and guidance
+checkpoint are persisted before the new call; remote replacement models retain the
+existing spend-policy and explicit-confirmation gates. Retry never replays the uncertain
+call and cannot target a different or stale role.
+
+Every non-terminal goal also exposes **Abort & start new goal** both before selection
+and in its goal timeline. Abort is a confirmed typed command, records the bounded user
+reason, terminally closes any active or paused production run without deleting its
+tasks, evidence, or worktree, and marks the goal unavailable for continuation.
+Presentation then clears that goal context and focuses the ordinary composer. Abort
+grants no Git, network, model, or cleanup authority; isolated worktree disposal
+remains a separate future lifecycle decision.
 
 ## Consequences
 

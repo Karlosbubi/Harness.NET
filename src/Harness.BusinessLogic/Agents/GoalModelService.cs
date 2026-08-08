@@ -20,6 +20,7 @@ internal sealed class GoalModelService :
     private readonly IReadOnlyDictionary<AgentRole, ModelProviderName> defaultRoutes;
     private readonly AgentDefaultsOptions defaultOptions;
     private readonly TimeProvider timeProvider;
+    private volatile ModelDiscoverySnapshot? discovery;
 
     internal GoalModelService(
         IGoalStore goalStore,
@@ -80,13 +81,14 @@ internal sealed class GoalModelService :
                 "Model discovery requires a goal in the active workspace.");
         }
 
-        (IReadOnlyList<GoalModelCandidate> models, IReadOnlyList<GoalModelProviderIssue> issues) =
-            await DiscoverModelsAsync(cancellationToken);
+        ModelDiscoverySnapshot discovered = await DiscoverModelsAsync(
+            forceRefresh: true,
+            cancellationToken);
 
         return new(
             goalId,
-            models,
-            issues,
+            discovered.Models,
+            discovered.Issues,
             ErrorCode: null,
             Error: null);
     }
@@ -163,18 +165,13 @@ internal sealed class GoalModelService :
         {
             return Failure(
                 "remote_budget_required",
-                "Select a positive remote budget when creating the goal before authorizing a remote model.");
+                "Choose unlimited or capped remote spending for the goal before authorizing a remote model.");
         }
 
-        ModelCatalog catalog = await provider.Provider.GetModelsAsync(cancellationToken);
-        if (catalog.Error is not null)
-        {
-            return Failure(catalog.Error.Code, catalog.Error.Message);
-        }
-
-        ModelDescriptor? model = catalog.Models.FirstOrDefault(candidate =>
-            candidate.Purposes?.Contains(ModelPurpose.Chat) is true &&
-            candidate.Id.Equals(request.Model.Value, StringComparison.Ordinal));
+        ModelDiscoverySnapshot discovered = await DiscoverModelsAsync(
+            forceRefresh: false,
+            cancellationToken);
+        GoalModelCandidate? model = FindModel(discovered, request.Provider, request.Model);
         if (model is null)
         {
             return Failure(
@@ -182,11 +179,19 @@ internal sealed class GoalModelService :
                 $"Chat model '{request.Model.Value}' is unavailable from '{provider.Name.Value}'.");
         }
 
+        if (!model.SupportedRoles.Contains(request.Role))
+        {
+            return Failure(
+                "model_role_unsupported",
+                $"Model '{provider.Name.Value}/{request.Model.Value}' does not fully support {request.Role}; " +
+                $"required capabilities: {string.Join(", ", AgentRoleModelPolicy.RequiredCapabilities(request.Role))}.");
+        }
+
         StoredGoalModelSelection stored = await selectionStore.SaveAsync(new(
             goal.Id,
             request.Role.ToString(),
             provider.Name.Value,
-            model.Id,
+            model.Model.Value,
             timeProvider.GetUtcNow()), cancellationToken);
         return new(
             new(
@@ -245,7 +250,26 @@ internal sealed class GoalModelService :
         {
             return RouteFailure(
                 "remote_budget_required",
-                "Remote agent execution requires a positive goal cost cap.");
+                "Remote agent execution requires unlimited or capped goal spending authority.");
+        }
+
+
+        ModelDiscoverySnapshot discovered = await DiscoverModelsAsync(
+            forceRefresh: false,
+            cancellationToken);
+        GoalModelCandidate? available = FindModel(discovered, provider.Name, model);
+        if (available is null)
+        {
+            return RouteFailure(
+                "model_unavailable",
+                $"Configured model '{provider.Name.Value}/{model.Value}' is not currently available.");
+        }
+
+        if (!available.SupportedRoles.Contains(role))
+        {
+            return RouteFailure(
+                "model_role_unsupported",
+                $"Configured model '{provider.Name.Value}/{model.Value}' does not fully support {role}.");
         }
 
         return new(
@@ -255,24 +279,27 @@ internal sealed class GoalModelService :
     }
 
     public async ValueTask<AgentDefaultsSnapshot> GetAsync(
-        CancellationToken cancellationToken = default) =>
-        new((await DefaultsAsync(cancellationToken)).Values
-                .OrderBy(item => item.Role)
-                .ToArray(),
-            Models: [],
-            Issues: []);
+        CancellationToken cancellationToken = default)
+    {
+        AgentRoleDefault[] defaults = (await DefaultsAsync(cancellationToken)).Values
+            .OrderBy(item => item.Role)
+            .ToArray();
+        ModelDiscoverySnapshot? current = discovery;
+        return current is null
+            ? new(defaults, [], [], UndiscoveredProviders(), [])
+            : Snapshot(defaults, current);
+    }
 
     public async ValueTask<AgentDefaultsSnapshot> DiscoverAvailableAsync(
         CancellationToken cancellationToken = default)
     {
-        (IReadOnlyList<GoalModelCandidate> models, IReadOnlyList<GoalModelProviderIssue> issues) =
-            await DiscoverModelsAsync(cancellationToken);
-        return new(
-            (await DefaultsAsync(cancellationToken)).Values
-                .OrderBy(item => item.Role)
-                .ToArray(),
-            models,
-            issues);
+        ModelDiscoverySnapshot discovered = await DiscoverModelsAsync(
+            forceRefresh: true,
+            cancellationToken);
+        AgentRoleDefault[] defaults = (await DefaultsAsync(cancellationToken)).Values
+            .OrderBy(item => item.Role)
+            .ToArray();
+        return Snapshot(defaults, discovered);
     }
 
     public async ValueTask<AgentRoleDefaultUpdateResult> UpdateAsync(
@@ -300,15 +327,10 @@ internal sealed class GoalModelService :
                 $"Provider '{request.Provider.Value}' is not configured.");
         }
 
-        ModelCatalog catalog = await provider.Provider.GetModelsAsync(cancellationToken);
-        if (catalog.Error is not null)
-        {
-            return DefaultFailure(catalog.Error.Code, catalog.Error.Message);
-        }
-
-        ModelDescriptor? model = catalog.Models.FirstOrDefault(candidate =>
-            candidate.Purposes?.Contains(ModelPurpose.Chat) is true &&
-            candidate.Id.Equals(request.Model.Value, StringComparison.Ordinal));
+        ModelDiscoverySnapshot discovered = await DiscoverModelsAsync(
+            forceRefresh: false,
+            cancellationToken);
+        GoalModelCandidate? model = FindModel(discovered, request.Provider, request.Model);
         if (model is null)
         {
             return DefaultFailure(
@@ -316,10 +338,19 @@ internal sealed class GoalModelService :
                 $"Chat model '{request.Model.Value}' is unavailable from '{provider.Name.Value}'.");
         }
 
+
+        if (!model.SupportedRoles.Contains(request.Role))
+        {
+            return DefaultFailure(
+                "model_role_unsupported",
+                $"Model '{provider.Name.Value}/{request.Model.Value}' does not fully support {request.Role}; " +
+                $"required capabilities: {string.Join(", ", AgentRoleModelPolicy.RequiredCapabilities(request.Role))}.");
+        }
+
         StoredAgentRoleDefault stored = await defaultStore.SaveAsync(new(
             MapRole(request.Role),
             new(provider.Name.Value),
-            new(model.Id),
+            new(model.Model.Value),
             new(request.MaximumOutputTokens.Value),
             timeProvider.GetUtcNow()), cancellationToken);
         return new(MapDefault(stored), ErrorCode: null, Error: null);
@@ -391,11 +422,16 @@ internal sealed class GoalModelService :
             value.UpdatedAt);
     }
 
-    private async ValueTask<(
-        IReadOnlyList<GoalModelCandidate> Models,
-        IReadOnlyList<GoalModelProviderIssue> Issues)> DiscoverModelsAsync(
+    private async ValueTask<ModelDiscoverySnapshot> DiscoverModelsAsync(
+        bool forceRefresh,
         CancellationToken cancellationToken)
     {
+        ModelDiscoverySnapshot? current = discovery;
+        if (!forceRefresh && current is not null)
+        {
+            return current;
+        }
+
         List<GoalModelCandidate> models = [];
         List<GoalModelProviderIssue> issues = [];
         foreach (GoalModelProviderRegistration provider in providers.Values
@@ -416,13 +452,110 @@ internal sealed class GoalModelService :
             }
         }
 
-        return (
+        ModelDiscoverySnapshot refreshed = new(
             models.OrderBy(model => model.Access)
                 .ThenBy(model => model.Provider.Value, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(model => model.Model.Value, StringComparer.Ordinal)
                 .ToArray(),
             issues);
+        discovery = refreshed;
+        return refreshed;
     }
+
+    private AgentDefaultsSnapshot Snapshot(
+        IReadOnlyList<AgentRoleDefault> defaults,
+        ModelDiscoverySnapshot discovered) => new(
+        defaults,
+        discovered.Models,
+        discovered.Issues,
+        ProviderStatuses(discovered),
+        ValidateDefaults(defaults, discovered));
+
+    private IReadOnlyList<AgentModelProviderStatus> UndiscoveredProviders() => providers.Values
+        .OrderBy(provider => provider.Access)
+        .ThenBy(provider => provider.Name.Value, StringComparer.OrdinalIgnoreCase)
+        .Select(provider => new AgentModelProviderStatus(
+            provider.Name,
+            provider.Access,
+            provider.DefaultModel,
+            DiscoveredChatModels: 0,
+            RoleCompatibleModels: 0,
+            HasPublishedPricing: false,
+            AgentModelProviderAvailability.Empty,
+            "Catalog discovery has not run."))
+        .ToArray();
+
+    private IReadOnlyList<AgentModelProviderStatus> ProviderStatuses(
+        ModelDiscoverySnapshot discovered) => providers.Values
+        .OrderBy(provider => provider.Access)
+        .ThenBy(provider => provider.Name.Value, StringComparer.OrdinalIgnoreCase)
+        .Select(provider =>
+        {
+            GoalModelCandidate[] models = discovered.Models
+                .Where(model => model.Provider == provider.Name)
+                .ToArray();
+            GoalModelProviderIssue? issue = discovered.Issues.FirstOrDefault(candidate =>
+                candidate.Provider == provider.Name);
+            AgentModelProviderAvailability availability = (models.Length, issue) switch
+            {
+                (> 0, not null) => AgentModelProviderAvailability.Degraded,
+                (> 0, null) => AgentModelProviderAvailability.Available,
+                (0, not null) => AgentModelProviderAvailability.Unavailable,
+                _ => AgentModelProviderAvailability.Empty,
+            };
+            return new AgentModelProviderStatus(
+                provider.Name,
+                provider.Access,
+                provider.DefaultModel,
+                models.Length,
+                models.Count(model => model.SupportedRoles.Count > 0),
+                models.Any(model => model.InputPrice is not null && model.OutputPrice is not null),
+                availability,
+                issue?.Message ?? (models.Length == 0 ? "No chat models were discovered." : null));
+        })
+        .ToArray();
+
+    private static IReadOnlyList<AgentRoleDefaultIssue> ValidateDefaults(
+        IReadOnlyList<AgentRoleDefault> defaults,
+        ModelDiscoverySnapshot discovered) => defaults.Select(roleDefault =>
+        {
+            GoalModelCandidate? model = FindModel(
+                discovered,
+                roleDefault.Provider,
+                roleDefault.Model);
+            if (model is null)
+            {
+                GoalModelProviderIssue? providerIssue = discovered.Issues.FirstOrDefault(issue =>
+                    issue.Provider == roleDefault.Provider);
+                return new AgentRoleDefaultIssue(
+                    roleDefault.Role,
+                    roleDefault.Provider,
+                    roleDefault.Model,
+                    new(providerIssue is null
+                        ? "default_model_unavailable"
+                        : "default_provider_unavailable"),
+                    providerIssue?.Message ??
+                    $"Configured model '{roleDefault.Provider.Value}/{roleDefault.Model.Value}' was not discovered.");
+            }
+
+            return model.SupportedRoles.Contains(roleDefault.Role)
+                ? null
+                : new AgentRoleDefaultIssue(
+                    roleDefault.Role,
+                    roleDefault.Provider,
+                    roleDefault.Model,
+                    new("default_model_role_unsupported"),
+                    $"Configured model does not fully support {roleDefault.Role}; required capabilities: " +
+                    $"{string.Join(", ", AgentRoleModelPolicy.RequiredCapabilities(roleDefault.Role))}.");
+        })
+        .OfType<AgentRoleDefaultIssue>()
+        .ToArray();
+
+    private static GoalModelCandidate? FindModel(
+        ModelDiscoverySnapshot discovered,
+        ModelProviderName provider,
+        AgentModel model) => discovered.Models.FirstOrDefault(candidate =>
+        candidate.Provider == provider && candidate.Model == model);
 
     private static AgentRole ParseRole(string value) =>
         Enum.TryParse(value, ignoreCase: false, out AgentRole parsed) && Enum.IsDefined(parsed)
@@ -452,6 +585,7 @@ internal sealed class GoalModelService :
         new(model.Id),
         provider.Access,
         model.Capabilities.Select(capability => new ModelCapability(capability)).ToArray(),
+        AgentRoleModelPolicy.SupportedRoles(model.Capabilities),
         model.ContextLength is null ? null : new(model.ContextLength.Value),
         model.Pricing is null ? null : new(model.Pricing.InputUsdPerToken * 1_000_000m),
         model.Pricing is null ? null : new(model.Pricing.OutputUsdPerToken * 1_000_000m),
@@ -465,4 +599,8 @@ internal sealed class GoalModelService :
 
     private static GoalModelRouteResult RouteFailure(string code, string error) =>
         new(null, new(code), new(error));
+
+    private sealed record ModelDiscoverySnapshot(
+        IReadOnlyList<GoalModelCandidate> Models,
+        IReadOnlyList<GoalModelProviderIssue> Issues);
 }

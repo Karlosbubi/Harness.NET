@@ -109,7 +109,7 @@ internal sealed class SourceDocumentSession : IDisposable
                          View.Access is WorkbenchDocumentAccess.Editable;
         if (IsDirty)
         {
-            Status.Text = "Unsaved changes · save uses the loaded worktree version as its baseline.";
+            Status.Text = "Unsaved changes · save uses the loaded file version as its exact baseline.";
         }
         else if (!isBusy)
         {
@@ -130,7 +130,9 @@ internal sealed class SourceDocumentSession : IDisposable
         IsDirty = false;
         Document.IsModified = false;
         Save.IsEnabled = false;
-        Status.Text = $"Saved {bytesWritten.Value:N0} bytes to {View.Branch?.Value ?? "the goal worktree"}.";
+        Status.Text = View.GoalId is null
+            ? $"Saved {bytesWritten.Value:N0} bytes to the active workspace."
+            : $"Saved {bytesWritten.Value:N0} bytes to {View.Branch?.Value ?? "the goal worktree"}.";
     }
 
     internal void ReplaceWith(WorkbenchDocumentView view)

@@ -52,3 +52,20 @@ solution build completes with zero warnings.
 This checkpoint does not claim semantic highlighting, diagnostics, completion, or
 refactoring. Those remain Tasks 042-044 and are deliberately represented as absent
 rather than fabricated.
+
+## User-directed editing amendment — 2026-08-08
+
+Files explicitly opened from the active trusted original workspace now enter the
+same editable surface by default; creating an agent goal is not a prerequisite for a
+manual user edit. The save request carries the registered workspace identity, relative
+path, exact loaded SHA-256, and UTF-8 content through Business Logic to the confined
+atomic file editor. Trust is revalidated at save time. An inactive or newly untrusted
+workspace is rejected before file access, and an external hash change retains the
+existing reload/overwrite/cancel conflict flow. Truncated files remain read-only.
+
+Approved-goal documents are unchanged: they resolve to the isolated worktree and save
+through the durable goal mutation/evidence boundary. Presentation coverage proves an
+original-workspace tab is labelled **EDITABLE**, accepts text, and emits a goal-free
+workspace-bound save; Business Logic coverage proves successful exact-baseline save
+and fail-closed trust revocation. No model provider, network operation, or paid check
+is involved.

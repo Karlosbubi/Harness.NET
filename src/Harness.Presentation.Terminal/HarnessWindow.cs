@@ -34,6 +34,7 @@ internal sealed class HarnessWindow : Window
     private readonly IGoalAcceptanceService goalAcceptanceService;
     private readonly ISemanticIndexService semanticIndexService;
     private readonly IApplicationOperationsService operationsService;
+    private readonly AgentDefaultsSnapshot agentDefaults;
     private readonly CancellationToken cancellationToken;
     private readonly FrameView workspaceFrame;
     private readonly FrameView activityFrame;
@@ -44,13 +45,14 @@ internal sealed class HarnessWindow : Window
     private readonly MenuItem trustWorkspaceMenuItem;
     private readonly Label activityText;
     private readonly Label detailsText;
+    private readonly TextField modelSearch;
     private readonly ListView modelList;
     private readonly Button refreshModels;
     private readonly Button useModel;
     private readonly TextField composer;
     private readonly Button send;
     private readonly Label status;
-    private string[] availableModelIds = [];
+    private string[] selectableModelIds = [];
     private WorkspaceView? activeWorkspace;
     private IReadOnlyList<GoalView> goals;
     private DashboardSnapshot latestSnapshot;
@@ -67,6 +69,7 @@ internal sealed class HarnessWindow : Window
         IGoalAcceptanceService goalAcceptanceService,
         ISemanticIndexService semanticIndexService,
         IApplicationOperationsService operationsService,
+        AgentDefaultsSnapshot agentDefaults,
         DashboardSnapshot initialSnapshot,
         WorkspaceView? activeWorkspace,
         IReadOnlyList<GoalView> goals,
@@ -83,6 +86,7 @@ internal sealed class HarnessWindow : Window
         this.goalAcceptanceService = goalAcceptanceService;
         this.semanticIndexService = semanticIndexService;
         this.operationsService = operationsService;
+        this.agentDefaults = agentDefaults;
         this.activeWorkspace = activeWorkspace;
         this.goals = goals;
         latestSnapshot = initialSnapshot;
@@ -145,13 +149,20 @@ internal sealed class HarnessWindow : Window
         ]);
         activityFrame = CreateFrame("Activity", activityText);
         detailsFrame = CreateFrame("Provider", detailsText);
-        detailsText.Height = Dim.Fill(7);
+        detailsText.Height = Dim.Fill(8);
+        modelSearch = new TextField
+        {
+            X = 0,
+            Y = Pos.AnchorEnd(7),
+            Width = Dim.Fill(),
+            Height = 1,
+        };
         modelList = new ListView
         {
             X = 0,
-            Y = Pos.AnchorEnd(6),
+            Y = Pos.AnchorEnd(5),
             Width = Dim.Fill(),
-            Height = 3,
+            Height = 2,
         };
         refreshModels = new Button
         {
@@ -169,7 +180,12 @@ internal sealed class HarnessWindow : Window
         };
         refreshModels.Accepted += async (_, _) => await RefreshProviderAsync();
         useModel.Accepted += async (_, _) => await SelectModelAsync();
-        detailsFrame.Add(modelList, refreshModels, useModel);
+        modelSearch.Accepting += (_, args) =>
+        {
+            args.Handled = true;
+            RenderProviderModels(latestSnapshot);
+        };
+        detailsFrame.Add(modelSearch, modelList, refreshModels, useModel);
 
         composer = new TextField
         {
@@ -274,19 +290,30 @@ internal sealed class HarnessWindow : Window
                                ? string.Empty
                                : $"\n{snapshot.Provider.Error}");
 
-        availableModelIds = snapshot.Provider.Models.Select(model => model.Id).ToArray();
-        string[] modelLabels = snapshot.Provider.Models.Select(model =>
+        RenderProviderModels(snapshot);
+
+        status.Text = $"{snapshot.Status} | {snapshot.Budget}";
+    }
+
+    private void RenderProviderModels(DashboardSnapshot snapshot)
+    {
+        string search = modelSearch.Text?.ToString()?.Trim() ?? string.Empty;
+        ProviderModel[] visible = snapshot.Provider.Models
+            .Where(model => search.Length == 0 ||
+                $"{model.Id} {string.Join(' ', model.Capabilities)}"
+                    .Contains(search, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        selectableModelIds = visible.Select(model => model.Id).ToArray();
+        string[] modelLabels = visible.Select(model =>
             $"{(model.Id == snapshot.Provider.SelectedModel ? "*" : " ")} {model.Id}  " +
             string.Join(',', model.Capabilities)).ToArray();
         ObservableCollection<string> models = new(modelLabels);
         modelList.SetSource(models);
-        int selectedModel = Array.IndexOf(availableModelIds, snapshot.Provider.SelectedModel);
+        int selectedModel = Array.IndexOf(selectableModelIds, snapshot.Provider.SelectedModel);
         if (selectedModel >= 0)
         {
             modelList.SelectedItem = selectedModel;
         }
-
-        status.Text = $"{snapshot.Status} | {snapshot.Budget}";
     }
 
     private void RenderWorkspace(DashboardSnapshot snapshot)
@@ -369,6 +396,7 @@ internal sealed class HarnessWindow : Window
                 goalWorkflowService,
                 goalAcceptanceService,
                 semanticIndexService,
+                agentDefaults,
                 activeWorkspace.Id,
                 goals,
                 cancellationToken);
@@ -721,13 +749,13 @@ internal sealed class HarnessWindow : Window
     private async Task SelectModelAsync()
     {
         int selected = modelList.SelectedItem ?? -1;
-        if (selected < 0 || selected >= availableModelIds.Length)
+        if (selected < 0 || selected >= selectableModelIds.Length)
         {
             status.Text = "No model selected";
             return;
         }
 
-        string model = availableModelIds[selected];
+        string model = selectableModelIds[selected];
         await RunProviderCommandAsync(token => dashboardService.SelectModelAsync(model, token));
     }
 
