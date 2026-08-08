@@ -925,7 +925,10 @@ internal sealed class WorkbenchDockHost
         factory.InitLayout(root);
         Control.Layout = root;
         root.ShowWindows?.Execute(null);
-        ActivateOverview();
+        IDockable restoredActiveDocument = documents.ActiveDockable ?? overviewDocument;
+        factory.SetActiveDockable(restoredActiveDocument);
+        activeDocument = restoredActiveDocument;
+        UpdateDocumentSwitcher();
         viewportInitialized = true;
         ApplyViewport(Control.Bounds.Width, Control.Bounds.Height);
     }

@@ -106,6 +106,9 @@ to be the primary agent interaction instead of a shallow log strip.
 Because Conversation is the primary interaction surface, closing or hiding its dock
 must never strand the user: a persistent header action, command-palette entry, and
 keyboard shortcut restore the tool and focus its composer.
+When the user moves Conversation into a more prominent dock, layout restoration keeps
+that exact placement and honors it as the active pane instead of forcing the workspace
+overview to the foreground.
 
 The default shell emphasizes workspace identity, command search, active goal/run
 state, and the next meaningful action. Provider, theme, role, and layout maintenance

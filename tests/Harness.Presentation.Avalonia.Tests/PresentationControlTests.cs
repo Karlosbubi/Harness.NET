@@ -1749,6 +1749,53 @@ public sealed class PresentationControlTests
     }
 
     [Fact]
+    public async Task Conversation_moved_to_document_region_survives_layout_restart()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            AvaloniaShellState shell = ApprovedGoalShell();
+            LayoutService layouts = new();
+            WorkbenchDockHost first = CreateWorkbench(shell, layouts);
+            Window firstWindow = new() { Width = 1280, Height = 800, Content = first.Control };
+            firstWindow.Show();
+            IDockable conversation = Find<IDockable>(
+                first.Root, WorkbenchDockIds.ConversationTool);
+            IToolDock bottom = Find<IToolDock>(first.Root, WorkbenchDockIds.Bottom);
+            bottom.VisibleDockables!.Remove(conversation);
+            first.Factory.AddDockable(first.Documents, conversation);
+            first.Factory.SetActiveDockable(conversation);
+            first.SaveLayoutAsync().AsTask().GetAwaiter().GetResult();
+            firstWindow.Close();
+
+            WorkbenchDockHost restored = CreateWorkbench(shell, layouts);
+            Window restoredWindow = new()
+            {
+                Width = 1280,
+                Height = 800,
+                Content = restored.Control,
+            };
+            restoredWindow.Show();
+            restored.RestoreLayoutAsync().AsTask().GetAwaiter().GetResult();
+            Dispatcher.UIThread.RunJobs();
+
+            IDockable restoredConversation = Find<IDockable>(
+                restored.Root, WorkbenchDockIds.ConversationTool);
+            Assert.Same(restored.Documents, restoredConversation.Owner);
+            Assert.Contains(restored.Documents.VisibleDockables ?? [], item =>
+                item.Id == WorkbenchDockIds.ConversationTool);
+            Assert.Equal(
+                WorkbenchDockIds.ConversationTool,
+                restored.Documents.ActiveDockable?.Id);
+            Assert.Contains(
+                Assert.IsAssignableFrom<Control>(restoredConversation.Context),
+                restoredWindow.GetVisualDescendants());
+            restoredWindow.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
     public async Task Accessibility_tree_neutralizes_only_visual_implementation_containers()
     {
         using HeadlessUnitTestSession session =
