@@ -229,6 +229,27 @@ of Stage 3 below.
   Resolve documentation against the dependency version actually used by the active
   workspace instead of silently answering from an unrelated current release.
   (Task 046)
+- Resolve dependency facts without asking a model. A typed dependency-inspection
+  service correlates project and central package declarations, evaluated MSBuild
+  properties for trusted workspaces, lock files, and approved restore assets. It
+  distinguishes declared, centrally overridden, direct, transitive, and resolved
+  versions and reports ambiguity or stale/missing restore evidence instead of guessing.
+  Untrusted inspection remains non-evaluating, and no lookup performs an implicit
+  restore or other network operation.
+- Validate packages being considered for use against configured authoritative package
+  sources before recommending or adding them. Deterministic evidence includes exact
+  package identity and version existence, target-framework/runtime compatibility,
+  dependency graph, listing/deprecation state, known vulnerability data, license and
+  repository provenance, package integrity/signing evidence where available, and
+  stable-versus-prerelease policy. A model may explain or compare those facts but may
+  not invent, override, or substitute for them. Package changes and restores retain
+  their existing explicit approval boundaries.
+- Maintain a deterministic software bill of materials from the validated resolved
+  graph, including package provenance, versions, hashes when available, dependency
+  relationships, licenses, and known advisory references. Show current and proposed
+  SBOM diffs during package research and mutation, retain generation provenance in
+  private Harness.NET state, and permit an explicit standards-compatible export to a
+  user-selected location without adding repository metadata automatically.
 - Introduce one Business Logic lookup manager shared by documentation retrieval and
   general web research. It routes a bounded query through available evidence sources:
   exact local/package documentation, curated local or vector-indexed documentation,
@@ -252,7 +273,8 @@ of Stage 3 below.
   workspace source, or private goal content is sent merely to discover documentation.
 - Record an ADR before implementation covering lookup sufficiency/escalation policy,
   adapter boundaries, MCP and web trust, version resolution, caching/index identity,
-  citations, licensing/retention, and deterministic testing without live services.
+  deterministic package validation, SBOM format/export/refresh ownership, citations,
+  licensing/retention, and deterministic testing without live services.
 
 ### Workflow friction (delivered)
 

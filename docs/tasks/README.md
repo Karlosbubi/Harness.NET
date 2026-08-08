@@ -80,7 +80,7 @@ but the end-user workflow is not complete.
 | 043 | Done | Get semantic assistance while editing | 042 | - | Warm, cancellable completion, quick info, signature help, go-to-definition, and find-references operate on the exact active Roslyn source context; stale responses are discarded, keyboard and pointer interactions are accessible, and detailed targets plus degraded states follow ADR 012. Production-control and real-workspace evidence is recorded in `docs/acceptance/roslyn-interactive-assistance-2026-07-31.md`. |
 | 044 | Done | Use deterministic Roslyn transformations for deterministic work | 042 | - | Semantic rename resolves a symbol through Roslyn, previews every affected file and conflict with exact baselines and a fingerprint, enforces goal/task path grants, applies all files atomically or none, and records post-apply diagnostics and complete bounded diff evidence. F2 in the editor and the Implementer's preview/apply tools use the same typed operation; no model-authored text-search rename path exists. Acceptance evidence is recorded in `docs/acceptance/roslyn-deterministic-rename-2026-07-31.md`. |
 | 045 | Planned | Let developers and models verify UI work in the same visual context | 013, 035, 040 | Visual debugging currently depends on external screenshot tools and out-of-band image sharing, so the developer cannot see exactly which frame and app action a model evaluated. | A Linux-first XDG Desktop Portal capture capability produces explicitly consented, bounded, goal-scoped visual evidence. The developer can inspect each frame with its initiating model/tool action, and models can request and inspect approved captures through typed tools without receiving unrestricted desktop capture or input control. |
-| 046 | Planned | Answer library questions from version-matched documentation without bloating model context | 010, 014, 016, 024 | Core-library knowledge currently depends on model memory or ad hoc external research; documentation is not version-resolved, source-managed, or available through one bounded escalation path. | A shared lookup manager gives developers and agents typed, on-demand access to exact local/package docs, curated vector-indexed docs, configured MCP sources, and web search as a visible fallback. Results are bounded, ranked, cited, version-aware, privacy-governed, and injected only when requested by concrete work. |
+| 046 | Planned | Answer library and package questions from version-matched, validated evidence without bloating model context | 010, 014, 016, 024 | Core-library knowledge currently depends on model memory or ad hoc external research; documentation is not version-resolved or source-managed, package candidates are not deterministically checked against the workspace and authoritative feeds, and no managed SBOM records the resolved dependency graph. | A shared lookup manager gives developers and agents typed, on-demand access to exact local/package docs, curated vector-indexed docs, configured MCP sources, and web search as a visible fallback. A non-model dependency service resolves project/package versions, validates candidate compatibility and supply-chain metadata, and maintains a provenance-rich SBOM. Results are bounded, ranked, cited, version-aware, privacy-governed, and injected only when requested by concrete work. |
 
 ### Prepared delivery slices for Tasks 040, 042-046
 
@@ -268,33 +268,53 @@ and apply tools share this operation. Deterministic acceptance is recorded in
    the portal supplies it, 100%/200% scaling, multiple displays, sensitive-window
    selection, restart cleanup, accessibility coexistence, and Linux x64 publication.
 
-#### Task 046: version-aware documentation and research lookup
+#### Task 046: version-aware documentation, dependency, and research lookup
 
 1. Record an ADR defining the shared lookup manager, source authority and sufficiency
    rules, local-to-MCP-to-web escalation, network/privacy authorization, package-version
-   resolution, citation contracts, cache/index identity, retention, and licensing.
+   resolution, deterministic candidate validation, SBOM format and lifecycle, citation
+   contracts, cache/index identity, retention, export ownership, and licensing.
 2. Add source-neutral query, result, provenance, version, confidence, freshness, and
    failure contracts. Implement deterministic routing with exact local/package lookup
    first, bounded semantic retrieval second, configured MCP documentation sources
    next, and web search only when earlier sources cannot adequately support the query.
    Adapters remain in Data Access; routing and escalation policy remain in Business Logic.
-3. Build a managed core-library catalog for .NET/SDK, Avalonia, Rx.NET, Serilog,
+3. Add a non-model dependency inventory service that correlates `.csproj` package
+   references, central package management, trusted evaluated MSBuild metadata, lock
+   files, and approved restore assets. Represent declared, overridden, direct,
+   transitive, and resolved versions explicitly; detect disagreement and stale assets;
+   never evaluate an untrusted project or restore implicitly. Persist a generation-
+   identified resolved graph and derive a provenance-rich SBOM from that graph.
+4. Add deterministic candidate-package validation against configured authoritative
+   feeds. Check exact identity/version availability, target-framework and runtime
+   compatibility, transitive dependencies, stable/prerelease status, deprecation and
+   listing state, known advisories, license/repository provenance, and available hash
+   or signing evidence. Preview the dependency and SBOM diff before an approved package
+   mutation, then reconcile it against post-restore assets; unknown facts remain unknown.
+5. Build a managed core-library catalog for .NET/SDK, Avalonia, Rx.NET, Serilog,
    Microsoft Agent Framework, Roslyn, Dock, Dapper, SQLite, xUnit, and other accepted
-   dependencies. Derive requested versions from evaluated workspace/project metadata,
+   dependencies. Derive requested versions from the validated dependency inventory,
    preserve license/source metadata, and partition cached or vector content by library,
-   version, source revision, embedding route, and chunking version.
-4. Expose one typed lookup tool to Lead, Implementer, and Reviewer plus a developer
+   version, source revision, embedding route, and chunking version. Refuse to present
+   mismatched-version documentation as exact evidence.
+6. Expose typed documentation lookup, dependency inspection, candidate validation, and
+   SBOM tools to Lead, Implementer, and Reviewer plus a developer
    Documentation/Research surface. Return only a small ranked evidence set by default;
-   support refine, expand, open source, and explain-escalation actions without placing
-   the catalog or prior search results in every model prompt.
-5. Add Settings management for documentation sources, MCP connections, local indexes,
-   version coverage, refresh/cache policy, offline mode, retention, and source failures.
+   support refine, expand, open source, compare package, inspect dependency path,
+   preview SBOM diff, export SBOM, and explain-escalation actions without placing the
+   catalog, dependency graph, or prior search results in every model prompt.
+7. Add Settings management for documentation and package sources, MCP connections,
+   local indexes, version coverage, refresh/cache and SBOM policy, offline mode,
+   retention, and source failures.
    Show when a lookup crosses from local state to MCP or web and apply existing remote
    privacy, credential, cost, cancellation, and audit boundaries.
-6. Prove exact API lookup, conceptual semantic lookup, version mismatch, conflicting
-   sources, stale cache, offline behavior, MCP failure, web fallback, cancellation,
-   deduplication, citation provenance, and strict context-size bounds with deterministic
-   fakes. Add opt-in live checks only for explicitly authorized documentation sources.
+8. Prove exact API lookup, conceptual semantic lookup, direct/central/transitive version
+   resolution, conditional references, stale or missing restore assets, candidate
+   compatibility and advisory checks, dependency and SBOM diffs, deterministic SBOM
+   reproduction/export, version mismatch, conflicting sources, stale cache, offline
+   behavior, MCP failure, web fallback, cancellation, deduplication, citation provenance,
+   and strict context-size bounds with deterministic fakes. Add opt-in live checks only
+   for explicitly authorized documentation and package sources.
 
 ### v1.0 release gate
 
