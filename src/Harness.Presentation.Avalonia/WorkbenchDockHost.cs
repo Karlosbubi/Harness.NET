@@ -2922,6 +2922,9 @@ internal sealed class WorkbenchDockHost
     /// <summary>Activates the Files panel, the same path as its keyboard shortcut.</summary>
     internal bool ShowFiles() => ActivateTool(WorkbenchDockIds.FilesTool);
 
+    /// <summary>Restores and activates the primary Conversation panel.</summary>
+    internal bool ShowConversation() => ActivateTool(WorkbenchDockIds.ConversationTool);
+
     /// <summary>Activates the Git panel, the same path as its keyboard shortcut.</summary>
     internal bool ShowGit() => ActivateTool(WorkbenchDockIds.GitTool);
 
@@ -2938,7 +2941,9 @@ internal sealed class WorkbenchDockHost
     private bool ActivateTool(string id)
     {
         IDockable? tool = FindDockable(root, id);
-        if (tool is null && factory.RestoreDockable(id) is { } restored)
+        bool visibleInOwner = tool?.Owner is IDock visibleOwner &&
+                              visibleOwner.VisibleDockables?.Contains(tool) is true;
+        if (!visibleInOwner && factory.RestoreDockable(id) is { } restored)
         {
             tool = restored;
         }
@@ -3093,6 +3098,7 @@ internal sealed class WorkbenchDockHost
             WorkbenchDockIds.FilesTool,
             WorkbenchDockIds.OverviewDocument,
             WorkbenchDockIds.GitTool,
+            WorkbenchDockIds.ConversationTool,
             WorkbenchDockIds.RunOutputTool,
         ];
         focusRegionIndex = (focusRegionIndex + 1) % regions.Length;

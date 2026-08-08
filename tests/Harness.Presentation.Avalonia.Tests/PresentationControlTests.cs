@@ -1720,6 +1720,35 @@ public sealed class PresentationControlTests
     }
 
     [Fact]
+    public async Task Closed_conversation_panel_can_be_restored_and_activated()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            WorkbenchDockHost workbench = CreateWorkbench(ApprovedGoalShell(), new());
+            Window window = new() { Width = 1280, Height = 800, Content = workbench.Control };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            IDockable conversation = Find<IDockable>(
+                workbench.Root, WorkbenchDockIds.ConversationTool);
+            IToolDock bottom = Find<IToolDock>(workbench.Root, WorkbenchDockIds.Bottom);
+
+            workbench.Factory.CloseDockable(conversation);
+            Dispatcher.UIThread.RunJobs();
+            Assert.DoesNotContain(bottom.VisibleDockables ?? [], item =>
+                item.Id == WorkbenchDockIds.ConversationTool);
+
+            Assert.True(workbench.ShowConversation());
+            Dispatcher.UIThread.RunJobs();
+            Assert.Contains(bottom.VisibleDockables ?? [], item =>
+                item.Id == WorkbenchDockIds.ConversationTool);
+            Assert.Equal(WorkbenchDockIds.ConversationTool, bottom.ActiveDockable?.Id);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
     public async Task Accessibility_tree_neutralizes_only_visual_implementation_containers()
     {
         using HeadlessUnitTestSession session =

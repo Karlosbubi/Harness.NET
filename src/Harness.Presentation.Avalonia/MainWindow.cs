@@ -79,6 +79,7 @@ internal sealed class MainWindow : Window
         Content = "⚙",
         AccessibleName = "Open Settings",
     };
+    private readonly Button showConversation = new() { Content = "Chat" };
     private readonly Border header = new();
     private readonly Border navigation = new();
     private readonly Border primary = new();
@@ -88,11 +89,6 @@ internal sealed class MainWindow : Window
     {
         Text = "Agent workspace for .NET",
         FontSize = 11,
-    };
-    private readonly TextBlock modelLabel = new()
-    {
-        Text = "Chat",
-        VerticalAlignment = VerticalAlignment.Center,
     };
     private WorkbenchDockHost? workbench;
     private bool suppressSelection;
@@ -245,7 +241,7 @@ internal sealed class MainWindow : Window
             VerticalAlignment = VerticalAlignment.Center,
             Children =
             {
-                Cluster(modelLabel, modelPicker, refreshProvider),
+                Cluster(showConversation, modelPicker, refreshProvider),
                 Cluster(openSettings),
             },
         };
@@ -266,7 +262,8 @@ internal sealed class MainWindow : Window
         modelPicker.Classes.Add("toolbar-input");
         refreshProvider.Classes.Add("icon");
         openSettings.Classes.Add("icon");
-        modelLabel.Classes.Add("cluster-label");
+        showConversation.Classes.Add("command");
+        AutomationProperties.SetName(showConversation, "Show Conversation panel");
         return grid;
     }
 
@@ -319,7 +316,6 @@ internal sealed class MainWindow : Window
         openWorkspace.IsVisible = !compact;
         // The palette keeps its keyboard shortcut when the bar is hidden for width.
         commandBar.IsVisible = !compact;
-        modelLabel.IsVisible = !compact;
     }
 
     private Control BuildNavigation()
@@ -467,6 +463,7 @@ internal sealed class MainWindow : Window
         refreshProvider.Click +=
             async (_, _) => await store.RefreshProviderAsync(cancellationToken);
         openSettings.Click += async (_, _) => await ShowSettingsAsync();
+        showConversation.Click += (_, _) => ShowConversation();
         openWorkspace.Click += async (_, _) => await ShowWorkspaceDialogAsync(true);
         manageWorkspaces.Click += async (_, _) => await ShowWorkspaceDialogAsync(false);
         inspectGoalContext.Click += async (_, _) => await ShowSemanticContextAsync();
@@ -503,6 +500,12 @@ internal sealed class MainWindow : Window
         {
             args.Handled = true;
             await ShowSettingsAsync();
+        }
+        else if (args.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Shift) &&
+                 args.Key is Key.C)
+        {
+            args.Handled = true;
+            ShowConversation();
         }
     }
 
@@ -575,6 +578,9 @@ internal sealed class MainWindow : Window
             [
                 new("tool.files", "Panels", "Show Files panel",
                     () => { host.ShowFiles(); return ValueTask.CompletedTask; }, "Ctrl+Shift+E"),
+                new("tool.conversation", "Panels", "Show Chat panel",
+                    () => { ShowConversation(); return ValueTask.CompletedTask; }, "Ctrl+Shift+C",
+                    MatchText: "Panels Show Chat Conversation goal agent message"),
                 new("tool.git", "Panels", "Show Git panel",
                     () => { host.ShowGit(); return ValueTask.CompletedTask; }, "Ctrl+Shift+G"),
                 new("tool.output", "Panels", "Show Run output panel",
@@ -591,6 +597,14 @@ internal sealed class MainWindow : Window
         }
 
         return commands;
+    }
+
+    private void ShowConversation()
+    {
+        if (workbench?.ShowConversation() is true)
+        {
+            Dispatcher.UIThread.Post(() => composer.Focus());
+        }
     }
 
     private async Task ShowDialogAsync(Window dialog) => await dialog.ShowDialog(this);

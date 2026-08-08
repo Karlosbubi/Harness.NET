@@ -103,6 +103,9 @@ Keep the ADR 010 docked document workbench. The center remains the editor/diff/p
 document area. Files/search, Git, Problems, goal/evidence, conversation, and run output
 remain movable tools, but default placement gives conversation enough continuous space
 to be the primary agent interaction instead of a shallow log strip.
+Because Conversation is the primary interaction surface, closing or hiding its dock
+must never strand the user: a persistent header action, command-palette entry, and
+keyboard shortcut restore the tool and focus its composer.
 
 The default shell emphasizes workspace identity, command search, active goal/run
 state, and the next meaningful action. Provider, theme, role, and layout maintenance
