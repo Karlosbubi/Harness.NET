@@ -72,7 +72,7 @@ but the end-user workflow is not complete.
 | 035 | Done | Make the workbench's daily surfaces feel like a professional IDE, not a prototype | 016, 026, 029, 032 | - | Framework rules/issues are scannable and filterable; Operations uses a native backup picker; Files is a bounded hierarchy with quick open; the header exposes command search; and Git diff has contrast-validated inline and side-by-side views. Source documents add theme-aware legible syntax colors, breadcrumb/branch/access chrome, compact save/reload/close actions, current-line and selection behavior, and caret/UTF-8/line-ending status without weakening exact-baseline saves. Real wide/compact approved-goal captures and production AT-SPI evidence are recorded in `docs/acceptance/source-editor-2026-07-29.md`. |
 | 036 | Done | Work across more than one trusted repository | 015 | Only one workspace can be active at a time; switching real projects requires re-registration/re-selection overhead. | A user can maintain multiple trusted workspaces and move between them without losing goal/context state, with clear active-workspace indication throughout Avalonia and the TUI. See `docs/acceptance/multi-workspace-2026-07-31.md`. |
 | 037 | Done | Trust the app on real, messy repositories | 013-033 | Large-repository scale, dirty bases, mid-goal conflicts, index rebuilds under load, provider outages, budget exhaustion, and corrupted/interrupted state are exercised only through the single scripted representative-repo gate. | Large real repositories, dirty working trees, merge conflicts mid-goal, provider outages, budget exhaustion, and corrupted/interrupted state are exercised and demonstrably recoverable, not just the scripted gate scenario. See `docs/acceptance/messy-repository-recovery-2026-07-31.md`. |
-| 038 | Deferred | See whether agent output can be trusted | 021 | No opt-in behavioral evaluation or regression data exists yet, so plan quality, tool-selection quality, and review quality have no measurable baseline over time or across model changes. Parked below the professional-IDE baseline and Task 045. | Opt-in Ollama behavioral evaluation datasets exist and regressions in planning, tool selection, and review are detectable before they reach a user's repository. |
+| 038 | Deferred | See whether agent output can be trusted | 021 | No opt-in behavioral evaluation or regression data exists yet, so plan quality, tool-selection quality, and review quality have no measurable baseline over time or across model changes. Parked below the professional-IDE baseline and Tasks 045-046. | Opt-in Ollama behavioral evaluation datasets exist and regressions in planning, tool selection, and review are detectable before they reach a user's repository. |
 | 039 | Done | Know what to do with an accepted goal branch | 023 | After exact-commit approval the goal branch sits in the repository with no in-app guidance; the user must already know to push, open a PR, or merge outside the app. | The app clearly surfaces the accepted branch's state and the deliberately manual next step (push/PR/merge) without automating merge or PR creation. See `docs/acceptance/goal-branch-handoff-2026-07-31.md`. |
 | 040 | Done | Collaborate through chat instead of a chain of pop-ups | 035 | - | Conversation is the primary goal surface; typed inline cards expose plans, cost/capability decisions, progress, validation, evidence, Restore, commit, and handoff. Plan, spending, Restore, destructive, budget-extension, and exact-commit authority remain explicit typed actions. Ordinary role/model defaults move to one searchable Settings surface, goal overrides use progressive disclosure, and obsolete dialog paths are removed. Production wide/compact and AT-SPI acceptance is recorded in `docs/acceptance/chat-first-workflow-2026-07-29.md`. |
 | 041 | Done | Recover application state without the verifier script | 026 | - | Avalonia and TUI Operations inspect exact v1/v2 archive evidence, require sensitive-state confirmation, and stage without changing the running app. The next cold start revalidates staged hashes, layout, schema, and SQLite integrity before replacement, retains bounded rollback material, and fails closed on tampering or publication failure. |
@@ -80,8 +80,9 @@ but the end-user workflow is not complete.
 | 043 | Done | Get semantic assistance while editing | 042 | - | Warm, cancellable completion, quick info, signature help, go-to-definition, and find-references operate on the exact active Roslyn source context; stale responses are discarded, keyboard and pointer interactions are accessible, and detailed targets plus degraded states follow ADR 012. Production-control and real-workspace evidence is recorded in `docs/acceptance/roslyn-interactive-assistance-2026-07-31.md`. |
 | 044 | Done | Use deterministic Roslyn transformations for deterministic work | 042 | - | Semantic rename resolves a symbol through Roslyn, previews every affected file and conflict with exact baselines and a fingerprint, enforces goal/task path grants, applies all files atomically or none, and records post-apply diagnostics and complete bounded diff evidence. F2 in the editor and the Implementer's preview/apply tools use the same typed operation; no model-authored text-search rename path exists. Acceptance evidence is recorded in `docs/acceptance/roslyn-deterministic-rename-2026-07-31.md`. |
 | 045 | Planned | Let developers and models verify UI work in the same visual context | 013, 035, 040 | Visual debugging currently depends on external screenshot tools and out-of-band image sharing, so the developer cannot see exactly which frame and app action a model evaluated. | A Linux-first XDG Desktop Portal capture capability produces explicitly consented, bounded, goal-scoped visual evidence. The developer can inspect each frame with its initiating model/tool action, and models can request and inspect approved captures through typed tools without receiving unrestricted desktop capture or input control. |
+| 046 | Planned | Answer library questions from version-matched documentation without bloating model context | 010, 014, 016, 024 | Core-library knowledge currently depends on model memory or ad hoc external research; documentation is not version-resolved, source-managed, or available through one bounded escalation path. | A shared lookup manager gives developers and agents typed, on-demand access to exact local/package docs, curated vector-indexed docs, configured MCP sources, and web search as a visible fallback. Results are bounded, ranked, cited, version-aware, privacy-governed, and injected only when requested by concrete work. |
 
-### Prepared delivery slices for Tasks 040, 042-045
+### Prepared delivery slices for Tasks 040, 042-046
 
 These slices are the implementation order. Each ends with its narrow tests, a build,
 and synchronized documentation; a later slice must not be pulled into an earlier one
@@ -266,6 +267,34 @@ and apply tools share this operation. Deterministic acceptance is recorded in
    correction, and recapture. Verify Wayland portal consent/denial, X11 fallback where
    the portal supplies it, 100%/200% scaling, multiple displays, sensitive-window
    selection, restart cleanup, accessibility coexistence, and Linux x64 publication.
+
+#### Task 046: version-aware documentation and research lookup
+
+1. Record an ADR defining the shared lookup manager, source authority and sufficiency
+   rules, local-to-MCP-to-web escalation, network/privacy authorization, package-version
+   resolution, citation contracts, cache/index identity, retention, and licensing.
+2. Add source-neutral query, result, provenance, version, confidence, freshness, and
+   failure contracts. Implement deterministic routing with exact local/package lookup
+   first, bounded semantic retrieval second, configured MCP documentation sources
+   next, and web search only when earlier sources cannot adequately support the query.
+   Adapters remain in Data Access; routing and escalation policy remain in Business Logic.
+3. Build a managed core-library catalog for .NET/SDK, Avalonia, Rx.NET, Serilog,
+   Microsoft Agent Framework, Roslyn, Dock, Dapper, SQLite, xUnit, and other accepted
+   dependencies. Derive requested versions from evaluated workspace/project metadata,
+   preserve license/source metadata, and partition cached or vector content by library,
+   version, source revision, embedding route, and chunking version.
+4. Expose one typed lookup tool to Lead, Implementer, and Reviewer plus a developer
+   Documentation/Research surface. Return only a small ranked evidence set by default;
+   support refine, expand, open source, and explain-escalation actions without placing
+   the catalog or prior search results in every model prompt.
+5. Add Settings management for documentation sources, MCP connections, local indexes,
+   version coverage, refresh/cache policy, offline mode, retention, and source failures.
+   Show when a lookup crosses from local state to MCP or web and apply existing remote
+   privacy, credential, cost, cancellation, and audit boundaries.
+6. Prove exact API lookup, conceptual semantic lookup, version mismatch, conflicting
+   sources, stale cache, offline behavior, MCP failure, web fallback, cancellation,
+   deduplication, citation provenance, and strict context-size bounds with deterministic
+   fakes. Add opt-in live checks only for explicitly authorized documentation sources.
 
 ### v1.0 release gate
 

@@ -221,6 +221,39 @@ of Stage 3 below.
   system can replace the Linux implementation. Record the capture/session, retention,
   privacy, and model-tool boundaries in an ADR before implementation.
 
+### Planned: documentation-aware lookup
+
+- Add explicit documentation support for the platform and core libraries Harness.NET
+  works with, initially .NET/SDK APIs, Avalonia, Rx.NET, Serilog, Microsoft Agent
+  Framework, Roslyn, Dock, Dapper, SQLite, and the configured test/tooling stack.
+  Resolve documentation against the dependency version actually used by the active
+  workspace instead of silently answering from an unrelated current release.
+  (Task 046)
+- Introduce one Business Logic lookup manager shared by documentation retrieval and
+  general web research. It routes a bounded query through available evidence sources:
+  exact local/package documentation, curated local or vector-indexed documentation,
+  configured MCP documentation sources, and web search only when local/configured
+  evidence is absent, stale, conflicting, or insufficient.
+- Keep documentation out of ambient prompts. Lead, Implementer, Reviewer, and the
+  developer invoke typed lookup/search actions when a concrete question needs support.
+  The manager returns a small ranked evidence set, permits progressive refinement,
+  deduplicates overlapping passages, and stops escalating once the question is
+  adequately supported.
+- Preserve source URI, library/package identity, version, retrieval time, source kind,
+  authority, and cache/index generation on every result. Answers and model actions can
+  cite the exact supporting material, surface version mismatches, and distinguish
+  authoritative documentation from examples, community discussion, and inference.
+- Manage sources in Settings: availability, version coverage, indexing/cache state,
+  MCP connection status, refresh policy, offline behavior, retention, and failures.
+  Documentation content and indexes remain private Harness.NET state and never add
+  metadata to the user's repository.
+- Apply existing privacy, network, credential, and cost boundaries before MCP or web
+  access. Query escalation must be visible in the workflow evidence; no provider key,
+  workspace source, or private goal content is sent merely to discover documentation.
+- Record an ADR before implementation covering lookup sufficiency/escalation policy,
+  adapter boundaries, MCP and web trust, version resolution, caching/index identity,
+  citations, licensing/retention, and deterministic testing without live services.
+
 ### Workflow friction (delivered)
 
 - Users can retain multiple trusted workspaces, switch through a dirty-document
@@ -253,7 +286,7 @@ of Stage 3 below.
 
 Deferred within Stage 3: opt-in Ollama behavioral evaluation and regression
 datasets for planning, tool-selection, and review quality (Task 038) are parked
-below every item above until the professional-IDE baseline and Task 045 close.
+below every item above until the professional-IDE baseline and Tasks 045-046 close.
 
 Stage 3 exits when a user can run real, non-scripted development work through the
 app, across multiple sessions and repositories, without the friction or gaps above
