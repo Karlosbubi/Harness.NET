@@ -72,15 +72,16 @@ but the end-user workflow is not complete.
 | 035 | Done | Make the workbench's daily surfaces feel like a professional IDE, not a prototype | 016, 026, 029, 032 | - | Framework rules/issues are scannable and filterable; Operations uses a native backup picker; Files is a bounded hierarchy with quick open; the header exposes command search; and Git diff has contrast-validated inline and side-by-side views. Source documents add theme-aware legible syntax colors, breadcrumb/branch/access chrome, compact save/reload/close actions, current-line and selection behavior, and caret/UTF-8/line-ending status without weakening exact-baseline saves. Real wide/compact approved-goal captures and production AT-SPI evidence are recorded in `docs/acceptance/source-editor-2026-07-29.md`. |
 | 036 | Done | Work across more than one trusted repository | 015 | Only one workspace can be active at a time; switching real projects requires re-registration/re-selection overhead. | A user can maintain multiple trusted workspaces and move between them without losing goal/context state, with clear active-workspace indication throughout Avalonia and the TUI. See `docs/acceptance/multi-workspace-2026-07-31.md`. |
 | 037 | Done | Trust the app on real, messy repositories | 013-033 | Large-repository scale, dirty bases, mid-goal conflicts, index rebuilds under load, provider outages, budget exhaustion, and corrupted/interrupted state are exercised only through the single scripted representative-repo gate. | Large real repositories, dirty working trees, merge conflicts mid-goal, provider outages, budget exhaustion, and corrupted/interrupted state are exercised and demonstrably recoverable, not just the scripted gate scenario. See `docs/acceptance/messy-repository-recovery-2026-07-31.md`. |
-| 038 | Deferred | See whether agent output can be trusted | 021 | No opt-in behavioral evaluation or regression data exists yet, so plan quality, tool-selection quality, and review quality have no measurable baseline over time or across model changes. Parked below Tasks 035-037 and 039-044 per 2026-07-29 prioritization. | Opt-in Ollama behavioral evaluation datasets exist and regressions in planning, tool selection, and review are detectable before they reach a user's repository. |
+| 038 | Deferred | See whether agent output can be trusted | 021 | No opt-in behavioral evaluation or regression data exists yet, so plan quality, tool-selection quality, and review quality have no measurable baseline over time or across model changes. Parked below the professional-IDE baseline and Task 045. | Opt-in Ollama behavioral evaluation datasets exist and regressions in planning, tool selection, and review are detectable before they reach a user's repository. |
 | 039 | Done | Know what to do with an accepted goal branch | 023 | After exact-commit approval the goal branch sits in the repository with no in-app guidance; the user must already know to push, open a PR, or merge outside the app. | The app clearly surfaces the accepted branch's state and the deliberately manual next step (push/PR/merge) without automating merge or PR creation. See `docs/acceptance/goal-branch-handoff-2026-07-31.md`. |
-| 040 | Done | Collaborate through chat instead of a chain of pop-ups | 035 | - | Conversation is the primary goal surface; typed inline cards expose plans, cost/capability decisions, progress, validation, evidence, Restore, commit, and handoff. Plan, spending, Restore, destructive, budget-extension, and exact-commit authority remain explicit typed actions. Ordinary role/model/output defaults move to one searchable Settings surface, goal overrides use progressive disclosure, and obsolete dialog paths are removed. Production wide/compact and AT-SPI acceptance is recorded in `docs/acceptance/chat-first-workflow-2026-07-29.md`. |
+| 040 | Done | Collaborate through chat instead of a chain of pop-ups | 035 | - | Conversation is the primary goal surface; typed inline cards expose plans, cost/capability decisions, progress, validation, evidence, Restore, commit, and handoff. Plan, spending, Restore, destructive, budget-extension, and exact-commit authority remain explicit typed actions. Ordinary role/model defaults move to one searchable Settings surface, goal overrides use progressive disclosure, and obsolete dialog paths are removed. Production wide/compact and AT-SPI acceptance is recorded in `docs/acceptance/chat-first-workflow-2026-07-29.md`. |
 | 041 | Done | Recover application state without the verifier script | 026 | - | Avalonia and TUI Operations inspect exact v1/v2 archive evidence, require sensitive-state confirmation, and stage without changing the running app. The next cold start revalidates staged hashes, layout, schema, and SQLite integrity before replacement, retains bounded rollback material, and fails closed on tampering or publication failure. |
 | 042 | Done | Validate every edit, model or manual, before it is trusted | 017, 018, 032 | - | An in-process Roslyn implementation behind implementation-neutral Data Access and Business Logic contracts loads only trusted source contexts without implicit restore. Versioned live buffers show syntax/compiler/analyzer diagnostics inline and in a Problems tool. Every model-authored candidate is compared with baseline diagnostics, is rejected before disk when it introduces a compiler Error, records warnings/findings as evidence, applies through an atomic baseline-protected boundary, and is verified again after apply. |
 | 043 | Done | Get semantic assistance while editing | 042 | - | Warm, cancellable completion, quick info, signature help, go-to-definition, and find-references operate on the exact active Roslyn source context; stale responses are discarded, keyboard and pointer interactions are accessible, and detailed targets plus degraded states follow ADR 012. Production-control and real-workspace evidence is recorded in `docs/acceptance/roslyn-interactive-assistance-2026-07-31.md`. |
 | 044 | Done | Use deterministic Roslyn transformations for deterministic work | 042 | - | Semantic rename resolves a symbol through Roslyn, previews every affected file and conflict with exact baselines and a fingerprint, enforces goal/task path grants, applies all files atomically or none, and records post-apply diagnostics and complete bounded diff evidence. F2 in the editor and the Implementer's preview/apply tools use the same typed operation; no model-authored text-search rename path exists. Acceptance evidence is recorded in `docs/acceptance/roslyn-deterministic-rename-2026-07-31.md`. |
+| 045 | Planned | Let developers and models verify UI work in the same visual context | 013, 035, 040 | Visual debugging currently depends on external screenshot tools and out-of-band image sharing, so the developer cannot see exactly which frame and app action a model evaluated. | A Linux-first XDG Desktop Portal capture capability produces explicitly consented, bounded, goal-scoped visual evidence. The developer can inspect each frame with its initiating model/tool action, and models can request and inspect approved captures through typed tools without receiving unrestricted desktop capture or input control. |
 
-### Prepared delivery slices for Tasks 040 and 042-044
+### Prepared delivery slices for Tasks 040, 042-045
 
 These slices are the implementation order. Each ends with its narrow tests, a build,
 and synchronized documentation; a later slice must not be pulled into an earlier one
@@ -93,8 +94,8 @@ merely to complete the final visual design at once.
    shell for General, Editor, Appearance and accessibility, Models and roles, Privacy
    and limits, Storage and recovery, and Advanced. Preserve goal-bound spending
    authorization as a separate decision rather than migrating it into a default.
-   Complete: the category shell, search, persisted Appearance page, typed role/model/
-   output defaults, remote-authority separation, and ownership inventory are delivered.
+   Complete: the category shell, search, persisted Appearance page, typed role/model
+   defaults, remote-authority separation, and ownership inventory are delivered.
 2. **Read-only workflow cards:** project existing plan, run, task, review, evidence,
    Restore, commit, and handoff records into immutable conversation
    card state. Render chronological loading, unavailable, stale, denied, failed,
@@ -244,6 +245,28 @@ Roslyn, and stores schema-20 rename evidence. F2 and the Implementer's closed pr
 and apply tools share this operation. Deterministic acceptance is recorded in
 `docs/acceptance/roslyn-deterministic-rename-2026-07-31.md`.
 
+#### Task 045: portal-mediated visual verification
+
+1. Record an ADR defining capture ownership, portal/session lifecycle, goal and
+   workspace binding, local/remote privacy disclosure, retention, image bounds, and
+   the prohibition on generic desktop input or background surveillance.
+2. Add focused platform-neutral contracts and a Linux XDG Desktop Portal Screenshot
+   adapter. Treat window/source selection, consent, cancellation, denial, portal
+   absence, stale sessions, multi-monitor coordinates, and scale as typed results.
+   Consider ScreenCast/PipeWire only after single-frame capture proves insufficient.
+3. Add a Visual verification document/tool showing the captured frame beside its
+   workspace, goal, timestamp, initiating actor, related model/tool action, and model
+   observations. The developer sees and can revoke the same evidence exposed to an
+   agent.
+4. Add typed agent operations to request a capture and inspect a user-approved
+   capture. Bound dimensions, encoded bytes, capture frequency, and retention;
+   require the existing remote privacy/cost disclosure before sending an image to a
+   remote model.
+5. Exercise a representative Avalonia UI change through capture, model observation,
+   correction, and recapture. Verify Wayland portal consent/denial, X11 fallback where
+   the portal supplies it, 100%/200% scaling, multiple displays, sensitive-window
+   selection, restart cleanup, accessibility coexistence, and Linux x64 publication.
+
 ### v1.0 release gate
 
 Tasks 013-033 are all **Done**, and a release candidate completes a representative
@@ -328,9 +351,9 @@ configured or paid provider.
   from `openai/text-embedding-3-small` for one short input. The opt-in live test
   enforced a five-microdollar reservation ceiling before sending the request.
 - Task 025 now requires an explicit remote provider/model choice for each goal role
-  and a positive goal cap. The durable selection authorizes only that provider/model
+  and an authorized monetary spend mode. The durable selection authorizes only that provider/model
   for the goal before plan approval, allowing a remote lead to propose a plan without
-  granting mutation rights. Every role call is goal-scoped and output-capped;
+  granting mutation rights. Every role call is goal-scoped and cost-accounted;
   reservations and reconciled charges remain enforced atomically and visible in the
   goal cost report. Approved goals retain goal-scoped remote embedding support.
 - Task 009 wraps Microsoft Agent Framework's `ChatClientAgent` behind semantic

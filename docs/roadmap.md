@@ -34,7 +34,7 @@ Exit evidence: accepted framework and architecture decision records.
   persisted model selection are available in the TUI. Typed XML supplies named
   provider modules and all main/reviewer/tool routes provide local defaults. Each
   goal can override lead, implementer, and reviewer independently; remote execution
-  is goal-bound, strictly private, output-capped, and cost-accounted.
+  is goal-bound, strictly private, and cost-accounted.
 - Completed: Git-backed workspace inspection, durable registration, active
   selection, entry-point validation, and explicit trust exist behind Business Logic
   contracts. A compact/wide TUI modal exposes registration and selection with a
@@ -155,12 +155,12 @@ of Stage 3 below.
   and theme-aware source editor now have recorded real-host evidence.
 - Completed the ADR 013 chat-first workflow replacement. Typed inline
   cards carry plans, progress, evidence, validation, consequential decisions, and
-  handoff; role/model/output defaults move to searchable Settings and goal-specific
+  handoff; role/model defaults move to searchable Settings and goal-specific
   overrides use progressive disclosure. Durable plan, remote-spend, Restore,
   destructive, budget, and exact-commit authority remains explicit. (Task 040)
   The Settings foundation is complete: all settled categories are searchable;
   Appearance owns persisted theme selection; Models & roles owns typed, validated,
-  schema-19 role/provider/model/output defaults; unavailable categories are explicit;
+  schema-19 role/provider/model defaults; unavailable categories are explicit;
   and remote authority remains goal-bound. `docs/settings.md` records ownership.
   The next increment is also present: durable goal, plan, run, task, evidence,
   capability/Restore, and exact-commit records now project into immutable conversation
@@ -195,6 +195,32 @@ of Stage 3 below.
   baselines. The editor and agents share the same typed operation; text-search rename
   is not an accepted agent behavior. (Task 044)
 
+### Planned: controlled visual verification
+
+- Add a Linux-first visual verification capability through XDG Desktop Portal
+  Screenshot, with ScreenCast/PipeWire considered only where a sequence of frames is
+  demonstrably necessary. The preferred target is the Harness.NET window or a
+  user-selected application window, never silent unrestricted desktop capture.
+  (Task 045)
+- Make every capture an explicit, visible developer action or a clearly disclosed,
+  revocable capture session. Portal consent, cancellation, denial, unavailable-portal,
+  multi-monitor, scaling, and Wayland behavior must be honest product states.
+- Store captures as bounded, goal-scoped visual evidence with the active workspace,
+  goal, app/window identity, timestamp, initiating actor, and related model/tool action.
+  A Visual verification document/tool shows the same frame and action context to the
+  developer before or while it is made available to a model.
+- Give models typed operations to request a capture and inspect an approved capture;
+  do not give them a generic desktop API, unrestricted video feed, pointer/keyboard
+  control, or authority to capture other applications. Remote-model disclosure and
+  privacy routing apply before image content leaves the machine.
+- Use the capability for bounded visual checks after UI changes: compare the rendered
+  result with the requested outcome, identify layout/focus/error-state problems, and
+  attach observations to the workflow evidence. Visual inspection complements rather
+  than replaces AT-SPI, deterministic UI tests, build/test evidence, or human review.
+- Keep portal interaction behind focused platform contracts so a future operating
+  system can replace the Linux implementation. Record the capture/session, retention,
+  privacy, and model-tool boundaries in an ADR before implementation.
+
 ### Workflow friction (delivered)
 
 - Users can retain multiple trusted workspaces, switch through a dirty-document
@@ -227,7 +253,7 @@ of Stage 3 below.
 
 Deferred within Stage 3: opt-in Ollama behavioral evaluation and regression
 datasets for planning, tool-selection, and review quality (Task 038) are parked
-below every item above until 035, 036, 037, and 039-044 close.
+below every item above until the professional-IDE baseline and Task 045 close.
 
 Stage 3 exits when a user can run real, non-scripted development work through the
 app, across multiple sessions and repositories, without the friction or gaps above
