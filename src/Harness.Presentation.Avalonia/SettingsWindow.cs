@@ -477,8 +477,8 @@ internal sealed class SettingsWindow : Window
         NumericUpDown maximum = new()
         {
             Minimum = 1,
-            Maximum = 8192,
-            Increment = 256,
+            Maximum = MaximumAgentOutputTokens.MaximumValue,
+            Increment = 1024,
             Value = roleDefault.MaximumOutputTokens.Value,
             MinWidth = 150,
             IsEnabled = !settingsState.IsBusy && choices.Length > 0,

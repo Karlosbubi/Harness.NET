@@ -150,10 +150,11 @@ actions. Screenshot assertions do not substitute for hands-on review.
 ### Stuck-goal recovery amendment (2026-08-08)
 
 A paused `NeedsDirection` run must not reduce recovery to an unexplained Continue
-action. Its inline run card offers **Retry with changes** for the exact failed role.
+action. Its inline run card offers **Retry** for the exact failed role.
 The focused recovery sheet includes a capability-qualified replacement model, role
-output ceiling, and bounded user guidance. The chosen goal-role route and guidance
-checkpoint are persisted before the new call; remote replacement models retain the
+output ceiling, and optional bounded user guidance. Empty guidance deliberately means
+an unchanged or model-only retry. The chosen goal-role route and retry checkpoint are
+persisted before the new call; remote replacement models retain the
 existing spend-policy and explicit-confirmation gates. Retry never replays the uncertain
 call and cannot target a different or stale role.
 

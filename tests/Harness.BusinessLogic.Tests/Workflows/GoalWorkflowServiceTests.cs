@@ -387,7 +387,7 @@ public sealed class GoalWorkflowServiceTests
     }
 
     [Fact]
-    public async Task Explicit_retry_reenters_the_normal_reviewer_cycle()
+    public async Task Explicit_retry_without_guidance_reenters_the_normal_reviewer_cycle()
     {
         FakeGoalService goals = new();
         FakeAgentRunner agents = new();
@@ -402,14 +402,16 @@ public sealed class GoalWorkflowServiceTests
         GoalWorkflowSnapshot recovered = (await CollectAsync(service.RetryAsync(new(
             goals.Goal.Id,
             GoalWorkflowRetryRole.Reviewer,
-            new(768),
-            new("Re-review the durable diff and evidence.")))))[^1];
+            new(1_000_000)))))[^1];
 
         Assert.Equal(GoalWorkflowRetryRole.Reviewer, failed.RetryRole);
         Assert.Equal(GoalWorkflowState.AwaitingAcceptance, recovered.State);
         Assert.Equal(1, recovered.ReviewCycle.Value);
         Assert.Equal([AgentRole.Lead, AgentRole.Implementer, AgentRole.Reviewer, AgentRole.Reviewer],
             agents.Requests.Select(request => request.Role));
+        Assert.Equal(1_000_000, agents.Requests[^1].MaximumOutputTokens?.Value);
+        Assert.DoesNotContain("USER RETRY GUIDANCE", agents.Requests[^1].Task.Value,
+            StringComparison.Ordinal);
     }
 
     [Fact]

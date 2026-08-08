@@ -893,7 +893,7 @@ internal sealed class AvaloniaPresentationStore(
         GoalWorkflowRetryRole role,
         GoalModelCandidate model,
         MaximumAgentOutputTokens maximumOutputTokens,
-        GoalRetryGuidance guidance,
+        GoalRetryGuidance? guidance,
         CancellationToken cancellationToken) =>
         await RunWorkflowAsync(
             goalId,
@@ -907,7 +907,7 @@ internal sealed class AvaloniaPresentationStore(
         GoalWorkflowRetryRole retryRole,
         GoalModelCandidate model,
         MaximumAgentOutputTokens maximumOutputTokens,
-        GoalRetryGuidance guidance,
+        GoalRetryGuidance? guidance,
         [System.Runtime.CompilerServices.EnumeratorCancellation]
         CancellationToken cancellationToken)
     {

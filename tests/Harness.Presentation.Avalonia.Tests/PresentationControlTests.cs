@@ -153,12 +153,12 @@ public sealed class PresentationControlTests
             [ConversationWorkflowActionKind.RetryRun,
                 ConversationWorkflowActionKind.AbortGoal],
             actions.Select(action => action.Kind));
-        Assert.Equal("Retry Reviewer with changes", actions[0].Label);
+        Assert.Equal("Retry Reviewer", actions[0].Label);
         Assert.Equal("Current run · Needs your direction", runCard.Title);
         Assert.Equal(ConversationWorkflowCardState.Paused, runCard.State);
         Assert.Contains("Now:", runCard.Summary, StringComparison.Ordinal);
         Assert.Contains("Result so far:", runCard.Summary, StringComparison.Ordinal);
-        Assert.Contains("Next: Retry Reviewer", runCard.Summary, StringComparison.Ordinal);
+        Assert.Contains("Next: Retry Reviewer as-is", runCard.Summary, StringComparison.Ordinal);
         Assert.Contains("explicitly retrying Reviewer", runCard.Details,
             StringComparison.Ordinal);
         ConversationWorkflowCard direction = Assert.Single(
@@ -453,7 +453,7 @@ public sealed class PresentationControlTests
     }
 
     [Fact]
-    public async Task Workflow_retry_requires_guidance_and_filters_models_to_the_failed_role()
+    public async Task Workflow_retry_allows_model_only_retry_and_large_output_maximum()
     {
         GoalModelCandidate reviewer = Candidate(
             "local", "reviewer", ModelAccess.Local, [AgentRole.Reviewer]);
@@ -467,7 +467,7 @@ public sealed class PresentationControlTests
                 GoalWorkflowRetryRole.Reviewer,
                 [leadOnly, reviewer],
                 reviewer,
-                3072,
+                1_000_000,
                 "The prior call was not replayed.");
             dialog.Show();
             Dispatcher.UIThread.RunJobs();
@@ -478,16 +478,15 @@ public sealed class PresentationControlTests
             TextBox guidance = Assert.Single(
                 dialog.GetLogicalDescendants().OfType<TextBox>(),
                 field => AutomationProperties.GetName(field) == "Guidance for Reviewer retry");
-            guidance.Text = "Re-check the deterministic rename before reviewing again.";
+            guidance.Text = string.Empty;
             Button retry = Assert.Single(
                 dialog.GetLogicalDescendants().OfType<Button>(),
-                button => Equals(button.Content, "Retry with changes"));
+                button => Equals(button.Content, "Retry Reviewer"));
             retry.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
 
             Assert.Equal(reviewer, dialog.Result?.Model);
-            Assert.Equal(3072, dialog.Result?.MaximumOutputTokens);
-            Assert.Contains("deterministic rename", dialog.Result?.Guidance,
-                StringComparison.Ordinal);
+            Assert.Equal(1_000_000, dialog.Result?.MaximumOutputTokens);
+            Assert.Null(dialog.Result?.Guidance);
         }, CancellationToken.None);
     }
 

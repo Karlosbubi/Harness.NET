@@ -16,7 +16,7 @@ internal sealed class GoalWorkflowService(
     IAgentRoleRunner agentRunner,
     TimeProvider timeProvider) : IGoalWorkflowService
 {
-    private const int MaximumOutputTokens = 8192;
+    private const int MaximumOutputTokens = MaximumAgentOutputTokens.MaximumValue;
 
     public async ValueTask<GoalWorkflowSnapshot?> GetLatestAsync(
         GoalId goalId,
@@ -432,11 +432,14 @@ internal sealed class GoalWorkflowService(
             _ => throw new ArgumentOutOfRangeException(nameof(request)),
         };
         snapshot = await AppendAsync(snapshot, callKind, StoredActor.System,
-            $"User explicitly retried the failed {request.Role} call with a replacement route or guidance.",
+            $"User explicitly retried the failed {request.Role} call with the selected route" +
+            (request.Guidance is null ? "." : " and additional guidance."),
             "Explicit retry",
             $"Retried {request.Role} with a maximum output of " +
-            $"{request.MaximumOutputTokens.Value} tokens. The prior call was not replayed automatically.\n\n" +
-            $"USER GUIDANCE\n{request.Guidance.Value}",
+            $"{request.MaximumOutputTokens.Value} tokens. The prior call was not replayed automatically." +
+            (request.Guidance is null
+                ? "\n\nUSER GUIDANCE\nNo additional guidance; retry the same work with the selected route."
+                : $"\n\nUSER GUIDANCE\n{request.Guidance.Value}"),
             StoredKind.UserDirectionRequired, StoredState.NeedsDirection,
             StoredState.Running, cancellationToken);
         yield return await ToViewAsync(snapshot, cancellationToken);
@@ -574,7 +577,7 @@ internal sealed class GoalWorkflowService(
         GoalView goal,
         StoredGoalWorkflowSnapshot snapshot,
         MaximumAgentOutputTokens maximumOutputTokens,
-        GoalRetryGuidance guidance,
+        GoalRetryGuidance? guidance,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         if (goal.State is not GoalState.Draft and not GoalState.NeedsPlanRevision)
@@ -856,14 +859,17 @@ internal sealed class GoalWorkflowService(
         evidenceTitle is null ? null : new(evidenceTitle),
         evidenceContent is null ? null : new(evidenceContent), createdAt);
 
-    private static string WithRetryGuidance(string prompt, GoalRetryGuidance guidance) => $$"""
-        {{prompt}}
+    private static string WithRetryGuidance(string prompt, GoalRetryGuidance? guidance) =>
+        guidance is null
+            ? prompt
+            : $$"""
+                {{prompt}}
 
-        USER RETRY GUIDANCE
-        Treat the following as additional user direction for this retry. It does not
-        expand your tool or file-area authority:
-        {{guidance.Value}}
-        """;
+                USER RETRY GUIDANCE
+                Treat the following as additional user direction for this retry. It does not
+                expand your tool or file-area authority:
+                {{guidance.Value}}
+                """;
 
     private static string LeadTask(GoalView goal) => $$"""
         Inspect the trusted workspace with your read-only typed tools and propose a bounded,
@@ -1003,13 +1009,13 @@ internal sealed class GoalWorkflowService(
     {
         if (request is null || !ValidGoalId(request.GoalId) ||
             !ValidMaximum(request.MaximumOutputTokens) ||
-            !Enum.IsDefined(request.Role) || request.Guidance is null ||
-            string.IsNullOrWhiteSpace(request.Guidance.Value) ||
-            request.Guidance.Value.Length > 16 * 1024)
+            !Enum.IsDefined(request.Role) ||
+            request.Guidance is { Value.Length: > 16 * 1024 } ||
+            request.Guidance is { Value: var guidance } && string.IsNullOrWhiteSpace(guidance))
         {
             throw new ArgumentException(
                 $"A valid goal, failed role, output maximum of 1-{MaximumOutputTokens} tokens, " +
-                "and retry guidance of 1-16384 characters are required.");
+                "and optional retry guidance of at most 16384 non-whitespace characters are required.");
         }
     }
 

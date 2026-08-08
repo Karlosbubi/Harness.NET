@@ -38,7 +38,9 @@ routes alone still grant no authority.
 - Models & roles projects all three effective role routes, distinguishes host
   fallbacks from saved defaults, filters every picker through the Business Logic role
   capability policy, reports unavailable or incompatible saved defaults, and persists
-  a 1–8192 token maximum.
+  a 1–10,000,000 token maximum. Providers and individual models may enforce a lower
+  runtime ceiling; Harness.NET preserves the configured upper bound and reports a
+  provider rejection instead of silently reducing it.
   Existing workflow limit prompts start from these defaults while remaining explicit
   progressive overrides during the chat-workflow migration.
 - Layout maintenance remains available from the command palette, while current

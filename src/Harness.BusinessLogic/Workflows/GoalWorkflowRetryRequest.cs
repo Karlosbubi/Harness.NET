@@ -9,4 +9,4 @@ public sealed record GoalWorkflowRetryRequest(
     GoalId GoalId,
     GoalWorkflowRetryRole Role,
     MaximumAgentOutputTokens MaximumOutputTokens,
-    GoalRetryGuidance Guidance);
+    GoalRetryGuidance? Guidance = null);

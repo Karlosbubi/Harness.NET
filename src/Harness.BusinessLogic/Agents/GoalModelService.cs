@@ -11,7 +11,7 @@ internal sealed class GoalModelService :
     IGoalModelRouteResolver,
     IAgentDefaultsService
 {
-    private const int MaximumOutputTokens = 8192;
+    private const int MaximumOutputTokens = MaximumAgentOutputTokens.MaximumValue;
     private readonly IGoalStore goalStore;
     private readonly IWorkspaceStore workspaceStore;
     private readonly IGoalModelSelectionStore selectionStore;

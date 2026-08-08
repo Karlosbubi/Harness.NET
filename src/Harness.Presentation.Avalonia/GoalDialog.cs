@@ -1046,7 +1046,10 @@ internal sealed class PlanGenerationDialog : Window
                         TextWrapping = TextWrapping.Wrap,
                         Classes = { "muted" },
                     },
-                    new TextBlock { Text = "Maximum output tokens (1–8192)" },
+                    new TextBlock
+                    {
+                        Text = $"Maximum output tokens (1–{MaximumAgentOutputTokens.MaximumValue:N0})",
+                    },
                     maximum,
                     validation,
                     new StackPanel
@@ -1072,9 +1075,11 @@ internal sealed class PlanGenerationDialog : Window
         }
 
         if (!int.TryParse(maximum.Text, NumberStyles.None,
-                CultureInfo.InvariantCulture, out int value) || value is < 1 or > 8192)
+                CultureInfo.InvariantCulture, out int value) ||
+            value is < 1 or > MaximumAgentOutputTokens.MaximumValue)
         {
-            validation.Text = "The output maximum must be an integer from 1 through 8192 tokens.";
+            validation.Text = $"The output maximum must be an integer from 1 through " +
+                              $"{MaximumAgentOutputTokens.MaximumValue:N0} tokens.";
             return;
         }
 
@@ -1086,7 +1091,7 @@ internal sealed class PlanGenerationDialog : Window
 internal sealed record WorkflowRetryResult(
     GoalModelCandidate Model,
     int MaximumOutputTokens,
-    string Guidance);
+    string? Guidance);
 
 internal sealed class WorkflowRetryDialog : Window
 {
@@ -1097,7 +1102,7 @@ internal sealed class WorkflowRetryDialog : Window
         AcceptsReturn = true,
         TextWrapping = TextWrapping.Wrap,
         MinHeight = 110,
-        PlaceholderText = "Explain what should change on this retry",
+        PlaceholderText = "Optional: add guidance for this retry",
     };
     private readonly TextBlock validation = new() { TextWrapping = TextWrapping.Wrap };
 
@@ -1130,7 +1135,7 @@ internal sealed class WorkflowRetryDialog : Window
         AutomationProperties.SetName(validation, "Retry validation");
         Button cancel = new() { Content = "Cancel" };
         cancel.Click += (_, _) => Close();
-        Button retry = new() { Content = "Retry with changes", IsEnabled = choices.Length > 0 };
+        Button retry = new() { Content = $"Retry {role}", IsEnabled = choices.Length > 0 };
         retry.Classes.Add("primary");
         retry.Click += (_, _) => Save();
         Content = new ScrollViewer
@@ -1160,9 +1165,12 @@ internal sealed class WorkflowRetryDialog : Window
                         Classes = { "muted" },
                         TextWrapping = TextWrapping.Wrap,
                     },
-                    new TextBlock { Text = "What should change?", FontWeight = FontWeight.SemiBold },
+                    new TextBlock { Text = "Additional guidance (optional)", FontWeight = FontWeight.SemiBold },
                     guidance,
-                    new TextBlock { Text = "Maximum output tokens (1–8192)" },
+                    new TextBlock
+                    {
+                        Text = $"Maximum output tokens (1–{MaximumAgentOutputTokens.MaximumValue:N0})",
+                    },
                     maximum,
                     validation,
                     new StackPanel
@@ -1175,7 +1183,7 @@ internal sealed class WorkflowRetryDialog : Window
                 },
             },
         };
-        Opened += (_, _) => guidance.Focus();
+        Opened += (_, _) => models.Focus();
     }
 
     internal WorkflowRetryResult? Result { get; private set; }
@@ -1189,20 +1197,22 @@ internal sealed class WorkflowRetryDialog : Window
         }
 
         string direction = guidance.Text?.Trim() ?? string.Empty;
-        if (direction.Length is < 1 or > 16 * 1024)
+        if (direction.Length > 16 * 1024)
         {
-            validation.Text = "Describe what should change using 1–16384 characters.";
+            validation.Text = "Optional retry guidance may contain at most 16384 characters.";
             return;
         }
 
         if (!int.TryParse(maximum.Text, NumberStyles.None,
-                CultureInfo.InvariantCulture, out int value) || value is < 1 or > 8192)
+                CultureInfo.InvariantCulture, out int value) ||
+            value is < 1 or > MaximumAgentOutputTokens.MaximumValue)
         {
-            validation.Text = "The output maximum must be an integer from 1 through 8192 tokens.";
+            validation.Text = $"The output maximum must be an integer from 1 through " +
+                              $"{MaximumAgentOutputTokens.MaximumValue:N0} tokens.";
             return;
         }
 
-        Result = new(candidate, value, direction);
+        Result = new(candidate, value, direction.Length == 0 ? null : direction);
         Close();
     }
 }
@@ -1338,9 +1348,10 @@ internal sealed class OutputLimitsDialog : Window
                     ? value
                     : 0)
             .ToArray();
-        if (values.Any(value => value is < 1 or > 8192))
+        if (values.Any(value => value is < 1 or > MaximumAgentOutputTokens.MaximumValue))
         {
-            validation.Text = "Every output maximum must be an integer from 1 through 8192 tokens.";
+            validation.Text = $"Every output maximum must be an integer from 1 through " +
+                              $"{MaximumAgentOutputTokens.MaximumValue:N0} tokens.";
             return;
         }
 
@@ -2258,7 +2269,7 @@ internal static class GoalPresentationFormatter
         $"This explicitly starts a new {retryRole} call from the last durable safe boundary.",
         "The prior call is not replayed automatically and may already have incurred remote cost. " +
         "Inspect its recovery notice and durable tool evidence before retrying.",
-        "Typed mutation baselines still reject stale repository writes; the aggregate goal cap always applies.",
+        "Typed mutation baselines still reject stale repository writes; the goal spend policy always applies.",
         FormatSelections(state.ModelSelections),
         FormatCostSummary(state));
 

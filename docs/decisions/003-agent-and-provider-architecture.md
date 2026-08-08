@@ -84,6 +84,20 @@ model, access class, and advertised capabilities and never turns arbitrary enter
 into a route. Catalog visibility, route compatibility, and spending authority remain
 separate facts.
 
+### Long-output and retry amendment (2026-08-08)
+
+Role output maxima are user-configurable from 1 through 10,000,000 tokens. This is a
+Harness.NET authorization and reservation ceiling, not a claim that every provider or
+model supports that output size; provider-declared and server-enforced limits may reject
+a request and must be reported without silently lowering the configured value. The bound
+stays within the existing integer provider contracts and conservative remote-cost
+reservation arithmetic.
+
+Explicit failed-role retry accepts optional additional guidance. An empty guidance field
+means to retry the same bounded work with the selected route and output maximum, allowing
+an unchanged retry or model-only change. Supplying guidance augments the prompt without
+expanding tool, file-area, mutation, or spending authority.
+
 ## Consequences
 
 - Provider SDK and Microsoft Agent Framework types are mapped to internal interfaces

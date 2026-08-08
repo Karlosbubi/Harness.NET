@@ -146,7 +146,7 @@ internal static class ConversationWorkflowActionProjector
             {
                 ConversationWorkflowAction retry = new(
                     ConversationWorkflowActionKind.RetryRun,
-                    $"Retry {retryRole} with changes",
+                    $"Retry {retryRole}",
                     true);
                 AgentRole? agentRole = retryRole switch
                 {
@@ -479,7 +479,7 @@ internal static class ConversationWorkflowProjector
     private static string NextStep(GoalWorkflowSnapshot workflow) => workflow.State switch
     {
         GoalWorkflowState.NeedsDirection when workflow.RetryRole is { } role =>
-            $"Retry {role} with a different model or guidance, or abort and start a new goal.",
+            $"Retry {role} as-is, change its model, add guidance, or abort and start a new goal.",
         GoalWorkflowState.NeedsDirection => "Choose whether to retry or abort this goal.",
         GoalWorkflowState.AwaitingPlanApproval => "Approve the plan or request changes.",
         GoalWorkflowState.AwaitingAcceptance => "Review the accepted changes and continue the Git workflow.",

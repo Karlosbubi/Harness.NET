@@ -1170,7 +1170,7 @@ internal sealed class MainWindow : Window
             retryRole,
             result.Model,
             new(result.MaximumOutputTokens),
-            new(result.Guidance),
+            result.Guidance is null ? null : new(result.Guidance),
             cancellationToken);
     }
 

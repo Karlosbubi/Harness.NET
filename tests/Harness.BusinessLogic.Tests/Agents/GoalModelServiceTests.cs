@@ -124,11 +124,11 @@ public sealed class GoalModelServiceTests
             AgentRole.Lead,
             new("OpenRouter"),
             new("remote"),
-            new(4096)));
+            new(2_000_000)));
         AgentDefaultsSnapshot snapshot = await service.GetAsync();
         GoalModelRouteResult route = await service.ResolveAsync(new("goal-1"), AgentRole.Lead);
 
-        Assert.Equal(4096, updated.Value?.MaximumOutputTokens.Value);
+        Assert.Equal(2_000_000, updated.Value?.MaximumOutputTokens.Value);
         Assert.True(snapshot.Roles.Single(item => item.Role is AgentRole.Lead).IsPersisted);
         Assert.Equal("remote", snapshot.Roles.Single(item => item.Role is AgentRole.Lead).Model.Value);
         Assert.Equal("remote_model_not_selected", route.ErrorCode?.Value);

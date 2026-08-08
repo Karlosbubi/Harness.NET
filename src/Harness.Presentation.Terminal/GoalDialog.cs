@@ -915,9 +915,10 @@ internal sealed class GoalDialog : Dialog
             }
 
             if (!int.TryParse(maximum.Text?.ToString(), out int value) ||
-                value is < 1 or > 8192)
+                value is < 1 or > MaximumAgentOutputTokens.MaximumValue)
             {
-                validation.Text = "The output maximum must be between 1 and 8192 tokens.";
+                validation.Text = $"The output maximum must be between 1 and " +
+                                  $"{MaximumAgentOutputTokens.MaximumValue:N0} tokens.";
                 return;
             }
 
@@ -992,7 +993,7 @@ internal sealed class GoalDialog : Dialog
                 $"{candidate.Access} {candidate.Provider.Value}/{candidate.Model.Value}")));
             models.SelectedItem = visibleCandidates.Length > 0 ? 0 : null;
         };
-        dialog.Add(new Label { X = 0, Y = 8, Text = "What should change?" });
+        dialog.Add(new Label { X = 0, Y = 8, Text = "Additional guidance (optional)" });
         Editor guidance = new()
         {
             X = 0,
@@ -1004,7 +1005,7 @@ internal sealed class GoalDialog : Dialog
         TextField maximum = Field(dialog, $"{retryRole} maximum output tokens", 15, "2048");
         Label validation = new() { X = 0, Y = 18, Width = Dim.Fill(), Height = 2 };
         TerminalRetry? result = null;
-        Button run = new() { Title = "_Retry with changes", Enabled = candidates.Length > 0 };
+        Button run = new() { Title = "_Retry", Enabled = candidates.Length > 0 };
         run.Accepting += (_, args) =>
         {
             args.Handled = true;
@@ -1016,19 +1017,24 @@ internal sealed class GoalDialog : Dialog
                 return;
             }
 
-            if (direction.Length is < 1 or > 16 * 1024)
+            if (direction.Length > 16 * 1024)
             {
-                validation.Text = "Retry guidance must contain 1-16384 characters.";
+                validation.Text = "Optional retry guidance may contain at most 16384 characters.";
                 return;
             }
 
-            if (!int.TryParse(maximum.Text?.ToString(), out int value) || value is < 1 or > 8192)
+            if (!int.TryParse(maximum.Text?.ToString(), out int value) ||
+                value is < 1 or > MaximumAgentOutputTokens.MaximumValue)
             {
-                validation.Text = "The output maximum must be between 1 and 8192 tokens.";
+                validation.Text = $"The output maximum must be between 1 and " +
+                                  $"{MaximumAgentOutputTokens.MaximumValue:N0} tokens.";
                 return;
             }
 
-            result = new(visibleCandidates[index], new(value), new(direction));
+            result = new(
+                visibleCandidates[index],
+                new(value),
+                direction.Length == 0 ? null : new(direction));
             dialog.RequestStop();
         };
         dialog.Add(search, models, guidance, validation);
@@ -1088,9 +1094,10 @@ internal sealed class GoalDialog : Dialog
             int[] values = fields.Select(field =>
                     int.TryParse(field.Text?.ToString(), out int value) ? value : 0)
                 .ToArray();
-            if (values.Any(value => value is < 1 or > 8192))
+            if (values.Any(value => value is < 1 or > MaximumAgentOutputTokens.MaximumValue))
             {
-                validation.Text = "Every output maximum must be between 1 and 8192 tokens.";
+                validation.Text = $"Every output maximum must be between 1 and " +
+                                  $"{MaximumAgentOutputTokens.MaximumValue:N0} tokens.";
                 return;
             }
 
@@ -1315,7 +1322,7 @@ internal sealed class GoalDialog : Dialog
     private sealed record TerminalRetry(
         GoalModelCandidate Model,
         MaximumAgentOutputTokens MaximumOutputTokens,
-        GoalRetryGuidance Guidance);
+        GoalRetryGuidance? Guidance);
 
     private static GoalModelCandidate[] FilterModels(
         IEnumerable<GoalModelCandidate> candidates,
