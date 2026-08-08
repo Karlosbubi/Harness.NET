@@ -20,6 +20,7 @@ internal static class ModelSelectionCatalog
 /// </summary>
 internal sealed class SearchableModelPicker : UserControl
 {
+    private SearchableModelChoice? committedSelection;
     private readonly AutoCompleteBox picker = new()
     {
         MinimumPrefixLength = 0,
@@ -29,13 +30,36 @@ internal sealed class SearchableModelPicker : UserControl
         PlaceholderText = "Search provider or model",
         HorizontalAlignment = HorizontalAlignment.Stretch,
     };
+    private readonly Button openList = new()
+    {
+        Content = "▼",
+        MinWidth = 42,
+        HorizontalAlignment = HorizontalAlignment.Right,
+        VerticalAlignment = VerticalAlignment.Stretch,
+    };
 
     internal SearchableModelPicker()
     {
         HorizontalContentAlignment = HorizontalAlignment.Stretch;
         picker.ItemFilter = Matches;
         picker.TextSelector = static (_, item) => item?.ToString() ?? string.Empty;
-        Content = picker;
+        picker.SelectionChanged += (_, _) =>
+        {
+            if (picker.SelectedItem is SearchableModelChoice selected)
+            {
+                committedSelection = selected;
+            }
+        };
+        picker.DropDownClosed += (_, _) => RestoreCommittedSelection();
+        AutomationProperties.SetName(openList, "Show all models");
+        ToolTip.SetTip(openList, "Show all models; type to filter");
+        openList.Click += (_, _) => ToggleModelList();
+
+        Grid content = new() { ColumnDefinitions = new("*,Auto") };
+        content.Children.Add(picker);
+        Grid.SetColumn(openList, 1);
+        content.Children.Add(openList);
+        Content = content;
     }
 
     internal GoalModelCandidate? SelectedCandidate =>
@@ -64,8 +88,32 @@ internal sealed class SearchableModelPicker : UserControl
         picker.ItemsSource = choices;
         SearchableModelChoice? selected =
             Find(choices, preferred) ?? Find(choices, current) ?? choices.FirstOrDefault();
+        committedSelection = selected;
         picker.SelectedItem = selected;
         picker.Text = selected?.ToString() ?? string.Empty;
+    }
+
+    private void ToggleModelList()
+    {
+        if (picker.IsDropDownOpen)
+        {
+            picker.IsDropDownOpen = false;
+            return;
+        }
+
+        picker.SelectedItem = null;
+        picker.Text = string.Empty;
+        picker.Focus();
+        picker.IsDropDownOpen = true;
+    }
+
+    private void RestoreCommittedSelection()
+    {
+        if (picker.SelectedItem is not SearchableModelChoice && committedSelection is not null)
+        {
+            picker.SelectedItem = committedSelection;
+            picker.Text = committedSelection.ToString();
+        }
     }
 
     private static SearchableModelChoice? Find(

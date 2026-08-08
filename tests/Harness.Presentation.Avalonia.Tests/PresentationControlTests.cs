@@ -278,6 +278,14 @@ public sealed class PresentationControlTests
             Assert.Equal("Search provider or model", models.PlaceholderText);
             Assert.True(models.ItemFilter!("openrouter", model));
             Assert.False(models.ItemFilter!("ollama", model));
+            Button showAll = Assert.Single(
+                dialog.GetLogicalDescendants().OfType<Button>(),
+                button => AutomationProperties.GetName(button) == "Show all models");
+            showAll.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+            Assert.True(models.IsDropDownOpen);
+            Assert.Null(models.SelectedItem);
+            Assert.Equal(string.Empty, models.Text);
             Assert.Equal(
                 "4096",
                 Assert.Single(dialog.GetLogicalDescendants().OfType<TextBox>()).Text);
