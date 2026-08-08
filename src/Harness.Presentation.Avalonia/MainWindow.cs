@@ -845,6 +845,7 @@ internal sealed class MainWindow : Window
         {
             ConversationWorkflowCardState.Approved or ConversationWorkflowCardState.Completed or
                 ConversationWorkflowCardState.Recovered => "success",
+            ConversationWorkflowCardState.Paused => "attention",
             ConversationWorkflowCardState.Denied or ConversationWorkflowCardState.Failed or
                 ConversationWorkflowCardState.Cancelled or ConversationWorkflowCardState.Stale => "attention",
             _ => "neutral",

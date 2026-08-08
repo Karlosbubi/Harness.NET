@@ -65,6 +65,7 @@ public sealed class PresentationControlTests
                 ConversationWorkflowCardState.Stale,
                 ConversationWorkflowCardState.Pending,
                 ConversationWorkflowCardState.Active,
+                ConversationWorkflowCardState.Paused,
                 ConversationWorkflowCardState.Approved,
                 ConversationWorkflowCardState.Denied,
                 ConversationWorkflowCardState.Failed,
@@ -132,7 +133,7 @@ public sealed class PresentationControlTests
             [],
             [new(1, GoalWorkflowCheckpointKind.UserDirectionRequired,
                 WorkflowActor.System, new("Provider unavailable; inspect cost evidence."))],
-            [new(1, new("Recovery notice"), new("The prior call was not replayed."))],
+            [new(1, new("Recovery notice"), new("Provider unavailable; inspect cost evidence."))],
             CanResume: false,
             RequiresUserDirection: true,
             RetryRole: GoalWorkflowRetryRole.Reviewer);
@@ -154,11 +155,23 @@ public sealed class PresentationControlTests
             actions.Select(action => action.Kind));
         Assert.Equal("Retry Reviewer with changes", actions[0].Label);
         Assert.Equal("Current run · Needs your direction", runCard.Title);
+        Assert.Equal(ConversationWorkflowCardState.Paused, runCard.State);
         Assert.Contains("Now:", runCard.Summary, StringComparison.Ordinal);
         Assert.Contains("Result so far:", runCard.Summary, StringComparison.Ordinal);
         Assert.Contains("Next: Retry Reviewer", runCard.Summary, StringComparison.Ordinal);
         Assert.Contains("explicitly retrying Reviewer", runCard.Details,
             StringComparison.Ordinal);
+        ConversationWorkflowCard direction = Assert.Single(
+            ConversationWorkflowProjector.Project(state),
+            card => card.Title == "User direction required");
+        Assert.Equal(ConversationWorkflowCardState.Paused, direction.State);
+        Assert.Contains("Reviewer did not produce a usable decision", direction.Summary,
+            StringComparison.Ordinal);
+        Assert.Contains("Technical detail: Provider unavailable", direction.Details,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            ConversationWorkflowProjector.Project(state),
+            card => card.Title == "Recovery notice");
 
         GoalManagementState remoteState = state with
         {
@@ -173,9 +186,26 @@ public sealed class PresentationControlTests
             card => card.Id == "run.run-retry");
         Assert.Equal(
             [ConversationWorkflowActionKind.RetryRun,
-                ConversationWorkflowActionKind.ExtendBudget,
                 ConversationWorkflowActionKind.AbortGoal],
             ConversationWorkflowActionProjector.Project(remoteRunCard, remoteState)
+                .Select(item => item.Kind));
+
+        GoalView cappedGoal = goal with
+        {
+            RemoteBudget = new(5_000_000),
+        };
+        GoalManagementState cappedState = remoteState with
+        {
+            Items = [cappedGoal],
+        };
+        ConversationWorkflowCard cappedRunCard = Assert.Single(
+            ConversationWorkflowProjector.Project(cappedState),
+            card => card.Id == "run.run-retry");
+        Assert.Equal(
+            [ConversationWorkflowActionKind.RetryRun,
+                ConversationWorkflowActionKind.ExtendBudget,
+                ConversationWorkflowActionKind.AbortGoal],
+            ConversationWorkflowActionProjector.Project(cappedRunCard, cappedState)
                 .Select(item => item.Kind));
 
         GoalManagementState correctionState = state with

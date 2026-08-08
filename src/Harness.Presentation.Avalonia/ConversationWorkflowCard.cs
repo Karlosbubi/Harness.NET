@@ -26,6 +26,7 @@ internal enum ConversationWorkflowCardState
     Stale,
     Pending,
     Active,
+    Paused,
     Approved,
     Denied,
     Failed,
@@ -154,13 +155,14 @@ internal static class ConversationWorkflowActionProjector
                     GoalWorkflowRetryRole.Reviewer => AgentRole.Reviewer,
                     _ => null,
                 };
-                bool remote = agentRole is not null && goals.ModelSelections.Any(selection =>
+                bool cappedRemote = RemoteSpendPreference.FromGoalBudget(goal.RemoteBudget).Mode is
+                    RemoteSpendMode.Capped && agentRole is not null && goals.ModelSelections.Any(selection =>
                     selection.Role == agentRole && selection.Access is ModelAccess.Remote);
                 ConversationWorkflowAction abort = new(
                     ConversationWorkflowActionKind.AbortGoal,
                     "Abort & start new",
                     false);
-                return remote
+                return cappedRemote
                     ? [retry, new(ConversationWorkflowActionKind.ExtendBudget,
                         "Increase remote cap", false), abort]
                     : [retry, abort];
@@ -271,8 +273,8 @@ internal static class ConversationWorkflowProjector
                 ConversationWorkflowCardKind.Run,
                 ActivityState(activity.Kind),
                 ActivityTitle(activity.Kind),
-                activity.Summary.Value,
-                activity.Actor.ToString(),
+                ActivitySummary(workflow, activity),
+                ActivityDetails(activity),
                 300 + activity.Sequence)));
             cards.AddRange(workflow.Tasks.Select(task => new ConversationWorkflowCard(
                 $"task.{task.Id.Value}",
@@ -282,7 +284,9 @@ internal static class ConversationWorkflowProjector
                 task.Objective.Value,
                 task.Report?.Value,
                 500 + task.Sequence.Value)));
-            cards.AddRange(workflow.Evidence.Select(item => new ConversationWorkflowCard(
+            cards.AddRange(workflow.Evidence
+                .Where(item => !DuplicatesDirectionNotice(workflow, item))
+                .Select(item => new ConversationWorkflowCard(
                 $"evidence.{workflow.Id.Value}.{item.Sequence}",
                 ConversationWorkflowCardKind.Evidence,
                 ConversationWorkflowCardState.Completed,
@@ -392,7 +396,7 @@ internal static class ConversationWorkflowProjector
         }
 
         return workflow.RetryRole is { } retryRole
-            ? $"{progress} The run is paused. Review the recovery notice before explicitly retrying {retryRole}."
+            ? $"{progress} The run is paused. Inspect the technical detail on the paused checkpoint before explicitly retrying {retryRole}."
             : $"{progress} The run is paused until you supply direction.";
     }
 
@@ -463,7 +467,9 @@ internal static class ConversationWorkflowProjector
                 GoalWorkflowCheckpointKind.ReviewCompleted =>
                 $"{completed}/{workflow.Tasks.Count} tasks and {workflow.Evidence.Count} evidence item(s) are durable.",
             GoalWorkflowCheckpointKind.UserDirectionRequired =>
-                "The last safe checkpoint and recovery evidence were preserved.",
+                workflow.RetryRole is GoalWorkflowRetryRole.Lead
+                    ? "No valid plan was produced; the prompt and failure details were preserved."
+                    : "No usable role result was produced; the last safe checkpoint and failure details were preserved.",
             GoalWorkflowCheckpointKind.Accepted =>
                 $"The result was accepted with {workflow.Evidence.Count} evidence item(s).",
             _ => "The latest durable checkpoint is preserved.",
@@ -510,7 +516,7 @@ internal static class ConversationWorkflowProjector
         GoalWorkflowState.Running => ConversationWorkflowCardState.Active,
         GoalWorkflowState.AwaitingPlanApproval => ConversationWorkflowCardState.Pending,
         GoalWorkflowState.AwaitingAcceptance => ConversationWorkflowCardState.Pending,
-        GoalWorkflowState.NeedsDirection => ConversationWorkflowCardState.Denied,
+        GoalWorkflowState.NeedsDirection => ConversationWorkflowCardState.Paused,
         GoalWorkflowState.Completed => ConversationWorkflowCardState.Completed,
         GoalWorkflowState.Aborted => ConversationWorkflowCardState.Cancelled,
         _ => ConversationWorkflowCardState.Stale,
@@ -526,7 +532,7 @@ internal static class ConversationWorkflowProjector
 
     private static ConversationWorkflowCardState ActivityState(GoalWorkflowCheckpointKind kind) =>
         kind is GoalWorkflowCheckpointKind.UserDirectionRequired
-            ? ConversationWorkflowCardState.Denied
+            ? ConversationWorkflowCardState.Paused
             : kind is GoalWorkflowCheckpointKind.Accepted
                 ? ConversationWorkflowCardState.Completed
                 : ConversationWorkflowCardState.Active;
@@ -545,6 +551,40 @@ internal static class ConversationWorkflowProjector
         GoalWorkflowCheckpointKind.Accepted => "Run accepted",
         _ => kind.ToString(),
     };
+
+    private static string ActivitySummary(
+        GoalWorkflowSnapshot workflow,
+        GoalWorkflowActivityView activity)
+    {
+        if (activity.Kind is not GoalWorkflowCheckpointKind.UserDirectionRequired)
+        {
+            return activity.Summary.Value;
+        }
+
+        return workflow.RetryRole switch
+        {
+            GoalWorkflowRetryRole.Lead =>
+                "The Lead response could not be converted into a valid plan. No repository changes were made.",
+            GoalWorkflowRetryRole.Implementer =>
+                "The Implementer did not produce a usable task result. Work is paused at the last safe checkpoint.",
+            GoalWorkflowRetryRole.Reviewer =>
+                "The Reviewer did not produce a usable decision. Work is paused at the last safe checkpoint.",
+            _ => "The agent call did not produce a usable result. Work is paused at the last safe checkpoint.",
+        };
+    }
+
+    private static string ActivityDetails(GoalWorkflowActivityView activity) =>
+        activity.Kind is GoalWorkflowCheckpointKind.UserDirectionRequired
+            ? $"Technical detail: {activity.Summary.Value}"
+            : activity.Actor.ToString();
+
+    private static bool DuplicatesDirectionNotice(
+        GoalWorkflowSnapshot workflow,
+        WorkflowEvidenceView evidence) =>
+        evidence.Title.Value.Equals("Recovery notice", StringComparison.OrdinalIgnoreCase) &&
+        workflow.Activities.Any(activity =>
+            activity.Kind is GoalWorkflowCheckpointKind.UserDirectionRequired &&
+            activity.Summary.Value.Equals(evidence.Content.Value, StringComparison.Ordinal));
 
     private static ConversationWorkflowCardState ApprovalState(CapabilityApprovalState state) =>
         state switch
