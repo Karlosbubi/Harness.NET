@@ -27,7 +27,6 @@ public sealed class AgentRoleRunnerTests
             new("goal-1"),
             role,
             new("  bounded task  "),
-            MaximumOutputTokens: null,
             FileAreas: role is AgentRole.Implementer ? [new("src")] : null));
 
         Assert.Null(result.Error);
@@ -103,7 +102,7 @@ public sealed class AgentRoleRunnerTests
     }
 
     [Fact]
-    public async Task Binds_remote_execution_to_the_goal_with_a_strict_output_cap()
+    public async Task Binds_remote_execution_to_the_goal_without_a_user_token_ceiling()
     {
         CapturingModelProvider provider = new("remote result");
         AgentRoleRunner runner = new(
@@ -120,17 +119,11 @@ public sealed class AgentRoleRunnerTests
             new EmptyAgentToolFactory(),
             NullLoggerFactory.Instance);
 
-        AgentRunResult missingCap = await runner.RunAsync(new(
-            new("goal-1"),
-            AgentRole.Lead,
-            new("plan")));
         AgentRunResult result = await runner.RunAsync(new(
             new("goal-1"),
             AgentRole.Lead,
-            new("plan"),
-            new(512)));
+            new("plan")));
 
-        Assert.Equal("maximum_output_tokens_required", missingCap.ErrorCode?.Value);
         Assert.Null(result.Error);
         ChatRequest request = Assert.Single(provider.Requests);
         Assert.Equal("goal-1", request.RemoteScope?.GoalId);
@@ -138,7 +131,6 @@ public sealed class AgentRoleRunnerTests
             ProviderPrivacyPolicy.NoCollectionAndZeroDataRetention,
             request.RemoteScope?.PrivacyPolicy);
         Assert.Equal(RemoteModelRole.Lead, request.RemoteScope?.Role);
-        Assert.Equal(512, request.MaximumOutputTokens?.Value);
     }
 
     [Fact]

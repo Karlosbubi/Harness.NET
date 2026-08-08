@@ -16,8 +16,6 @@ internal sealed class GoalWorkflowService(
     IAgentRoleRunner agentRunner,
     TimeProvider timeProvider) : IGoalWorkflowService
 {
-    private const int MaximumOutputTokens = MaximumAgentOutputTokens.MaximumValue;
-
     public async ValueTask<GoalWorkflowSnapshot?> GetLatestAsync(
         GoalId goalId,
         CancellationToken cancellationToken = default)
@@ -76,8 +74,7 @@ internal sealed class GoalWorkflowService(
             result = await agentRunner.RunAsync(new(
                 goal.Id,
                 AgentRole.Lead,
-                new(leadTask),
-                request.LeadMaximumOutputTokens), cancellationToken);
+                new(leadTask)), cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -88,7 +85,7 @@ internal sealed class GoalWorkflowService(
 
         if (result.Output is null)
         {
-            snapshot = await MarkDirectionAsync(snapshot,
+            snapshot = await MarkAgentFailureAsync(snapshot, result,
                 $"Lead call did not produce a plan: {result.Error?.Value ?? "unknown failure"}",
                 cancellationToken);
             yield return await ToViewAsync(snapshot, cancellationToken);
@@ -295,7 +292,6 @@ internal sealed class GoalWorkflowService(
                     goal.Id,
                     AgentRole.Implementer,
                     new(revisionTask),
-                    request.ImplementerMaximumOutputTokens,
                     FileAreas(delegatedTasks)), cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -308,7 +304,7 @@ internal sealed class GoalWorkflowService(
 
             if (revision.Output is null)
             {
-                snapshot = await MarkDirectionAsync(snapshot,
+                snapshot = await MarkAgentFailureAsync(snapshot, revision,
                     $"Implementer correction failed and was not replayed: {revision.Error?.Value}",
                     cancellationToken);
                 yield return await ToViewAsync(snapshot, cancellationToken);
@@ -350,7 +346,6 @@ internal sealed class GoalWorkflowService(
                     goal.Id,
                     AgentRole.Implementer,
                     new(implementerTask),
-                    request.ImplementerMaximumOutputTokens,
                     FileAreas(delegatedTask)), cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -362,7 +357,7 @@ internal sealed class GoalWorkflowService(
 
             if (implementation.Output is null)
             {
-                snapshot = await MarkDirectionAsync(snapshot,
+                snapshot = await MarkAgentFailureAsync(snapshot, implementation,
                     $"Delegated task {delegatedTask.Sequence.Value} failed and was not replayed: " +
                     implementation.Error?.Value,
                     cancellationToken);
@@ -393,8 +388,6 @@ internal sealed class GoalWorkflowService(
                            plan,
                            delegatedTasks,
                            snapshot,
-                           request.ImplementerMaximumOutputTokens,
-                           request.ReviewerMaximumOutputTokens,
                            reviewerCallAlreadyStarted: false,
                            stopAfterReview: false,
                            initialImplementationOutput: resumedImplementationOutput,
@@ -435,8 +428,7 @@ internal sealed class GoalWorkflowService(
             $"User explicitly retried the failed {request.Role} call with the selected route" +
             (request.Guidance is null ? "." : " and additional guidance."),
             "Explicit retry",
-            $"Retried {request.Role} with a maximum output of " +
-            $"{request.MaximumOutputTokens.Value} tokens. The prior call was not replayed automatically." +
+            $"Retried {request.Role}. The prior call was not replayed automatically." +
             (request.Guidance is null
                 ? "\n\nUSER GUIDANCE\nNo additional guidance; retry the same work with the selected route."
                 : $"\n\nUSER GUIDANCE\n{request.Guidance.Value}"),
@@ -447,8 +439,7 @@ internal sealed class GoalWorkflowService(
         if (request.Role is GoalWorkflowRetryRole.Lead)
         {
             await foreach (GoalWorkflowSnapshot result in RetryLeadAsync(
-                               goal, snapshot, request.MaximumOutputTokens,
-                               request.Guidance, cancellationToken))
+                               goal, snapshot, request.Guidance, cancellationToken))
             {
                 yield return result;
             }
@@ -490,7 +481,6 @@ internal sealed class GoalWorkflowService(
                     goal.Id,
                     AgentRole.Implementer,
                     new(implementerTask),
-                    request.MaximumOutputTokens,
                     FileAreas(task)), cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -502,7 +492,7 @@ internal sealed class GoalWorkflowService(
 
             if (implementation.Output is null)
             {
-                snapshot = await MarkDirectionAsync(snapshot,
+                snapshot = await MarkAgentFailureAsync(snapshot, implementation,
                     $"Retried delegated task {task.Sequence.Value} failed and was not replayed: " +
                     implementation.Error?.Value,
                     cancellationToken);
@@ -542,8 +532,6 @@ internal sealed class GoalWorkflowService(
                            plan,
                            delegatedTasks,
                            snapshot,
-                           request.MaximumOutputTokens,
-                           request.MaximumOutputTokens,
                            reviewerCallAlreadyStarted: true,
                            stopAfterReview: true,
                            initialImplementationOutput: null,
@@ -576,7 +564,6 @@ internal sealed class GoalWorkflowService(
     private async IAsyncEnumerable<GoalWorkflowSnapshot> RetryLeadAsync(
         GoalView goal,
         StoredGoalWorkflowSnapshot snapshot,
-        MaximumAgentOutputTokens maximumOutputTokens,
         GoalRetryGuidance? guidance,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
@@ -595,8 +582,7 @@ internal sealed class GoalWorkflowService(
             result = await agentRunner.RunAsync(new(
                 goal.Id,
                 AgentRole.Lead,
-                new(WithRetryGuidance(LeadTask(goal), guidance)),
-                maximumOutputTokens), cancellationToken);
+                new(WithRetryGuidance(LeadTask(goal), guidance))), cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -607,7 +593,7 @@ internal sealed class GoalWorkflowService(
 
         if (result.Output is null)
         {
-            snapshot = await MarkDirectionAsync(snapshot,
+            snapshot = await MarkAgentFailureAsync(snapshot, result,
                 $"Retried Lead call did not produce a plan: {result.Error?.Value ?? "unknown failure"}",
                 cancellationToken);
             yield return await ToViewAsync(snapshot, cancellationToken);
@@ -665,8 +651,6 @@ internal sealed class GoalWorkflowService(
         PlanView plan,
         IReadOnlyList<StoredGoalWorkflowTask> delegatedTasks,
         StoredGoalWorkflowSnapshot snapshot,
-        MaximumAgentOutputTokens implementerMaximumOutputTokens,
-        MaximumAgentOutputTokens reviewerMaximumOutputTokens,
         bool reviewerCallAlreadyStarted,
         bool stopAfterReview,
         AgentOutput? initialImplementationOutput,
@@ -703,8 +687,7 @@ internal sealed class GoalWorkflowService(
                 review = await agentRunner.RunAsync(new(
                     goal.Id,
                     AgentRole.Reviewer,
-                    new(reviewerTask),
-                    reviewerMaximumOutputTokens), cancellationToken);
+                    new(reviewerTask)), cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -715,7 +698,7 @@ internal sealed class GoalWorkflowService(
 
             if (review.Output is null)
             {
-                snapshot = await MarkDirectionAsync(snapshot,
+                snapshot = await MarkAgentFailureAsync(snapshot, review,
                     $"Reviewer call failed and was not replayed: {review.Error?.Value}",
                     cancellationToken);
                 yield return await ToViewAsync(snapshot, cancellationToken);
@@ -776,7 +759,6 @@ internal sealed class GoalWorkflowService(
                     goal.Id,
                     AgentRole.Implementer,
                     new(revisionTask),
-                    implementerMaximumOutputTokens,
                     FileAreas(delegatedTasks)), cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -789,7 +771,7 @@ internal sealed class GoalWorkflowService(
 
             if (revision.Output is null)
             {
-                snapshot = await MarkDirectionAsync(snapshot,
+                snapshot = await MarkAgentFailureAsync(snapshot, revision,
                     $"Implementer correction failed and was not replayed: {revision.Error?.Value}",
                     cancellationToken);
                 yield return await ToViewAsync(snapshot, cancellationToken);
@@ -821,6 +803,29 @@ internal sealed class GoalWorkflowService(
         StoredGoalWorkflowCheckpoint latest = snapshot.Checkpoints[^1];
         return await AppendAsync(snapshot, StoredKind.UserDirectionRequired,
             StoredActor.System, reason, "Recovery notice", reason,
+            latest.Kind, snapshot.Run.State, StoredState.NeedsDirection,
+            cancellationToken);
+    }
+
+    private async ValueTask<StoredGoalWorkflowSnapshot> MarkAgentFailureAsync(
+        StoredGoalWorkflowSnapshot snapshot,
+        AgentRunResult result,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        if (result.ErrorCode?.Value is not "remote_cost_cap_exceeded")
+        {
+            return await MarkDirectionAsync(snapshot, reason, cancellationToken);
+        }
+
+        StoredGoalWorkflowCheckpoint latest = snapshot.Checkpoints[^1];
+        const string partial =
+            "The configured monetary cost limit was reached before the goal could finish. " +
+            "Every completed task and durable tool result has been preserved; no uncertain " +
+            "model call will be replayed automatically. Review the verified partial result, " +
+            "then raise or remove the cost cap to continue, retry the current role, or abort.";
+        return await AppendAsync(snapshot, StoredKind.UserDirectionRequired,
+            StoredActor.System, partial, "Partial completion", partial,
             latest.Kind, snapshot.Run.State, StoredState.NeedsDirection,
             cancellationToken);
     }
@@ -878,9 +883,13 @@ internal sealed class GoalWorkflowService(
         Goal: {{goal.Title}}
         Objective: {{goal.Objective}}
 
-        Return JSON only with exactly this shape. Supply 1-12 ordered tasks; each task must be
-        independently bounded, name concrete repository-relative file areas, and define
-        objective acceptance criteria. Do not implement or claim that work is complete.
+        Return JSON only with exactly this shape. Supply 1-12 ordered tasks. Order tasks so each
+        completed prefix is coherent, useful, and verifiable if a monetary cost limit stops later
+        work: establish the smallest end-to-end foundation first, then add value in independently
+        shippable increments. Each task must be bounded, name concrete repository-relative file
+        areas, and define objective acceptance criteria. Put optional polish last. Include explicit
+        partial-completion checkpoints, verification, risks, and non-goals in the plan. Do not
+        implement or claim that work is complete.
 
         {
           "plan": "reviewable plan including verification, risks, and non-goals",
@@ -904,7 +913,10 @@ internal sealed class GoalWorkflowService(
         '{{goal.Title}}' using typed goal-worktree tools. Respect its file-area boundary;
         inspect before editing, use atomic edits with correlation identifiers, then run the
         narrowest relevant build and tests without restore. Do not broaden scope or claim
-        success without durable tool evidence.
+        success without durable tool evidence. Work in small durable increments. Before broadening
+        the change, leave the current increment coherent and run its narrow validation. If the
+        provider or cost boundary stops the call, do not fabricate completion: preserve the last
+        verified state and report completed criteria, validation, and remaining work separately.
 
         APPROVED PLAN
         {{plan.Content}}
@@ -986,44 +998,34 @@ internal sealed class GoalWorkflowService(
 
     private static void ValidateStart(GoalWorkflowStartRequest request)
     {
-        if (request is null || !ValidGoalId(request.GoalId) ||
-            !ValidMaximum(request.LeadMaximumOutputTokens))
+        if (request is null || !ValidGoalId(request.GoalId))
         {
-            throw new ArgumentException(
-                $"A valid goal and lead output maximum of 1-{MaximumOutputTokens} tokens are required.");
+            throw new ArgumentException("A valid goal is required.");
         }
     }
 
     private static void ValidateResume(GoalWorkflowResumeRequest request)
     {
-        if (request is null || !ValidGoalId(request.GoalId) ||
-            !ValidMaximum(request.ImplementerMaximumOutputTokens) ||
-            !ValidMaximum(request.ReviewerMaximumOutputTokens))
+        if (request is null || !ValidGoalId(request.GoalId))
         {
-            throw new ArgumentException(
-                $"A valid goal and role output maxima of 1-{MaximumOutputTokens} tokens are required.");
+            throw new ArgumentException("A valid goal is required.");
         }
     }
 
     private static void ValidateRetry(GoalWorkflowRetryRequest request)
     {
-        if (request is null || !ValidGoalId(request.GoalId) ||
-            !ValidMaximum(request.MaximumOutputTokens) ||
-            !Enum.IsDefined(request.Role) ||
+        if (request is null || !ValidGoalId(request.GoalId) || !Enum.IsDefined(request.Role) ||
             request.Guidance is { Value.Length: > 16 * 1024 } ||
             request.Guidance is { Value: var guidance } && string.IsNullOrWhiteSpace(guidance))
         {
             throw new ArgumentException(
-                $"A valid goal, failed role, output maximum of 1-{MaximumOutputTokens} tokens, " +
-                "and optional retry guidance of at most 16384 non-whitespace characters are required.");
+                "A valid goal, failed role, and optional retry guidance of at most " +
+                "16384 non-whitespace characters are required.");
         }
     }
 
     private static bool ValidGoalId(GoalId? goalId) =>
         goalId is not null && Guid.TryParseExact(goalId.Value, "N", out _);
-
-    private static bool ValidMaximum(MaximumAgentOutputTokens? maximum) =>
-        maximum is not null && maximum.Value is > 0 and <= MaximumOutputTokens;
 
     private async ValueTask<GoalWorkflowSnapshot> ToViewAsync(
         StoredGoalWorkflowSnapshot snapshot,
@@ -1041,6 +1043,9 @@ internal sealed class GoalWorkflowService(
                 StoredState.Running => GoalWorkflowState.Running,
                 StoredState.AwaitingPlanApproval => GoalWorkflowState.AwaitingPlanApproval,
                 StoredState.AwaitingAcceptance => GoalWorkflowState.AwaitingAcceptance,
+                StoredState.NeedsDirection when
+                    latest.EvidenceTitle?.Value is "Partial completion" =>
+                    GoalWorkflowState.PartiallyCompleted,
                 StoredState.NeedsDirection => GoalWorkflowState.NeedsDirection,
                 StoredState.Completed when IsAborted(snapshot) => GoalWorkflowState.Aborted,
                 StoredState.Completed => GoalWorkflowState.Completed,

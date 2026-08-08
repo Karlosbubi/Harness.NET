@@ -99,7 +99,7 @@ internal sealed class GoalSettingsDialog : Window
                 new TextBlock { Text = "Progressive overrides", FontWeight = FontWeight.SemiBold },
                 new TextBlock
                 {
-                    Text = "Ordinary role defaults come from Settings. Open this only when the current goal needs a different local or remote route; per-run output ceilings remain explicit when a run starts.",
+                    Text = "Ordinary role defaults come from Settings. Open this only when the current goal needs a different local or remote route or monetary spend policy.",
                     TextWrapping = TextWrapping.Wrap,
                     Classes = { "muted" },
                 },

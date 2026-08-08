@@ -13,8 +13,7 @@ internal sealed class ModelProviderChatClient(
     IModelProvider provider,
     AgentModel model,
     GoalId? remoteGoalId,
-    AgentRole role,
-    MaximumAgentOutputTokens? maximumOutputTokens) : IChatClient
+    AgentRole role) : IChatClient
 {
     public async Task<ChatResponse> GetResponseAsync(
         IEnumerable<Microsoft.Extensions.AI.ChatMessage> messages,
@@ -75,7 +74,6 @@ internal sealed class ModelProviderChatClient(
                             AgentRole.Reviewer => RemoteModelRole.Reviewer,
                             _ => throw new ArgumentOutOfRangeException(nameof(role)),
                         }),
-                maximumOutputTokens is null ? null : new(maximumOutputTokens.Value),
                 tools),
             cancellationToken))
         {

@@ -336,7 +336,6 @@ internal sealed class GoalDialog : Window
             PlanGenerationDialog dialog = new(
                 candidates,
                 preferred,
-                DefaultOutputMaximum(AgentRole.Lead),
                 GoalPresentationFormatter.StartDisclosure(store.Current.Goals));
             await dialog.ShowDialog(this);
             if (dialog.Result is not { } result)
@@ -357,7 +356,6 @@ internal sealed class GoalDialog : Window
             await store.StartGoalWorkflowAsync(
                 selected.Id,
                 result.LeadModel,
-                new(result.MaximumOutputTokens),
                 cancellationToken);
         };
         resumeRun.Click += async (_, _) =>
@@ -368,34 +366,10 @@ internal sealed class GoalDialog : Window
                 return;
             }
 
-            string disclosure = GoalPresentationFormatter.ResumeDisclosure(
-                selected,
-                store.Current.Goals);
-            OutputLimitsDialog dialog = new(
-                "Continue production run",
-                ["Implementer maximum output tokens", "Reviewer maximum output tokens"],
-                disclosure,
-                [
-                    DefaultOutputMaximum(AgentRole.Implementer),
-                    DefaultOutputMaximum(AgentRole.Reviewer),
-                ]);
-            await dialog.ShowDialog(this);
-            if (dialog.Result is { Length: 2 } limits)
-            {
-                await store.ResumeGoalWorkflowAsync(
-                    selected.Id,
-                    new(limits[0]),
-                    new(limits[1]),
-                    cancellationToken);
-            }
+            await store.ResumeGoalWorkflowAsync(selected.Id, cancellationToken);
         };
         cancelRun.Click += (_, _) => store.CancelGoalWorkflow();
     }
-
-    private int DefaultOutputMaximum(AgentRole role) =>
-        store.Current.Settings.AgentDefaults?.Roles
-            .FirstOrDefault(item => item.Role == role)
-            ?.MaximumOutputTokens.Value ?? 2048;
 
     private void Render(AvaloniaShellState state)
     {
@@ -987,20 +961,16 @@ internal sealed class RemoteModelAuthorizationDialog : Window
     }
 }
 
-internal sealed record PlanGenerationResult(
-    GoalModelCandidate LeadModel,
-    int MaximumOutputTokens);
+internal sealed record PlanGenerationResult(GoalModelCandidate LeadModel);
 
 internal sealed class PlanGenerationDialog : Window
 {
     private readonly SearchableModelPicker models = new() { MinWidth = 380 };
-    private readonly TextBox maximum = new();
     private readonly TextBlock validation = new() { TextWrapping = TextWrapping.Wrap };
 
     internal PlanGenerationDialog(
         IReadOnlyList<GoalModelCandidate> candidates,
         GoalModelCandidate? selected,
-        int initialMaximum,
         string disclosure)
     {
         Title = "Generate goal plan";
@@ -1012,9 +982,7 @@ internal sealed class PlanGenerationDialog : Window
         GoalModelCandidate[] choices = ModelSelectionCatalog.ForRole(
             candidates, AgentRole.Lead);
         models.SetCandidates(choices, selected);
-        maximum.Text = initialMaximum.ToString(CultureInfo.InvariantCulture);
         models.SetAutomationName("Lead model for plan generation");
-        AutomationProperties.SetName(maximum, "Lead maximum output tokens");
         AutomationProperties.SetName(validation, "Plan generation validation");
         Button cancel = new() { Content = "Cancel" };
         cancel.Click += (_, _) => Close();
@@ -1046,11 +1014,6 @@ internal sealed class PlanGenerationDialog : Window
                         TextWrapping = TextWrapping.Wrap,
                         Classes = { "muted" },
                     },
-                    new TextBlock
-                    {
-                        Text = $"Maximum output tokens (1–{MaximumAgentOutputTokens.MaximumValue:N0})",
-                    },
-                    maximum,
                     validation,
                     new StackPanel
                     {
@@ -1074,29 +1037,18 @@ internal sealed class PlanGenerationDialog : Window
             return;
         }
 
-        if (!int.TryParse(maximum.Text, NumberStyles.None,
-                CultureInfo.InvariantCulture, out int value) ||
-            value is < 1 or > MaximumAgentOutputTokens.MaximumValue)
-        {
-            validation.Text = $"The output maximum must be an integer from 1 through " +
-                              $"{MaximumAgentOutputTokens.MaximumValue:N0} tokens.";
-            return;
-        }
-
-        Result = new(candidate, value);
+        Result = new(candidate);
         Close();
     }
 }
 
 internal sealed record WorkflowRetryResult(
     GoalModelCandidate Model,
-    int MaximumOutputTokens,
     string? Guidance);
 
 internal sealed class WorkflowRetryDialog : Window
 {
     private readonly SearchableModelPicker models = new() { MinWidth = 420 };
-    private readonly TextBox maximum = new();
     private readonly TextBox guidance = new()
     {
         AcceptsReturn = true,
@@ -1110,7 +1062,6 @@ internal sealed class WorkflowRetryDialog : Window
         GoalWorkflowRetryRole role,
         IReadOnlyList<GoalModelCandidate> candidates,
         GoalModelCandidate? selected,
-        int initialMaximum,
         string disclosure)
     {
         Title = $"Retry {role} with changes";
@@ -1128,9 +1079,7 @@ internal sealed class WorkflowRetryDialog : Window
         };
         GoalModelCandidate[] choices = ModelSelectionCatalog.ForRole(candidates, agentRole);
         models.SetCandidates(choices, selected);
-        maximum.Text = initialMaximum.ToString(CultureInfo.InvariantCulture);
         models.SetAutomationName($"Replacement model for {role} retry");
-        AutomationProperties.SetName(maximum, $"{role} retry maximum output tokens");
         AutomationProperties.SetName(guidance, $"Guidance for {role} retry");
         AutomationProperties.SetName(validation, "Retry validation");
         Button cancel = new() { Content = "Cancel" };
@@ -1167,11 +1116,6 @@ internal sealed class WorkflowRetryDialog : Window
                     },
                     new TextBlock { Text = "Additional guidance (optional)", FontWeight = FontWeight.SemiBold },
                     guidance,
-                    new TextBlock
-                    {
-                        Text = $"Maximum output tokens (1–{MaximumAgentOutputTokens.MaximumValue:N0})",
-                    },
-                    maximum,
                     validation,
                     new StackPanel
                     {
@@ -1203,16 +1147,7 @@ internal sealed class WorkflowRetryDialog : Window
             return;
         }
 
-        if (!int.TryParse(maximum.Text, NumberStyles.None,
-                CultureInfo.InvariantCulture, out int value) ||
-            value is < 1 or > MaximumAgentOutputTokens.MaximumValue)
-        {
-            validation.Text = $"The output maximum must be an integer from 1 through " +
-                              $"{MaximumAgentOutputTokens.MaximumValue:N0} tokens.";
-            return;
-        }
-
-        Result = new(candidate, value, direction.Length == 0 ? null : direction);
+        Result = new(candidate, direction.Length == 0 ? null : direction);
         Close();
     }
 }
@@ -1283,81 +1218,6 @@ internal sealed class AbortGoalDialog : Window
     }
 
     internal GoalAbortReason? Result { get; private set; }
-}
-
-internal sealed class OutputLimitsDialog : Window
-{
-    private readonly TextBox[] fields;
-    private readonly TextBlock validation = new() { TextWrapping = TextWrapping.Wrap };
-
-    internal OutputLimitsDialog(
-        string title,
-        IReadOnlyList<string> labels,
-        string disclosure,
-        IReadOnlyList<int>? initialValues = null)
-    {
-        Title = title;
-        Width = 720;
-        Height = 470 + (labels.Count * 60);
-        MinHeight = 460;
-        WindowStartupLocation = WindowStartupLocation.CenterOwner;
-        fields = labels.Select((_, index) => new TextBox
-        {
-            Text = (initialValues is not null && index < initialValues.Count
-                    ? initialValues[index]
-                    : 2048)
-                .ToString(CultureInfo.InvariantCulture),
-        }).ToArray();
-        StackPanel panel = new() { Margin = new Thickness(20), Spacing = 8 };
-        panel.Children.Add(new TextBlock
-        {
-            Text = "Bounded model execution",
-            FontSize = 17,
-            FontWeight = FontWeight.SemiBold,
-        });
-        panel.Children.Add(new TextBlock { Text = disclosure, TextWrapping = TextWrapping.Wrap });
-        foreach ((string label, TextBox field) in labels.Zip(fields))
-        {
-            AutomationProperties.SetName(field, label);
-            panel.Children.Add(new TextBlock { Text = label });
-            panel.Children.Add(field);
-        }
-
-        AutomationProperties.SetName(validation, $"{title} validation");
-        panel.Children.Add(validation);
-        Button cancel = new() { Content = "Cancel" };
-        cancel.Click += (_, _) => Close();
-        Button run = new() { Content = "Run with these limits" };
-        run.Click += (_, _) => Save();
-        panel.Children.Add(new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Spacing = 8,
-            Children = { cancel, run },
-        });
-        Content = new ScrollViewer { Content = panel };
-    }
-
-    internal int[]? Result { get; private set; }
-
-    private void Save()
-    {
-        int[] values = fields.Select(field =>
-                int.TryParse(field.Text, NumberStyles.None, CultureInfo.InvariantCulture, out int value)
-                    ? value
-                    : 0)
-            .ToArray();
-        if (values.Any(value => value is < 1 or > MaximumAgentOutputTokens.MaximumValue))
-        {
-            validation.Text = $"Every output maximum must be an integer from 1 through " +
-                              $"{MaximumAgentOutputTokens.MaximumValue:N0} tokens.";
-            return;
-        }
-
-        Result = values;
-        Close();
-    }
 }
 
 internal sealed class RestoreApprovalDialog : Window

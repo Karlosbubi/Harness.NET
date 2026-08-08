@@ -337,7 +337,6 @@ internal sealed class AvaloniaPresentationStore(
     internal async ValueTask UpdateAgentDefaultAsync(
         AgentRole role,
         GoalModelCandidate candidate,
-        int maximumOutputTokens,
         CancellationToken cancellationToken)
     {
         Publish(Current with
@@ -350,8 +349,7 @@ internal sealed class AvaloniaPresentationStore(
             AgentRoleDefaultUpdateResult result = await agentDefaultsService.UpdateAsync(new(
                 role,
                 candidate.Provider,
-                candidate.Model,
-                new(maximumOutputTokens)), cancellationToken);
+                candidate.Model), cancellationToken);
             if (result.Value is null)
             {
                 Publish(Current with
@@ -836,18 +834,16 @@ internal sealed class AvaloniaPresentationStore(
     internal async ValueTask StartGoalWorkflowAsync(
         GoalId goalId,
         GoalModelCandidate leadModel,
-        MaximumAgentOutputTokens leadMaximum,
         CancellationToken cancellationToken) =>
         await RunWorkflowAsync(
             goalId,
-            token => StartPlanningWithModelAsync(goalId, leadModel, leadMaximum, token),
+            token => StartPlanningWithModelAsync(goalId, leadModel, token),
             cancellationToken,
             "Lead planning");
 
     private async IAsyncEnumerable<GoalWorkflowSnapshot> StartPlanningWithModelAsync(
         GoalId goalId,
         GoalModelCandidate leadModel,
-        MaximumAgentOutputTokens leadMaximum,
         [System.Runtime.CompilerServices.EnumeratorCancellation]
         CancellationToken cancellationToken)
     {
@@ -868,7 +864,7 @@ internal sealed class AvaloniaPresentationStore(
             Goals = Current.Goals with { ModelSelections = selections },
         });
         await foreach (GoalWorkflowSnapshot snapshot in goalWorkflowService.StartPlanningAsync(
-                           new(goalId, leadMaximum), cancellationToken)
+                           new(goalId), cancellationToken)
                            .WithCancellation(cancellationToken))
         {
             yield return snapshot;
@@ -877,13 +873,11 @@ internal sealed class AvaloniaPresentationStore(
 
     internal async ValueTask ResumeGoalWorkflowAsync(
         GoalId goalId,
-        MaximumAgentOutputTokens implementerMaximum,
-        MaximumAgentOutputTokens reviewerMaximum,
         CancellationToken cancellationToken) =>
         await RunWorkflowAsync(
             goalId,
             token => goalWorkflowService.ResumeAsync(
-                new(goalId, implementerMaximum, reviewerMaximum),
+                new(goalId),
                 token),
             cancellationToken,
             "Production workflow");
@@ -892,13 +886,12 @@ internal sealed class AvaloniaPresentationStore(
         GoalId goalId,
         GoalWorkflowRetryRole role,
         GoalModelCandidate model,
-        MaximumAgentOutputTokens maximumOutputTokens,
         GoalRetryGuidance? guidance,
         CancellationToken cancellationToken) =>
         await RunWorkflowAsync(
             goalId,
             token => RetryWithModelAsync(
-                goalId, role, model, maximumOutputTokens, guidance, token),
+                goalId, role, model, guidance, token),
             cancellationToken,
             $"{role} retry");
 
@@ -906,7 +899,6 @@ internal sealed class AvaloniaPresentationStore(
         GoalId goalId,
         GoalWorkflowRetryRole retryRole,
         GoalModelCandidate model,
-        MaximumAgentOutputTokens maximumOutputTokens,
         GoalRetryGuidance? guidance,
         [System.Runtime.CompilerServices.EnumeratorCancellation]
         CancellationToken cancellationToken)
@@ -935,7 +927,7 @@ internal sealed class AvaloniaPresentationStore(
             Goals = Current.Goals with { ModelSelections = selections },
         });
         await foreach (GoalWorkflowSnapshot snapshot in goalWorkflowService.RetryAsync(
-                           new(goalId, retryRole, maximumOutputTokens, guidance),
+                           new(goalId, retryRole, guidance),
                            cancellationToken).WithCancellation(cancellationToken))
         {
             yield return snapshot;

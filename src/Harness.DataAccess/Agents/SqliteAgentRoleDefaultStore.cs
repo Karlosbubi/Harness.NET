@@ -14,9 +14,7 @@ internal sealed class SqliteAgentRoleDefaultStore(IApplicationPaths applicationP
         await using SqliteConnection connection = await OpenAsync(cancellationToken);
         IEnumerable<RoleDefaultRow> rows = await connection.QueryAsync<RoleDefaultRow>(
             new CommandDefinition("""
-                SELECT role, provider, model,
-                       maximum_output_tokens AS MaximumOutputTokens,
-                       updated_at AS UpdatedAt
+                SELECT role, provider, model, updated_at AS UpdatedAt
                 FROM agent_role_defaults
                 ORDER BY CASE role WHEN 'Lead' THEN 0 WHEN 'Implementer' THEN 1 ELSE 2 END;
                 """, cancellationToken: cancellationToken));
@@ -31,23 +29,18 @@ internal sealed class SqliteAgentRoleDefaultStore(IApplicationPaths applicationP
         await using SqliteConnection connection = await OpenAsync(cancellationToken);
         RoleDefaultRow row = await connection.QuerySingleAsync<RoleDefaultRow>(
             new CommandDefinition("""
-                INSERT INTO agent_role_defaults (
-                    role, provider, model, maximum_output_tokens, updated_at)
-                VALUES (@Role, @Provider, @Model, @MaximumOutputTokens, @UpdatedAt)
+                INSERT INTO agent_role_defaults (role, provider, model, updated_at)
+                VALUES (@Role, @Provider, @Model, @UpdatedAt)
                 ON CONFLICT (role) DO UPDATE SET
                     provider = excluded.provider,
                     model = excluded.model,
-                    maximum_output_tokens = excluded.maximum_output_tokens,
                     updated_at = excluded.updated_at
-                RETURNING role, provider, model,
-                          maximum_output_tokens AS MaximumOutputTokens,
-                          updated_at AS UpdatedAt;
+                RETURNING role, provider, model, updated_at AS UpdatedAt;
                 """, new
             {
                 Role = value.Role.ToString(),
                 Provider = value.Provider.Value,
                 Model = value.Model.Value,
-                MaximumOutputTokens = value.MaximumOutputTokens.Value,
                 UpdatedAt = value.UpdatedAt.ToString("O", CultureInfo.InvariantCulture),
             }, cancellationToken: cancellationToken));
         return row.ToRecord();
@@ -74,15 +67,12 @@ internal sealed class SqliteAgentRoleDefaultStore(IApplicationPaths applicationP
 
         public string Model { get; init; } = string.Empty;
 
-        public int MaximumOutputTokens { get; init; }
-
         public string UpdatedAt { get; init; } = string.Empty;
 
         internal StoredAgentRoleDefault ToRecord() => new(
             Enum.Parse<AgentDefaultRole>(Role),
             new(Provider),
             new(Model),
-            new(MaximumOutputTokens),
             DateTimeOffset.Parse(UpdatedAt, CultureInfo.InvariantCulture));
     }
 }

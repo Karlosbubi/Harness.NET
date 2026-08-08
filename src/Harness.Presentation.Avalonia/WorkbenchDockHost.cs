@@ -909,6 +909,18 @@ internal sealed class WorkbenchDockHost
             WorkbenchDockContent.ReleaseFromPresenter(context);
         }
 
+        // Restore builds the replacement Dock graph while the durable controls can
+        // still belong to presenters in the retiring graph. Re-apply the rendered
+        // content contract after releasing those presenters so complex controls
+        // (notably Conversation) are materialized by the replacement graph.
+        foreach ((string id, Control context) in durableContexts)
+        {
+            if (FindDockable(restored, id) is { } dockable)
+            {
+                WorkbenchDockContent.Attach(dockable, context);
+            }
+        }
+
         Control.Layout = null;
         root = restored;
         documents = restoredDocuments;

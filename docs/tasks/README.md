@@ -106,7 +106,7 @@ merely to complete the final visual design at once.
    next slice.
 3. **Goal creation and continuation:** let the composer create or select a goal and
    continue its Lead/Implementer/Reviewer workflow with configured defaults. Put
-   optional per-goal role routes, output ceilings, review cycles, privacy route, and
+   optional per-goal role routes, review cycles, privacy route, and
    remote cap behind one progressive-disclosure surface.
    The ordinary entry path is delivered: in a trusted active workspace the first
    composer submission creates and selects a private draft with three review cycles,
@@ -117,7 +117,7 @@ merely to complete the final visual design at once.
    cycles and an exact goal-wide remote USD cap persist through a typed optimistic-
    concurrency boundary, and role/model routes open on demand. Remote spend stays
    disabled by default, requires workspace trust, and cannot be added after planning
-   starts. Per-run output ceilings remain explicit on the run action.
+   starts. ADR 014 later replaced token ceilings with monetary-only limits.
 4. **Inline authority actions:** bind explicit typed approve/deny/cancel commands to
    the matching plan, remote authorization, Restore, budget, destructive-operation,
    and exact-commit cards. Preserve any policy-required second confirmation as one
@@ -305,8 +305,8 @@ configured or paid provider.
   Goal catalog discovery distinguishes chat from embedding models, preserves named
   module attribution, reports per-provider failures without exposing secrets, and
   shows published remote input/output/request pricing. Agent execution resolves the
-  selected goal/role route and carries strict privacy plus a required output-token
-  ceiling into remote requests.
+  selected goal/role route and carries strict privacy into remote requests. ADR 014's
+  later monetary-only amendment removed user-configured output-token ceilings.
 - Task 010 uses the pinned Microsoft SQLite vector connector solely inside Data
   Access. Deterministic tests prove Git-index eligibility and secret/generated/binary
   filtering, stable bounded chunks, provider/model/dimension/version partitioning,

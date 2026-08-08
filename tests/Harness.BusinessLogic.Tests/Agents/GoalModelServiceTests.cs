@@ -123,12 +123,11 @@ public sealed class GoalModelServiceTests
         AgentRoleDefaultUpdateResult updated = await service.UpdateAsync(new(
             AgentRole.Lead,
             new("OpenRouter"),
-            new("remote"),
-            new(2_000_000)));
+            new("remote")));
         AgentDefaultsSnapshot snapshot = await service.GetAsync();
         GoalModelRouteResult route = await service.ResolveAsync(new("goal-1"), AgentRole.Lead);
 
-        Assert.Equal(2_000_000, updated.Value?.MaximumOutputTokens.Value);
+        Assert.NotNull(updated.Value);
         Assert.True(snapshot.Roles.Single(item => item.Role is AgentRole.Lead).IsPersisted);
         Assert.Equal("remote", snapshot.Roles.Single(item => item.Role is AgentRole.Lead).Model.Value);
         Assert.Equal("remote_model_not_selected", route.ErrorCode?.Value);
@@ -146,7 +145,6 @@ public sealed class GoalModelServiceTests
 
         Assert.Equal(3, snapshot.Roles.Count);
         Assert.Equal(2, snapshot.Models.Count);
-        Assert.All(snapshot.Roles, item => Assert.Equal(2048, item.MaximumOutputTokens.Value));
         Assert.Empty(snapshot.DefaultIssues);
         Assert.All(snapshot.Models, item => Assert.Equal(Enum.GetValues<AgentRole>(), item.SupportedRoles));
         Assert.Collection(
@@ -208,8 +206,7 @@ public sealed class GoalModelServiceTests
         AgentRoleDefaultUpdateResult updated = await service.UpdateAsync(new(
             AgentRole.Reviewer,
             new("Ollama"),
-            new("plain-chat"),
-            new(2048)));
+            new("plain-chat")));
 
         Assert.Equal("model_role_unsupported", selected.ErrorCode);
         Assert.Equal("model_role_unsupported", updated.ErrorCode);
@@ -225,7 +222,6 @@ public sealed class GoalModelServiceTests
             AgentDefaultRole.Lead,
             new("Ollama"),
             new("plain-chat"),
-            new(4096),
             DateTimeOffset.UtcNow));
         GoalModelService service = CreateService(
             Goal(remoteBudget: null),
@@ -268,7 +264,6 @@ public sealed class GoalModelServiceTests
             AgentDefaultRole.Lead,
             new("removed-provider"),
             new("removed-model"),
-            new(4096),
             DateTimeOffset.UtcNow));
         GoalModelService service = CreateService(
             Goal(remoteBudget: null),
@@ -281,7 +276,6 @@ public sealed class GoalModelServiceTests
 
         Assert.Equal("Ollama", lead.Provider.Value);
         Assert.False(lead.IsPersisted);
-        Assert.Equal(2048, lead.MaximumOutputTokens.Value);
     }
 
     private static GoalModelService CreateService(
@@ -305,7 +299,6 @@ public sealed class GoalModelServiceTests
             [AgentRole.Implementer] = new("Ollama"),
             [AgentRole.Reviewer] = new("Ollama"),
         },
-        new(new(2048)),
         TimeProvider.System);
 
     private static ModelDescriptor Model(

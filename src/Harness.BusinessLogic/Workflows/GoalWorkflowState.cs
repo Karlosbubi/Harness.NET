@@ -6,6 +6,7 @@ public enum GoalWorkflowState
     AwaitingPlanApproval,
     AwaitingAcceptance,
     NeedsDirection,
+    PartiallyCompleted,
     Completed,
     Aborted,
 }

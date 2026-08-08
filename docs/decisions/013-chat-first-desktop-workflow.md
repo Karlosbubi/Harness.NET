@@ -82,13 +82,13 @@ Add one searchable Settings surface with stable categories:
 - Storage, backup, and recovery;
 - Advanced diagnostics and experimental modules.
 
-Lead, Implementer, and Reviewer model routes, default output ceilings, and default
+Lead, Implementer, and Reviewer model routes and default
 review-cycle limits move out of the routine goal journey. The shell may show concise
 effective-route and cost status, but it does not require users to operate role
 selectors for every goal.
 
 Goal-specific overrides remain available through progressive disclosure when a user
-needs a different model, limit, privacy route, or remote cap. ADR 014 replaces the
+needs a different model, privacy route, or remote cap. ADR 014 replaces the
 former local-only default: the saved spend-mode preference now authorizes new goals.
 The exact
 goal-bound authorization remains visible and explicit.
@@ -151,8 +151,8 @@ actions. Screenshot assertions do not substitute for hands-on review.
 
 A paused `NeedsDirection` run must not reduce recovery to an unexplained Continue
 action. Its inline run card offers **Retry** for the exact failed role.
-The focused recovery sheet includes a capability-qualified replacement model, role
-output ceiling, and optional bounded user guidance. Empty guidance deliberately means
+The focused recovery sheet includes a capability-qualified replacement model and
+optional bounded user guidance. Empty guidance deliberately means
 an unchanged or model-only retry. The chosen goal-role route and retry checkpoint are
 persisted before the new call; remote replacement models retain the
 existing spend-policy and explicit-confirmation gates. Retry never replays the uncertain

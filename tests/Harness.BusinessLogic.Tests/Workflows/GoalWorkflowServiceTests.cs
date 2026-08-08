@@ -21,7 +21,7 @@ public sealed class GoalWorkflowServiceTests
         GoalWorkflowService service = CreateService(store, goals, agents);
 
         List<GoalWorkflowSnapshot> planning = await CollectAsync(
-            service.StartPlanningAsync(new(goals.Goal.Id, new(1024))));
+            service.StartPlanningAsync(new(goals.Goal.Id)));
 
         Assert.Equal(
             [
@@ -35,10 +35,8 @@ public sealed class GoalWorkflowServiceTests
         Assert.Equal(GoalTaskState.Pending, plannedTask.State);
         goals.Approve();
 
-        List<GoalWorkflowSnapshot> resumed = await CollectAsync(service.ResumeAsync(new(
-            goals.Goal.Id,
-            new(2048),
-            new(512))));
+        List<GoalWorkflowSnapshot> resumed = await CollectAsync(
+            service.ResumeAsync(new(goals.Goal.Id)));
 
         GoalWorkflowSnapshot completedReview = resumed[^1];
         Assert.Equal(GoalWorkflowState.AwaitingAcceptance, completedReview.State);
@@ -49,8 +47,6 @@ public sealed class GoalWorkflowServiceTests
         Assert.Equal(
             [AgentRole.Lead, AgentRole.Implementer, AgentRole.Reviewer],
             agents.Requests.Select(request => request.Role));
-        Assert.Equal([1024, 2048, 512],
-            agents.Requests.Select(request => request.MaximumOutputTokens?.Value));
         Assert.Equal(GoalTaskState.Completed, Assert.Single(completedReview.Tasks).State);
     }
 
@@ -67,11 +63,11 @@ public sealed class GoalWorkflowServiceTests
         InMemoryGoalWorkflowStore store = new();
         GoalWorkflowService service = CreateService(store, goals, agents);
         GoalWorkflowSnapshot planned = (await CollectAsync(
-            service.StartPlanningAsync(new(goals.Goal.Id, new(512)))))[^1];
+            service.StartPlanningAsync(new(goals.Goal.Id))))[^1];
         goals.Approve();
 
-        GoalWorkflowSnapshot result = (await CollectAsync(service.ResumeAsync(new(
-            goals.Goal.Id, new(512), new(512)))))[^1];
+        GoalWorkflowSnapshot result = (await CollectAsync(
+            service.ResumeAsync(new(goals.Goal.Id))))[^1];
 
         Assert.Equal(["Data slice", "Logic slice"],
             planned.Tasks.Select(task => task.Title.Value));
@@ -116,8 +112,8 @@ public sealed class GoalWorkflowServiceTests
         FakeAgentRunner agents = new();
         GoalWorkflowService service = CreateService(store, goals, agents);
 
-        List<GoalWorkflowSnapshot> snapshots = await CollectAsync(service.ResumeAsync(new(
-            goals.Goal.Id, new(512), new(512))));
+        List<GoalWorkflowSnapshot> snapshots = await CollectAsync(
+            service.ResumeAsync(new(goals.Goal.Id)));
 
         Assert.Equal(ViewKind.ImplementationProduced, snapshots[0].Activities[^1].Kind);
         Assert.Contains("Recovered durable delegated task",
@@ -154,8 +150,8 @@ public sealed class GoalWorkflowServiceTests
         FakeAgentRunner agents = new();
         GoalWorkflowService service = CreateService(store, goals, agents);
 
-        GoalWorkflowSnapshot result = Assert.Single(await CollectAsync(service.ResumeAsync(new(
-            goals.Goal.Id, new(512), new(512)))));
+        GoalWorkflowSnapshot result = Assert.Single(await CollectAsync(
+            service.ResumeAsync(new(goals.Goal.Id))));
 
         Assert.Equal(GoalWorkflowState.NeedsDirection, result.State);
         Assert.True(result.RequiresUserDirection);
@@ -182,8 +178,8 @@ public sealed class GoalWorkflowServiceTests
         FakeAgentRunner agents = new();
         GoalWorkflowService service = CreateService(store, goals, agents);
 
-        GoalWorkflowSnapshot result = Assert.Single(await CollectAsync(service.ResumeAsync(new(
-            goals.Goal.Id, new(512), new(512)))));
+        GoalWorkflowSnapshot result = Assert.Single(await CollectAsync(
+            service.ResumeAsync(new(goals.Goal.Id))));
 
         Assert.Equal(GoalWorkflowState.AwaitingPlanApproval, result.State);
         Assert.Equal(ViewKind.PlanProposed, result.Activities[^1].Kind);
@@ -202,11 +198,11 @@ public sealed class GoalWorkflowServiceTests
         };
         InMemoryGoalWorkflowStore store = new();
         GoalWorkflowService service = CreateService(store, goals, agents);
-        await CollectAsync(service.StartPlanningAsync(new(goals.Goal.Id, new(512))));
+        await CollectAsync(service.StartPlanningAsync(new(goals.Goal.Id)));
         goals.Approve();
 
-        GoalWorkflowSnapshot result = (await CollectAsync(service.ResumeAsync(new(
-            goals.Goal.Id, new(512), new(512)))))[^1];
+        GoalWorkflowSnapshot result = (await CollectAsync(
+            service.ResumeAsync(new(goals.Goal.Id))))[^1];
 
         Assert.Equal(GoalWorkflowState.NeedsDirection, result.State);
         Assert.True(result.RequiresUserDirection);
@@ -230,11 +226,11 @@ public sealed class GoalWorkflowServiceTests
             "{\"decision\":\"accept\",\"summary\":\"Boundary test is now durable.\"}");
         InMemoryGoalWorkflowStore store = new();
         GoalWorkflowService service = CreateService(store, goals, agents);
-        await CollectAsync(service.StartPlanningAsync(new(goals.Goal.Id, new(512))));
+        await CollectAsync(service.StartPlanningAsync(new(goals.Goal.Id)));
         goals.Approve();
 
-        GoalWorkflowSnapshot result = (await CollectAsync(service.ResumeAsync(new(
-            goals.Goal.Id, new(512), new(512)))))[^1];
+        GoalWorkflowSnapshot result = (await CollectAsync(
+            service.ResumeAsync(new(goals.Goal.Id))))[^1];
 
         Assert.Equal(GoalWorkflowState.AwaitingAcceptance, result.State);
         Assert.Equal(2, result.ReviewCycle.Value);
@@ -254,10 +250,10 @@ public sealed class GoalWorkflowServiceTests
         FakeAgentRunner agents = new();
         InMemoryGoalWorkflowStore store = new();
         GoalWorkflowService firstProcess = CreateService(store, goals, agents);
-        await CollectAsync(firstProcess.StartPlanningAsync(new(goals.Goal.Id, new(512))));
+        await CollectAsync(firstProcess.StartPlanningAsync(new(goals.Goal.Id)));
         goals.Approve();
         await using (IAsyncEnumerator<GoalWorkflowSnapshot> enumerator = firstProcess.ResumeAsync(
-                         new(goals.Goal.Id, new(512), new(512))).GetAsyncEnumerator())
+                         new(goals.Goal.Id)).GetAsyncEnumerator())
         {
             Assert.True(await enumerator.MoveNextAsync());
             Assert.True(await enumerator.MoveNextAsync());
@@ -268,8 +264,8 @@ public sealed class GoalWorkflowServiceTests
 
         agents.Requests.Clear();
         GoalWorkflowService restartedProcess = CreateService(store, goals, agents);
-        GoalWorkflowSnapshot result = (await CollectAsync(restartedProcess.ResumeAsync(new(
-            goals.Goal.Id, new(512), new(512)))))[^1];
+        GoalWorkflowSnapshot result = (await CollectAsync(
+            restartedProcess.ResumeAsync(new(goals.Goal.Id))))[^1];
 
         Assert.Equal(GoalWorkflowState.AwaitingAcceptance, result.State);
         Assert.Equal([AgentRole.Reviewer], agents.Requests.Select(request => request.Role));
@@ -287,12 +283,12 @@ public sealed class GoalWorkflowServiceTests
         };
         InMemoryGoalWorkflowStore store = new();
         GoalWorkflowService service = CreateService(store, goals, agents);
-        await CollectAsync(service.StartPlanningAsync(new(goals.Goal.Id, new(512))));
+        await CollectAsync(service.StartPlanningAsync(new(goals.Goal.Id)));
         goals.Approve();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
             await CollectAsync(service.ResumeAsync(
-                new(goals.Goal.Id, new(512), new(512)), cancellation.Token)));
+                new(goals.Goal.Id), cancellation.Token)));
 
         Assert.NotNull(store.Snapshot);
         Assert.Equal(StoredState.NeedsDirection, store.Snapshot.Run.State);
@@ -309,7 +305,7 @@ public sealed class GoalWorkflowServiceTests
         GoalWorkflowService service = CreateService(store, goals, agents);
 
         GoalWorkflowSnapshot failed = (await CollectAsync(
-            service.StartPlanningAsync(new(goals.Goal.Id, new(512)))))[^1];
+            service.StartPlanningAsync(new(goals.Goal.Id))))[^1];
 
         Assert.Equal(GoalWorkflowState.NeedsDirection, failed.State);
         Assert.Equal(GoalWorkflowRetryRole.Lead, failed.RetryRole);
@@ -317,19 +313,16 @@ public sealed class GoalWorkflowServiceTests
             await CollectAsync(service.RetryAsync(new(
                 goals.Goal.Id,
                 GoalWorkflowRetryRole.Reviewer,
-                new(768),
                 new("Use a different approach.")))));
         GoalWorkflowSnapshot recovered = (await CollectAsync(service.RetryAsync(new(
             goals.Goal.Id,
             GoalWorkflowRetryRole.Lead,
-            new(768),
             new("Inspect the actual workspace before planning.")))))[^1];
 
         Assert.Equal(GoalWorkflowState.AwaitingPlanApproval, recovered.State);
         Assert.Null(recovered.RetryRole);
         Assert.Contains(recovered.Evidence, item =>
-            item.Title.Value == "Explicit retry" &&
-            item.Content.Value.Contains("768 tokens", StringComparison.Ordinal));
+            item.Title.Value == "Explicit retry");
         Assert.Equal([AgentRole.Lead, AgentRole.Lead],
             agents.Requests.Select(request => request.Role));
         Assert.Contains("Inspect the actual workspace before planning.",
@@ -352,37 +345,37 @@ public sealed class GoalWorkflowServiceTests
             evidence.Title.Value == "Goal aborted" &&
             evidence.Content.Value.Contains("objective is obsolete", StringComparison.Ordinal));
         await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-            await CollectAsync(service.StartPlanningAsync(new(goals.Goal.Id, new(512)))));
+            await CollectAsync(service.StartPlanningAsync(new(goals.Goal.Id))));
     }
 
     [Fact]
-    public async Task Explicit_retry_recovers_an_implementer_budget_failure_at_safe_boundary()
+    public async Task Cost_limit_preserves_partial_completion_and_allows_explicit_retry()
     {
         FakeGoalService goals = new();
         FakeAgentRunner agents = new();
         InMemoryGoalWorkflowStore store = new();
         GoalWorkflowService service = CreateService(store, goals, agents);
-        await CollectAsync(service.StartPlanningAsync(new(goals.Goal.Id, new(512))));
+        await CollectAsync(service.StartPlanningAsync(new(goals.Goal.Id)));
         goals.Approve();
-        agents.Failures.Enqueue((AgentRole.Implementer, "budget_exhausted", "Budget exhausted"));
+        agents.Failures.Enqueue((AgentRole.Implementer, "remote_cost_cap_exceeded", "Cost cap exhausted"));
 
-        GoalWorkflowSnapshot failed = (await CollectAsync(service.ResumeAsync(new(
-            goals.Goal.Id, new(512), new(512)))))[^1];
+        GoalWorkflowSnapshot failed = (await CollectAsync(
+            service.ResumeAsync(new(goals.Goal.Id))))[^1];
 
-        Assert.Equal(GoalWorkflowState.NeedsDirection, failed.State);
+        Assert.Equal(GoalWorkflowState.PartiallyCompleted, failed.State);
         Assert.Equal(GoalWorkflowRetryRole.Implementer, failed.RetryRole);
         Assert.Equal(GoalTaskState.InProgress, Assert.Single(failed.Tasks).State);
+        Assert.Equal("Partial completion", failed.Evidence[^1].Title.Value);
         GoalWorkflowSnapshot retried = (await CollectAsync(service.RetryAsync(new(
             goals.Goal.Id,
             GoalWorkflowRetryRole.Implementer,
-            new(1024),
             new("Apply the bounded task without repeating the failed call.")))))[^1];
 
         Assert.Equal(GoalWorkflowState.Running, retried.State);
         Assert.True(retried.CanResume);
         Assert.Equal(GoalTaskState.Completed, Assert.Single(retried.Tasks).State);
-        GoalWorkflowSnapshot completed = (await CollectAsync(service.ResumeAsync(new(
-            goals.Goal.Id, new(512), new(512)))))[^1];
+        GoalWorkflowSnapshot completed = (await CollectAsync(
+            service.ResumeAsync(new(goals.Goal.Id))))[^1];
         Assert.Equal(GoalWorkflowState.AwaitingAcceptance, completed.State);
     }
 
@@ -393,23 +386,21 @@ public sealed class GoalWorkflowServiceTests
         FakeAgentRunner agents = new();
         InMemoryGoalWorkflowStore store = new();
         GoalWorkflowService service = CreateService(store, goals, agents);
-        await CollectAsync(service.StartPlanningAsync(new(goals.Goal.Id, new(512))));
+        await CollectAsync(service.StartPlanningAsync(new(goals.Goal.Id)));
         goals.Approve();
         agents.Failures.Enqueue((AgentRole.Reviewer, "provider_unavailable", "Provider unavailable"));
-        GoalWorkflowSnapshot failed = (await CollectAsync(service.ResumeAsync(new(
-            goals.Goal.Id, new(512), new(512)))))[^1];
+        GoalWorkflowSnapshot failed = (await CollectAsync(
+            service.ResumeAsync(new(goals.Goal.Id))))[^1];
 
         GoalWorkflowSnapshot recovered = (await CollectAsync(service.RetryAsync(new(
             goals.Goal.Id,
-            GoalWorkflowRetryRole.Reviewer,
-            new(1_000_000)))))[^1];
+            GoalWorkflowRetryRole.Reviewer))))[^1];
 
         Assert.Equal(GoalWorkflowRetryRole.Reviewer, failed.RetryRole);
         Assert.Equal(GoalWorkflowState.AwaitingAcceptance, recovered.State);
         Assert.Equal(1, recovered.ReviewCycle.Value);
         Assert.Equal([AgentRole.Lead, AgentRole.Implementer, AgentRole.Reviewer, AgentRole.Reviewer],
             agents.Requests.Select(request => request.Role));
-        Assert.Equal(1_000_000, agents.Requests[^1].MaximumOutputTokens?.Value);
         Assert.DoesNotContain("USER RETRY GUIDANCE", agents.Requests[^1].Task.Value,
             StringComparison.Ordinal);
     }
@@ -421,32 +412,29 @@ public sealed class GoalWorkflowServiceTests
         FakeAgentRunner agents = new();
         InMemoryGoalWorkflowStore store = new();
         GoalWorkflowService service = CreateService(store, goals, agents);
-        await CollectAsync(service.StartPlanningAsync(new(goals.Goal.Id, new(512))));
+        await CollectAsync(service.StartPlanningAsync(new(goals.Goal.Id)));
         goals.Approve();
         agents.Failures.Enqueue((AgentRole.Reviewer, "provider_unavailable", "Provider unavailable"));
-        await CollectAsync(service.ResumeAsync(new(goals.Goal.Id, new(512), new(512))));
+        await CollectAsync(service.ResumeAsync(new(goals.Goal.Id)));
         agents.ReviewerOutputs.Enqueue(
             "{\"decision\":\"revise\",\"summary\":\"Add the boundary case.\"}");
 
         GoalWorkflowSnapshot reviewed = (await CollectAsync(service.RetryAsync(new(
             goals.Goal.Id,
             GoalWorkflowRetryRole.Reviewer,
-            new(768),
             new("Focus on the missing boundary case.")))))[^1];
 
         Assert.Equal(GoalWorkflowState.Running, reviewed.State);
         Assert.True(reviewed.CanResume);
         Assert.Equal(AgentRole.Reviewer, agents.Requests[^1].Role);
         Assert.Equal(4, agents.Requests.Count);
-        GoalWorkflowSnapshot completed = (await CollectAsync(service.ResumeAsync(new(
-            goals.Goal.Id, new(640), new(896)))))[^1];
+        GoalWorkflowSnapshot completed = (await CollectAsync(
+            service.ResumeAsync(new(goals.Goal.Id))))[^1];
         Assert.Equal(GoalWorkflowState.AwaitingAcceptance, completed.State);
         Assert.Equal(AgentRole.Implementer, agents.Requests[^2].Role);
-        Assert.Equal(640, agents.Requests[^2].MaximumOutputTokens?.Value);
         Assert.Contains("Add the boundary case", agents.Requests[^2].Task.Value,
             StringComparison.Ordinal);
         Assert.Equal(AgentRole.Reviewer, agents.Requests[^1].Role);
-        Assert.Equal(896, agents.Requests[^1].MaximumOutputTokens?.Value);
     }
 
     private static GoalWorkflowService CreateService(

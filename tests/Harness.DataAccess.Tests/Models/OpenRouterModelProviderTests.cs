@@ -75,8 +75,7 @@ public sealed class OpenRouterModelProviderTests
                            new(
                                "goal-1",
                                ProviderPrivacyPolicy.NoCollectionAndZeroDataRetention,
-                               RemoteModelRole.Lead),
-                           new(2))))
+                               RemoteModelRole.Lead))))
         {
             events.Add(item);
         }
@@ -85,14 +84,56 @@ public sealed class OpenRouterModelProviderTests
         Assert.Equal("hello", events[1].Content);
         Assert.True(events[2].Done);
         Assert.Equal(new MicroUsd(7), events[2].Usage.Cost);
-        Assert.Equal(new MicroUsd(11), costs.Request?.EstimatedCost);
+        Assert.Equal(new MicroUsd(7), costs.Request?.EstimatedCost);
         Assert.Equal(RemoteModelRole.Lead, costs.Request?.Role);
         Assert.Equal(new MicroUsd(7), costs.ReconciledCost);
         using JsonDocument body = JsonDocument.Parse(requestJson!);
-        Assert.Equal(2, body.RootElement.GetProperty("max_tokens").GetInt32());
+        Assert.False(body.RootElement.TryGetProperty("max_tokens", out _));
         JsonElement routing = body.RootElement.GetProperty("provider");
         Assert.Equal("deny", routing.GetProperty("data_collection").GetString());
         Assert.True(routing.GetProperty("zdr").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Capped_goal_derives_provider_output_boundary_from_remaining_money()
+    {
+        string? requestJson = null;
+        using HttpClient httpClient = CreateClient(async (request, cancellationToken) =>
+        {
+            if (request.Method == HttpMethod.Get)
+            {
+                return JsonResponse(ModelsJson("openai/gpt-5-mini", "text"));
+            }
+
+            requestJson = await request.Content!.ReadAsStringAsync(cancellationToken);
+            return JsonResponse(
+                "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}]," +
+                "\"usage\":{\"prompt_tokens\":6,\"completion_tokens\":2,\"cost\":0.000007}}\n\n" +
+                "data: [DONE]\n\n",
+                "text/event-stream");
+        });
+        StubRemoteCostStore costs = new()
+        {
+            Ledger = new(
+                "goal-capped",
+                new(21),
+                new(0),
+                new(0),
+                new(21),
+                new(0),
+                []),
+        };
+        OpenRouterModelProvider provider = CreateProvider(httpClient, costs);
+
+        List<ChatStreamEvent> events = await CollectAsync(provider.StreamChatAsync(new(
+            "openai/gpt-5-mini",
+            [new(ChatRole.User, "hi")],
+            new("goal-capped", ProviderPrivacyPolicy.Normal, RemoteModelRole.Lead))));
+
+        using JsonDocument body = JsonDocument.Parse(requestJson!);
+        Assert.Equal(7, body.RootElement.GetProperty("max_tokens").GetInt32());
+        Assert.Equal(new MicroUsd(21), costs.Request?.EstimatedCost);
+        Assert.Equal("remote_cost_cap_exceeded", events[^1].Error?.Code);
     }
 
     [Fact]
@@ -160,7 +201,6 @@ public sealed class OpenRouterModelProviderTests
             [new(ChatRole.User, "inspect")],
             new("goal-tools", ProviderPrivacyPolicy.NoCollectionAndZeroDataRetention,
                 RemoteModelRole.Reviewer),
-            new(16),
             [new(new("read_file"), new("Read one file."),
                 new("{\"type\":\"object\",\"properties\":{}}"))])));
 
@@ -187,7 +227,7 @@ public sealed class OpenRouterModelProviderTests
         OpenRouterModelProvider provider = CreateProvider(httpClient, costs);
 
         ChatStreamEvent result = Assert.Single(await CollectAsync(provider.StreamChatAsync(
-            new("model", [new(ChatRole.User, "hello")], MaximumOutputTokens: new(10)))));
+            new("model", [new(ChatRole.User, "hello")]))));
 
         Assert.Equal("remote_scope_required", result.Error?.Code);
         Assert.Equal(0, requests);
@@ -271,6 +311,8 @@ public sealed class OpenRouterModelProviderTests
 
     private sealed class StubRemoteCostStore : IRemoteCostStore
     {
+        public RemoteCostLedger? Ledger { get; init; }
+
         public RemoteCostReservationRequest? Request { get; private set; }
 
         public MicroUsd? ReconciledCost { get; private set; }
@@ -278,7 +320,7 @@ public sealed class OpenRouterModelProviderTests
         public ValueTask<RemoteCostLedger?> GetLedgerAsync(
             string goalId,
             CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<RemoteCostLedger?>(null);
+            ValueTask.FromResult(Ledger);
 
         public ValueTask<RemoteCostReservationResult> ReserveAsync(
             RemoteCostReservationRequest request,

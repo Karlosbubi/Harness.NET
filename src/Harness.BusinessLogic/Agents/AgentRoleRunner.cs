@@ -34,7 +34,6 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
             string.IsNullOrWhiteSpace(request.Task.Value) ||
             request.Task.Value.Length > MaximumTaskCharacters ||
             !Enum.IsDefined(request.Role) ||
-            request.MaximumOutputTokens?.Value is <= 0 ||
             !ValidFileAreas(request.Role, request.FileAreas))
         {
             return new(
@@ -56,22 +55,13 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
             }
 
             GoalModelRoute route = resolved.Route;
-            if (route.Access is ModelAccess.Remote && request.MaximumOutputTokens is null)
-            {
-                return new(
-                    request.Role,
-                    Output: null,
-                    new("maximum_output_tokens_required"),
-                    new("Remote agent execution requires a positive output-token maximum."));
-            }
 
             AIAgent agent = new ChatClientAgent(
                 new ModelProviderChatClient(
                     route.Provider,
                     route.Model,
                     route.Access is ModelAccess.Remote ? route.GoalId : null,
-                    route.Role,
-                    request.MaximumOutputTokens),
+                    route.Role),
                 Instructions(request.Role),
                 Name(request.Role),
                 Description(request.Role),
@@ -91,10 +81,13 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
         }
         catch (Exception exception)
         {
+            bool costLimitReached = exception.Message.Contains(
+                "remote_cost_cap_exceeded",
+                StringComparison.Ordinal);
             return new(
                 request.Role,
                 Output: null,
-                new("agent_run_failed"),
+                new(costLimitReached ? "remote_cost_cap_exceeded" : "agent_run_failed"),
                 new(exception.Message));
         }
     }
@@ -131,14 +124,19 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
     private static string Instructions(AgentRole role) => role switch
     {
         AgentRole.Lead =>
-            "You are the lead agent. Turn the supplied objective into bounded, verifiable work. " +
-            "Respect accepted architecture and do not claim completion without evidence.",
+            "You are the lead agent. Turn the supplied objective into the smallest ordered set " +
+            "of independently useful, verifiable slices. Front-load foundations and user-visible " +
+            "value so stopping after any completed slice leaves a coherent partial result. Respect " +
+            "accepted architecture, identify explicit non-goals, and never claim completion without evidence.",
         AgentRole.Implementer =>
-            "You are the implementer agent. Complete only the supplied bounded task. " +
-            "Keep changes narrow, follow accepted architecture, and report verification evidence.",
+            "You are the implementer agent. Complete only the supplied bounded task. Keep changes " +
+            "narrow and the repository coherent at every durable tool boundary. Prioritize the task's " +
+            "core acceptance criteria, validate incrementally, and if execution must stop, preserve a " +
+            "buildable useful partial result and report exactly what is complete, verified, and remaining.",
         AgentRole.Reviewer =>
-            "You are the reviewer agent. Review the supplied work independently. " +
-            "Prioritize correctness, regressions, boundary violations, missing tests, and unsupported claims.",
+            "You are the reviewer agent. Review the supplied work independently, including coherent " +
+            "partial results. Prioritize correctness, regressions, boundary violations, missing tests, " +
+            "and unsupported claims. Distinguish verified completed value from unfinished scope.",
         _ => throw new ArgumentOutOfRangeException(nameof(role)),
     };
 }

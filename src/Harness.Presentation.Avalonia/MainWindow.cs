@@ -1020,7 +1020,6 @@ internal sealed class MainWindow : Window
         PlanGenerationDialog dialog = new(
             candidates,
             preferred,
-            DefaultOutputMaximum(AgentRole.Lead),
             GoalPresentationFormatter.StartDisclosure(store.Current.Goals));
         await dialog.ShowDialog(this);
         if (dialog.Result is not { } result)
@@ -1041,7 +1040,6 @@ internal sealed class MainWindow : Window
         await store.StartGoalWorkflowAsync(
             goal.Id,
             result.LeadModel,
-            new(result.MaximumOutputTokens),
             cancellationToken);
     }
 
@@ -1097,23 +1095,7 @@ internal sealed class MainWindow : Window
 
     private async Task ContinueRunAsync(GoalView goal)
     {
-        OutputLimitsDialog dialog = new(
-            "Continue production run",
-            ["Implementer maximum output tokens", "Reviewer maximum output tokens"],
-            GoalPresentationFormatter.ResumeDisclosure(goal, store.Current.Goals),
-            [
-                DefaultOutputMaximum(AgentRole.Implementer),
-                DefaultOutputMaximum(AgentRole.Reviewer),
-            ]);
-        await dialog.ShowDialog(this);
-        if (dialog.Result is { Length: 2 } limits)
-        {
-            await store.ResumeGoalWorkflowAsync(
-                goal.Id,
-                new(limits[0]),
-                new(limits[1]),
-                cancellationToken);
-        }
+        await store.ResumeGoalWorkflowAsync(goal.Id, cancellationToken);
     }
 
     private async Task RetryRunAsync(GoalView goal)
@@ -1150,7 +1132,6 @@ internal sealed class MainWindow : Window
             retryRole,
             candidates,
             preferred,
-            DefaultOutputMaximum(role),
             GoalPresentationFormatter.RetryDisclosure(retryRole, store.Current.Goals));
         await dialog.ShowDialog(this);
         if (dialog.Result is not { } result)
@@ -1169,7 +1150,6 @@ internal sealed class MainWindow : Window
             goal.Id,
             retryRole,
             result.Model,
-            new(result.MaximumOutputTokens),
             result.Guidance is null ? null : new(result.Guidance),
             cancellationToken);
     }
@@ -1199,11 +1179,6 @@ internal sealed class MainWindow : Window
 
         await workbench.RefreshGitAsync();
     }
-
-    private int DefaultOutputMaximum(AgentRole role) =>
-        store.Current.Settings.AgentDefaults?.Roles
-            .FirstOrDefault(item => item.Role == role)
-            ?.MaximumOutputTokens.Value ?? 2048;
 
     private async Task ApproveRestoreAsync(GoalView goal, ConversationWorkflowCard card)
     {

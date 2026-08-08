@@ -474,17 +474,6 @@ internal sealed class SettingsWindow : Window
         };
         model.SetCandidates(choices, selected);
         model.SetAutomationName($"{roleDefault.Role} default model");
-        NumericUpDown maximum = new()
-        {
-            Minimum = 1,
-            Maximum = MaximumAgentOutputTokens.MaximumValue,
-            Increment = 1024,
-            Value = roleDefault.MaximumOutputTokens.Value,
-            MinWidth = 150,
-            IsEnabled = !settingsState.IsBusy && choices.Length > 0,
-            IsVisible = choices.Length > 0,
-        };
-        AutomationProperties.SetName(maximum, $"{roleDefault.Role} maximum output tokens");
         Button save = new()
         {
             Content = "Save default",
@@ -497,12 +486,11 @@ internal sealed class SettingsWindow : Window
             !settingsState.IsBusy && model.SelectedCandidate is not null;
         save.Click += async (_, _) =>
         {
-            if (model.SelectedCandidate is { } candidate && maximum.Value is { } value)
+            if (model.SelectedCandidate is { } candidate)
             {
                 await store.UpdateAgentDefaultAsync(
                     roleDefault.Role,
                     candidate,
-                    decimal.ToInt32(value),
                     cancellationToken);
             }
         };
@@ -513,24 +501,18 @@ internal sealed class SettingsWindow : Window
             IsVisible = choices.Length == 0,
             Child = new TextBlock
             {
-                Text = "Discover available models to edit this route and token limit.",
+                Text = "Discover available models to edit this route.",
                 TextWrapping = TextWrapping.Wrap,
             },
         };
         Grid fields = new()
         {
             RowDefinitions = new("Auto,Auto"),
-            ColumnDefinitions = new("*,Auto"),
             RowSpacing = 8,
             ColumnSpacing = 10,
             Children = { model, unavailable },
         };
-        Grid.SetColumnSpan(model, 2);
-        Grid.SetColumnSpan(unavailable, 2);
-        Grid.SetRow(maximum, 1);
-        fields.Children.Add(maximum);
         Grid.SetRow(save, 1);
-        Grid.SetColumn(save, 1);
         fields.Children.Add(save);
         return new Border
         {
@@ -548,7 +530,7 @@ internal sealed class SettingsWindow : Window
                     new TextBlock
                     {
                         Text = defaultIssue is null
-                            ? $"Effective: {roleDefault.Access} · {roleDefault.Provider.Value}/{roleDefault.Model.Value} · {roleDefault.MaximumOutputTokens.Value} tokens" +
+                            ? $"Effective: {roleDefault.Access} · {roleDefault.Provider.Value}/{roleDefault.Model.Value}" +
                               (roleDefault.IsPersisted ? " · Saved" : " · Host fallback")
                             : $"Needs attention: {defaultIssue.Message}",
                         Classes = { "muted" },

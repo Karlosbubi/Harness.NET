@@ -182,7 +182,6 @@ builder.Services.AddSingleton<GoalModelService>(services =>
         services.GetRequiredService<IAgentRoleDefaultStore>(),
         providers,
         routes,
-        new(new(2048)),
         services.GetRequiredService<TimeProvider>());
 });
 builder.Services.AddSingleton<IGoalModelService>(services =>

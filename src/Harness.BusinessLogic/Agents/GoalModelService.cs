@@ -11,14 +11,12 @@ internal sealed class GoalModelService :
     IGoalModelRouteResolver,
     IAgentDefaultsService
 {
-    private const int MaximumOutputTokens = MaximumAgentOutputTokens.MaximumValue;
     private readonly IGoalStore goalStore;
     private readonly IWorkspaceStore workspaceStore;
     private readonly IGoalModelSelectionStore selectionStore;
     private readonly IAgentRoleDefaultStore defaultStore;
     private readonly IReadOnlyDictionary<string, GoalModelProviderRegistration> providers;
     private readonly IReadOnlyDictionary<AgentRole, ModelProviderName> defaultRoutes;
-    private readonly AgentDefaultsOptions defaultOptions;
     private readonly TimeProvider timeProvider;
     private volatile ModelDiscoverySnapshot? discovery;
 
@@ -29,7 +27,6 @@ internal sealed class GoalModelService :
         IAgentRoleDefaultStore defaultStore,
         IReadOnlyList<GoalModelProviderRegistration> providers,
         IReadOnlyDictionary<AgentRole, ModelProviderName> defaultRoutes,
-        AgentDefaultsOptions defaultOptions,
         TimeProvider timeProvider)
     {
         this.goalStore = goalStore;
@@ -40,7 +37,6 @@ internal sealed class GoalModelService :
             registration => registration.Name.Value,
             StringComparer.OrdinalIgnoreCase);
         this.defaultRoutes = defaultRoutes;
-        this.defaultOptions = defaultOptions;
         this.timeProvider = timeProvider;
 
         AgentRole[] missingRoles = Enum.GetValues<AgentRole>()
@@ -311,13 +307,11 @@ internal sealed class GoalModelService :
             request.Provider is null ||
             string.IsNullOrWhiteSpace(request.Provider.Value) ||
             request.Model is null ||
-            string.IsNullOrWhiteSpace(request.Model.Value) ||
-            request.MaximumOutputTokens is null ||
-            request.MaximumOutputTokens.Value is < 1 or > MaximumOutputTokens)
+            string.IsNullOrWhiteSpace(request.Model.Value))
         {
             return DefaultFailure(
                 "invalid_agent_default",
-                $"A role, provider, model, and output maximum of 1-{MaximumOutputTokens} are required.");
+                "A role, provider, and model are required.");
         }
 
         if (!providers.TryGetValue(request.Provider.Value, out GoalModelProviderRegistration? provider))
@@ -351,7 +345,6 @@ internal sealed class GoalModelService :
             MapRole(request.Role),
             new(provider.Name.Value),
             new(model.Model.Value),
-            new(request.MaximumOutputTokens.Value),
             timeProvider.GetUtcNow()), cancellationToken);
         return new(MapDefault(stored), ErrorCode: null, Error: null);
     }
@@ -402,7 +395,6 @@ internal sealed class GoalModelService :
                 provider.Name,
                 provider.DefaultModel,
                 provider.Access,
-                defaultOptions.FallbackMaximumOutputTokens,
                 IsPersisted: false,
                 UpdatedAt: null);
         });
@@ -417,7 +409,6 @@ internal sealed class GoalModelService :
             provider.Name,
             new(value.Model.Value),
             provider.Access,
-            new(value.MaximumOutputTokens.Value),
             IsPersisted: true,
             value.UpdatedAt);
     }

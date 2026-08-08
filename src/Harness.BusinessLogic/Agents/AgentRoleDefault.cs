@@ -5,6 +5,5 @@ public sealed record AgentRoleDefault(
     ModelProviderName Provider,
     AgentModel Model,
     ModelAccess Access,
-    MaximumAgentOutputTokens MaximumOutputTokens,
     bool IsPersisted,
     DateTimeOffset? UpdatedAt);

@@ -437,7 +437,7 @@ internal sealed class GoalDialog : Dialog
 
         GoalWorkflowSnapshot? latest = null;
         await foreach (GoalWorkflowSnapshot snapshot in workflowService.StartPlanningAsync(
-                           new(goal.Id, generation.MaximumOutputTokens), cancellationToken))
+                           new(goal.Id), cancellationToken))
         {
             latest = snapshot;
             status.Text = $"Run {snapshot.State} | {snapshot.Activities[^1].Kind}";
@@ -509,8 +509,7 @@ internal sealed class GoalDialog : Dialog
 
             GoalWorkflowSnapshot? retried = null;
             await foreach (GoalWorkflowSnapshot snapshot in workflowService.RetryAsync(
-                               new(goal.Id, retryRole, retry.MaximumOutputTokens,
-                                   retry.Guidance), cancellationToken))
+                               new(goal.Id, retryRole, retry.Guidance), cancellationToken))
             {
                 retried = snapshot;
                 status.Text = $"Run {snapshot.State} | {snapshot.Activities[^1].Kind}";
@@ -524,30 +523,9 @@ internal sealed class GoalDialog : Dialog
             return;
         }
 
-        int pendingTasks = current?.Tasks.Count(task => task.State is GoalTaskState.Pending) ?? 0;
-        int remainingReviews = Math.Max(
-            0,
-            goal.ReviewCycleLimit.Value - (current?.ReviewCycle.Value ?? 0));
-        int maximumCorrections = Math.Max(0, remainingReviews - 1);
-        string workload =
-            $"Maximum remaining role calls: {pendingTasks} delegated Implementer + " +
-            $"{remainingReviews} Reviewer + {maximumCorrections} correction Implementer. " +
-            "Acceptance may stop earlier. Model-directed semantic searches may add " +
-            "separately attributed embedding calls; the aggregate goal cap always applies.";
-        MaximumAgentOutputTokens[]? maxima = await CollectOutputMaximaAsync(
-            "Continue production run",
-            goal,
-            [AgentRole.Implementer, AgentRole.Reviewer],
-            ["Implementer maximum output tokens", "Reviewer maximum output tokens"],
-            workload);
-        if (maxima is null)
-        {
-            return;
-        }
-
         GoalWorkflowSnapshot? latest = null;
         await foreach (GoalWorkflowSnapshot snapshot in workflowService.ResumeAsync(
-                           new(goal.Id, maxima[0], maxima[1]), cancellationToken))
+                           new(goal.Id), cancellationToken))
         {
             latest = snapshot;
             status.Text = $"Run {snapshot.State} | {snapshot.Activities[^1].Kind}";
@@ -900,8 +878,7 @@ internal sealed class GoalDialog : Dialog
                 $"{candidate.Access} {candidate.Provider.Value}/{candidate.Model.Value}")));
             models.SelectedItem = visibleCandidates.Length > 0 ? 0 : null;
         };
-        TextField maximum = Field(dialog, "Lead maximum output tokens", 9, "2048");
-        Label validation = new() { X = 0, Y = 12, Width = Dim.Fill(), Height = 2 };
+        Label validation = new() { X = 0, Y = 9, Width = Dim.Fill(), Height = 2 };
         TerminalPlanGeneration? result = null;
         Button run = new() { Title = "_Generate", Enabled = candidates.Length > 0 };
         run.Accepting += (_, args) =>
@@ -914,15 +891,7 @@ internal sealed class GoalDialog : Dialog
                 return;
             }
 
-            if (!int.TryParse(maximum.Text?.ToString(), out int value) ||
-                value is < 1 or > MaximumAgentOutputTokens.MaximumValue)
-            {
-                validation.Text = $"The output maximum must be between 1 and " +
-                                  $"{MaximumAgentOutputTokens.MaximumValue:N0} tokens.";
-                return;
-            }
-
-            result = new(visibleCandidates[index], new(value));
+            result = new(visibleCandidates[index]);
             dialog.RequestStop();
         };
         dialog.Add(search, models, validation);
@@ -1002,8 +971,7 @@ internal sealed class GoalDialog : Dialog
             Height = 5,
             ViewportSettings = ViewportSettingsFlags.HasVerticalScrollBar,
         };
-        TextField maximum = Field(dialog, $"{retryRole} maximum output tokens", 15, "2048");
-        Label validation = new() { X = 0, Y = 18, Width = Dim.Fill(), Height = 2 };
+        Label validation = new() { X = 0, Y = 15, Width = Dim.Fill(), Height = 2 };
         TerminalRetry? result = null;
         Button run = new() { Title = "_Retry", Enabled = candidates.Length > 0 };
         run.Accepting += (_, args) =>
@@ -1023,88 +991,12 @@ internal sealed class GoalDialog : Dialog
                 return;
             }
 
-            if (!int.TryParse(maximum.Text?.ToString(), out int value) ||
-                value is < 1 or > MaximumAgentOutputTokens.MaximumValue)
-            {
-                validation.Text = $"The output maximum must be between 1 and " +
-                                  $"{MaximumAgentOutputTokens.MaximumValue:N0} tokens.";
-                return;
-            }
-
             result = new(
                 visibleCandidates[index],
-                new(value),
                 direction.Length == 0 ? null : new(direction));
             dialog.RequestStop();
         };
         dialog.Add(search, models, guidance, validation);
-        dialog.AddButton(run);
-        dialog.AddButton(new Button { Title = "_Cancel" });
-        await application.RunAsync(dialog, cancellationToken);
-        return result;
-    }
-
-    private async Task<MaximumAgentOutputTokens[]?> CollectOutputMaximaAsync(
-        string title,
-        GoalView goal,
-        IReadOnlyList<AgentRole> roles,
-        IReadOnlyList<string> labels,
-        string workloadNote)
-    {
-        RemoteCostReport? cost = await remoteCostService.GetAsync(goal.Id, cancellationToken);
-        IReadOnlyList<GoalModelSelectionView> selections =
-            await modelService.GetSelectionsAsync(goal.Id, cancellationToken);
-        string routes = string.Join(" | ", roles.Select(role =>
-        {
-            GoalModelSelectionView? selection = selections.FirstOrDefault(item => item.Role == role);
-            return selection is null
-                ? $"{role}: unavailable"
-                : $"{role}: {selection.Access} {selection.Provider.Value}/{selection.Model.Value}";
-        }));
-        using Dialog dialog = new()
-        {
-            Title = title,
-            Width = Dim.Percent(70),
-            Height = 13 + (labels.Count * 2),
-        };
-        TextField[] fields = labels.Select((label, index) =>
-            Field(dialog, label, index * 2, "2048")).ToArray();
-        Label note = new()
-        {
-            X = 0,
-            Y = labels.Count * 2,
-            Width = Dim.Fill(),
-            Height = 7,
-            Text = "Each role call is capped; the aggregate goal budget is enforced.\n" +
-                   workloadNote + "\n" +
-                   routes + "\n" +
-                   GoalTextFormatter.FormatCostStatus(goal, cost),
-        };
-        Label validation = new()
-        {
-            X = 0,
-            Y = (labels.Count * 2) + 7,
-            Width = Dim.Fill(),
-        };
-        MaximumAgentOutputTokens[]? result = null;
-        Button run = new() { Title = "_Run" };
-        run.Accepting += (_, args) =>
-        {
-            args.Handled = true;
-            int[] values = fields.Select(field =>
-                    int.TryParse(field.Text?.ToString(), out int value) ? value : 0)
-                .ToArray();
-            if (values.Any(value => value is < 1 or > MaximumAgentOutputTokens.MaximumValue))
-            {
-                validation.Text = $"Every output maximum must be between 1 and " +
-                                  $"{MaximumAgentOutputTokens.MaximumValue:N0} tokens.";
-                return;
-            }
-
-            result = values.Select(value => new MaximumAgentOutputTokens(value)).ToArray();
-            dialog.RequestStop();
-        };
-        dialog.Add(note, validation);
         dialog.AddButton(run);
         dialog.AddButton(new Button { Title = "_Cancel" });
         await application.RunAsync(dialog, cancellationToken);
@@ -1315,13 +1207,10 @@ internal sealed class GoalDialog : Dialog
         abortGoal.Enabled = enabled && state is not null;
     }
 
-    private sealed record TerminalPlanGeneration(
-        GoalModelCandidate Model,
-        MaximumAgentOutputTokens MaximumOutputTokens);
+    private sealed record TerminalPlanGeneration(GoalModelCandidate Model);
 
     private sealed record TerminalRetry(
         GoalModelCandidate Model,
-        MaximumAgentOutputTokens MaximumOutputTokens,
         GoalRetryGuidance? Guidance);
 
     private static GoalModelCandidate[] FilterModels(

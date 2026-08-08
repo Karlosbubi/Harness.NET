@@ -65,8 +65,8 @@ remain explicit goal-bound actions for the next increment.
 Draft goal cards expose a focused progressive settings surface for review cycles,
 per-goal role/model routes, and prominent Unlimited, Capped, and Local-only spend
 choices. The active workspace must be trusted, stale writes fail, and neither the
-spend policy nor review cycles can change once planning starts. Run-specific output ceilings remain explicit in the bounded-call
-sheet rather than becoming ambient authority.
+spend policy nor review cycles can change once planning starts. Monetary policy remains
+explicit in the bounded-call sheet rather than becoming ambient authority.
 
 Task 040 production acceptance, including wide/compact captures and the Linux AT-SPI
 journey, is recorded in

@@ -18,8 +18,24 @@ reservation reconciliation, and explicit model selection remain unchanged.
 
 New goals authorize unlimited remote-model spend by default. “Unlimited” means no
 application-enforced aggregate monetary ceiling; provider billing and account limits
-still apply. Every request retains its positive output-token maximum, published-price
-preflight, durable estimated-cost reservation, and reconciled actual-cost evidence.
+still apply. Every request retains its published-price preflight, durable estimated-cost
+reservation, and reconciled actual-cost evidence.
+
+### Monetary-only execution amendment (2026-08-08)
+
+Harness.NET no longer exposes, persists, or accepts user-configured model output-token
+ceilings. Token usage remains observable evidence, not an execution policy. Unlimited
+goals omit `max_tokens` and allow the provider/model to apply its native output behavior.
+For a Capped goal, the OpenRouter adapter may derive a request-local provider maximum
+from the currently remaining micro-USD budget and published output price. That value is
+an implementation detail of enforcing the monetary cap, not a user token setting.
+
+Lead plans order independently useful end-to-end slices so each completed prefix is a
+coherent partial result. Role prompts require incremental validation and an explicit
+completed/verified/remaining report when execution stops. If the monetary boundary
+rejects the next role call, the workflow records `PartiallyCompleted` above its durable
+`NeedsDirection` checkpoint, preserves completed tasks and evidence, and offers cap
+extension/removal, explicit retry, or abort without automatic replay.
 
 Cost control is a prominent opt-in with three typed modes:
 
@@ -45,5 +61,7 @@ storage sentinel as a dollar cap.
 - Users who want hard cost control must deliberately opt into a cap or local-only mode;
   both choices remain visible in Settings and goal creation.
 - Remote calls still fail closed when credentials or pricing are unavailable.
+- Monetary caps remain enforceable without making users guess a model-specific token
+  budget; unlimited goals are not accidentally constrained by an application ceiling.
 - Existing per-call model confirmation remains a route/privacy disclosure, not the
   mechanism that grants aggregate spend authority.

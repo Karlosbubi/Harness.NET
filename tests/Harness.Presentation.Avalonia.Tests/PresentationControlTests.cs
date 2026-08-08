@@ -292,7 +292,6 @@ public sealed class PresentationControlTests
                     configuredLead,
                 ],
                 configuredLead,
-                4096,
                 "Disclosure");
             dialog.Show();
             Dispatcher.UIThread.RunJobs();
@@ -316,9 +315,7 @@ public sealed class PresentationControlTests
             Assert.True(models.IsDropDownOpen);
             Assert.Null(models.SelectedItem);
             Assert.Equal(string.Empty, models.Text);
-            Assert.Equal(
-                "4096",
-                Assert.Single(dialog.GetLogicalDescendants().OfType<TextBox>()).Text);
+            Assert.Empty(dialog.GetLogicalDescendants().OfType<TextBox>());
             dialog.Close();
         }, CancellationToken.None);
     }
@@ -431,29 +428,7 @@ public sealed class PresentationControlTests
     }
 
     [Fact]
-    public async Task Workflow_limit_override_starts_from_saved_role_defaults()
-    {
-        using HeadlessUnitTestSession session =
-            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
-        await session.Dispatch(() =>
-        {
-            OutputLimitsDialog dialog = new(
-                "Continue production run",
-                ["Implementer maximum output tokens", "Reviewer maximum output tokens"],
-                "Disclosure",
-                [4096, 1024]);
-
-            Assert.Equal(
-                ["4096", "1024"],
-                dialog.GetLogicalDescendants().OfType<TextBox>()
-                    .Select(item => item.Text ?? string.Empty)
-                    .ToArray());
-            dialog.Close();
-        }, CancellationToken.None);
-    }
-
-    [Fact]
-    public async Task Workflow_retry_allows_model_only_retry_and_large_output_maximum()
+    public async Task Workflow_retry_allows_model_only_retry_without_token_ceiling()
     {
         GoalModelCandidate reviewer = Candidate(
             "local", "reviewer", ModelAccess.Local, [AgentRole.Reviewer]);
@@ -467,7 +442,6 @@ public sealed class PresentationControlTests
                 GoalWorkflowRetryRole.Reviewer,
                 [leadOnly, reviewer],
                 reviewer,
-                1_000_000,
                 "The prior call was not replayed.");
             dialog.Show();
             Dispatcher.UIThread.RunJobs();
@@ -485,7 +459,6 @@ public sealed class PresentationControlTests
             retry.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
 
             Assert.Equal(reviewer, dialog.Result?.Model);
-            Assert.Equal(1_000_000, dialog.Result?.MaximumOutputTokens);
             Assert.Null(dialog.Result?.Guidance);
         }, CancellationToken.None);
     }
@@ -1756,7 +1729,10 @@ public sealed class PresentationControlTests
         {
             AvaloniaShellState shell = ApprovedGoalShell();
             LayoutService layouts = new();
-            WorkbenchDockHost first = CreateWorkbench(shell, layouts);
+            WorkbenchDockHost first = CreateWorkbench(
+                shell,
+                layouts,
+                conversation: ConversationSurface("First conversation"));
             Window firstWindow = new() { Width = 1280, Height = 800, Content = first.Control };
             firstWindow.Show();
             IDockable conversation = Find<IDockable>(
@@ -1768,7 +1744,11 @@ public sealed class PresentationControlTests
             first.SaveLayoutAsync().AsTask().GetAwaiter().GetResult();
             firstWindow.Close();
 
-            WorkbenchDockHost restored = CreateWorkbench(shell, layouts);
+            Control restoredConversationSurface = ConversationSurface("Restored conversation");
+            WorkbenchDockHost restored = CreateWorkbench(
+                shell,
+                layouts,
+                conversation: restoredConversationSurface);
             Window restoredWindow = new()
             {
                 Width = 1280,
@@ -1788,7 +1768,7 @@ public sealed class PresentationControlTests
                 WorkbenchDockIds.ConversationTool,
                 restored.Documents.ActiveDockable?.Id);
             Assert.Contains(
-                Assert.IsAssignableFrom<Control>(restoredConversation.Context),
+                restoredConversationSurface,
                 restoredWindow.GetVisualDescendants());
             restoredWindow.Close();
         }, CancellationToken.None);
@@ -2151,7 +2131,8 @@ public sealed class PresentationControlTests
         RunOutputService? runOutput = null,
         CodeIntelligenceService? codeIntelligence = null,
         Func<bool, Task>? manageWorkspace = null,
-        MutationService? mutationService = null) => new(
+        MutationService? mutationService = null,
+        Control? conversation = null) => new(
         runOutput ?? new RunOutputService(),
         inspection ?? new InspectionService(),
         documents ?? new DocumentService(),
@@ -2160,11 +2141,24 @@ public sealed class PresentationControlTests
         prompt ?? new DocumentPrompt(),
         () => shell,
         new TextBlock { Text = "Workspace" },
-        new TextBlock { Text = "Conversation" },
+        conversation ?? new TextBlock { Text = "Conversation" },
         new TextBlock { Text = "Goal context" },
         CancellationToken.None,
         manageWorkspace,
         mutationService);
+
+    private static Control ConversationSurface(string text) => new Border
+    {
+        Child = new Grid
+        {
+            RowDefinitions = RowDefinitions.Parse("*,Auto"),
+            Children =
+            {
+                new ScrollViewer { Content = new TextBlock { Text = text } },
+                new TextBox { [Grid.RowProperty] = 1, PlaceholderText = "Message Harness" },
+            },
+        },
+    };
 
     private static AvaloniaShellState TrustedShell()
     {

@@ -89,8 +89,8 @@ caps, propose and inspect versioned plans, and require confirmation before plan
 approval provisions an isolated worktree. Avalonia disables approval until the active
 workspace is trusted and explains the exact repository-local capabilities granted.
 When a role call needs direction, its run card can retry the exact role with a
-capability-compatible replacement model, a new output limit, and required user
-guidance. Any non-terminal goal can instead be confirmed as aborted and immediately
+capability-compatible replacement model and optional user guidance. Any non-terminal
+goal can instead be confirmed as aborted and immediately
 return the interface to new-goal composition; its history, evidence, and worktree are
 preserved while it is removed from the continuation list.
 Trusted-workspace tools now provide confined file reads, tracked-text search,
@@ -99,15 +99,15 @@ edits, and cancellable .NET execution in isolated goal worktrees. Agent role
 execution now runs lead, implementer, and reviewer prompts through Microsoft Agent
 Framework behind semantic Business Logic contracts, with each role using its
 configured local default or goal-specific selection. Remote role execution carries
-the goal identity, strict privacy policy, and a required output-token ceiling into
-the cost-controlled provider boundary. The production coordinator durably runs Lead
+the goal identity and strict privacy policy into the cost-controlled provider boundary.
+Capped goals derive a provider request boundary from remaining money; unlimited goals
+do not send an application token ceiling. The production coordinator durably runs Lead
 planning, approved Implementer work, and independent Reviewer decisions with closed
 role tool scopes. Lead plans persist 1-12 ordered tasks with file areas and acceptance
 criteria; Implementer executes one task per call and completed reports recover without
 replay. Reviewer findings drive bounded correction passes until acceptance or the
 configured cycle limit. Avalonia and the TUI show pending and maximum remaining calls,
-role routes,
-output ceilings, aggregate cap, active reservations, reconciled spend, and remaining
+role routes, aggregate cap, active reservations, reconciled spend, and remaining
 budget before model calls. Both can start bounded Lead planning, continue approved
 Implementer/Reviewer work, cancel an active run, and inspect durable tasks, activity,
 and evidence. Starting plan generation explicitly selects a compatible Lead model,

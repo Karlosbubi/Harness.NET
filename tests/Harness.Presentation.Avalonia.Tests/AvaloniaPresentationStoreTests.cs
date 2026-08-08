@@ -280,13 +280,11 @@ public sealed class AvaloniaPresentationStoreTests
         await store.UpdateAgentDefaultAsync(
             AgentRole.Reviewer,
             candidate,
-            4096,
             CancellationToken.None);
 
         AgentRoleDefault reviewer = store.Current.Settings.AgentDefaults!.Roles
             .Single(item => item.Role is AgentRole.Reviewer);
         Assert.True(reviewer.IsPersisted);
-        Assert.Equal(4096, reviewer.MaximumOutputTokens.Value);
         Assert.Equal("Saved Reviewer defaults.", store.Current.Settings.Status);
     }
 
@@ -454,18 +452,12 @@ public sealed class AvaloniaPresentationStoreTests
         await store.StartGoalWorkflowAsync(
             goal.Id,
             remote,
-            new(1024),
             CancellationToken.None);
         await store.ResumeGoalWorkflowAsync(
             goal.Id,
-            new(2048),
-            new(1536),
             CancellationToken.None);
 
         Assert.Equal(remote.Model, models.Selections[AgentRole.Lead].Model);
-        Assert.Equal(1024, workflow.LeadMaximum);
-        Assert.Equal(2048, workflow.ImplementerMaximum);
-        Assert.Equal(1536, workflow.ReviewerMaximum);
         Assert.Equal(GoalWorkflowState.Completed, store.Current.Goals.Workflow?.State);
         Assert.False(store.Current.Goals.IsWorkflowRunning);
         ConversationWorkflowCard runCard = Assert.Single(
@@ -571,7 +563,7 @@ public sealed class AvaloniaPresentationStoreTests
         GoalView goal = Assert.Single(store.Current.Goals.Items);
         await store.ProposePlanAsync(goal.Id, "Implement and verify.", CancellationToken.None);
         await store.DecidePlanAsync(goal.Id, PlanDecision.Approve, null, CancellationToken.None);
-        await store.ResumeGoalWorkflowAsync(goal.Id, new(1024), new(1024), CancellationToken.None);
+        await store.ResumeGoalWorkflowAsync(goal.Id, CancellationToken.None);
 
         await store.RefreshCommitAsync(goal.Id, CancellationToken.None);
         GoalCommitPreview preview = Assert.IsType<GoalCommitPreview>(store.Current.Goals.CommitPreview);
@@ -1262,7 +1254,6 @@ public sealed class AvaloniaPresentationStoreTests
                 Local.Provider,
                 Local.Model,
                 Local.Access,
-                new(2048),
                 IsPersisted: false,
                 UpdatedAt: null));
 
@@ -1288,7 +1279,6 @@ public sealed class AvaloniaPresentationStoreTests
                 request.Provider,
                 request.Model,
                 Local.Access,
-                request.MaximumOutputTokens,
                 IsPersisted: true,
                 DateTimeOffset.UtcNow);
             values[request.Role] = value;
@@ -1331,9 +1321,6 @@ public sealed class AvaloniaPresentationStoreTests
     {
         private GoalWorkflowSnapshot? latest;
 
-        internal int? LeadMaximum { get; private set; }
-        internal int? ImplementerMaximum { get; private set; }
-        internal int? ReviewerMaximum { get; private set; }
         internal GoalWorkflowRetryRole? RetriedRole { get; private set; }
 
         public ValueTask<GoalWorkflowSnapshot?> GetLatestAsync(
@@ -1345,7 +1332,6 @@ public sealed class AvaloniaPresentationStoreTests
             GoalWorkflowStartRequest request,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
-            LeadMaximum = request.LeadMaximumOutputTokens.Value;
             latest = Snapshot(request.GoalId, GoalWorkflowState.Running, "Lead planning started", true);
             yield return latest;
             await Task.Yield();
@@ -1361,8 +1347,6 @@ public sealed class AvaloniaPresentationStoreTests
             GoalWorkflowResumeRequest request,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
-            ImplementerMaximum = request.ImplementerMaximumOutputTokens.Value;
-            ReviewerMaximum = request.ReviewerMaximumOutputTokens.Value;
             latest = Snapshot(request.GoalId, GoalWorkflowState.Running, "Implementation started", true);
             yield return latest;
             await Task.Yield();

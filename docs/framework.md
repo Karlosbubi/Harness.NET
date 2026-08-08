@@ -74,8 +74,9 @@ Data Access -> Business Logic -> Presentation
   inputs and reports use explicit micro-USD domain values internally and render USD
   at presentation boundaries without hiding sub-cent reservations.
 - Before production continuation, Presentation shows the pending delegated-call count,
-  maximum remaining review/correction calls, per-role output ceilings, selected routes,
-  aggregate cap, active reservations, spend, and remaining budget.
+  maximum remaining review/correction calls, selected routes, aggregate cap, active
+  reservations, spend, and remaining budget. Token usage remains observable but is not
+  a user-configured execution limit.
 
 ## Approval and trust policy
 
@@ -274,7 +275,7 @@ overlay, `AGENTS.md`, or a suitable existing documentation file.
   visible for local-only goals, but visibility never bypasses the goal spend mode and
   explicit-confirmation requirements.
 - A provider or budget failure pauses only the exact failed role. Recovery requires an
-  explicit compatible model, bounded output ceiling, and fresh user guidance before a
+  explicit compatible model and optional fresh user guidance before a
   retry. Any non-terminal goal can instead be aborted and removed from continuation;
   abort preserves its durable history, evidence, tasks, and worktree and grants no
   cleanup authority.

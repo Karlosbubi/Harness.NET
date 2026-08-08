@@ -6,5 +6,4 @@ public sealed record AgentRunRequest(
     GoalId GoalId,
     AgentRole Role,
     AgentTask Task,
-    MaximumAgentOutputTokens? MaximumOutputTokens = null,
     IReadOnlyList<AgentFileArea>? FileAreas = null);

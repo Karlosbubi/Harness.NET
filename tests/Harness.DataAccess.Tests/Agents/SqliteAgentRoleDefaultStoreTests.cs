@@ -24,24 +24,20 @@ public sealed class SqliteAgentRoleDefaultStoreTests : IDisposable
             AgentDefaultRole.Lead,
             new("Ollama"),
             new("local"),
-            new(2048),
             firstAt));
         StoredAgentRoleDefault replaced = await store.SaveAsync(new(
             AgentDefaultRole.Lead,
             new("OpenRouter"),
             new("remote"),
-            new(1_000_000),
             secondAt));
         await store.SaveAsync(new(
             AgentDefaultRole.Reviewer,
             new("Ollama"),
             new("review"),
-            new(1024),
             secondAt));
         IReadOnlyList<StoredAgentRoleDefault> values = await store.ListAsync();
 
         Assert.Equal("OpenRouter", replaced.Provider.Value);
-        Assert.Equal(1_000_000, replaced.MaximumOutputTokens.Value);
         Assert.Equal(secondAt, replaced.UpdatedAt);
         Assert.Equal(
             [AgentDefaultRole.Lead, AgentDefaultRole.Reviewer],

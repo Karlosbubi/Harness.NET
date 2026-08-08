@@ -141,7 +141,8 @@ internal static class ConversationWorkflowActionProjector
                 return [new(ConversationWorkflowActionKind.ContinueRun, "Continue run", true)];
             }
 
-            if (workflow.State is GoalWorkflowState.NeedsDirection &&
+            if (workflow.State is GoalWorkflowState.NeedsDirection or
+                GoalWorkflowState.PartiallyCompleted &&
                 workflow.RetryRole is { } retryRole)
             {
                 ConversationWorkflowAction retry = new(
@@ -405,6 +406,11 @@ internal static class ConversationWorkflowProjector
 
     private static string CurrentPhase(GoalWorkflowSnapshot workflow)
     {
+        if (workflow.State is GoalWorkflowState.PartiallyCompleted)
+        {
+            return "Partial completion";
+        }
+
         if (workflow.State is GoalWorkflowState.NeedsDirection)
         {
             return "Needs your direction";
@@ -433,6 +439,8 @@ internal static class ConversationWorkflowProjector
 
     private static string CurrentWork(GoalWorkflowSnapshot workflow) => workflow.State switch
     {
+        GoalWorkflowState.PartiallyCompleted =>
+            "The monetary cost limit stopped the run at its last durable checkpoint.",
         GoalWorkflowState.NeedsDirection => "The agent run is paused and waiting for your decision.",
         GoalWorkflowState.AwaitingPlanApproval => "The proposed plan is waiting for your review.",
         GoalWorkflowState.AwaitingAcceptance => "The reviewed result is waiting for your acceptance.",
@@ -452,6 +460,12 @@ internal static class ConversationWorkflowProjector
     private static string CurrentResult(GoalWorkflowSnapshot workflow)
     {
         int completed = workflow.Tasks.Count(task => task.State is GoalTaskState.Completed);
+        if (workflow.State is GoalWorkflowState.PartiallyCompleted)
+        {
+            return $"{completed}/{workflow.Tasks.Count} delegated tasks and " +
+                   $"{workflow.Evidence.Count} evidence item(s) are durable and ready to inspect.";
+        }
+
         return LatestCheckpoint(workflow) switch
         {
             null or GoalWorkflowCheckpointKind.Started or GoalWorkflowCheckpointKind.LeadCallStarted =>
@@ -478,6 +492,10 @@ internal static class ConversationWorkflowProjector
 
     private static string NextStep(GoalWorkflowSnapshot workflow) => workflow.State switch
     {
+        GoalWorkflowState.PartiallyCompleted when workflow.RetryRole is { } role =>
+            $"Review the completed work, then increase or remove the cost cap and retry {role}, or abort.",
+        GoalWorkflowState.PartiallyCompleted =>
+            "Review the completed work, then increase or remove the cost cap to continue, or abort.",
         GoalWorkflowState.NeedsDirection when workflow.RetryRole is { } role =>
             $"Retry {role} as-is, change its model, add guidance, or abort and start a new goal.",
         GoalWorkflowState.NeedsDirection => "Choose whether to retry or abort this goal.",
@@ -517,6 +535,7 @@ internal static class ConversationWorkflowProjector
         GoalWorkflowState.AwaitingPlanApproval => ConversationWorkflowCardState.Pending,
         GoalWorkflowState.AwaitingAcceptance => ConversationWorkflowCardState.Pending,
         GoalWorkflowState.NeedsDirection => ConversationWorkflowCardState.Paused,
+        GoalWorkflowState.PartiallyCompleted => ConversationWorkflowCardState.Paused,
         GoalWorkflowState.Completed => ConversationWorkflowCardState.Completed,
         GoalWorkflowState.Aborted => ConversationWorkflowCardState.Cancelled,
         _ => ConversationWorkflowCardState.Stale,

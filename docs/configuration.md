@@ -71,9 +71,10 @@ Every OpenRouter inference request also requires an authorized goal with a persi
 remote-spend mode. New goals default to Unlimited; Settings and goal creation expose
 Capped and Local-only as prominent cost-control opt-ins. Explicit goal-role selection authorizes planning inference before plan
 approval without granting repository mutation; plan approval separately authorizes
-the isolated worktree capabilities. Chat requests require a positive
-maximum-output-token value so the
-connector can reserve a conservative estimate before sending content. Strict
+the isolated worktree capabilities. For capped goals, the connector derives a provider
+request boundary from the remaining monetary budget so it can reserve a conservative
+estimate before sending content. Unlimited goals omit an application output-token
+ceiling. Strict
 workspace privacy is represented as a typed policy and sends both no-collection and
 zero-data-retention routing constraints.
 
@@ -81,8 +82,8 @@ Configured chat routes remain separate from spending authority. In the
 Goals menu, **Models** discovers each configured provider catalog without performing
 inference and lets the user select a provider/model separately for lead, implementer,
 and reviewer. A local default may run without a stored override. A remote default or
-override must be explicitly selected for that goal, its spend mode must be Unlimited
-or Capped, and every agent call must declare a positive output-token maximum.
+override must be explicitly selected for that goal, and its spend mode must be Unlimited
+or Capped. Every agent call remains subject to that goal's monetary spend policy.
 Selections persist by goal and role; changing one role does not authorize another.
 Published input/output prices are shown per million tokens, and missing pricing is
 shown explicitly because paid calls fail closed when the provider cannot price them.

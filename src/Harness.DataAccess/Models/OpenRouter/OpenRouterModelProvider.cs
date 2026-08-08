@@ -19,6 +19,8 @@ internal sealed class OpenRouterModelProvider(
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly Dictionary<string, ModelPricing> pricingByModel =
         new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> contextLengthByModel =
+        new(StringComparer.Ordinal);
     private readonly Lock pricingLock = new();
 
     public async ValueTask<ModelCatalog> GetModelsAsync(
@@ -65,6 +67,10 @@ internal sealed class OpenRouterModelProvider(
                 {
                     pricingByModel[model.Id] = model.Pricing;
                 }
+                if (model.ContextLength is > 0)
+                {
+                    contextLengthByModel[model.Id] = model.ContextLength.Value;
+                }
             }
         }
 
@@ -75,10 +81,7 @@ internal sealed class OpenRouterModelProvider(
         ChatRequest request,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        ProviderError? validationError = ValidateRemoteRequest(
-            request.RemoteScope,
-            request.MaximumOutputTokens,
-            requireMaximumOutputTokens: true);
+        ProviderError? validationError = ValidateRemoteRequest(request.RemoteScope);
         if (validationError is not null)
         {
             yield return ErrorEvent(validationError);
@@ -99,13 +102,16 @@ internal sealed class OpenRouterModelProvider(
             yield break;
         }
 
-        MicroUsd estimate = EstimateChatCost(request, pricing.Pricing!);
+        ChatCostBoundary boundary = await ResolveChatCostBoundaryAsync(
+            request,
+            pricing.Pricing!,
+            cancellationToken);
         RemoteCostReservationResult reservationResult = await remoteCostStore.ReserveAsync(new(
             request.RemoteScope!.GoalId,
             providerName,
             request.Model,
             RemoteCostOperation.Chat,
-            estimate,
+            boundary.EstimatedCost,
             request.RemoteScope.Role), cancellationToken);
         if (reservationResult.Reservation is null)
         {
@@ -129,7 +135,7 @@ internal sealed class OpenRouterModelProvider(
                 Messages = request.Messages.Select(MapMessage).ToArray(),
                 Tools = MapTools(request.Tools),
                 Stream = true,
-                MaxTokens = request.MaximumOutputTokens!.Value,
+                MaxTokens = boundary.ProviderMaximumOutputTokens,
                 Provider = CreateRouting(request.RemoteScope.PrivacyPolicy),
             });
 
@@ -233,6 +239,15 @@ internal sealed class OpenRouterModelProvider(
                     OpenRouterChoice? choice = chunk.Choices.FirstOrDefault();
                     MicroUsd? chunkCost = ToMicroUsd(chunk.Usage?.Cost);
                     actualCost = chunkCost ?? actualCost;
+                    if (boundary.IsCostConstrained &&
+                        choice?.FinishReason is "length")
+                    {
+                        yield return ErrorEvent(new(
+                            "remote_cost_cap_exceeded",
+                            "The model reached the output boundary derived from the goal's remaining monetary cost cap.",
+                            IsTransient: false));
+                        yield break;
+                    }
                     bool done = choice?.FinishReason is not null || chunk.Usage is not null;
                     completed |= done;
                     if (choice?.Delta is not null)
@@ -364,10 +379,7 @@ internal sealed class OpenRouterModelProvider(
         EmbeddingRequest request,
         CancellationToken cancellationToken = default)
     {
-        ProviderError? validationError = ValidateRemoteRequest(
-            request.RemoteScope,
-            maximumOutputTokens: null,
-            requireMaximumOutputTokens: false);
+        ProviderError? validationError = ValidateRemoteRequest(request.RemoteScope);
         if (validationError is not null)
         {
             return EmbeddingFailure(validationError);
@@ -523,6 +535,10 @@ internal sealed class OpenRouterModelProvider(
                 {
                     pricingByModel[descriptor.Id] = descriptor.Pricing;
                 }
+                if (descriptor.ContextLength is > 0)
+                {
+                    contextLengthByModel[descriptor.Id] = descriptor.ContextLength.Value;
+                }
             }
 
             return pricingByModel.TryGetValue(model, out ModelPricing? found)
@@ -631,7 +647,10 @@ internal sealed class OpenRouterModelProvider(
         decimal.TryParse(value ?? "0", NumberStyles.Float, CultureInfo.InvariantCulture, out result) &&
         result >= 0;
 
-    private static MicroUsd EstimateChatCost(ChatRequest request, ModelPricing pricing)
+    private async ValueTask<ChatCostBoundary> ResolveChatCostBoundaryAsync(
+        ChatRequest request,
+        ModelPricing pricing,
+        CancellationToken cancellationToken)
     {
         long estimatedInputTokens = request.Messages.Sum(message =>
             (long)Encoding.UTF8.GetByteCount(message.Role.ToString()) +
@@ -648,10 +667,43 @@ internal sealed class OpenRouterModelProvider(
             (long)Encoding.UTF8.GetByteCount(tool.Name.Value) +
             Encoding.UTF8.GetByteCount(tool.Description.Value) +
             Encoding.UTF8.GetByteCount(tool.JsonSchema.Value)) ?? 0;
-        decimal usd = pricing.UsdPerRequest +
-            (estimatedInputTokens * pricing.InputUsdPerToken) +
-            (request.MaximumOutputTokens!.Value * pricing.OutputUsdPerToken);
-        return ToMicroUsdCeiling(usd);
+        decimal baseUsd = pricing.UsdPerRequest +
+            (estimatedInputTokens * pricing.InputUsdPerToken);
+        RemoteCostLedger? ledger = await remoteCostStore.GetLedgerAsync(
+            request.RemoteScope!.GoalId,
+            cancellationToken);
+        if (ledger is null || ledger.CostCap.Value == long.MaxValue ||
+            pricing.OutputUsdPerToken == 0)
+        {
+            return new(
+                ToMicroUsdCeiling(baseUsd),
+                ProviderMaximumOutputTokens: null,
+                IsCostConstrained: false);
+        }
+
+        decimal remainingUsd = ledger.RemainingCost.Value / 1_000_000m;
+        decimal affordable = decimal.Floor(
+            (remainingUsd - baseUsd) / pricing.OutputUsdPerToken);
+        if (affordable < 1)
+        {
+            return new(
+                new(checked(ledger.RemainingCost.Value + 1)),
+                ProviderMaximumOutputTokens: 1,
+                IsCostConstrained: true);
+        }
+
+        int modelBoundary;
+        lock (pricingLock)
+        {
+            modelBoundary = contextLengthByModel.GetValueOrDefault(
+                request.Model,
+                int.MaxValue);
+        }
+        int providerMaximum = (int)Math.Min(affordable, modelBoundary);
+        return new(
+            ToMicroUsdCeiling(baseUsd + (providerMaximum * pricing.OutputUsdPerToken)),
+            providerMaximum,
+            IsCostConstrained: affordable <= modelBoundary);
     }
 
     private static MicroUsd EstimateEmbeddingCost(EmbeddingRequest request, ModelPricing pricing)
@@ -673,10 +725,7 @@ internal sealed class OpenRouterModelProvider(
             ? new() { Zdr = true }
             : null;
 
-    private static ProviderError? ValidateRemoteRequest(
-        RemoteModelScope? scope,
-        MaximumOutputTokens? maximumOutputTokens,
-        bool requireMaximumOutputTokens)
+    private static ProviderError? ValidateRemoteRequest(RemoteModelScope? scope)
     {
         if (scope is null || string.IsNullOrWhiteSpace(scope.GoalId))
         {
@@ -686,14 +735,13 @@ internal sealed class OpenRouterModelProvider(
                 IsTransient: false);
         }
 
-        return (requireMaximumOutputTokens && maximumOutputTokens is null) ||
-            maximumOutputTokens is not null && maximumOutputTokens.Value <= 0
-            ? new(
-                "maximum_output_tokens_required",
-                "OpenRouter chat requests require a positive output-token maximum.",
-                IsTransient: false)
-            : null;
+        return null;
     }
+
+    private sealed record ChatCostBoundary(
+        MicroUsd EstimatedCost,
+        int? ProviderMaximumOutputTokens,
+        bool IsCostConstrained);
 
     private static HttpRequestMessage CreateAuthorizedRequest(
         HttpMethod method,

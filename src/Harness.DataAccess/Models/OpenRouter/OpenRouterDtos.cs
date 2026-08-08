@@ -15,7 +15,8 @@ internal sealed class OpenRouterChatRequestPayload
     public bool Stream { get; init; }
 
     [JsonPropertyName("max_tokens")]
-    public int MaxTokens { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? MaxTokens { get; init; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public OpenRouterProviderPreferences? Provider { get; init; }
