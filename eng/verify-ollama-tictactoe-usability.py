@@ -457,19 +457,17 @@ def create_goal_and_generate_plan(
         "The plan model search is exposed to AT-SPI as a panel, not an editable control; "
         "the exercise used the configured Ollama default."
     )
-    application.set_text("Lead maximum output tokens", "8192")
     application.invoke("Generate plan")
     state = wait_for_state(database, {"AwaitingPlanApproval", "NeedsDirection"}, timeout)
     if state == "NeedsDirection":
         previous = latest_workflow_status(database)
-        application.invoke("Retry Lead with changes")
+        application.invoke("Retry Lead")
         application.wait_for_name("Retry Lead with changes", "frame")
         application.set_text(
             "Guidance for Lead retry",
             "Return the requested JSON object directly. Do not wrap it in Markdown or code fences.",
         )
-        application.set_text("Lead retry maximum output tokens", "8192")
-        application.invoke("Retry with changes")
+        application.invoke("Retry Lead")
         report.setdefault("usability_observations", []).append(
             "The first Lead response used a Markdown fence and entered NeedsDirection; "
             "the exercise retried through the recovery UI with corrective guidance."
@@ -493,10 +491,6 @@ def approve_and_run(application: Any, database: Path, timeout: int) -> None:
     application.invoke("Approve and create worktree")
     application.wait_for_name("Continue run", "push button")
     application.invoke("Continue run")
-    application.wait_for_name("Continue production run", "frame")
-    application.set_text("Implementer maximum output tokens", "8192")
-    application.set_text("Reviewer maximum output tokens", "8192")
-    application.invoke("Run with these limits")
     state = wait_for_state(database, {"AwaitingAcceptance", "NeedsDirection"}, timeout)
     if state != "AwaitingAcceptance":
         raise RuntimeError(
