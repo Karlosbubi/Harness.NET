@@ -163,6 +163,29 @@ public sealed class OllamaModelProviderTests
     }
 
     [Fact]
+    public async Task Maps_an_explicit_sampling_temperature()
+    {
+        string? requestJson = null;
+        using HttpClient httpClient = CreateClient(async (request, cancellationToken) =>
+        {
+            requestJson = await request.Content!.ReadAsStringAsync(cancellationToken);
+            return JsonResponse(
+                "{\"message\":{\"content\":\"ok\"},\"done\":true}\n",
+                "application/x-ndjson");
+        });
+        OllamaModelProvider provider = new(httpClient);
+
+        _ = await CollectAsync(provider.StreamChatAsync(new(
+            "model",
+            [new(ChatRole.User, "deterministic")],
+            Temperature: 0)));
+
+        using JsonDocument body = JsonDocument.Parse(requestJson!);
+        Assert.Equal(0, body.RootElement.GetProperty("options")
+            .GetProperty("temperature").GetDouble());
+    }
+
+    [Fact]
     public async Task Requests_native_json_schema_for_exact_structured_output()
     {
         string? requestJson = null;

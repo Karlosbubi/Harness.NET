@@ -31,12 +31,12 @@ GOAL_TITLE = "Build validated Tic-Tac-Toe with an unbeatable computer"
 GOAL_OBJECTIVE = """Build a polished .NET 10 console Tic-Tac-Toe application where a human plays X against a computer playing O.
 
 Requirements:
-- Keep the existing solution and three-project layout, including the read-only acceptance executable. The complete mutation allow-list is exactly src/TicTacToe/GameState.cs, src/TicTacToe/MinimaxSolver.cs, src/TicTacToe/Program.cs, and tests/TicTacToe.Tests/UnitTest1.cs. Use those exact existing paths as plan file areas. Do not create, rename, or split projects or source files, and never edit tests/TicTacToe.Acceptance.
+- Keep the existing solution and three-project layout, including the read-only deterministic acceptance tests. The complete mutation allow-list is exactly src/TicTacToe/GameState.cs, src/TicTacToe/MinimaxSolver.cs, src/TicTacToe/Program.cs, and tests/TicTacToe.Tests/UnitTest1.cs. Use those exact existing paths as plan file areas. Do not create, rename, or split projects or source files, and never edit tests/TicTacToe.Acceptance.
 - Keep the engine in namespace TicTacToe.Core with public enum Mark { Empty, X, O }.
 - GameState must be immutable and expose a public parameterless constructor, CurrentPlayer, Winner, IsDraw, IReadOnlyList<int> LegalMoves, a zero-based indexer, and GameState Play(int cell). Store all nine marks in private state. The public constructor creates an empty X-to-move board. Play validates range, occupancy, and terminal state; clones the board; writes CurrentPlayer; evaluates the eight winning lines and full-board draw; and returns a new state with the next player. The indexer and LegalMoves must reflect the stored board.
 - MinimaxSolver must expose int ChooseMove(GameState state, Mark computerMark), choose only legal moves, and play optimally so the human cannot force a win. Recursively score terminal states from computerMark's perspective, maximize on the computer turn, minimize on its opponent's turn, and use a deterministic legal tie-break.
-- The console UI must render the board, accept cells 1-9, reject malformed/occupied moves without crashing, show the result, and allow q to exit immediately.
-- Replace the placeholder tests with concise deterministic xUnit coverage for wins, draws, invalid moves, and representative legal solver choices. The independent acceptance validator performs the exhaustive human move traversal, so do not duplicate that traversal in the generated test file.
+- The console UI must render the board, accept cells 1-9, reject malformed/occupied moves without crashing, show the result, and allow q to exit immediately. Console.ReadLine() is nullable: receive every result in string? and treat null/EOF like q.
+- Replace the placeholder tests with concise deterministic xUnit coverage for wins, draws, invalid moves, and representative legal solver choices. Every Fact or Theory must execute at least one meaningful Assert; do not emit empty, comment-only, placeholder, or vacuous tests. A known reachable full-board draw is the move sequence 0,1,2,4,3,5,7,6,8; use it rather than guessing draw data. The independent acceptance validator performs the exhaustive human move traversal, so do not duplicate that traversal in the generated test file.
 - Do not add packages, restore dependencies, weaken warnings, or edit AGENTS.md. Build and test the complete solution without restore and inspect the exact Git diff before reporting completion.
 """
 
@@ -51,13 +51,22 @@ public enum Mark
 
 public sealed class GameState
 {
-    public Mark CurrentPlayer => Mark.X;
-    public Mark Winner => Mark.Empty;
-    public bool IsDraw => false;
-    public IReadOnlyList<int> LegalMoves => Enumerable.Range(0, 9).ToArray();
-    public Mark this[int cell] => cell is >= 0 and < 9
-        ? Mark.Empty
-        : throw new ArgumentOutOfRangeException(nameof(cell));
+    private readonly Mark[] board;
+
+    public GameState() : this(new Mark[9])
+    {
+    }
+
+    private GameState(Mark[] board)
+    {
+        this.board = board;
+    }
+
+    public Mark CurrentPlayer => throw new NotImplementedException();
+    public Mark Winner => throw new NotImplementedException();
+    public bool IsDraw => throw new NotImplementedException();
+    public IReadOnlyList<int> LegalMoves => throw new NotImplementedException();
+    public Mark this[int cell] => throw new NotImplementedException();
 
     public GameState Play(int cell) => throw new NotImplementedException();
 }
@@ -83,9 +92,10 @@ TEST_STUB = """namespace TicTacToe.Tests;
 
 public sealed class ImplementationTests
 {
-    [Fact]
-    public void Complete_the_engine_and_replace_this_placeholder() =>
-        Assert.Fail("Harness.NET must replace this placeholder with deterministic tests.");
+    [Fact(Skip = "HARNESS_GENERATION_PLACEHOLDER")]
+    public void Complete_the_engine_and_replace_this_placeholder()
+    {
+    }
 }
 """
 
@@ -193,6 +203,112 @@ void ExploreHumanTurns(GameState state)
 ExploreHumanTurns(new GameState());
 Require(exploredHumanBranches >= 100, "exhaustive traversal covered too few human branches");
 Console.WriteLine($"Independent validation passed; explored {exploredHumanBranches} human branches.");
+"""
+
+ACCEPTANCE_TESTS = r"""using TicTacToe.Core;
+
+namespace TicTacToe.Acceptance;
+
+public sealed class GameStateContractTests
+{
+    [Fact]
+    public void Alternating_moves_preserve_turns_and_detect_a_win()
+    {
+        GameState state = new();
+        Assert.Equal(Mark.X, state.CurrentPlayer);
+
+        state = state.Play(0);
+        Assert.Equal(Mark.O, state.CurrentPlayer);
+        state = state.Play(3);
+        Assert.Equal(Mark.X, state.CurrentPlayer);
+        state = state.Play(1);
+        Assert.Equal(Mark.O, state.CurrentPlayer);
+        state = state.Play(4);
+        Assert.Equal(Mark.X, state.CurrentPlayer);
+        state = state.Play(2);
+
+        Assert.Equal(Mark.X, state.Winner);
+        Assert.False(state.IsDraw);
+        Assert.Throws<InvalidOperationException>(() => state.Play(5));
+    }
+
+    [Fact]
+    public void Full_non_winning_board_is_a_draw()
+    {
+        GameState state = new();
+        foreach (int move in new[] { 0, 1, 2, 4, 3, 5, 7, 6, 8 })
+        {
+            state = state.Play(move);
+        }
+
+        Assert.Equal(Mark.Empty, state.Winner);
+        Assert.True(state.IsDraw);
+        Assert.Empty(state.LegalMoves);
+    }
+
+    [Fact]
+    public void Moves_validate_range_and_occupancy_without_mutating_the_source()
+    {
+        GameState initial = new();
+        GameState next = initial.Play(4);
+
+        Assert.Equal(Mark.Empty, initial[4]);
+        Assert.Equal(Mark.X, next[4]);
+        Assert.Throws<ArgumentOutOfRangeException>(() => initial.Play(9));
+        Assert.Throws<InvalidOperationException>(() => next.Play(4));
+    }
+
+    [Fact]
+    public void Computer_solver_cannot_lose_against_any_human_line()
+    {
+        MinimaxSolver solver = new();
+        try
+        {
+            _ = solver.ChooseMove(new GameState().Play(0), Mark.O);
+        }
+        catch (NotImplementedException)
+        {
+            // The solver's original repository stub is expected while the earlier GameState
+            // task is validated. Once the solver task replaces it, the proof below must run.
+            return;
+        }
+
+        int exploredHumanBranches = 0;
+
+        void Explore(GameState state, List<int> moves)
+        {
+            if (state.Winner != Mark.Empty || state.IsDraw)
+            {
+                Assert.True(state.Winner != Mark.X,
+                    $"Human forced a win through moves: {string.Join(",", moves)}");
+                return;
+            }
+
+            Assert.Equal(Mark.X, state.CurrentPlayer);
+            foreach (int humanMove in state.LegalMoves.ToArray())
+            {
+                exploredHumanBranches++;
+                GameState afterHuman = state.Play(humanMove);
+                List<int> afterHumanMoves = [.. moves, humanMove];
+                if (afterHuman.Winner != Mark.Empty || afterHuman.IsDraw)
+                {
+                    Assert.True(afterHuman.Winner != Mark.X,
+                        $"Human forced a win through moves: {string.Join(",", afterHumanMoves)}");
+                    continue;
+                }
+
+                int[] legal = afterHuman.LegalMoves.ToArray();
+                int computerMove = solver.ChooseMove(afterHuman, Mark.O);
+                Assert.Contains(computerMove, legal);
+                Assert.Equal(legal, afterHuman.LegalMoves);
+                Explore(afterHuman.Play(computerMove), [.. afterHumanMoves, computerMove]);
+            }
+        }
+
+        Explore(new GameState(), []);
+        Assert.True(exploredHumanBranches >= 100);
+    }
+}
 """
 
 
@@ -325,7 +441,7 @@ def create_repository(root: Path) -> Path:
         "--output", "tests/TicTacToe.Tests", "--no-restore",
     ], repository, environment=environment)
     run([
-        "dotnet", "new", "console", "--framework", "net10.0",
+        "dotnet", "new", "xunit", "--framework", "net10.0",
         "--name", "TicTacToe.Acceptance",
         "--output", "tests/TicTacToe.Acceptance", "--no-restore",
     ], repository, environment=environment)
@@ -365,7 +481,7 @@ def create_repository(root: Path) -> Path:
     write(repository / "src/TicTacToe/GameState.cs", GAME_STATE_STUB)
     write(repository / "src/TicTacToe/MinimaxSolver.cs", SOLVER_STUB)
     write(repository / "tests/TicTacToe.Tests/UnitTest1.cs", TEST_STUB)
-    write(repository / "tests/TicTacToe.Acceptance/Program.cs", VALIDATOR_PROGRAM)
+    write(repository / "tests/TicTacToe.Acceptance/UnitTest1.cs", ACCEPTANCE_TESTS)
     run(["dotnet", "restore", "TicTacToe.slnx", "-m:1"], repository,
         environment=environment)
     run([
@@ -741,14 +857,20 @@ def validate_generated_project(root: Path, repository: Path) -> dict[str, Any]:
         timeout=300,
     )
 
-    test_sources = "\n".join(
-        path.read_text(encoding="utf-8")
-        for path in (worktree / "tests").rglob("*.cs")
+    generated_test_source = (
+        worktree / "tests/TicTacToe.Tests/UnitTest1.cs"
+    ).read_text(encoding="utf-8")
+    generated_test_cases = (
+        generated_test_source.count("[Fact") + generated_test_source.count("[Theory")
     )
-    generated_test_cases = test_sources.count("[Fact]") + test_sources.count("[Theory]")
-    if "Assert.Fail" in test_sources or generated_test_cases < 4:
+    generated_assertions = generated_test_source.count("Assert.")
+    if (
+        "HARNESS_GENERATION_PLACEHOLDER" in generated_test_source
+        or generated_test_cases < 4
+        or generated_assertions < generated_test_cases
+    ):
         raise RuntimeError(
-            "generated validation did not replace the placeholder with at least four test cases"
+            "generated validation requires at least four non-vacuous test cases with an assertion per case"
         )
 
     validator = root / "independent-validator"

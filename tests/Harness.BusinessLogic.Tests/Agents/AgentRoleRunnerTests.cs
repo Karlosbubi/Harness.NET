@@ -71,6 +71,7 @@ public sealed class AgentRoleRunnerTests
             Assert.Null(request.ResponseSchema);
         }
         Assert.Null(request.RemoteScope);
+        Assert.Equal(0, request.Temperature);
     }
 
     [Fact]
@@ -278,6 +279,80 @@ public sealed class AgentRoleRunnerTests
         Assert.Null(result.Error);
         Assert.Equal(source, mutations.Content);
         Assert.Equal([DotNetOperation.Build, DotNetOperation.Test], mutations.Operations);
+    }
+
+    [Fact]
+    public async Task Structured_local_type_fragment_preserves_the_existing_namespace_and_sibling_types()
+    {
+        const string baseline = """
+            namespace TicTacToe.Core;
+
+            public enum Mark { Empty, X, O }
+
+            public sealed class GameState { }
+            """;
+        CapturingModelProvider provider = new("""
+            ```csharp
+            public sealed class GameState
+            {
+                public Mark CurrentPlayer => Mark.X;
+            }
+            ```
+            """);
+        RecordingMutationService mutations = new();
+        AgentRoleRunner runner = new(
+            new StubRouteResolver(role => Route(role, "tool-model", provider)),
+            new CapturingAgentToolFactory { ReturnWorkspaceFileView = true },
+            NullLoggerFactory.Instance,
+            new StaticInspectionService(baseline),
+            mutations);
+
+        AgentRunResult result = await runner.RunAsync(new(
+            new("goal-tools"),
+            AgentRole.Implementer,
+            new("replace the exact game state file"),
+            [new("src/GameState.cs")]));
+
+        Assert.Null(result.Error);
+        Assert.Contains("namespace TicTacToe.Core;", mutations.Content, StringComparison.Ordinal);
+        Assert.Contains("public enum Mark", mutations.Content, StringComparison.Ordinal);
+        Assert.Contains("public sealed class GameState", mutations.Content, StringComparison.Ordinal);
+        Assert.Equal([DotNetOperation.Build, DotNetOperation.Test], mutations.Operations);
+    }
+
+    [Fact]
+    public async Task Structured_local_edit_rejects_a_dependency_type_for_the_target_file()
+    {
+        const string baseline = """
+            namespace TicTacToe.Tests;
+
+            public sealed class ImplementationTests { }
+            """;
+        CapturingModelProvider provider = new("""
+            ```csharp
+            namespace TicTacToe.Core;
+
+            public sealed class MinimaxSolver { }
+            ```
+            """);
+        RecordingMutationService mutations = new();
+        AgentRoleRunner runner = new(
+            new StubRouteResolver(role => Route(role, "tool-model", provider)),
+            new CapturingAgentToolFactory { ReturnWorkspaceFileView = true },
+            NullLoggerFactory.Instance,
+            new StaticInspectionService(baseline),
+            mutations);
+
+        AgentRunResult result = await runner.RunAsync(new(
+            new("goal-tools"),
+            AgentRole.Implementer,
+            new("replace the exact test file"),
+            [new("tests/UnitTest1.cs")]));
+
+        Assert.Equal("structured_source_identity_mismatch", result.ErrorCode?.Value);
+        Assert.Contains("wrong C# namespace", result.Error?.Value, StringComparison.Ordinal);
+        Assert.Null(mutations.Content);
+        Assert.Empty(mutations.Operations);
     }
 
     private static AgentRoleRunner CreateRunner(
@@ -551,7 +626,8 @@ public sealed class AgentRoleRunnerTests
             throw new NotSupportedException();
     }
 
-    private sealed class StaticInspectionService : IGoalWorkspaceInspectionService
+    private sealed class StaticInspectionService(string content = "baseline")
+        : IGoalWorkspaceInspectionService
     {
         public ValueTask<WorkspaceFileView> ReadFileAsync(
             GoalId goalId,
@@ -559,7 +635,7 @@ public sealed class AgentRoleRunnerTests
             string relativePath,
             CancellationToken cancellationToken = default) => ValueTask.FromResult(new WorkspaceFileView(
                 relativePath,
-                "baseline",
+                content,
                 new string('a', 64),
                 8,
                 IsTruncated: false,

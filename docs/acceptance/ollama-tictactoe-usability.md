@@ -26,14 +26,18 @@ compiler-correction loop is not misreported as a hung workflow.
 Local exact-file generation returns fenced source text rather than embedding source in
 a JSON string; this preserves C# escape sequences. Each accepted model-authored C# edit
 must introduce no compiler warning or error, including errors in transitive dependent
-projects. Harness then runs a no-restore solution build, and test-source edits must also
-pass the real test suite before the Implementer can report completion.
+projects. Harness then runs a no-restore solution build and the real deterministic test
+suite after every C# edit, so a production task cannot close over an already failing
+behavioral contract. Replacement source must also preserve the exact target namespace
+and at least one existing target type; a compilable dependency class cannot be written
+into the wrong file.
 
 Acceptance does not trust the model-authored tests alone. After Harness reaches
 `AwaitingAcceptance`, the script independently:
 
 1. builds with warnings as errors and runs the generated test suite without restore;
-2. rejects the original failing placeholder or fewer than four generated test cases;
+2. rejects the original skipped placeholder, fewer than four generated test cases, or
+   a generated suite without at least one assertion per test case;
 3. compiles a separate validator against the required public engine API;
 4. checks win, draw, range, occupied-cell, turn, and immutability behavior;
 5. enumerates every human branch reachable against the generated O solver and fails
@@ -59,16 +63,21 @@ the SQLite database manually.
 
 ## Evaluation on 2026-08-09
 
-The exercise found and closed four false-positive completion paths: introduced
-warnings were accepted, dependent projects were not recompiled, structured source was
-damaged by JSON escaping, and generated tests were not executed before model review.
-The normal deterministic Harness.NET suite remained green after those fixes.
+The exercise found and closed additional false-positive completion paths beyond the
+original compiler and transport failures: production edits were not behavior-tested,
+an incorrect minimax implementation reached review, and a model could replace the test
+file with a dependency class that compiled but contained no tests. Read-only staged
+acceptance tests now validate GameState while its task is writable and activate an
+exhaustive solver proof as soon as the original solver stub is replaced. Source-identity
+validation rejects wrong-namespace and wrong-type replacements before mutation.
 
-The local-model usability result is still a failure, not an acceptance: Gemma 4,
-Mistral Nemo, and Granite 3.3 required many compiler-rejected full-file proposals and
-did not reliably finish the four-file project within a reasonable interactive session.
-Raw fenced-source transport materially improved one run—`GameState` converged after
-one correction and `MinimaxSolver` passed first try—but later runs still exhausted
-bounded retries. The retained diagnostic roots under `artifacts/usability/` are the
-evidence. These models should not be treated as dependable default Implementers until
-proposal repair becomes more targeted than repeated full-file rewriting.
+The accepted run is retained at
+`artifacts/usability/ollama-tictactoe-20260809T090534Z`. It used Mistral Nemo for Lead,
+Gemma 4 for Implementer, and Mistral for Reviewer, all through Ollama. Harness reached
+`AwaitingAcceptance` after four completed tasks and one review cycle. The generated
+solution built warning-free, all generated and read-only xUnit tests passed, the
+independent validator explored 1,119 human branches without finding a forced win, and
+the console accepted `q` and exited cleanly. The full exercise took about 21 minutes;
+most of that time was local full-file correction inference, so targeted edit repair
+remains the principal usability/performance opportunity even though the end-to-end
+result is now accepted.

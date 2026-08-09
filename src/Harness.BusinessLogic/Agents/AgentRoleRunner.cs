@@ -338,7 +338,7 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
                 }
             }
         }
-        return new(context, request.FileAreas[0].Value, sha256);
+        return new(context, request.FileAreas[0].Value, sha256, file?.Content);
     }
 
     private async ValueTask<AgentRunResult> ApplyStructuredLocalFileEditAsync(
@@ -373,6 +373,13 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
             }
         }
 
+        content = PreserveSourceEnvelope(content, bootstrap);
+        string? identityError = ValidateSourceIdentity(content, bootstrap);
+        if (identityError is not null)
+        {
+            return new(role, Output: null, new("structured_source_identity_mismatch"),
+                new(identityError));
+        }
         if (string.IsNullOrWhiteSpace(content) ||
             tools.OfType<AIFunction>().SingleOrDefault(tool => tool.Name == "apply_file_edit") is not
                 { } applyFileEdit)
@@ -429,7 +436,11 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
                 return ValidationFailure(role, build);
             }
 
-            if (bootstrap.RelativePath.StartsWith("tests/", StringComparison.Ordinal))
+            // A warning-free build proves only that the candidate compiles. Run the repository's
+            // deterministic tests after every C# edit so a production task cannot be marked
+            // complete while an existing behavioral contract is already failing. The correction
+            // loop still owns the exact active file, so failures are repaired at their source.
+            if (bootstrap.RelativePath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
             {
                 DotNetOperationView test = await mutationService.RunDotNetAsync(new(
                     goalId.Value,
@@ -474,6 +485,92 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
         return new(role, Output: null, new("structured_validation_failed"), new(detail));
     }
 
+    private static string? PreserveSourceEnvelope(
+        string? proposal,
+        BootstrapInspection bootstrap)
+    {
+        if (string.IsNullOrWhiteSpace(proposal) ||
+            !bootstrap.RelativePath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) ||
+            proposal.Contains("namespace ", StringComparison.Ordinal) ||
+            string.IsNullOrWhiteSpace(bootstrap.Content))
+        {
+            return proposal;
+        }
+
+        string typeName = Path.GetFileNameWithoutExtension(bootstrap.RelativePath);
+        string declarationPattern =
+            "(?m)^[ \\t]*(?:(?:public|internal|private|protected|sealed|static|abstract|partial|readonly|ref|file)[ \\t]+)*(?:class|record(?:[ \\t]+class)?|struct|interface|enum)[ \\t]+" +
+            Regex.Escape(typeName) + "\\b";
+        Match baselineDeclaration = Regex.Match(
+            bootstrap.Content,
+            declarationPattern,
+            RegexOptions.CultureInvariant);
+        Match proposalDeclaration = Regex.Match(
+            proposal,
+            declarationPattern,
+            RegexOptions.CultureInvariant);
+        if (baselineDeclaration.Success && proposalDeclaration.Success)
+        {
+            return bootstrap.Content[..baselineDeclaration.Index] +
+                proposal[proposalDeclaration.Index..].Trim();
+        }
+
+        Match namespaceDeclaration = Regex.Match(
+            bootstrap.Content,
+            @"(?m)^[ \t]*namespace[ \t]+[^;{]+;[ \t]*(?:\r?\n)?",
+            RegexOptions.CultureInvariant);
+        return namespaceDeclaration.Success
+            ? bootstrap.Content[..(namespaceDeclaration.Index + namespaceDeclaration.Length)] +
+              proposal.Trim()
+            : proposal;
+    }
+
+    private static string? ValidateSourceIdentity(
+        string? proposal,
+        BootstrapInspection bootstrap)
+    {
+        if (string.IsNullOrWhiteSpace(proposal) ||
+            !bootstrap.RelativePath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) ||
+            string.IsNullOrWhiteSpace(bootstrap.Content))
+        {
+            return null;
+        }
+
+        Match baselineNamespace = Regex.Match(
+            bootstrap.Content,
+            @"(?m)^[ \t]*namespace[ \t]+(?<name>[A-Za-z_][A-Za-z0-9_.]*)[ \t]*[;{]",
+            RegexOptions.CultureInvariant);
+        if (baselineNamespace.Success && !Regex.IsMatch(
+                proposal,
+                @"(?m)^[ \t]*namespace[ \t]+" +
+                Regex.Escape(baselineNamespace.Groups["name"].Value) + @"[ \t]*[;{]",
+                RegexOptions.CultureInvariant))
+        {
+            return "The proposal is for the wrong C# namespace. Preserve namespace " +
+                baselineNamespace.Groups["name"].Value + " from the exact target file.";
+        }
+
+        const string typePattern =
+            @"(?m)^[ \t]*(?:(?:public|internal|private|protected|sealed|static|abstract|partial|readonly|ref|file)[ \t]+)*(?:class|record(?:[ \t]+class)?|struct|interface|enum)[ \t]+(?<name>[A-Za-z_][A-Za-z0-9_]*)\b";
+        string[] baselineTypes = Regex.Matches(
+                bootstrap.Content, typePattern, RegexOptions.CultureInvariant)
+            .Select(match => match.Groups["name"].Value)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (baselineTypes.Length > 0 && !baselineTypes.Any(typeName => Regex.IsMatch(
+                proposal,
+                @"(?m)^[ \t]*(?:(?:public|internal|private|protected|sealed|static|abstract|partial|readonly|ref|file)[ \t]+)*(?:class|record(?:[ \t]+class)?|struct|interface|enum)[ \t]+" +
+                Regex.Escape(typeName) + @"\b",
+                RegexOptions.CultureInvariant)))
+        {
+            return "The proposal is for the wrong C# type. The complete replacement for " +
+                bootstrap.RelativePath + " must preserve at least one target declaration: " +
+                string.Join(", ", baselineTypes) + ". Do not return a dependency type.";
+        }
+
+        return null;
+    }
+
     private static string DescribeRejectedEdit(FileEditView edit)
     {
         List<string> lines =
@@ -482,22 +579,57 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
         ];
         if (edit.CandidateCodeValidation is { } validation)
         {
-            lines.AddRange(validation.Diagnostics
+            WorkbenchCodeValidationDiagnostic[] introduced = validation.Diagnostics
                 .Where(item => item.Kind is WorkbenchCodeDiagnosticDeltaKind.Introduced)
                 .Where(item => item.Diagnostic.Severity is
                     WorkbenchCodeDiagnosticSeverity.Warning or
                     WorkbenchCodeDiagnosticSeverity.Error)
                 .Take(20)
+                .ToArray();
+            lines.AddRange(introduced
                 .Select(item =>
                     $"{item.Diagnostic.Id.Value}: {item.Diagnostic.Message.Value} " +
                     $"at {item.Diagnostic.Path.Value}:" +
                     $"{item.Diagnostic.Range.Start.Line + 1}"));
+            lines.AddRange(introduced
+                .Select(item => DiagnosticRepairGuidance(item.Diagnostic.Id.Value))
+                .Where(guidance => guidance is not null)
+                .Distinct(StringComparer.Ordinal)
+                .Select(guidance => "Deterministic repair guidance: " + guidance));
         }
 
         return string.Join('\n', lines);
     }
 
-    private sealed record BootstrapInspection(string Context, string RelativePath, string Sha256);
+    private static string? DiagnosticRepairGuidance(string diagnosticId) => diagnosticId switch
+    {
+        "CS8600" =>
+            "Fix the declaration at the cited line, not a different occurrence. The expression " +
+            "may return null: change the receiving reference type from T to T? and retain an " +
+            "explicit null check, or use a semantically correct non-null fallback. In particular, " +
+            "every Console.ReadLine() result must be received by string? rather than string.",
+        "CS8602" =>
+            "Prove the receiver is non-null with an explicit guard before dereference, or use a " +
+            "null-safe operation whose fallback preserves the required behavior.",
+        "CS8603" =>
+            "The return expression may be null. Return a non-null value on every path or make the " +
+            "declared return type nullable when null is part of the contract.",
+        "CS8618" =>
+            "Initialize the non-nullable member in every constructor or mark it required/nullable " +
+            "only when that matches the public contract.",
+        "CS0122" =>
+            "The referenced member is non-public. Remove every call to it. Construct values only " +
+            "through public constructors or factories shown in dependency context, then derive " +
+            "needed states through public transition methods. Tests must never synthesize state " +
+            "through a private storage constructor or private helper.",
+        _ => null,
+    };
+
+    private sealed record BootstrapInspection(
+        string Context,
+        string RelativePath,
+        string Sha256,
+        string? Content);
 
     private static string Name(AgentRole role) => role switch
     {

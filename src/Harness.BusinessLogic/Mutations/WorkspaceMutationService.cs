@@ -30,6 +30,7 @@ internal sealed class WorkspaceMutationService(
         @"(?ix)
         \b(?:TODO|FIXME)\b |
         \bplaceholder\b |
+        \badd\s+(?:the|your)\b[^\r\n]{0,80}\b(?:logic|implementation|checks?|code)\b |
         \bomitted\s+for\s+brevity\b |
         \bnot\s+implemented\b |
         \bNotImplementedException\b",

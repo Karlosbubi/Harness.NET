@@ -160,6 +160,7 @@ public sealed class WorkspaceMutationServiceTests
     [Theory]
     [InlineData("class Program { // TODO: implement\n}")]
     [InlineData("class Program { /* placeholder logic */ }")]
+    [InlineData("class Program { // Add your implementation logic here\n}")]
     [InlineData("class Program { void Run() => throw new NotImplementedException(); }")]
     public async Task Model_compiler_edit_with_explicit_incomplete_marker_is_rejected_before_validation(
         string content)

@@ -171,7 +171,8 @@ internal sealed class ModelProviderChatClient(
                             new(ImplementerHandoffSchema),
                         _ => null,
                     }
-                    : null),
+                    : null,
+                remoteGoalId is null ? 0 : null),
             cancellationToken))
         {
             if (item.Error is not null)

@@ -107,7 +107,8 @@ internal sealed class OllamaModelProvider(HttpClient httpClient) : IModelProvide
                 Options = new()
                 {
                     ContextLength = ResolveContextLength(request),
-                    Temperature = request.Tools is { Count: > 0 } ? 0 : null,
+                    Temperature = request.Temperature ??
+                        (request.Tools is { Count: > 0 } ? 0 : null),
                 },
             }),
         };
