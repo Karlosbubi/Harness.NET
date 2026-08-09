@@ -20,6 +20,30 @@ public sealed class GoalDelegationParserTests
     }
 
     [Theory]
+    [InlineData("```json\n{\"plan\":\"Plan\",\"tasks\":[{\"title\":\"Slice\",\"objective\":\"Implement slice\",\"fileAreas\":[\"src/A\"],\"acceptanceCriteria\":[\"Build passes\"]}]}\n```")]
+    [InlineData("```\n{\"plan\":\"Plan\",\"tasks\":[{\"title\":\"Slice\",\"objective\":\"Implement slice\",\"fileAreas\":[\"src/A\"],\"acceptanceCriteria\":[\"Build passes\"]}]}\n```")]
+    public void Parses_one_exact_markdown_json_fence(string value)
+    {
+        GoalDelegation result = GoalDelegationParser.Parse(value);
+
+        Assert.Null(result.Error);
+        Assert.Single(result.Tasks);
+    }
+
+    [Fact]
+    public void Rejects_prose_around_a_json_fence()
+    {
+        GoalDelegation result = GoalDelegationParser.Parse("""
+            Here is the plan:
+            ```json
+            {"plan":"Plan","tasks":[]}
+            ```
+            """);
+
+        Assert.NotNull(result.Error);
+    }
+
+    [Theory]
     [InlineData("{\"plan\":\"Plan\",\"tasks\":[]}")]
     [InlineData("{\"plan\":\"Plan\",\"tasks\":[{\"title\":\"Task\"}]}")]
     [InlineData("{\"plan\":\"Plan\",\"tasks\":[],\"extra\":true}")]
@@ -30,5 +54,53 @@ public sealed class GoalDelegationParserTests
 
         Assert.NotNull(result.Error);
         Assert.Empty(result.Tasks);
+    }
+
+    [Fact]
+    public void Rejects_standalone_inspection_task()
+    {
+        GoalDelegation result = GoalDelegationParser.Parse("""
+            {"plan":"Plan","tasks":[{"title":"Inspect workspace","objective":"Assess the existing solution layout.","fileAreas":["src/A"],"acceptanceCriteria":["Layout is documented."]}]}
+            """);
+
+        Assert.Contains("Standalone discovery", result.Error, StringComparison.Ordinal);
+        Assert.Empty(result.Tasks);
+    }
+
+    [Fact]
+    public void Ignores_standalone_inspection_when_durable_work_remains()
+    {
+        GoalDelegation result = GoalDelegationParser.Parse("""
+            {"plan":"Plan","tasks":[{"title":"Inspect workspace","objective":"Assess the existing solution layout.","fileAreas":["src/A"],"acceptanceCriteria":["Layout is documented."]},{"title":"Implement engine","objective":"Implement the immutable game engine.","fileAreas":["src/A"],"acceptanceCriteria":["Build passes."]}]}
+            """);
+
+        Assert.Null(result.Error);
+        GoalDelegatedTask task = Assert.Single(result.Tasks);
+        Assert.Equal("Implement engine", task.Title.Value);
+        Assert.Contains("ignored 1 standalone", result.Plan, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Allows_inspection_folded_into_implementation()
+    {
+        GoalDelegation result = GoalDelegationParser.Parse("""
+            {"plan":"Plan","tasks":[{"title":"Inspect and implement GameState","objective":"Inspect the contract, then implement the immutable engine.","fileAreas":["src/A"],"acceptanceCriteria":["Build passes."]}]}
+            """);
+
+        Assert.Null(result.Error);
+        Assert.Single(result.Tasks);
+    }
+
+    [Fact]
+    public void Ignores_planning_and_validation_only_tasks_while_preserving_code_and_test_writes()
+    {
+        GoalDelegation result = GoalDelegationParser.Parse("""
+            {"plan":"Plan","tasks":[{"title":"Inspect and plan","objective":"Inspect the workspace and create an implementation plan.","fileAreas":["src/A"],"acceptanceCriteria":["Plan exists."]},{"title":"Create engine","objective":"Create the GameState class.","fileAreas":["src/A"],"acceptanceCriteria":["Engine works."]},{"title":"Write tests","objective":"Write deterministic tests.","fileAreas":["tests/A"],"acceptanceCriteria":["Tests cover behavior."]},{"title":"Build and test","objective":"Build and test the solution.","fileAreas":["src/A"],"acceptanceCriteria":["Build passes."]}]}
+            """);
+
+        Assert.Null(result.Error);
+        Assert.Equal(["Create engine", "Write tests"],
+            result.Tasks.Select(task => task.Title.Value));
+        Assert.Contains("ignored 2 standalone", result.Plan, StringComparison.Ordinal);
     }
 }

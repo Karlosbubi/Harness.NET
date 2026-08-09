@@ -128,6 +128,94 @@ public sealed class WorkspaceMutationServiceTests
     }
 
     [Fact]
+    public async Task Model_compiler_edit_is_rejected_before_writing_when_it_introduces_a_warning()
+    {
+        FakeFileEditor editor = new();
+        FakeCodeIntelligenceService codeIntelligence = new()
+        {
+            CandidateDiagnostics = [IntroducedDiagnostic(WorkbenchCodeDiagnosticSeverity.Warning)],
+        };
+        WorkspaceMutationService service = new(
+            new FakeGoalStore(CreateGoal("Approved"), CreateWorktree()),
+            new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)),
+            editor,
+            new FakeDotNetToolRunner(),
+            new FakeToolEvidenceStore(),
+            new FakeCapabilityApprovalStore(),
+            codeIntelligence);
+
+        FileEditView result = await service.ApplyFileEditAsync(new(
+            "goal-id",
+            new("model-warning"),
+            "Program.cs",
+            Baseline,
+            "class Program { }",
+            FileEditOrigin.Model));
+
+        Assert.Equal("compiler_validation_rejected", result.ErrorCode);
+        Assert.Equal(0, editor.CallCount);
+        Assert.Equal([WorkbenchCodeValidationPhase.Candidate], codeIntelligence.Phases);
+    }
+
+    [Theory]
+    [InlineData("class Program { // TODO: implement\n}")]
+    [InlineData("class Program { /* placeholder logic */ }")]
+    [InlineData("class Program { void Run() => throw new NotImplementedException(); }")]
+    public async Task Model_compiler_edit_with_explicit_incomplete_marker_is_rejected_before_validation(
+        string content)
+    {
+        FakeFileEditor editor = new();
+        FakeToolEvidenceStore evidence = new();
+        FakeCodeIntelligenceService codeIntelligence = new();
+        WorkspaceMutationService service = new(
+            new FakeGoalStore(CreateGoal("Approved"), CreateWorktree()),
+            new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)),
+            editor,
+            new FakeDotNetToolRunner(),
+            evidence,
+            new FakeCapabilityApprovalStore(),
+            codeIntelligence);
+
+        FileEditView result = await service.ApplyFileEditAsync(new(
+            "goal-id",
+            new("model-incomplete"),
+            "Program.cs",
+            Baseline,
+            content,
+            FileEditOrigin.Model));
+
+        Assert.Equal("incomplete_model_edit_rejected", result.ErrorCode);
+        Assert.Equal(0, editor.CallCount);
+        Assert.Equal(0, codeIntelligence.StartCallCount);
+        Assert.Equal(ToolCallState.Failed, Assert.Single(evidence.Items).State);
+    }
+
+    [Fact]
+    public async Task Human_compiler_edit_may_contain_an_incomplete_marker()
+    {
+        FakeFileEditor editor = new();
+        WorkspaceMutationService service = new(
+            new FakeGoalStore(CreateGoal("Approved"), CreateWorktree()),
+            new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)),
+            editor,
+            new FakeDotNetToolRunner(),
+            new FakeToolEvidenceStore(),
+            new FakeCapabilityApprovalStore(),
+            new FakeCodeIntelligenceService());
+
+        FileEditView result = await service.ApplyFileEditAsync(new(
+            "goal-id",
+            new("human-incomplete"),
+            "Program.cs",
+            Baseline,
+            "class Program { // TODO: user-owned work\n}",
+            FileEditOrigin.Human));
+
+        Assert.Null(result.ErrorCode);
+        Assert.Equal(1, editor.CallCount);
+    }
+
+    [Fact]
     public async Task Model_compiler_edit_is_checked_before_and_after_the_atomic_write()
     {
         FakeFileEditor editor = new();
@@ -538,6 +626,18 @@ public sealed class WorkspaceMutationServiceTests
         Assert.Equal(0, runner.CallCount);
     }
 
+    private static WorkbenchCodeValidationDiagnostic IntroducedDiagnostic(
+        WorkbenchCodeDiagnosticSeverity severity) => new(
+        WorkbenchCodeDiagnosticDeltaKind.Introduced,
+        new(
+            new("CS0001"),
+            new("Introduced diagnostic."),
+            new("Compiler"),
+            new("Project"),
+            new("Program.cs"),
+            new(new(0, 0), new(0, 1)),
+            severity));
+
     private static StoredGoal CreateGoal(string state) => new(
         "goal-id",
         "workspace-id",
@@ -766,6 +866,8 @@ public sealed class WorkspaceMutationServiceTests
             WorkbenchCodeValidationDisposition.Validated;
         internal WorkbenchCodeValidationDisposition AppliedDisposition { get; init; } =
             WorkbenchCodeValidationDisposition.Validated;
+        internal IReadOnlyList<WorkbenchCodeValidationDiagnostic> CandidateDiagnostics { get; init; } = [];
+        internal IReadOnlyList<WorkbenchCodeValidationDiagnostic> AppliedDiagnostics { get; init; } = [];
         internal string RenameFingerprint { get; init; } = Baseline;
 
         public ValueTask<WorkbenchCodeSessionView> StartAsync(
@@ -794,7 +896,9 @@ public sealed class WorkspaceMutationServiceTests
                 request.SessionId,
                 WorkbenchCodeResultState.Ready,
                 disposition,
-                [],
+                request.Phase is WorkbenchCodeValidationPhase.Candidate
+                    ? CandidateDiagnostics
+                    : AppliedDiagnostics,
                 []));
         }
 

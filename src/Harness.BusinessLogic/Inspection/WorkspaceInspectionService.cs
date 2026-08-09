@@ -33,6 +33,7 @@ internal sealed class WorkspaceInspectionService(
         return new(
             result.Path,
             result.Content,
+            result.Sha256,
             result.SizeBytes,
             result.IsTruncated,
             result.ErrorCode,
@@ -144,7 +145,7 @@ internal sealed class WorkspaceInspectionService(
     }
 
     private static WorkspaceFileView Failure(string path, string code, string error) =>
-        new(path, string.Empty, 0, IsTruncated: false, code, error);
+        new(path, string.Empty, Sha256: null, 0, IsTruncated: false, code, error);
 
     private static WorkspaceTextSearchView SearchFailure(string code, string error) =>
         new([], 0, IsTruncated: false, code, error);

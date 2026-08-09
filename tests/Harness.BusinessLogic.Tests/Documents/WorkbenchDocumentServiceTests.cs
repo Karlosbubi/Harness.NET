@@ -16,7 +16,7 @@ public sealed class WorkbenchDocumentServiceTests
     [Fact]
     public async Task Approved_goal_opens_the_isolated_worktree_with_an_exact_baseline()
     {
-        FileReader reader = new(new("src/App.cs", "content", 7, false, null, null));
+        FileReader reader = new(new("src/App.cs", "content", Hash("content"), 7, false, null, null));
         WorkbenchDocumentService service = CreateService(
             CreateGoal("Approved"),
             CreateWorktree(),
@@ -40,7 +40,7 @@ public sealed class WorkbenchDocumentServiceTests
     [Fact]
     public async Task Goal_without_an_active_approval_opens_the_original_file_for_user_editing()
     {
-        FileReader reader = new(new("src/App.cs", "content", 7, false, null, null));
+        FileReader reader = new(new("src/App.cs", "content", Hash("content"), 7, false, null, null));
         WorkbenchDocumentService service = CreateService(
             CreateGoal("AwaitingPlanApproval"),
             worktree: null,
@@ -63,7 +63,7 @@ public sealed class WorkbenchDocumentServiceTests
     [Fact]
     public async Task Truncated_worktree_source_is_honestly_read_only_without_a_baseline()
     {
-        FileReader reader = new(new("large.cs", "partial", 70_000, true, null, null));
+        FileReader reader = new(new("large.cs", "partial", Sha256: null, 70_000, true, null, null));
         WorkbenchDocumentService service = CreateService(
             CreateGoal("Approved"),
             CreateWorktree(),
@@ -102,7 +102,7 @@ public sealed class WorkbenchDocumentServiceTests
             CreateGoal("Approved"),
             CreateWorktree(),
             CreateWorkspace(isTrusted: true),
-            new(new("src/App.cs", "before", 6, false, null, null)),
+            new(new("src/App.cs", "before", Hash("before"), 6, false, null, null)),
             mutations);
 
         WorkbenchDocumentSaveResult result = await service.SaveAsync(new(
@@ -139,7 +139,7 @@ public sealed class WorkbenchDocumentServiceTests
             CreateGoal("Approved"),
             CreateWorktree(),
             CreateWorkspace(isTrusted: true),
-            new(new("src/App.cs", "before", 6, false, null, null)),
+            new(new("src/App.cs", "before", Hash("before"), 6, false, null, null)),
             mutations);
 
         WorkbenchDocumentSaveResult result = await service.SaveAsync(new(
@@ -168,7 +168,7 @@ public sealed class WorkbenchDocumentServiceTests
             CreateGoal("Draft"),
             worktree: null,
             CreateWorkspace(isTrusted: true),
-            new(new("src/App.cs", "before", 6, false, null, null)),
+            new(new("src/App.cs", "before", Hash("before"), 6, false, null, null)),
             new MutationService(),
             editor);
 
@@ -196,7 +196,7 @@ public sealed class WorkbenchDocumentServiceTests
             CreateGoal("Draft"),
             worktree: null,
             CreateWorkspace(isTrusted: false),
-            new(new("src/App.cs", "before", 6, false, null, null)),
+            new(new("src/App.cs", "before", Hash("before"), 6, false, null, null)),
             new MutationService(),
             editor);
 
@@ -220,7 +220,7 @@ public sealed class WorkbenchDocumentServiceTests
         };
         WorkbenchDocumentService service = CreateService(
             CreateGoal("Draft"), worktree: null, CreateWorkspace(isTrusted: true),
-            new(new("src/App.cs", "before", 6, false, null, null)),
+            new(new("src/App.cs", "before", Hash("before"), 6, false, null, null)),
             new MutationService(), editor);
 
         WorkbenchDocumentSaveResult result = await service.SaveAsync(new(
@@ -235,7 +235,7 @@ public sealed class WorkbenchDocumentServiceTests
     [Fact]
     public async Task Revoked_trust_rejects_open_before_any_file_access()
     {
-        FileReader reader = new(new("src/App.cs", "content", 7, false, null, null));
+        FileReader reader = new(new("src/App.cs", "content", Hash("content"), 7, false, null, null));
         WorkbenchDocumentService service = CreateService(
             CreateGoal("Approved"),
             CreateWorktree(),

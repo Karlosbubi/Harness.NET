@@ -38,6 +38,7 @@ public sealed class WorkspaceInspectionServiceTests
 
         Assert.Null(result.Error);
         Assert.Equal("source", result.Content);
+        Assert.Equal("hash", result.Sha256);
         Assert.Equal(1, reader.ReadCount);
         Assert.Equal("/workspace/repository", reader.LastRoot);
     }
@@ -143,6 +144,7 @@ public sealed class WorkspaceInspectionServiceTests
             return ValueTask.FromResult(new WorkspaceFileRead(
                 relativePath,
                 "source",
+                "hash",
                 6,
                 IsTruncated: false,
                 ErrorCode: null,

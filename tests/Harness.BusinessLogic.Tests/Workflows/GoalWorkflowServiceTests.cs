@@ -1,5 +1,7 @@
 using Harness.BusinessLogic.Agents;
+using Harness.BusinessLogic.Evidence;
 using Harness.BusinessLogic.Goals;
+using Harness.BusinessLogic.Tools;
 using Harness.BusinessLogic.Workflows;
 using Harness.DataAccess.Workflows;
 using StoredActor = Harness.DataAccess.Workflows.WorkflowActor;
@@ -47,6 +49,16 @@ public sealed class GoalWorkflowServiceTests
         Assert.Equal(
             [AgentRole.Lead, AgentRole.Implementer, AgentRole.Reviewer],
             agents.Requests.Select(request => request.Role));
+        Assert.Contains("call inspect_dotnet", agents.Requests[0].Task.Value,
+            StringComparison.Ordinal);
+        Assert.Contains("Objective", agents.Requests[0].Task.Value,
+            StringComparison.Ordinal);
+        Assert.Contains("FULL GOAL OBJECTIVE (AUTHORITATIVE)",
+            agents.Requests[1].Task.Value, StringComparison.Ordinal);
+        Assert.Contains("expectedSha256", agents.Requests[1].Task.Value,
+            StringComparison.Ordinal);
+        Assert.Contains("FULL GOAL OBJECTIVE", agents.Requests[2].Task.Value,
+            StringComparison.Ordinal);
         Assert.Equal(GoalTaskState.Completed, Assert.Single(completedReview.Tasks).State);
     }
 
@@ -82,6 +94,27 @@ public sealed class GoalWorkflowServiceTests
             StringComparison.Ordinal);
         Assert.Contains("src/Logic", agents.Requests[2].Task.Value, StringComparison.Ordinal);
         Assert.Equal(["src/Logic"], agents.Requests[2].FileAreas?.Select(area => area.Value));
+    }
+
+    [Fact]
+    public async Task Implementer_report_without_successful_mutation_evidence_does_not_complete_task()
+    {
+        FakeGoalService goals = new();
+        FakeAgentRunner agents = new();
+        InMemoryGoalWorkflowStore store = new();
+        GoalWorkflowService service = CreateService(
+            store, goals, agents, new EmptyToolEvidenceService());
+        _ = await CollectAsync(service.StartPlanningAsync(new(goals.Goal.Id)));
+        goals.Approve();
+
+        GoalWorkflowSnapshot result = (await CollectAsync(
+            service.ResumeAsync(new(goals.Goal.Id))))[^1];
+
+        Assert.Equal(GoalWorkflowState.NeedsDirection, result.State);
+        Assert.Equal(GoalWorkflowRetryRole.Implementer, result.RetryRole);
+        Assert.Equal(GoalTaskState.InProgress, Assert.Single(result.Tasks).State);
+        Assert.Contains("without successful new mutation evidence",
+            result.Activities[^1].Summary.Value, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -440,7 +473,14 @@ public sealed class GoalWorkflowServiceTests
     private static GoalWorkflowService CreateService(
         InMemoryGoalWorkflowStore store,
         IGoalService goals,
-        IAgentRoleRunner agents) => new(store, store, goals, agents, new FixedTimeProvider());
+        IAgentRoleRunner agents,
+        IToolEvidenceService? evidence = null) => new(
+            store,
+            store,
+            goals,
+            agents,
+            evidence ?? new AdvancingToolEvidenceService(),
+            new FixedTimeProvider());
 
     private static StoredGoalWorkflowTask Task(
         StoredRunId runId,
@@ -517,6 +557,39 @@ public sealed class GoalWorkflowServiceTests
             return ValueTask.FromResult(new AgentRunResult(
                 request.Role, new(output), ErrorCode: null, Error: null));
         }
+    }
+
+    private sealed class AdvancingToolEvidenceService : IToolEvidenceService
+    {
+        private int reads;
+
+        public ValueTask<ToolEvidenceSnapshot> ListAsync(
+            string goalId,
+            CancellationToken cancellationToken = default)
+        {
+            int completedMutations = ++reads;
+            ToolEvidenceView[] items = Enumerable.Range(1, completedMutations)
+                .Select(index => new ToolEvidenceView(
+                    new($"evidence-{index}"),
+                    goalId,
+                    new($"correlation-{index}"),
+                    ToolKind.FileEdit,
+                    "{}",
+                    ToolEvidenceState.Succeeded,
+                    "{}",
+                    DateTimeOffset.UtcNow,
+                    DateTimeOffset.UtcNow))
+                .ToArray();
+            return ValueTask.FromResult(new ToolEvidenceSnapshot(items, null, null));
+        }
+    }
+
+    private sealed class EmptyToolEvidenceService : IToolEvidenceService
+    {
+        public ValueTask<ToolEvidenceSnapshot> ListAsync(
+            string goalId,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new ToolEvidenceSnapshot([], null, null));
     }
 
     private sealed class FakeGoalService : IGoalService

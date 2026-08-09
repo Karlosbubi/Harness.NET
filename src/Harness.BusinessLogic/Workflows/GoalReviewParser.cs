@@ -8,7 +8,8 @@ internal static class GoalReviewParser
     {
         try
         {
-            using JsonDocument document = JsonDocument.Parse(value);
+            using JsonDocument document = JsonDocument.Parse(
+                StructuredAgentOutput.NormalizeJson(value));
             JsonElement root = document.RootElement;
             if (root.ValueKind is not JsonValueKind.Object ||
                 !root.TryGetProperty("decision", out JsonElement decisionElement) ||

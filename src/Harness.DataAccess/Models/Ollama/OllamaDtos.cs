@@ -28,6 +28,9 @@ internal sealed class OllamaModelDetails
 
     [JsonPropertyName("quantization_level")]
     public string? QuantizationLevel { get; init; }
+
+    [JsonPropertyName("context_length")]
+    public int? ContextLength { get; init; }
 }
 
 internal sealed class OllamaChatResponse
@@ -67,7 +70,24 @@ internal sealed class OllamaChatRequestPayload
     public bool Stream { get; init; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JsonElement? Format { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public OllamaToolDefinition[]? Tools { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? Think { get; init; }
+
+    public OllamaChatOptions Options { get; init; } = new();
+}
+
+internal sealed class OllamaChatOptions
+{
+    [JsonPropertyName("num_ctx")]
+    public int ContextLength { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? Temperature { get; init; }
 }
 
 internal sealed class OllamaRequestMessage

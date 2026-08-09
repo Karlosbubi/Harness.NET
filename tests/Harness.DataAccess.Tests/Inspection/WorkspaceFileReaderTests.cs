@@ -24,6 +24,23 @@ public sealed class WorkspaceFileReaderTests : IDisposable
         Assert.Equal(64 * 1024, result.Content.Length);
         Assert.Equal(70 * 1024, result.SizeBytes);
         Assert.True(result.IsTruncated);
+        Assert.Null(result.Sha256);
+    }
+
+    [Fact]
+    public async Task Returns_exact_sha256_for_a_complete_editable_read()
+    {
+        Directory.CreateDirectory(root);
+        await File.WriteAllTextAsync(Path.Combine(root, "source.cs"), "hello");
+        WorkspaceFileReader reader = new();
+
+        WorkspaceFileRead result = await reader.ReadAsync(root, "source.cs");
+
+        Assert.Null(result.Error);
+        Assert.False(result.IsTruncated);
+        Assert.Equal(
+            "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+            result.Sha256);
     }
 
     [Fact]

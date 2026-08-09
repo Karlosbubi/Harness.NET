@@ -22,7 +22,8 @@ public sealed class OllamaModelProviderTests
                     "details": {
                       "family": "gemma4",
                       "parameter_size": "8B",
-                      "quantization_level": "Q4_K_M"
+                      "quantization_level": "Q4_K_M",
+                      "context_length": 131072
                     },
                     "capabilities": ["completion", "tools", "thinking"]
                   }]
@@ -38,6 +39,7 @@ public sealed class OllamaModelProviderTests
         Assert.Equal("gemma4:latest", model.Id);
         Assert.Equal("Ollama", model.Provider);
         Assert.Equal("8B", model.ParameterSize);
+        Assert.Equal(131072, model.ContextLength);
         Assert.Equal(["completion", "tools", "thinking"], model.Capabilities);
         Assert.Equal([ModelPurpose.Chat], model.Purposes);
     }
@@ -45,9 +47,11 @@ public sealed class OllamaModelProviderTests
     [Fact]
     public async Task Streams_chat_content_thinking_and_usage()
     {
+        string? requestJson = null;
         using HttpClient httpClient = CreateClient((request, _) =>
         {
             Assert.Equal("/api/chat", request.RequestUri?.AbsolutePath);
+            requestJson = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
             return JsonResponse(
                 "{\"message\":{\"thinking\":\"checking\"},\"done\":false}\n" +
                 "{\"message\":{\"content\":\"hello\"},\"done\":false}\n" +
@@ -69,6 +73,9 @@ public sealed class OllamaModelProviderTests
         Assert.Equal("hello", events[1].Content);
         Assert.True(events[2].Done);
         Assert.Equal(new ProviderUsage(7, 2), events[2].Usage);
+        using JsonDocument body = JsonDocument.Parse(requestJson!);
+        Assert.Equal(32768, body.RootElement.GetProperty("options")
+            .GetProperty("num_ctx").GetInt32());
     }
 
     [Fact]
@@ -126,8 +133,58 @@ public sealed class OllamaModelProviderTests
         using JsonDocument body = JsonDocument.Parse(requestJson!);
         Assert.Equal("read_file", body.RootElement.GetProperty("tools")[0]
             .GetProperty("function").GetProperty("name").GetString());
+        Assert.False(body.RootElement.GetProperty("think").GetBoolean());
+        Assert.Equal(0, body.RootElement.GetProperty("options")
+            .GetProperty("temperature").GetDouble());
         Assert.Equal("{\"content\":\"prior\"}", body.RootElement.GetProperty("messages")[1]
             .GetProperty("content").GetString());
+    }
+
+    [Fact]
+    public async Task Requests_native_json_mode_for_structured_role_output()
+    {
+        string? requestJson = null;
+        using HttpClient httpClient = CreateClient(async (request, cancellationToken) =>
+        {
+            requestJson = await request.Content!.ReadAsStringAsync(cancellationToken);
+            return JsonResponse(
+                "{\"message\":{\"content\":\"{}\"},\"done\":true}\n",
+                "application/x-ndjson");
+        });
+        OllamaModelProvider provider = new(httpClient);
+
+        _ = await CollectAsync(provider.StreamChatAsync(new(
+            "model",
+            [new(ChatRole.User, "return json")],
+            ResponseFormat: ChatResponseFormat.Json)));
+
+        using JsonDocument body = JsonDocument.Parse(requestJson!);
+        Assert.Equal("json", body.RootElement.GetProperty("format").GetString());
+    }
+
+    [Fact]
+    public async Task Requests_native_json_schema_for_exact_structured_output()
+    {
+        string? requestJson = null;
+        using HttpClient httpClient = CreateClient(async (request, cancellationToken) =>
+        {
+            requestJson = await request.Content!.ReadAsStringAsync(cancellationToken);
+            return JsonResponse(
+                "{\"message\":{\"content\":\"{}\"},\"done\":true}\n",
+                "application/x-ndjson");
+        });
+        OllamaModelProvider provider = new(httpClient);
+
+        _ = await CollectAsync(provider.StreamChatAsync(new(
+            "model",
+            [new(ChatRole.User, "return an object")],
+            ResponseFormat: ChatResponseFormat.Json,
+            ResponseSchema: new("{\"type\":\"object\",\"required\":[\"value\"]}"))));
+
+        using JsonDocument body = JsonDocument.Parse(requestJson!);
+        JsonElement format = body.RootElement.GetProperty("format");
+        Assert.Equal("object", format.GetProperty("type").GetString());
+        Assert.Equal("value", format.GetProperty("required")[0].GetString());
     }
 
     [Fact]

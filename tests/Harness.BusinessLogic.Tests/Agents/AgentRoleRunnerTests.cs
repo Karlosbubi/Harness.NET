@@ -1,9 +1,12 @@
 using Harness.BusinessLogic.Agents;
 using Harness.BusinessLogic.Goals;
+using Harness.BusinessLogic.Inspection;
+using Harness.BusinessLogic.Mutations;
 using Harness.DataAccess.Models;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.AI;
 using System.Runtime.CompilerServices;
+using ProviderChatResponseFormat = Harness.DataAccess.Models.ChatResponseFormat;
 
 namespace Harness.BusinessLogic.Tests.Agents;
 
@@ -42,7 +45,31 @@ public sealed class AgentRoleRunnerTests
         Assert.Equal(expectedModel, request.Model);
         Assert.Equal(Harness.DataAccess.Models.ChatRole.System, request.Messages[0].Role);
         Assert.Contains(expectedPrompt, request.Messages[0].Content, StringComparison.Ordinal);
+        if (role is AgentRole.Implementer)
+        {
+            Assert.Contains("first action must be a typed inspection tool call",
+                request.Messages[0].Content, StringComparison.Ordinal);
+            Assert.Contains("A final response before at least one successful mutation is a failed task",
+                request.Messages[0].Content, StringComparison.Ordinal);
+        }
         Assert.Equal("bounded task", request.Messages[^1].Content);
+        Assert.Equal(
+            role is AgentRole.Lead or AgentRole.Reviewer
+                ? ProviderChatResponseFormat.Json
+                : ProviderChatResponseFormat.Text,
+            request.ResponseFormat);
+        if (role is AgentRole.Lead or AgentRole.Reviewer)
+        {
+            Assert.NotNull(request.ResponseSchema);
+            Assert.Contains(role is AgentRole.Lead ? "fileAreas" : "decision",
+                request.ResponseSchema.Value, StringComparison.Ordinal);
+            Assert.Contains("\"minLength\":1", request.ResponseSchema.Value,
+                StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.Null(request.ResponseSchema);
+        }
         Assert.Null(request.RemoteScope);
     }
 
@@ -145,20 +172,112 @@ public sealed class AgentRoleRunnerTests
 
         AgentRunResult result = await runner.RunAsync(new(
             new("goal-tools"),
-            AgentRole.Lead,
-            new("inspect")));
+            AgentRole.Implementer,
+            new("inspect"),
+            [new("src")]));
 
         Assert.Null(result.Error);
-        Assert.Equal("finished after tool", result.Output?.Value);
+        Assert.Equal("finished after edit", result.Output?.Value);
         Assert.Equal("src/Program.cs", tools.RelativePath);
-        Assert.Equal(2, provider.Requests.Count);
+        Assert.Equal("updated source", tools.EditedContent);
+        Assert.Equal(3, provider.Requests.Count);
         Assert.Equal("read_file", Assert.Single(provider.Requests[0].Tools!).Name.Value);
-        ChatToolResult returned = Assert.Single(
+        ChatToolResult readResult = Assert.Single(
             provider.Requests[1].Messages,
             message => message.ToolResult is not null)
             .ToolResult!;
-        Assert.Equal("call-1", returned.CallId.Value);
-        Assert.Contains("bounded file", returned.Result.Value, StringComparison.Ordinal);
+        Assert.Equal("call-1", readResult.CallId.Value);
+        Assert.Contains("bounded file", readResult.Result.Value, StringComparison.Ordinal);
+        Assert.Equal(ProviderChatResponseFormat.Text, provider.Requests[1].ResponseFormat);
+        Assert.Contains(provider.Requests[1].Tools!, tool => tool.Name.Value == "apply_file_edit");
+        ChatToolResult editResult = Assert.Single(
+            provider.Requests[2].Messages,
+            message => message.ToolResult?.CallId.Value == "call-2")
+            .ToolResult!;
+        Assert.Contains("edit applied", editResult.Result.Value, StringComparison.Ordinal);
+        Assert.Equal(ProviderChatResponseFormat.Json, provider.Requests[2].ResponseFormat);
+        Assert.Contains("\"remaining\"", provider.Requests[2].ResponseSchema?.Value,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Gives_implementer_one_in_session_correction_when_it_narrates_without_tools()
+    {
+        NarratingThenToolCallingModelProvider provider = new();
+        CapturingAgentToolFactory tools = new();
+        AgentRoleRunner runner = new(
+            new StubRouteResolver(role => Route(role, "tool-model", provider)),
+            tools,
+            NullLoggerFactory.Instance);
+
+        AgentRunResult result = await runner.RunAsync(new(
+            new("goal-tools"),
+            AgentRole.Implementer,
+            new("implement"),
+            [new("src")]));
+
+        Assert.Null(result.Error);
+        Assert.Equal("finished after correction tool", result.Output?.Value);
+        Assert.Equal("src/Program.cs", tools.RelativePath);
+        Assert.Equal(3, provider.Requests.Count);
+        Assert.Contains("TOOL EXECUTION REQUIRED",
+            provider.Requests[1].Messages[^1].Content, StringComparison.Ordinal);
+        Assert.Contains("BOUNDED TASK", provider.Requests[1].Messages[^1].Content,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Bootstraps_exact_file_inspection_before_requesting_a_mutation()
+    {
+        BootstrapMutationModelProvider provider = new();
+        CapturingAgentToolFactory tools = new() { ReturnWorkspaceFileView = true };
+        AgentRoleRunner runner = new(
+            new StubRouteResolver(role => Route(role, "tool-model", provider)),
+            tools,
+            NullLoggerFactory.Instance);
+
+        AgentRunResult result = await runner.RunAsync(new(
+            new("goal-tools"),
+            AgentRole.Implementer,
+            new("replace the exact source file"),
+            [new("src/Program.cs")]));
+
+        Assert.Null(result.Error);
+        Assert.Equal("src/Program.cs", tools.RelativePath);
+        Assert.Equal("bootstrapped source", tools.EditedContent);
+        Assert.Single(provider.Requests);
+        Assert.Empty(provider.Requests[0].Tools!);
+        Assert.Equal(ProviderChatResponseFormat.Text, provider.Requests[0].ResponseFormat);
+        Assert.Null(provider.Requests[0].ResponseSchema);
+        Assert.Contains("DETERMINISTIC TYPED INSPECTION", provider.Requests[0].Messages[^1].Content,
+            StringComparison.Ordinal);
+        Assert.Contains("bounded file", provider.Requests[0].Messages[^1].Content,
+            StringComparison.Ordinal);
+        Assert.Contains("Applied the typed edit", result.Output?.Value, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Structured_local_test_edit_preserves_source_escapes_and_runs_build_and_test()
+    {
+        const string source = "Console.WriteLine(\"\\n\");";
+        CapturingModelProvider provider = new($"```csharp\n{source}\n```");
+        RecordingMutationService mutations = new();
+        AgentRoleRunner runner = new(
+            new StubRouteResolver(role => Route(role, "tool-model", provider)),
+            new CapturingAgentToolFactory { ReturnWorkspaceFileView = true },
+            NullLoggerFactory.Instance,
+            new StaticInspectionService(),
+            mutations);
+
+        AgentRunResult result = await runner.RunAsync(new(
+            new("goal-tools"),
+            AgentRole.Implementer,
+            new("replace the exact test file"),
+            [new("tests/UnitTest1.cs")]));
+
+        Assert.Null(result.Error);
+        Assert.Equal(source, mutations.Content);
+        Assert.Equal([DotNetOperation.Build, DotNetOperation.Test], mutations.Operations);
     }
 
     private static AgentRoleRunner CreateRunner(
@@ -210,6 +329,8 @@ public sealed class AgentRoleRunnerTests
     private sealed class CapturingAgentToolFactory : IAgentToolFactory
     {
         internal string? RelativePath { get; private set; }
+        internal string? EditedContent { get; private set; }
+        internal bool ReturnWorkspaceFileView { get; init; }
 
         public IList<AITool> Create(
             AgentRole role,
@@ -220,12 +341,44 @@ public sealed class AgentRoleRunnerTests
                 (string relativePath) =>
                 {
                     RelativePath = relativePath;
-                    return "bounded file";
+                    return ReturnWorkspaceFileView
+                        ? (object)new WorkspaceFileView(
+                            relativePath,
+                            "bounded file",
+                            new string('a', 64),
+                            12,
+                            IsTruncated: false,
+                            ErrorCode: null,
+                            Error: null)
+                        : "bounded file";
                 },
                 new()
                 {
                     Name = "read_file",
                     Description = "Read a bounded file.",
+                }),
+            AIFunctionFactory.Create(
+                (string relativePath, string content) =>
+                {
+                    RelativePath = relativePath;
+                    EditedContent = content;
+                    return content == "bootstrapped source"
+                        ? (object)new FileEditView(
+                            "goal-tools",
+                            new("structured-edit"),
+                            relativePath,
+                            PreviousSha256: "old",
+                            NewSha256: "new",
+                            BytesWritten: content.Length,
+                            WasCreated: false,
+                            ErrorCode: null,
+                            Error: null)
+                        : "edit applied";
+                },
+                new()
+                {
+                    Name = "apply_file_edit",
+                    Description = "Apply a bounded file edit.",
                 }),
         ];
     }
@@ -258,13 +411,96 @@ public sealed class AgentRoleRunnerTests
                 yield break;
             }
 
+            if (Requests.Count == 2)
+            {
+                yield return new(
+                    string.Empty,
+                    string.Empty,
+                    Done: true,
+                    DoneReason: "tool_calls",
+                    new(8, 3),
+                    Error: null,
+                    [new(new("call-2"), new("apply_file_edit"),
+                        new("{\"relativePath\":\"src/Program.cs\",\"content\":\"updated source\"}"))]);
+                yield break;
+            }
+
             yield return new(
-                "finished after tool",
+                "finished after edit",
                 string.Empty,
                 Done: true,
                 DoneReason: "stop",
-                new(8, 4),
+                new(12, 4),
                 Error: null);
+        }
+
+        public ValueTask<EmbeddingResult> EmbedAsync(
+            EmbeddingRequest request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class NarratingThenToolCallingModelProvider : IModelProvider
+    {
+        internal List<ChatRequest> Requests { get; } = [];
+
+        public ValueTask<ModelCatalog> GetModelsAsync(CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public async IAsyncEnumerable<ChatStreamEvent> StreamChatAsync(
+            ChatRequest request,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            Requests.Add(request);
+            await Task.Yield();
+            cancellationToken.ThrowIfCancellationRequested();
+            if (Requests.Count == 1)
+            {
+                yield return new("I will inspect the file.", string.Empty, true, "stop",
+                    new(4, 2), Error: null);
+                yield break;
+            }
+
+            if (Requests.Count == 2)
+            {
+                yield return new(
+                    string.Empty,
+                    string.Empty,
+                    Done: true,
+                    DoneReason: "tool_calls",
+                    new(8, 3),
+                    Error: null,
+                    [new(new("call-correction"), new("read_file"),
+                        new("{\"relativePath\":\"src/Program.cs\"}"))]);
+                yield break;
+            }
+
+            yield return new("finished after correction tool", string.Empty, true, "stop",
+                new(12, 4), Error: null);
+        }
+
+        public ValueTask<EmbeddingResult> EmbedAsync(
+            EmbeddingRequest request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class BootstrapMutationModelProvider : IModelProvider
+    {
+        internal List<ChatRequest> Requests { get; } = [];
+
+        public ValueTask<ModelCatalog> GetModelsAsync(CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public async IAsyncEnumerable<ChatStreamEvent> StreamChatAsync(
+            ChatRequest request,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            Requests.Add(request);
+            await Task.Yield();
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return new("```csharp\nbootstrapped source\n```", string.Empty, true,
+                "stop", new(10, 3), Error: null);
         }
 
         public ValueTask<EmbeddingResult> EmbedAsync(
@@ -313,5 +549,75 @@ public sealed class AgentRoleRunnerTests
             EmbeddingRequest request,
             CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
+    }
+
+    private sealed class StaticInspectionService : IGoalWorkspaceInspectionService
+    {
+        public ValueTask<WorkspaceFileView> ReadFileAsync(
+            GoalId goalId,
+            GoalWorkspaceScope scope,
+            string relativePath,
+            CancellationToken cancellationToken = default) => ValueTask.FromResult(new WorkspaceFileView(
+                relativePath,
+                "baseline",
+                new string('a', 64),
+                8,
+                IsTruncated: false,
+                ErrorCode: null,
+                Error: null));
+
+        public ValueTask<WorkspaceTextSearchView> SearchTextAsync(
+            GoalId goalId, GoalWorkspaceScope scope, string query,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<WorkspaceGitStateView> InspectGitAsync(
+            GoalId goalId, GoalWorkspaceScope scope,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<WorkspaceDotNetInfoView> InspectDotNetAsync(
+            GoalId goalId, GoalWorkspaceScope scope,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private sealed class RecordingMutationService : IWorkspaceMutationService
+    {
+        internal string? Content { get; private set; }
+        internal List<DotNetOperation> Operations { get; } = [];
+
+        public ValueTask<FileEditView> ApplyFileEditAsync(
+            FileEditRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            Content = request.Content;
+            return ValueTask.FromResult(new FileEditView(
+                request.GoalId,
+                request.CorrelationId,
+                request.Path,
+                request.ExpectedSha256,
+                new string('b', 64),
+                request.Content.Length,
+                WasCreated: false,
+                ErrorCode: null,
+                Error: null));
+        }
+
+        public ValueTask<DotNetOperationView> RunDotNetAsync(
+            DotNetOperationRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            Operations.Add(request.Operation);
+            return ValueTask.FromResult(new DotNetOperationView(
+                request.GoalId,
+                request.CorrelationId,
+                request.Operation,
+                "Harness.slnx",
+                ExitCode: 0,
+                StandardOutput: string.Empty,
+                StandardError: string.Empty,
+                IsOutputTruncated: false,
+                IsErrorTruncated: false,
+                WasCancelled: false,
+                DurationMilliseconds: 1,
+                ErrorCode: null,
+                Error: null));
+        }
     }
 }

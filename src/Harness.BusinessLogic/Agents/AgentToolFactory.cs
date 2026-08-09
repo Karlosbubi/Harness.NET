@@ -33,7 +33,9 @@ internal sealed class AgentToolFactory(
             (string relativePath, CancellationToken cancellationToken) =>
                 inspectionService.ReadFileAsync(
                     goalId, Scope(role), relativePath, cancellationToken),
-            Options("read_file", "Read one bounded file from the goal workspace.")),
+            Options("read_file", "Read one bounded existing file from the goal workspace. " +
+                "A complete read returns sha256; pass that exact value as expectedSha256 " +
+                "when replacing the file with apply_file_edit.")),
         AgentToolKind.SearchText => AIFunctionFactory.Create(
             (string query, CancellationToken cancellationToken) =>
                 inspectionService.SearchTextAsync(
@@ -73,7 +75,12 @@ internal sealed class AgentToolFactory(
                         "task_file_area_denied",
                         "The delegated task does not authorize edits in this file area.")),
             Options("apply_file_edit",
-                "Validate and atomically apply one file replacement in the approved goal worktree.")),
+                "Validate and atomically replace one file in the approved goal worktree. " +
+                "For C#, project, solution, props, or targets files, first call read_file on " +
+                "the exact existing path and pass its sha256 as expectedSha256. Do not invent " +
+                "compiler-input paths; new compiler files are rejected without a baseline. " +
+                "Submit complete production code: TODO, FIXME, placeholder or omitted logic, " +
+                "and NotImplementedException are deterministically rejected.")),
         AgentToolKind.PreviewRename => AIFunctionFactory.Create(
             (string relativePath, string expectedSha256, string content, int line, int character,
                     string newName, CancellationToken cancellationToken) =>

@@ -12,7 +12,8 @@ internal static class GoalDelegationParser
     {
         try
         {
-            using JsonDocument document = JsonDocument.Parse(value);
+            using JsonDocument document = JsonDocument.Parse(
+                StructuredAgentOutput.NormalizeJson(value));
             JsonElement root = document.RootElement;
             if (root.ValueKind is not JsonValueKind.Object ||
                 !ExactProperties(root, "plan", "tasks") ||
@@ -32,6 +33,7 @@ internal static class GoalDelegationParser
             }
 
             List<GoalDelegatedTask> tasks = [];
+            int ignoredDiscoveryTasks = 0;
             foreach (JsonElement task in tasksElement.EnumerateArray())
             {
                 if (task.ValueKind is not JsonValueKind.Object ||
@@ -48,8 +50,28 @@ internal static class GoalDelegationParser
                         "acceptanceCriteria values.");
                 }
 
+                if (IsStandaloneDiscoveryTask(title, objective))
+                {
+                    ignoredDiscoveryTasks++;
+                    continue;
+                }
+
                 tasks.Add(new(new(title), new(objective), new(fileAreas),
                     new(acceptanceCriteria)));
+            }
+
+            if (tasks.Count == 0)
+            {
+                return Failure(
+                    "Standalone discovery, inspection, planning, and validation tasks are not " +
+                    "delegated work. Fold required inspection and validation into an implementation slice.");
+            }
+
+            if (ignoredDiscoveryTasks > 0)
+            {
+                plan += $"\n\nHarness normalization: ignored {ignoredDiscoveryTasks} standalone " +
+                    "discovery/inspection/planning/validation task(s); implementers inspect and " +
+                    "validate within the retained durable slices.";
             }
 
             return new(plan, tasks, Error: null);
@@ -66,6 +88,29 @@ internal static class GoalDelegationParser
         return actual.Length == expected.Length &&
             expected.All(name => actual.Contains(name, StringComparer.Ordinal));
     }
+
+    private static bool IsStandaloneDiscoveryTask(string title, string objective)
+    {
+        string combined = $"{title} {objective}";
+        string[] nonMutationWords =
+        [
+            "inspect", "analyze", "analyse", "discover", "explore", "inventory", "assess",
+            "plan", "planning", "build", "test", "verify", "validate", "review", "document",
+        ];
+        string[] strongMutationWords =
+            ["implement", "update", "change", "fix", "replace", "remove", "refactor", "integrate"];
+        string[] weakMutationWords = ["create", "add", "write"];
+        bool hasNonMutationWord = nonMutationWords.Any(word => ContainsWord(combined, word));
+        bool hasStrongMutation = strongMutationWords.Any(word => ContainsWord(combined, word));
+        bool hasWeakMutation = weakMutationWords.Any(word => ContainsWord(combined, word));
+        bool isPlanning = ContainsWord(combined, "plan") || ContainsWord(combined, "planning");
+        return hasNonMutationWord && !hasStrongMutation && (!hasWeakMutation || isPlanning);
+    }
+
+    private static bool ContainsWord(string value, string word) =>
+        value.Split([' ', '\t', '\r', '\n', ',', '.', ':', ';', '-', '_', '/', '(', ')'],
+                StringSplitOptions.RemoveEmptyEntries)
+            .Contains(word, StringComparer.OrdinalIgnoreCase);
 
     private static bool Text(
         JsonElement element,

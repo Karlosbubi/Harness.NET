@@ -120,6 +120,33 @@ public sealed class RoslynCodeIntelligenceEngineTests(ITestOutputHelper output) 
     }
 
     [Fact]
+    public async Task Candidate_validation_includes_transitive_dependent_projects()
+    {
+        const string original = "namespace Contracts; public sealed class Contract { public int Value { get; } }\n";
+        const string candidate = "namespace Contracts; public sealed class Contract { }\n";
+        await CreateDependentSolutionAsync(original);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("context-1");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(new(
+            contextId,
+            new(root),
+            new("Dependent.slnx"),
+            CodeIntelligenceSourceKind.ApprovedGoalWorktree));
+
+        CodeIntelligenceValidationResult result = await engine.ValidateAsync(new(
+            contextId,
+            session.SessionId!,
+            CodeIntelligenceValidationPhase.Candidate,
+            [new(new("Contracts/Contract.cs"), new(Hash(original)), new(candidate))]));
+
+        Assert.Equal(CodeIntelligenceValidationDisposition.Rejected, result.Disposition);
+        Assert.Contains(result.Diagnostics, diagnostic =>
+            diagnostic.Kind is CodeIntelligenceDiagnosticDeltaKind.Introduced &&
+            diagnostic.Diagnostic.Project?.Value == "Consumer" &&
+            diagnostic.Diagnostic.Severity is CodeIntelligenceDiagnosticSeverity.Error);
+    }
+
+    [Fact]
     public async Task Candidate_validation_preserves_existing_errors_and_reports_warning_evidence()
     {
         const string original = "class Sample { Missing value; }\n";
@@ -688,6 +715,46 @@ public sealed class RoslynCodeIntelligenceEngineTests(ITestOutputHelper output) 
             <Solution>
               <Project Path="First/First.csproj" />
               <Project Path="Second/Second.csproj" />
+            </Solution>
+            """);
+    }
+
+    private async ValueTask CreateDependentSolutionAsync(string contract)
+    {
+        Directory.CreateDirectory(Path.Combine(root, "Contracts"));
+        Directory.CreateDirectory(Path.Combine(root, "Consumer"));
+        await File.WriteAllTextAsync(Path.Combine(root, "global.json"), """
+            {
+              "sdk": {
+                "version": "10.0.201",
+                "rollForward": "latestPatch",
+                "allowPrerelease": false
+              }
+            }
+            """);
+        await File.WriteAllTextAsync(Path.Combine(root, "Contracts", "Contracts.csproj"), """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+            </Project>
+            """);
+        await File.WriteAllTextAsync(
+            Path.Combine(root, "Contracts", "Contract.cs"),
+            contract,
+            Utf8WithoutBom);
+        await File.WriteAllTextAsync(Path.Combine(root, "Consumer", "Consumer.csproj"), """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+              <ItemGroup><ProjectReference Include="../Contracts/Contracts.csproj" /></ItemGroup>
+            </Project>
+            """);
+        await File.WriteAllTextAsync(
+            Path.Combine(root, "Consumer", "Use.cs"),
+            "using Contracts; class Use { int Read(Contract value) => value.Value; }\n",
+            Utf8WithoutBom);
+        await File.WriteAllTextAsync(Path.Combine(root, "Dependent.slnx"), """
+            <Solution>
+              <Project Path="Contracts/Contracts.csproj" />
+              <Project Path="Consumer/Consumer.csproj" />
             </Solution>
             """);
     }

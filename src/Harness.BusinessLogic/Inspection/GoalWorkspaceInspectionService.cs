@@ -23,7 +23,7 @@ internal sealed class GoalWorkspaceInspectionService(
         GoalInspectionContext? context = await ResolveAsync(goalId, scope, cancellationToken);
         if (context is null)
         {
-            return new(relativePath, string.Empty, 0, false,
+            return new(relativePath, string.Empty, Sha256: null, 0, false,
                 "goal_workspace_unavailable", "The trusted goal workspace is unavailable.");
         }
 
@@ -31,7 +31,7 @@ internal sealed class GoalWorkspaceInspectionService(
             context.RootPath,
             relativePath,
             cancellationToken);
-        return new(result.Path, result.Content, result.SizeBytes, result.IsTruncated,
+        return new(result.Path, result.Content, result.Sha256, result.SizeBytes, result.IsTruncated,
             result.ErrorCode, result.Error);
     }
 

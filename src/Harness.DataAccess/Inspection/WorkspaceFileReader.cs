@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text;
 
 namespace Harness.DataAccess.Inspection;
@@ -57,9 +58,13 @@ internal sealed class WorkspaceFileReader : IWorkspaceFileReader
 
             bool isTruncated = file.Length > MaximumContentBytes;
             string content = DecodeUtf8(buffer, offset, isTruncated);
+            string? sha256 = isTruncated
+                ? null
+                : Convert.ToHexStringLower(SHA256.HashData(buffer.AsSpan(0, offset)));
             return new(
                 confinedPath,
                 content,
+                sha256,
                 file.Length,
                 isTruncated,
                 ErrorCode: null,
@@ -98,5 +103,5 @@ internal sealed class WorkspaceFileReader : IWorkspaceFileReader
         string code,
         string error,
         long sizeBytes = 0) =>
-        new(path, string.Empty, sizeBytes, IsTruncated: false, code, error);
+        new(path, string.Empty, Sha256: null, sizeBytes, IsTruncated: false, code, error);
 }

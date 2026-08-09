@@ -8,7 +8,11 @@ namespace Harness.DataAccess.Models.Ollama;
 internal sealed class OllamaModelProvider(HttpClient httpClient) : IModelProvider
 {
     private const string ProviderName = "Ollama";
+    private const int DefaultAgentContextLength = 32_768;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private readonly Dictionary<string, int> contextLengthByModel =
+        new(StringComparer.Ordinal);
+    private readonly Lock contextLengthLock = new();
 
     public async ValueTask<ModelCatalog> GetModelsAsync(
         CancellationToken cancellationToken = default)
@@ -53,9 +57,20 @@ internal sealed class OllamaModelProvider(HttpClient httpClient) : IModelProvide
                         model.Details?.ParameterSize,
                         model.Details?.QuantizationLevel,
                         model.Capabilities,
+                        ContextLength: model.Details?.ContextLength,
                         Purposes: Purposes(model.Capabilities)))
                     .Where(model => !string.IsNullOrWhiteSpace(model.Id))
                     .ToArray() ?? [];
+                lock (contextLengthLock)
+                {
+                    foreach (ModelDescriptor model in models)
+                    {
+                        if (model.ContextLength is > 0)
+                        {
+                            contextLengthByModel[model.Id] = model.ContextLength.Value;
+                        }
+                    }
+                }
                 return new(models, Error: null);
             }
             catch (JsonException exception)
@@ -86,7 +101,14 @@ internal sealed class OllamaModelProvider(HttpClient httpClient) : IModelProvide
                 Model = request.Model,
                 Messages = request.Messages.Select(MapMessage).ToArray(),
                 Stream = true,
+                Format = ResponseFormat(request),
                 Tools = MapTools(request.Tools),
+                Think = request.Tools is { Count: > 0 } ? false : null,
+                Options = new()
+                {
+                    ContextLength = ResolveContextLength(request),
+                    Temperature = request.Tools is { Count: > 0 } ? 0 : null,
+                },
             }),
         };
 
@@ -200,6 +222,23 @@ internal sealed class OllamaModelProvider(HttpClient httpClient) : IModelProvide
         }).ToArray(),
     };
 
+    private static JsonElement? ResponseFormat(ChatRequest request)
+    {
+        if (request.ResponseSchema is not null)
+        {
+            using JsonDocument schema = JsonDocument.Parse(request.ResponseSchema.Value);
+            return schema.RootElement.Clone();
+        }
+
+        if (request.ResponseFormat is not ChatResponseFormat.Json)
+        {
+            return null;
+        }
+
+        using JsonDocument json = JsonDocument.Parse("\"json\"");
+        return json.RootElement.Clone();
+    }
+
     private static OllamaToolDefinition[]? MapTools(
         IReadOnlyList<ChatToolDefinition>? tools) =>
         tools is null || tools.Count == 0
@@ -213,6 +252,24 @@ internal sealed class OllamaModelProvider(HttpClient httpClient) : IModelProvide
                     Parameters = JsonDocument.Parse(tool.JsonSchema.Value).RootElement.Clone(),
                 },
             }).ToArray();
+
+    private int ResolveContextLength(ChatRequest request)
+    {
+        long characterCount = request.Messages.Sum(message => (long)message.Content.Length) +
+                              (request.ResponseSchema?.Value.Length ?? 0) +
+                              (request.Tools?.Sum(tool =>
+                                  (long)tool.Description.Value.Length + tool.JsonSchema.Value.Length) ?? 0);
+        long estimatedInputTokens = (characterCount + 2) / 3;
+        int desired = (int)Math.Min(
+            int.MaxValue,
+            Math.Max(DefaultAgentContextLength, (estimatedInputTokens * 2) + 4_096));
+        lock (contextLengthLock)
+        {
+            return contextLengthByModel.TryGetValue(request.Model, out int advertisedMaximum)
+                ? Math.Min(desired, advertisedMaximum)
+                : desired;
+        }
+    }
 
     public async ValueTask<EmbeddingResult> EmbedAsync(
         EmbeddingRequest request,

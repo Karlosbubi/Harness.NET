@@ -391,6 +391,13 @@ internal sealed partial class RoslynCodeIntelligenceEngine(IMSBuildRuntime msBui
                 }
             }
 
+            ProjectDependencyGraph dependencyGraph = candidate.GetProjectDependencyGraph();
+            foreach (ProjectId projectId in affectedProjects.ToArray())
+            {
+                affectedProjects.UnionWith(
+                    dependencyGraph.GetProjectsThatTransitivelyDependOnThisProject(projectId));
+            }
+
             IReadOnlyList<CollectedDiagnostic> baselineDiagnostics =
                 await CollectDiagnosticsAsync(baseline, affectedProjects, session.RootPath, cancellationToken);
             IReadOnlyList<CollectedDiagnostic> candidateDiagnostics =

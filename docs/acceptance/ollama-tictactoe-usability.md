@@ -1,13 +1,14 @@
 # Ollama Tic-Tac-Toe usability exercise
 
 `eng/verify-ollama-tictactoe-usability.py` is a deliberately model-driven daily-use
-exercise. Unlike the deterministic release verifier, it uses one real tool-capable
-Ollama model for Lead, Implementer, and Reviewer and drives the production Avalonia
+exercise. Unlike the deterministic release verifier, it uses real tool-capable
+Ollama models for Lead, Implementer, Reviewer, and bounded recovery and drives the production Avalonia
 surface exclusively through Linux AT-SPI.
 
 The script creates a persistent isolated diagnostic root containing:
 
-- a restored and initially compiling .NET 10 solution with console and xUnit projects;
+- a restored and initially compiling .NET 10 solution with console, xUnit, and
+  read-only acceptance projects, all configured to treat warnings as errors;
 - private XDG configuration containing only an Ollama provider;
 - the Harness.NET SQLite database, logs, and isolated goal worktree;
 - phase timings and durable workflow/checkpoint state in `usability-report.json`;
@@ -17,10 +18,16 @@ Harness receives a bounded goal to replace the seed stubs with a playable human-
 versus computer-O game, immutable game engine, minimax solver, input validation, and
 meaningful generated tests. The exercise crosses the plan-model selection surface,
 approves the generated plan, and continues the real Implementer/Reviewer workflow.
-Because the current Avalonia model picker is exposed to AT-SPI as a generic panel,
-the script records that accessibility defect and uses the only configured model's
-default selection. If planning enters `NeedsDirection`, it exercises the recovery
-dialog once with explicit JSON-only guidance before reporting a persistent failure.
+If planning or implementation enters `NeedsDirection`, the script exercises the
+searchable recovery model selector and supplies bounded corrective guidance. Activity
+tracking includes durable tool calls as well as workflow checkpoints, so an active
+compiler-correction loop is not misreported as a hung workflow.
+
+Local exact-file generation returns fenced source text rather than embedding source in
+a JSON string; this preserves C# escape sequences. Each accepted model-authored C# edit
+must introduce no compiler warning or error, including errors in transitive dependent
+projects. Harness then runs a no-restore solution build, and test-source edits must also
+pass the real test suite before the Implementer can report completion.
 
 Acceptance does not trust the model-authored tests alone. After Harness reaches
 `AwaitingAcceptance`, the script independently:
@@ -49,3 +56,19 @@ failure so usability stalls can be inspected rather than erased.
 Failed reports include checkpoint summaries and recent typed-tool errors, making
 model loops and deterministic code-intelligence rejections visible without querying
 the SQLite database manually.
+
+## Evaluation on 2026-08-09
+
+The exercise found and closed four false-positive completion paths: introduced
+warnings were accepted, dependent projects were not recompiled, structured source was
+damaged by JSON escaping, and generated tests were not executed before model review.
+The normal deterministic Harness.NET suite remained green after those fixes.
+
+The local-model usability result is still a failure, not an acceptance: Gemma 4,
+Mistral Nemo, and Granite 3.3 required many compiler-rejected full-file proposals and
+did not reliably finish the four-file project within a reasonable interactive session.
+Raw fenced-source transport materially improved one run—`GameState` converged after
+one correction and `MinimaxSolver` passed first try—but later runs still exhausted
+bounded retries. The retained diagnostic roots under `artifacts/usability/` are the
+evidence. These models should not be treated as dependable default Implementers until
+proposal repair becomes more targeted than repeated full-file rewriting.

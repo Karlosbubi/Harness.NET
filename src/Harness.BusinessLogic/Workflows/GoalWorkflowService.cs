@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using Harness.BusinessLogic.Agents;
+using Harness.BusinessLogic.Evidence;
 using Harness.BusinessLogic.Goals;
 using Harness.DataAccess.Workflows;
 using StoredActor = Harness.DataAccess.Workflows.WorkflowActor;
@@ -14,6 +15,7 @@ internal sealed class GoalWorkflowService(
     IGoalWorkflowTaskStore taskStore,
     IGoalService goalService,
     IAgentRoleRunner agentRunner,
+    IToolEvidenceService evidenceService,
     TimeProvider timeProvider) : IGoalWorkflowService
 {
     public async ValueTask<GoalWorkflowSnapshot?> GetLatestAsync(
@@ -286,6 +288,8 @@ internal sealed class GoalWorkflowService(
             yield return await ToViewAsync(snapshot, cancellationToken);
 
             AgentRunResult revision;
+            HashSet<string> evidenceBefore = await EvidenceIdsAsync(
+                goal.Id, cancellationToken);
             try
             {
                 revision = await agentRunner.RunAsync(new(
@@ -307,6 +311,18 @@ internal sealed class GoalWorkflowService(
                 snapshot = await MarkAgentFailureAsync(snapshot, revision,
                     $"Implementer correction failed and was not replayed: {revision.Error?.Value}",
                     cancellationToken);
+                yield return await ToViewAsync(snapshot, cancellationToken);
+                yield break;
+            }
+
+            if (!await HasNewDurableMutationEvidenceAsync(
+                    goal.Id, evidenceBefore, CancellationToken.None))
+            {
+                snapshot = await MarkDirectionAsync(snapshot,
+                    "The Implementer returned a correction report without successful new " +
+                    "mutation evidence. The correction remains in progress " +
+                    "and requires retry.",
+                    CancellationToken.None);
                 yield return await ToViewAsync(snapshot, cancellationToken);
                 yield break;
             }
@@ -340,6 +356,8 @@ internal sealed class GoalWorkflowService(
                 delegatedTask.Id, timeProvider.GetUtcNow(), cancellationToken);
 
             AgentRunResult implementation;
+            HashSet<string> evidenceBefore = await EvidenceIdsAsync(
+                goal.Id, cancellationToken);
             try
             {
                 implementation = await agentRunner.RunAsync(new(
@@ -361,6 +379,18 @@ internal sealed class GoalWorkflowService(
                     $"Delegated task {delegatedTask.Sequence.Value} failed and was not replayed: " +
                     implementation.Error?.Value,
                     cancellationToken);
+                yield return await ToViewAsync(snapshot, cancellationToken);
+                yield break;
+            }
+
+            if (!await HasNewDurableMutationEvidenceAsync(
+                    goal.Id, evidenceBefore, CancellationToken.None))
+            {
+                snapshot = await MarkDirectionAsync(snapshot,
+                    $"Delegated task {delegatedTask.Sequence.Value} returned a report without " +
+                    "successful new mutation evidence. The task remains in progress and " +
+                    "requires retry.",
+                    CancellationToken.None);
                 yield return await ToViewAsync(snapshot, cancellationToken);
                 yield break;
             }
@@ -474,6 +504,10 @@ internal sealed class GoalWorkflowService(
             string implementerTask = WithRetryGuidance(
                 ImplementerTask(goal, plan, task, delegatedTasks.Count),
                 request.Guidance);
+            implementerTask += await LatestFailedToolFeedbackAsync(
+                goal.Id, cancellationToken);
+            HashSet<string> evidenceBefore = await EvidenceIdsAsync(
+                goal.Id, cancellationToken);
             AgentRunResult implementation;
             try
             {
@@ -496,6 +530,17 @@ internal sealed class GoalWorkflowService(
                     $"Retried delegated task {task.Sequence.Value} failed and was not replayed: " +
                     implementation.Error?.Value,
                     cancellationToken);
+                yield return await ToViewAsync(snapshot, cancellationToken);
+                yield break;
+            }
+
+            if (!await HasNewDurableMutationEvidenceAsync(
+                    goal.Id, evidenceBefore, CancellationToken.None))
+            {
+                snapshot = await MarkDirectionAsync(snapshot,
+                    $"Retried delegated task {task.Sequence.Value} returned a report without " +
+                    "successful new mutation evidence. The task remains in progress.",
+                    CancellationToken.None);
                 yield return await ToViewAsync(snapshot, cancellationToken);
                 yield break;
             }
@@ -753,6 +798,8 @@ internal sealed class GoalWorkflowService(
             yield return await ToViewAsync(snapshot, cancellationToken);
 
             AgentRunResult revision;
+            HashSet<string> evidenceBefore = await EvidenceIdsAsync(
+                goal.Id, cancellationToken);
             try
             {
                 revision = await agentRunner.RunAsync(new(
@@ -778,6 +825,17 @@ internal sealed class GoalWorkflowService(
                 yield break;
             }
 
+            if (!await HasNewDurableMutationEvidenceAsync(
+                    goal.Id, evidenceBefore, CancellationToken.None))
+            {
+                snapshot = await MarkDirectionAsync(snapshot,
+                    "The Implementer returned a review-correction report without successful " +
+                    "new mutation evidence. The correction remains in progress.",
+                    CancellationToken.None);
+                yield return await ToViewAsync(snapshot, cancellationToken);
+                yield break;
+            }
+
             implementationOutput = revision.Output;
             snapshot = await AppendAsync(snapshot, StoredKind.ImplementationProduced,
                 StoredActor.Implementer,
@@ -794,6 +852,71 @@ internal sealed class GoalWorkflowService(
         CancellationToken cancellationToken) =>
         await goalService.GetAsync(goalId, cancellationToken) ??
         throw new InvalidOperationException("The goal does not exist.");
+
+    private async ValueTask<HashSet<string>> EvidenceIdsAsync(
+        GoalId goalId,
+        CancellationToken cancellationToken)
+    {
+        ToolEvidenceSnapshot evidence = await evidenceService.ListAsync(
+            goalId.Value, cancellationToken);
+        if (evidence.ErrorCode is not null)
+        {
+            throw new InvalidOperationException(
+                $"Tool evidence is unavailable: {evidence.Error ?? evidence.ErrorCode}");
+        }
+
+        return evidence.Items.Select(item => item.Id.Value).ToHashSet(StringComparer.Ordinal);
+    }
+
+    private async ValueTask<string> LatestFailedToolFeedbackAsync(
+        GoalId goalId,
+        CancellationToken cancellationToken)
+    {
+        const int maximumResultCharacters = 16 * 1024;
+        ToolEvidenceSnapshot evidence = await evidenceService.ListAsync(
+            goalId.Value, cancellationToken);
+        ToolEvidenceView? failed = evidence.ErrorCode is null
+            ? evidence.Items
+                .Where(item => item.State is ToolEvidenceState.Failed)
+                .OrderByDescending(item => item.StartedAt)
+                .FirstOrDefault()
+            : null;
+        if (failed is null)
+        {
+            return string.Empty;
+        }
+
+        string result = failed.ResultJson ?? "No structured failure result was recorded.";
+        if (result.Length > maximumResultCharacters)
+        {
+            result = result[..maximumResultCharacters] + "\n[truncated]";
+        }
+
+        return $$"""
+
+
+            LATEST FAILED TOOL EVIDENCE
+            The prior attempt's durable failure follows. Correct these exact diagnostics; do not
+            repeat the rejected candidate.
+            Tool: {{failed.Tool}}
+            Correlation: {{failed.CorrelationId.Value}}
+            Result:
+            {{result}}
+            """;
+    }
+
+    private async ValueTask<bool> HasNewDurableMutationEvidenceAsync(
+        GoalId goalId,
+        IReadOnlySet<string> previousIds,
+        CancellationToken cancellationToken)
+    {
+        ToolEvidenceSnapshot evidence = await evidenceService.ListAsync(
+            goalId.Value, cancellationToken);
+        return evidence.ErrorCode is null && evidence.Items.Any(item =>
+            !previousIds.Contains(item.Id.Value) &&
+            item.State is ToolEvidenceState.Succeeded &&
+            item.Tool is ToolKind.FileEdit or ToolKind.Rename);
+    }
 
     private async ValueTask<StoredGoalWorkflowSnapshot> MarkDirectionAsync(
         StoredGoalWorkflowSnapshot snapshot,
@@ -877,17 +1000,27 @@ internal sealed class GoalWorkflowService(
                 """;
 
     private static string LeadTask(GoalView goal) => $$"""
-        Inspect the trusted workspace with your read-only typed tools and propose a bounded,
-        verifiable implementation plan for this goal.
+        Inspect the trusted workspace with your read-only typed tools before answering. At minimum,
+        call inspect_dotnet and inspect the relevant existing source/test paths with read_file or
+        search_text. Then propose a bounded, verifiable implementation plan for this goal.
 
         Goal: {{goal.Title}}
         Objective: {{goal.Objective}}
 
-        Return JSON only with exactly this shape. Supply 1-12 ordered tasks. Order tasks so each
+        Return JSON only with exactly this shape (one surrounding ```json fence is tolerated but
+        unnecessary). Supply 1-12 ordered tasks. Order tasks so each
         completed prefix is coherent, useful, and verifiable if a monetary cost limit stops later
         work: establish the smallest end-to-end foundation first, then add value in independently
-        shippable increments. Each task must be bounded, name concrete repository-relative file
-        areas, and define objective acceptance criteria. Put optional polish last. Include explicit
+        shippable increments. Each task must be bounded and define objective acceptance criteria.
+        Do not create standalone discovery, inspection, planning, or status-report tasks. Fold
+        necessary inspection into the first implementation slice. Every delegated task must end
+        with durable successful mutation or build/test evidence from the typed tools.
+        File areas are mutation grants: name only exact existing repository-relative files or
+        directories that you observed, unless the goal explicitly authorizes creating a path.
+        Prefer the smallest observed directory that contains all files for a slice. If the goal says
+        to edit only existing files, never propose a new filename. Preserve exact public APIs,
+        indexing conventions, validation commands, and prohibitions from the objective in the
+        relevant delegated task rather than paraphrasing them away. Put optional polish last. Include explicit
         partial-completion checkpoints, verification, risks, and non-goals in the plan. Do not
         implement or claim that work is complete.
 
@@ -911,12 +1044,18 @@ internal sealed class GoalWorkflowService(
         int taskCount) => $$"""
         Implement only delegated task {{task.Sequence.Value}}/{{taskCount}} for goal
         '{{goal.Title}}' using typed goal-worktree tools. Respect its file-area boundary;
-        inspect before editing, use atomic edits with correlation identifiers, then run the
+        inspect each exact existing target with read_file before editing and pass the returned
+        sha256 as expectedSha256 to apply_file_edit. Never invent a path or baseline. If a tool
+        rejects a request, use its error as evidence, inspect the workspace, and correct the request
+        with a new correlation identifier. Use atomic edits, then run the
         narrowest relevant build and tests without restore. Do not broaden scope or claim
         success without durable tool evidence. Work in small durable increments. Before broadening
         the change, leave the current increment coherent and run its narrow validation. If the
         provider or cost boundary stops the call, do not fabricate completion: preserve the last
         verified state and report completed criteria, validation, and remaining work separately.
+
+        FULL GOAL OBJECTIVE (AUTHORITATIVE)
+        {{goal.Objective}}
 
         APPROVED PLAN
         {{plan.Content}}
@@ -969,6 +1108,9 @@ internal sealed class GoalWorkflowService(
         and unsupported completion claims against the approved plan.
 
         GOAL: {{goal.Title}}
+        FULL GOAL OBJECTIVE:
+        {{goal.Objective}}
+
         APPROVED PLAN:
         {{plan.Content}}
 
@@ -988,6 +1130,9 @@ internal sealed class GoalWorkflowService(
         '{{goal.Title}}'. Use only typed goal-worktree tools, inspect before editing, preserve
         the approved plan's scope, and build and test without restore. Do not claim success
         without durable tool evidence.
+
+        FULL GOAL OBJECTIVE (AUTHORITATIVE)
+        {{goal.Objective}}
 
         APPROVED PLAN
         {{plan.Content}}

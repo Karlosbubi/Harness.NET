@@ -6,6 +6,7 @@ using Microsoft.Extensions.AI;
 using AIChatRole = Microsoft.Extensions.AI.ChatRole;
 using ProviderChatMessage = Harness.DataAccess.Models.ChatMessage;
 using ProviderChatRole = Harness.DataAccess.Models.ChatRole;
+using ProviderChatResponseFormat = Harness.DataAccess.Models.ChatResponseFormat;
 
 namespace Harness.BusinessLogic.Agents;
 
@@ -13,8 +14,60 @@ internal sealed class ModelProviderChatClient(
     IModelProvider provider,
     AgentModel model,
     GoalId? remoteGoalId,
-    AgentRole role) : IChatClient
+    AgentRole role,
+    bool implementerInspectionBootstrapped = false,
+    bool structuredLocalFileEditProposal = false) : IChatClient
 {
+    private int toolCallCount;
+    private const string LeadResponseSchema = """
+        {
+          "type":"object",
+          "additionalProperties":false,
+          "required":["plan","tasks"],
+          "properties":{
+            "plan":{"type":"string","minLength":1},
+            "tasks":{
+              "type":"array","minItems":1,
+              "items":{
+                "type":"object","additionalProperties":false,
+                "required":["title","objective","fileAreas","acceptanceCriteria"],
+                "properties":{
+                  "title":{"type":"string","minLength":1},
+                  "objective":{"type":"string","minLength":1},
+                  "fileAreas":{"type":"array","minItems":1,"items":{"type":"string","minLength":1}},
+                  "acceptanceCriteria":{"type":"array","minItems":1,"items":{"type":"string","minLength":1}}
+                }
+              }
+            }
+          }
+        }
+        """;
+    private const string ReviewerResponseSchema = """
+        {
+          "type":"object",
+          "additionalProperties":false,
+          "required":["decision","summary"],
+          "properties":{
+            "decision":{"type":"string","enum":["accept","revise"]},
+            "summary":{"type":"string","minLength":1}
+          }
+        }
+        """;
+    private const string ImplementerHandoffSchema = """
+        {
+          "type":"object",
+          "additionalProperties":false,
+          "required":["status","summary","validation","remaining"],
+          "properties":{
+            "status":{"type":"string","enum":["complete","partial"]},
+            "summary":{"type":"string","minLength":1},
+            "validation":{"type":"array","items":{"type":"string"}},
+            "remaining":{"type":"array","items":{"type":"string"}}
+          }
+        }
+        """;
+    internal int ToolCallCount => Volatile.Read(ref toolCallCount);
+
     public async Task<ChatResponse> GetResponseAsync(
         IEnumerable<Microsoft.Extensions.AI.ChatMessage> messages,
         ChatOptions? options = null,
@@ -42,15 +95,44 @@ internal sealed class ModelProviderChatClient(
         ChatOptions? options = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        List<Microsoft.Extensions.AI.ChatMessage> inputMessages = messages.ToList();
+        bool followsToolResult = inputMessages.Any(message =>
+            message.Contents.OfType<FunctionResultContent>().Any());
+        HashSet<string> completedCallIds = inputMessages
+            .SelectMany(message => message.Contents.OfType<FunctionResultContent>())
+            .Select(result => result.CallId)
+            .ToHashSet(StringComparer.Ordinal);
+        bool followsCompletionTool = inputMessages
+            .SelectMany(message => message.Contents.OfType<FunctionCallContent>())
+            .Where(call => completedCallIds.Contains(call.CallId))
+            .Any(call => call.Name is "apply_file_edit" or "apply_symbol_rename" or
+                "dotnet_build" or "dotnet_test");
         List<ProviderChatMessage> providerMessages = [];
         if (!string.IsNullOrWhiteSpace(options?.Instructions))
         {
             providerMessages.Add(new(ProviderChatRole.System, options.Instructions));
         }
 
-        providerMessages.AddRange(messages.SelectMany(MapMessage));
+        providerMessages.AddRange(inputMessages.SelectMany(MapMessage));
 
-        IReadOnlyList<ChatToolDefinition> tools = options?.Tools?
+        IEnumerable<AITool> offeredTools = options?.Tools ?? [];
+        if (structuredLocalFileEditProposal)
+        {
+            offeredTools = [];
+        }
+        else if (role is AgentRole.Implementer && !followsCompletionTool)
+        {
+            offeredTools = !implementerInspectionBootstrapped && !followsToolResult
+                ? offeredTools
+                    .OfType<AIFunctionDeclaration>()
+                    .Where(tool => tool.Name == "read_file")
+                : offeredTools
+                    .OfType<AIFunctionDeclaration>()
+                    .Where(tool => tool.Name is "apply_file_edit" or
+                        "preview_symbol_rename" or "apply_symbol_rename");
+        }
+
+        IReadOnlyList<ChatToolDefinition> tools = offeredTools
             .OfType<AIFunctionDeclaration>()
             .Select(tool => new ChatToolDefinition(
                 new(tool.Name),
@@ -74,7 +156,22 @@ internal sealed class ModelProviderChatClient(
                             AgentRole.Reviewer => RemoteModelRole.Reviewer,
                             _ => throw new ArgumentOutOfRangeException(nameof(role)),
                         }),
-                tools),
+                tools,
+                remoteGoalId is null &&
+                    (role is AgentRole.Lead or AgentRole.Reviewer ||
+                     role is AgentRole.Implementer && followsCompletionTool)
+                    ? ProviderChatResponseFormat.Json
+                    : ProviderChatResponseFormat.Text,
+                remoteGoalId is null
+                    ? role switch
+                    {
+                        AgentRole.Lead => new(LeadResponseSchema),
+                        AgentRole.Reviewer => new(ReviewerResponseSchema),
+                        AgentRole.Implementer when followsCompletionTool =>
+                            new(ImplementerHandoffSchema),
+                        _ => null,
+                    }
+                    : null),
             cancellationToken))
         {
             if (item.Error is not null)
@@ -91,6 +188,7 @@ internal sealed class ModelProviderChatClient(
 
             if (item.ToolCalls is not null)
             {
+                Interlocked.Add(ref toolCallCount, item.ToolCalls.Count);
                 contents.AddRange(item.ToolCalls.Select(call => new FunctionCallContent(
                     call.Id.Value,
                     call.Name.Value,

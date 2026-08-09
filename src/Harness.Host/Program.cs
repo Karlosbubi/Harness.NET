@@ -197,12 +197,15 @@ builder.Services.AddSingleton<IAgentRoleRunner>(services => new AgentRoleRunner(
         services.GetRequiredService<IWorkspaceMutationService>(),
         services.GetRequiredService<IToolEvidenceService>(),
         services.GetRequiredService<IGoalContextService>()),
-    services.GetRequiredService<ILoggerFactory>()));
+    services.GetRequiredService<ILoggerFactory>(),
+    services.GetRequiredService<IGoalWorkspaceInspectionService>(),
+    services.GetRequiredService<IWorkspaceMutationService>()));
 builder.Services.AddSingleton<IGoalWorkflowService>(services => new GoalWorkflowService(
     services.GetRequiredService<IGoalWorkflowStore>(),
     services.GetRequiredService<IGoalWorkflowTaskStore>(),
     services.GetRequiredService<IGoalService>(),
     services.GetRequiredService<IAgentRoleRunner>(),
+    services.GetRequiredService<IToolEvidenceService>(),
     services.GetRequiredService<TimeProvider>()));
 ModelProviderConfiguration embeddingProvider =
     configuration.Providers[configuration.Routing.Embedding];

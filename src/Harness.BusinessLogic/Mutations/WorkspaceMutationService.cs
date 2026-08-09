@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using Harness.BusinessLogic.CodeIntelligence;
 using Harness.DataAccess.Approvals;
 using Harness.DataAccess.Evidence;
@@ -25,6 +26,15 @@ internal sealed class WorkspaceMutationService(
     private static readonly HashSet<string> CompilerInputExtensions = new(
         [".cs", ".csproj", ".sln", ".slnx", ".props", ".targets"],
         StringComparer.OrdinalIgnoreCase);
+    private static readonly Regex IncompleteModelEditPattern = new(
+        @"(?ix)
+        \b(?:TODO|FIXME)\b |
+        \bplaceholder\b |
+        \bomitted\s+for\s+brevity\b |
+        \bnot\s+implemented\b |
+        \bNotImplementedException\b",
+        RegexOptions.CultureInvariant,
+        TimeSpan.FromMilliseconds(100));
 
     public async ValueTask<FileEditView> ApplyFileEditAsync(
         FileEditRequest request,
@@ -79,6 +89,20 @@ internal sealed class WorkspaceMutationService(
         {
             if (requiresCompilerValidation)
             {
+                Match incompleteMarker = IncompleteModelEditPattern.Match(request.Content);
+                if (incompleteMarker.Success)
+                {
+                    FileEditView incomplete = Failure(
+                        request,
+                        "incomplete_model_edit_rejected",
+                        $"Model-authored compiler input contains an explicit incomplete implementation marker: '{incompleteMarker.Value}'. Submit complete production code without TODOs, placeholders, omitted logic, or NotImplementedException.");
+                    await CompleteEvidenceAsync(
+                        started.ToolCall.Id,
+                        ToolCallState.Failed,
+                        incomplete);
+                    return incomplete;
+                }
+
                 if (codeIntelligenceService is null)
                 {
                     FileEditView unavailable = Failure(
@@ -139,7 +163,7 @@ internal sealed class WorkspaceMutationService(
                         WorkbenchCodeValidationPhase.Candidate,
                         [new(new(request.Path), new(request.ExpectedSha256), new(request.Content))]),
                     cancellationToken);
-                if (validation.Disposition is not WorkbenchCodeValidationDisposition.Validated)
+                if (!IsWarningFreeModelEdit(validation))
                 {
                     FileEditView rejected = new(
                         goal.Id,
@@ -151,7 +175,7 @@ internal sealed class WorkspaceMutationService(
                         WasCreated: false,
                         "compiler_validation_rejected",
                         validation.Issues.FirstOrDefault()?.Message.Value ??
-                            "The candidate introduced a compiler error.",
+                            "The candidate introduced a compiler warning or error.",
                         validation);
                     await CompleteEvidenceAsync(
                         started.ToolCall.Id,
@@ -193,7 +217,7 @@ internal sealed class WorkspaceMutationService(
                     [new(new(result.Path), new(result.NewSha256), new(request.Content))]),
                 cancellationToken);
             view = view with { AppliedCodeValidation = applied };
-            if (applied.Disposition is not WorkbenchCodeValidationDisposition.Validated)
+            if (!IsWarningFreeModelEdit(applied))
             {
                 view = view with
                 {
@@ -209,6 +233,14 @@ internal sealed class WorkspaceMutationService(
             view);
         return view;
     }
+
+    private static bool IsWarningFreeModelEdit(WorkbenchCodeValidationView validation) =>
+        validation.Disposition is WorkbenchCodeValidationDisposition.Validated &&
+        !validation.Diagnostics.Any(item =>
+            item.Kind is WorkbenchCodeDiagnosticDeltaKind.Introduced &&
+            item.Diagnostic.Severity is
+                WorkbenchCodeDiagnosticSeverity.Warning or
+                WorkbenchCodeDiagnosticSeverity.Error);
 
     public async ValueTask<RenameSymbolPreviewView> PreviewRenameAsync(
         RenameSymbolPreviewRequest request,

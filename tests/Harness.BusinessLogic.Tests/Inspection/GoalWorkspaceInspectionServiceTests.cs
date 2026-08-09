@@ -25,6 +25,7 @@ public sealed class GoalWorkspaceInspectionServiceTests
 
         Assert.Null(result.Error);
         Assert.Equal("/workspace/repository", reader.RootPath);
+        Assert.Equal("hash", result.Sha256);
     }
 
     [Fact]
@@ -98,7 +99,7 @@ public sealed class GoalWorkspaceInspectionServiceTests
         {
             RootPath = workspaceRoot;
             return ValueTask.FromResult(new WorkspaceFileRead(
-                relativePath, "content", 7, false, null, null));
+                relativePath, "content", "hash", 7, false, null, null));
         }
     }
 

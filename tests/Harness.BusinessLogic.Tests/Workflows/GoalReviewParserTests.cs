@@ -23,4 +23,17 @@ public sealed class GoalReviewParserTests
         Assert.Null(GoalReviewParser.Parse(
             "{\"decision\":\"maybe\",\"summary\":\"Unsure.\"}").Decision);
     }
+
+    [Fact]
+    public void Parses_one_exact_markdown_json_fence()
+    {
+        GoalReviewResult result = GoalReviewParser.Parse("""
+            ```json
+            {"decision":"accept","summary":"Evidence."}
+            ```
+            """);
+
+        Assert.Equal(GoalReviewDecision.Accept, result.Decision);
+        Assert.Null(result.Error);
+    }
 }

@@ -31,12 +31,12 @@ GOAL_TITLE = "Build validated Tic-Tac-Toe with an unbeatable computer"
 GOAL_OBJECTIVE = """Build a polished .NET 10 console Tic-Tac-Toe application where a human plays X against a computer playing O.
 
 Requirements:
-- Keep the existing solution and project layout. Edit only the existing files under src/TicTacToe and tests/TicTacToe.Tests; do not create, rename, or split projects or source files.
+- Keep the existing solution and three-project layout, including the read-only acceptance executable. The complete mutation allow-list is exactly src/TicTacToe/GameState.cs, src/TicTacToe/MinimaxSolver.cs, src/TicTacToe/Program.cs, and tests/TicTacToe.Tests/UnitTest1.cs. Use those exact existing paths as plan file areas. Do not create, rename, or split projects or source files, and never edit tests/TicTacToe.Acceptance.
 - Keep the engine in namespace TicTacToe.Core with public enum Mark { Empty, X, O }.
-- GameState must be immutable and expose a public parameterless constructor, CurrentPlayer, Winner, IsDraw, IReadOnlyList<int> LegalMoves, a zero-based indexer, and GameState Play(int cell).
-- MinimaxSolver must expose int ChooseMove(GameState state, Mark computerMark), choose only legal moves, and play optimally so the human cannot force a win.
+- GameState must be immutable and expose a public parameterless constructor, CurrentPlayer, Winner, IsDraw, IReadOnlyList<int> LegalMoves, a zero-based indexer, and GameState Play(int cell). Store all nine marks in private state. The public constructor creates an empty X-to-move board. Play validates range, occupancy, and terminal state; clones the board; writes CurrentPlayer; evaluates the eight winning lines and full-board draw; and returns a new state with the next player. The indexer and LegalMoves must reflect the stored board.
+- MinimaxSolver must expose int ChooseMove(GameState state, Mark computerMark), choose only legal moves, and play optimally so the human cannot force a win. Recursively score terminal states from computerMark's perspective, maximize on the computer turn, minimize on its opponent's turn, and use a deterministic legal tie-break.
 - The console UI must render the board, accept cells 1-9, reject malformed/occupied moves without crashing, show the result, and allow q to exit immediately.
-- Replace the placeholder tests with meaningful deterministic xUnit coverage for wins, draws, invalid moves, legal solver choices, and exhaustive human move sequences proving the O solver never loses.
+- Replace the placeholder tests with concise deterministic xUnit coverage for wins, draws, invalid moves, and representative legal solver choices. The independent acceptance validator performs the exhaustive human move traversal, so do not duplicate that traversal in the generated test file.
 - Do not add packages, restore dependencies, weaken warnings, or edit AGENTS.md. Build and test the complete solution without restore and inspect the exact Git diff before reporting completion.
 """
 
@@ -94,8 +94,13 @@ AGENT_GUIDANCE = """# Generated repository instructions
 - Target .NET 10 with nullable analysis and warnings as errors.
 - Do not add or update NuGet packages; the repository is restored before Harness starts.
 - Keep game rules independent from console input/output.
-- Keep the existing two-project layout and edit only existing source and test files;
+- Keep the existing three-project layout and edit only the four explicitly authorized files;
   model-authored compiler inputs require an exact pre-existing file baseline.
+- The only editable files are src/TicTacToe/GameState.cs,
+  src/TicTacToe/MinimaxSolver.cs, src/TicTacToe/Program.cs, and
+  tests/TicTacToe.Tests/UnitTest1.cs. Plans and tool calls must use these exact paths.
+- tests/TicTacToe.Acceptance is a read-only deterministic contract and exhaustive
+  validator. Inspect it when needed, but never edit it.
 - Preserve the public TicTacToe.Core API described in the active goal because an
   independent external validator compiles against it.
 - Preserve Directory.Build.props; it keeps restored intermediates available to the
@@ -201,7 +206,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--model",
         default=os.environ.get("HARNESS_OLLAMA_MODEL", "gemma4:latest"),
-        help="tool-capable Ollama model used for Lead, Implementer, and Reviewer",
+        help="tool-capable Ollama model used for Lead and as the other role fallback",
+    )
+    parser.add_argument(
+        "--implementer-model",
+        help="tool-capable Ollama model used for Implementer (default: --model)",
+    )
+    parser.add_argument(
+        "--reviewer-model",
+        help="tool-capable Ollama model used for Reviewer (default: --model)",
+    )
+    parser.add_argument(
+        "--recovery-implementer-model",
+        action="append",
+        default=[],
+        help="additional tool-capable Ollama model selectable for Implementer recovery; may be repeated",
     )
     parser.add_argument(
         "--output-root",
@@ -306,18 +325,29 @@ def create_repository(root: Path) -> Path:
         "--output", "tests/TicTacToe.Tests", "--no-restore",
     ], repository, environment=environment)
     run([
+        "dotnet", "new", "console", "--framework", "net10.0",
+        "--name", "TicTacToe.Acceptance",
+        "--output", "tests/TicTacToe.Acceptance", "--no-restore",
+    ], repository, environment=environment)
+    run([
         "dotnet", "add", "tests/TicTacToe.Tests/TicTacToe.Tests.csproj", "reference",
         "src/TicTacToe/TicTacToe.csproj",
     ], repository, environment=environment)
     run([
+        "dotnet", "add", "tests/TicTacToe.Acceptance/TicTacToe.Acceptance.csproj",
+        "reference", "src/TicTacToe/TicTacToe.csproj",
+    ], repository, environment=environment)
+    run([
         "dotnet", "sln", "TicTacToe.slnx", "add", "src/TicTacToe/TicTacToe.csproj",
         "tests/TicTacToe.Tests/TicTacToe.Tests.csproj",
+        "tests/TicTacToe.Acceptance/TicTacToe.Acceptance.csproj",
     ], repository, environment=environment)
 
     write(repository / "AGENTS.md", AGENT_GUIDANCE)
     write(repository / "Directory.Build.props", """<Project>
   <PropertyGroup>
     <NuGetAudit>false</NuGetAudit>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <PropertyGroup Condition="'$(HarnessUsabilityBuildRoot)' != ''">
     <BaseIntermediateOutputPath>$(HarnessUsabilityBuildRoot)obj/$(MSBuildProjectName)/</BaseIntermediateOutputPath>
@@ -335,6 +365,7 @@ def create_repository(root: Path) -> Path:
     write(repository / "src/TicTacToe/GameState.cs", GAME_STATE_STUB)
     write(repository / "src/TicTacToe/MinimaxSolver.cs", SOLVER_STUB)
     write(repository / "tests/TicTacToe.Tests/UnitTest1.cs", TEST_STUB)
+    write(repository / "tests/TicTacToe.Acceptance/Program.cs", VALIDATOR_PROGRAM)
     run(["dotnet", "restore", "TicTacToe.slnx", "-m:1"], repository,
         environment=environment)
     run([
@@ -350,12 +381,17 @@ def create_repository(root: Path) -> Path:
     return repository
 
 
-def write_configuration(root: Path, endpoint: str, model: str) -> None:
+def write_configuration(
+    root: Path,
+    endpoint: str,
+    lead_model: str,
+    implementer_model: str,
+    reviewer_model: str,
+    recovery_implementer_models: list[str],
+) -> None:
     config = root / "config/harness.net/harness.xml"
-    write(config, f"""<?xml version="1.0" encoding="utf-8" ?>
-<Harness>
-  <Providers>
-    <Ollama>
+    recovery_providers = "\n".join(
+        f"""    <RecoveryImplementer{index}>
       <Kind>Ollama</Kind>
       <Endpoint>{html.escape(endpoint.rstrip('/') + '/')}</Endpoint>
       <ChatModel>{html.escape(model)}</ChatModel>
@@ -363,13 +399,46 @@ def write_configuration(root: Path, endpoint: str, model: str) -> None:
       <EmbeddingDimensions>1</EmbeddingDimensions>
       <ConnectTimeoutSeconds>10</ConnectTimeoutSeconds>
       <RequestTimeoutSeconds>1800</RequestTimeoutSeconds>
-    </Ollama>
+    </RecoveryImplementer{index}>"""
+        for index, model in enumerate(recovery_implementer_models, start=1)
+    )
+    write(config, f"""<?xml version="1.0" encoding="utf-8" ?>
+<Harness>
+  <Providers>
+    <LeadOllama>
+      <Kind>Ollama</Kind>
+      <Endpoint>{html.escape(endpoint.rstrip('/') + '/')}</Endpoint>
+      <ChatModel>{html.escape(lead_model)}</ChatModel>
+      <EmbeddingModel>{html.escape(lead_model)}</EmbeddingModel>
+      <EmbeddingDimensions>1</EmbeddingDimensions>
+      <ConnectTimeoutSeconds>10</ConnectTimeoutSeconds>
+      <RequestTimeoutSeconds>1800</RequestTimeoutSeconds>
+    </LeadOllama>
+    <ImplementerOllama>
+      <Kind>Ollama</Kind>
+      <Endpoint>{html.escape(endpoint.rstrip('/') + '/')}</Endpoint>
+      <ChatModel>{html.escape(implementer_model)}</ChatModel>
+      <EmbeddingModel>{html.escape(implementer_model)}</EmbeddingModel>
+      <EmbeddingDimensions>1</EmbeddingDimensions>
+      <ConnectTimeoutSeconds>10</ConnectTimeoutSeconds>
+      <RequestTimeoutSeconds>1800</RequestTimeoutSeconds>
+    </ImplementerOllama>
+    <ReviewerOllama>
+      <Kind>Ollama</Kind>
+      <Endpoint>{html.escape(endpoint.rstrip('/') + '/')}</Endpoint>
+      <ChatModel>{html.escape(reviewer_model)}</ChatModel>
+      <EmbeddingModel>{html.escape(reviewer_model)}</EmbeddingModel>
+      <EmbeddingDimensions>1</EmbeddingDimensions>
+      <ConnectTimeoutSeconds>10</ConnectTimeoutSeconds>
+      <RequestTimeoutSeconds>1800</RequestTimeoutSeconds>
+    </ReviewerOllama>
+{recovery_providers}
   </Providers>
   <Routing>
-    <MainLlm>Ollama</MainLlm>
-    <Reviewer>Ollama</Reviewer>
-    <ToolLlm>Ollama</ToolLlm>
-    <Embedding>Ollama</Embedding>
+    <MainLlm>LeadOllama</MainLlm>
+    <Reviewer>ReviewerOllama</Reviewer>
+    <ToolLlm>ImplementerOllama</ToolLlm>
+    <Embedding>LeadOllama</Embedding>
   </Routing>
 </Harness>
 """)
@@ -396,6 +465,39 @@ def latest_workflow_status(database: Path) -> tuple[str, str] | None:
     return None if row is None else (str(row[0]), str(row[1]))
 
 
+def workflow_checkpoint_count(database: Path) -> int:
+    if not database.is_file():
+        return 0
+    with sqlite3.connect(database) as connection:
+        row = connection.execute(
+            "SELECT COUNT(*) FROM goal_workflow_checkpoints"
+        ).fetchone()
+    return 0 if row is None else int(row[0])
+
+
+def workflow_activity_count(database: Path) -> int:
+    if not database.is_file():
+        return 0
+    with sqlite3.connect(database) as connection:
+        checkpoints = connection.execute(
+            "SELECT COUNT(*) FROM goal_workflow_checkpoints"
+        ).fetchone()
+        tool_calls = connection.execute("SELECT COUNT(*) FROM tool_calls").fetchone()
+    return int(checkpoints[0]) + int(tool_calls[0])
+
+
+def wait_for_checkpoint_count(database: Path, minimum: int, timeout: int) -> str:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if workflow_checkpoint_count(database) >= minimum:
+            return latest_workflow_state(database) or ""
+        time.sleep(0.5)
+    raise TimeoutError(
+        f"workflow did not persist checkpoint {minimum} in {timeout}s; "
+        f"latest={latest_workflow_state(database)}"
+    )
+
+
 def wait_for_workflow_update(
     database: Path, previous: tuple[str, str] | None, timeout: int
 ) -> str:
@@ -417,6 +519,27 @@ def wait_for_state(database: Path, expected: set[str], timeout: int) -> str:
         time.sleep(0.5)
     raise TimeoutError(
         f"workflow did not reach {sorted(expected)} in {timeout}s; latest={latest_workflow_state(database)}"
+    )
+
+
+def wait_for_state_with_progress(
+    database: Path, expected: set[str], inactivity_timeout: int
+) -> str:
+    deadline = time.monotonic() + inactivity_timeout
+    activity_count = workflow_activity_count(database)
+    while time.monotonic() < deadline:
+        state = latest_workflow_state(database)
+        if state in expected:
+            return state
+        current_count = workflow_activity_count(database)
+        if current_count > activity_count:
+            activity_count = current_count
+            deadline = time.monotonic() + inactivity_timeout
+        time.sleep(0.5)
+    raise TimeoutError(
+        "workflow produced no checkpoint or tool-call progress for "
+        f"{inactivity_timeout}s while waiting for {sorted(expected)}; "
+        f"latest={latest_workflow_state(database)}"
     )
 
 
@@ -459,18 +582,26 @@ def create_goal_and_generate_plan(
     )
     application.invoke("Generate plan")
     state = wait_for_state(database, {"AwaitingPlanApproval", "NeedsDirection"}, timeout)
-    if state == "NeedsDirection":
+    lead_recoveries = 0
+    while state == "NeedsDirection" and lead_recoveries < 6:
         previous = latest_workflow_status(database)
         application.invoke("Retry Lead")
         application.wait_for_name("Retry Lead with changes", "frame")
         application.set_text(
             "Guidance for Lead retry",
-            "Return the requested JSON object directly. Do not wrap it in Markdown or code fences.",
+            "Return the requested JSON object directly. Every task must have a non-empty "
+            "title, objective, fileAreas array, and acceptanceCriteria array. Use only the "
+            "four exact existing paths authorized by the goal. Do not wrap the object in "
+            "Markdown or code fences. Do not create standalone inspect, analyze, discover, "
+            "assessment, planning, or documentation tasks; inspection belongs inside each "
+            "implementation task.",
         )
         application.invoke("Retry Lead")
+        lead_recoveries += 1
         report.setdefault("usability_observations", []).append(
-            "The first Lead response used a Markdown fence and entered NeedsDirection; "
-            "the exercise retried through the recovery UI with corrective guidance."
+            "A Lead response was not usable delegation JSON and entered "
+            "NeedsDirection; the exercise retried through the recovery UI with "
+            "corrective guidance."
         )
         state = wait_for_workflow_update(database, previous, min(timeout, 60))
         if state == "Running":
@@ -479,23 +610,99 @@ def create_goal_and_generate_plan(
             )
     if state != "AwaitingPlanApproval":
         raise RuntimeError(
-            "Lead planning still needs user direction after one guided retry; "
+            "Lead planning still needs user direction after six guided retries; "
             "inspect Harness logs and evidence"
         )
     application.wait_for_name("Approve plan", "push button")
 
 
-def approve_and_run(application: Any, database: Path, timeout: int) -> None:
+def approve_and_run(
+    application: Any,
+    database: Path,
+    report: dict[str, Any],
+    timeout: int,
+    recovery_implementer_models: list[str],
+) -> None:
     application.invoke("Approve plan")
     application.wait_for_name("Approve plan and capabilities", "frame")
     application.invoke("Approve and create worktree")
     application.wait_for_name("Continue run", "push button")
     application.invoke("Continue run")
-    state = wait_for_state(database, {"AwaitingAcceptance", "NeedsDirection"}, timeout)
-    if state != "AwaitingAcceptance":
-        raise RuntimeError(
-            "Implementation/review paused for user direction; inspect Harness logs and evidence"
+    recoveries = 0
+    while True:
+        state = wait_for_state_with_progress(
+            database, {"AwaitingAcceptance", "NeedsDirection"}, timeout
         )
+        if state == "AwaitingAcceptance":
+            return
+        if recoveries >= 8:
+            raise RuntimeError(
+                "Implementation/review still needs direction after eight bounded recoveries"
+            )
+
+        nodes = application.nodes()
+        retry_names = {
+            node.name for node in nodes
+            if node.role == "push button" and node.name.startswith("Retry ")
+        }
+        retry_name = next(
+            (name for name in ("Retry Implementer", "Retry Reviewer")
+             if name in retry_names),
+            None,
+        )
+        if retry_name is None:
+            raise RuntimeError(
+                "Workflow needs direction but exposes no Implementer or Reviewer retry action"
+            )
+
+        role = retry_name.removeprefix("Retry ")
+        before = workflow_checkpoint_count(database)
+        application.invoke(retry_name)
+        application.wait_for_name(f"Retry {role} with changes", "frame")
+        if role == "Implementer" and recovery_implementer_models:
+            recovery_model = recovery_implementer_models[
+                recoveries % len(recovery_implementer_models)
+            ]
+            application.invoke("Show all models")
+            time.sleep(0.5)
+            matches = [
+                node for node in application.nodes()
+                if node.role == "list item" and recovery_model in node.name
+            ]
+            if matches:
+                application.invoke_node(matches[-1])
+                report.setdefault("usability_observations", []).append(
+                    f"Selected replacement Implementer model {recovery_model} through the recovery UI."
+                )
+            else:
+                application.invoke("Show all models")
+                report.setdefault("usability_observations", []).append(
+                    f"Recovery model {recovery_model} was correctly absent from the "
+                    "Implementer-compatible selector; retained the current route."
+                )
+        guidance = (
+            "Use the typed tools now. Read the exact existing target path first, pass the "
+            "returned sha256 as expectedSha256 to apply_file_edit, correct any rejected "
+            "request with a new correlation id. Also read GameState.cs and MinimaxSolver.cs "
+            "before writing code that consumes them; use only members actually present. Run "
+            "the relevant build/test before "
+            "reporting. Do not return a prose-only status."
+            if role == "Implementer"
+            else
+            "Inspect Git diff and durable tool evidence, then return only the required "
+            "structured reviewer decision."
+        )
+        application.set_text(f"Guidance for {role} retry", guidance)
+        application.invoke(retry_name)
+        recoveries += 1
+        report.setdefault("usability_observations", []).append(
+            f"The workflow paused for {role}; the exercise used the explicit retry UI "
+            "with bounded corrective guidance."
+        )
+        state = wait_for_checkpoint_count(database, before + 2, timeout)
+        if state == "Running":
+            application.wait_for_name("Continue run", "push button")
+            application.invoke("Continue run")
 
 
 def goal_worktree(repository: Path) -> Path:
@@ -656,7 +863,12 @@ def main() -> int:
     report: dict[str, Any] = {
         "started_at": datetime.now(timezone.utc).isoformat(),
         "ollama_endpoint": args.ollama_endpoint,
-        "model": args.model,
+        "models": {
+            "lead": args.model,
+            "implementer": args.implementer_model or args.model,
+            "reviewer": args.reviewer_model or args.model,
+            "recovery_implementers": args.recovery_implementer_model,
+        },
         "result": "running",
     }
     report_path = root / "usability-report.json"
@@ -682,7 +894,14 @@ def main() -> int:
 
     try:
         with measured(report, "ollama_preflight"):
-            verify_ollama(args.ollama_endpoint, args.model)
+            selected_models = [
+                report["models"]["lead"],
+                report["models"]["implementer"],
+                report["models"]["reviewer"],
+                *report["models"]["recovery_implementers"],
+            ]
+            for model in dict.fromkeys(selected_models):
+                verify_ollama(args.ollama_endpoint, model)
         if not args.skip_host_build:
             with measured(report, "host_build"):
                 run([
@@ -691,7 +910,14 @@ def main() -> int:
                 ], repository_root)
         with measured(report, "seed_repository"):
             repository = create_repository(root)
-            write_configuration(root, args.ollama_endpoint, args.model)
+            write_configuration(
+                root,
+                args.ollama_endpoint,
+                report["models"]["lead"],
+                report["models"]["implementer"],
+                report["models"]["reviewer"],
+                report["models"]["recovery_implementers"],
+            )
 
         environment = os.environ.copy()
         environment.update({
@@ -718,7 +944,13 @@ def main() -> int:
                 application, database, report, args.timeout_seconds
             )
         with measured(report, "implementation_and_review"):
-            approve_and_run(application, database, args.timeout_seconds)
+            approve_and_run(
+                application,
+                database,
+                report,
+                args.timeout_seconds,
+                report["models"]["recovery_implementers"],
+            )
         with measured(report, "independent_validation"):
             report["validation"] = validate_generated_project(root, repository)
 
