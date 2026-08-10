@@ -23,6 +23,7 @@ behavior Harness.NET will provide.
 | Presentation | Use Avalonia by default, retain Terminal.Gui v2, allow future gRPC adapters, and avoid web frontends. |
 | Process | Remain in one application process as long as practical. |
 | Code intelligence | Use in-process Roslyn first behind implementation-neutral contracts; keep a future local LSP module replaceable. |
+| Agent IDE tools | Expose deterministic IDE capabilities through an on-demand typed catalog; never expose an unrestricted shell or dynamic execute-by-name escape hatch. |
 
 ## Layer and dependency rules
 
@@ -178,6 +179,11 @@ overlay, `AGENTS.md`, or a suitable existing documentation file.
 - Lead, Implementer, and Reviewer may retrieve 1-8 bounded semantic matches through a
   typed goal-context tool. Queries are mapped to the active trusted goal workspace,
   strict remote privacy, and separately attributed embedding usage.
+- Model roles share a product-owned IDE capability catalog with the developer-facing
+  services. A small bootstrap set is direct; additional role- and authority-qualified
+  typed toolsets are activated only for the next bounded turn so the catalog does not
+  bloat every prompt. Unreal Engine capabilities and unrestricted shell execution are
+  excluded. See ADR 016 and `docs/agent-ide-capabilities.md`.
 
 ## Repository and tool policy
 

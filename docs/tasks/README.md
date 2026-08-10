@@ -75,7 +75,7 @@ but the end-user workflow is not complete.
 | 035 | Done | Make the workbench's daily surfaces feel like a professional IDE, not a prototype | 016, 026, 029, 032 | - | Framework rules/issues are scannable and filterable; Operations uses a native backup picker; Files is a bounded hierarchy with quick open; the header exposes command search; and Git diff has contrast-validated inline and side-by-side views. Source documents add theme-aware legible syntax colors, breadcrumb/branch/access chrome, compact save/reload/close actions, current-line and selection behavior, and caret/UTF-8/line-ending status without weakening exact-baseline saves. Real wide/compact approved-goal captures and production AT-SPI evidence are recorded in `docs/acceptance/source-editor-2026-07-29.md`. |
 | 036 | Done | Work across more than one trusted repository | 015 | Only one workspace can be active at a time; switching real projects requires re-registration/re-selection overhead. | A user can maintain multiple trusted workspaces and move between them without losing goal/context state, with clear active-workspace indication throughout Avalonia and the TUI. See `docs/acceptance/multi-workspace-2026-07-31.md`. |
 | 037 | Done | Trust the app on real, messy repositories | 013-033 | Large-repository scale, dirty bases, mid-goal conflicts, index rebuilds under load, provider outages, budget exhaustion, and corrupted/interrupted state are exercised only through the single scripted representative-repo gate. | Large real repositories, dirty working trees, merge conflicts mid-goal, provider outages, budget exhaustion, and corrupted/interrupted state are exercised and demonstrably recoverable, not just the scripted gate scenario. See `docs/acceptance/messy-repository-recovery-2026-07-31.md`. |
-| 038 | Deferred | See whether agent output can be trusted | 021 | No opt-in behavioral evaluation or regression data exists yet, so plan quality, tool-selection quality, and review quality have no measurable baseline over time or across model changes. Parked below the professional-IDE baseline and Tasks 045-046. | Opt-in Ollama behavioral evaluation datasets exist and regressions in planning, tool selection, and review are detectable before they reach a user's repository. |
+| 038 | Deferred | See whether agent output can be trusted | 021 | No opt-in behavioral evaluation or regression data exists yet, so plan quality, tool-selection quality, and review quality have no measurable baseline over time or across model changes. Parked below the professional-IDE baseline and Tasks 045-047. | Opt-in Ollama behavioral evaluation datasets exist and regressions in planning, tool selection, and review quality are detectable before they reach a user's repository. |
 | 039 | Done | Know what to do with an accepted goal branch | 023 | After exact-commit approval the goal branch sits in the repository with no in-app guidance; the user must already know to push, open a PR, or merge outside the app. | The app clearly surfaces the accepted branch's state and the deliberately manual next step (push/PR/merge) without automating merge or PR creation. See `docs/acceptance/goal-branch-handoff-2026-07-31.md`. |
 | 040 | Done | Collaborate through chat instead of a chain of pop-ups | 035 | - | Conversation is the primary goal surface; typed inline cards expose plans, cost/capability decisions, progress, validation, evidence, Restore, commit, and handoff. Plan, spending, Restore, destructive, budget-extension, and exact-commit authority remain explicit typed actions. Ordinary role/model defaults move to one searchable Settings surface, goal overrides use progressive disclosure, and obsolete dialog paths are removed. Production wide/compact and AT-SPI acceptance is recorded in `docs/acceptance/chat-first-workflow-2026-07-29.md`. |
 | 041 | Done | Recover application state without the verifier script | 026 | - | Avalonia and TUI Operations inspect exact v1/v2 archive evidence, require sensitive-state confirmation, and stage without changing the running app. The next cold start revalidates staged hashes, layout, schema, and SQLite integrity before replacement, retains bounded rollback material, and fails closed on tampering or publication failure. |
@@ -84,8 +84,9 @@ but the end-user workflow is not complete.
 | 044 | Done | Use deterministic Roslyn transformations for deterministic work | 042 | - | Semantic rename resolves a symbol through Roslyn, previews every affected file and conflict with exact baselines and a fingerprint, enforces goal/task path grants, applies all files atomically or none, and records post-apply diagnostics and complete bounded diff evidence. F2 in the editor and the Implementer's preview/apply tools use the same typed operation; no model-authored text-search rename path exists. Acceptance evidence is recorded in `docs/acceptance/roslyn-deterministic-rename-2026-07-31.md`. |
 | 045 | Planned | Let developers and models verify UI work in the same visual context | 013, 035, 040 | Visual debugging currently depends on external screenshot tools and out-of-band image sharing, so the developer cannot see exactly which frame and app action a model evaluated. | A Linux-first XDG Desktop Portal capture capability produces explicitly consented, bounded, goal-scoped visual evidence. The developer can inspect each frame with its initiating model/tool action, and models can request and inspect approved captures through typed tools without receiving unrestricted desktop capture or input control. |
 | 046 | Partial | Answer library and package questions from version-matched, validated evidence without bloating model context | 010, 014, 016, 024 | Stateless MCP 2.x connections, startup discovery, fail-closed read-only agent tools, and first-class Settings management are delivered. The shared local/MCP/web lookup manager, version-resolved documentation catalog, deterministic package validation, and managed SBOM remain. | A shared lookup manager gives developers and agents typed, on-demand access to exact local/package docs, curated vector-indexed docs, configured MCP sources, and web search as a visible fallback. A non-model dependency service resolves project/package versions, validates candidate compatibility and supply-chain metadata, and maintains a provenance-rich SBOM. Results are bounded, ranked, cited, version-aware, privacy-governed, and injected only when requested by concrete work. |
+| 047 | Planned | Give models the deterministic IDE capabilities available to the developer without bloating every prompt | 017, 018, 042, 043, 044, 046 | Current role tools cover bounded files/text/Git/.NET inspection, semantic context, edits, Build/Test and Roslyn rename. Rich diagnostics, symbols, run/debug/database/profiling/notebook operations and on-demand catalog activation remain presentation-only or absent. | ADR 016's capability catalog and Settings owner expose the non-Unreal Rider-inspired breadth through role-qualified, on-demand typed toolsets. Deterministic operations replace model guesses; transformations are preview/fingerprint/apply; execution and sensitive operations retain explicit authority; no unrestricted shell or dynamic execute-by-name tool exists. |
 
-### Prepared delivery slices for Tasks 040, 042-046
+### Prepared delivery slices for Tasks 040, 042-047
 
 These slices are the implementation order. Each ends with its narrow tests, a build,
 and synchronized documentation; a later slice must not be pulled into an earlier one
@@ -328,6 +329,62 @@ and apply tools share this operation. Deterministic acceptance is recorded in
    behavior, MCP failure, web fallback, cancellation, deduplication, citation provenance,
    and strict context-size bounds with deterministic fakes. Add opt-in live checks only
    for explicitly authorized documentation and package sources.
+
+#### Task 047: model-accessible IDE capability catalog
+
+0. **Reference inventory and authority decision (delivered):** inventory the live
+   Rider 2026.2 MCP catalog, exclude all Unreal-specific behavior, map every remaining
+   category to delivered/internal/partial/planned Harness.NET capabilities, and accept
+   ADR 016. Rider remains a breadth reference rather than a dependency or copied wire
+   contract. `docs/agent-ide-capabilities.md` is the maintained parity map.
+1. Add typed catalog, source, category, toolset, role, availability and authority
+   contracts plus deterministic policy fakes. Introduce a small direct bootstrap set
+   and a toolset request that activates concrete typed schemas only on the next bounded
+   role turn. Prove that request does not invoke a tool or grant authority and that no
+   dynamic execute-by-name path exists.
+2. Ship **Settings → Agent tools** in the same slice: show built-in/external source,
+   module health, role eligibility, direct/on-demand state, trust/approval class and
+   unavailable reason. Permit disabling optional modules and safe exposure preferences
+   without weakening required goal approvals. Project toolset requests and use into
+   conversation/run evidence.
+3. Complete workspace exploration and project health: bounded tree/glob/regex/ranged
+   reads, active/open-document context, source/dependency navigation, solution/project
+   graph and readiness, exact package/project dependencies, file/project/changed-set
+   diagnostics and Git roots/status. Reuse existing typed services rather than adding
+   a parallel IDE-only notion of workspace state.
+4. Expose semantic analysis: symbol information/search, definitions/references,
+   incoming/outgoing calls, type/implementation/override hierarchy, associated-test
+   discovery and one deterministic post-edit quality result. Tie every result to exact
+   context/buffer identity with paging, depth, size, timeout and cancellation bounds.
+5. Add closed preview/fingerprint/apply transformations for formatting, imports and
+   namespaces, signature change, extract method/interface/base, move type and safe
+   delete. Reuse atomic baselines, task file-area grants, Roslyn candidate diagnostics
+   and post-apply evidence. Never add a generic Roslyn/code-action executor.
+6. Add asynchronous build/rebuild state, test discovery/filter/run/cancel, launch
+   profile and executable-entry discovery, typed one-run argument/environment/working-
+   directory overrides, structured output and stop. Represent justified command gaps
+   as configured executable modules; never accept an unrestricted shell string.
+7. Deliver .NET debugger slices: configuration launch and explicit process attach;
+   session/status lifecycle; breakpoints, logpoints, exception policy, pause/resume/
+   step/run-to-line/stop; paged threads/stacks/frame/value inspection; then separately
+   approved expression evaluation, variable mutation, memory dumps and mixed/native
+   attach. Treat evaluation as potentially executing target code.
+8. Deliver database slices with Settings and Secret Service ownership: connection
+   create/edit/test, schema introspection, object description, recent query/status,
+   bounded execute/fetch/cancel and table preview. Read-only mode relies on a database
+   principal with enforced permissions; other queries and connection mutations require
+   their concrete approval.
+9. Add optional performance/notebook/analyzer toolsets: dotTrace snapshot/timeline/
+   call-tree reports, sensitive memory artifacts, Unity profiler summaries, .NET
+   Interactive cells and Roslyn analyzer/code-fix authoring fixtures. Integrate Task
+   045 portal captures as the only generic screenshot capability. Keep all Unreal
+   asset, Blueprint, actor, viewport and `ue_*` tools absent.
+10. Run a deterministic parity acceptance matrix over all catalog entries and roles:
+    availability/degradation, on-demand activation, prompt-size bounds, original versus
+    goal-worktree scope, stale identities, cancellation, output truncation, restart,
+    Settings persistence, evidence, every approval class and the explicit absence of
+    shell/dynamic-executor/Unreal escape hatches. Use opt-in live adapters only when the
+    user approves their exact process, database or profiler target.
 
 ### v1.0 release gate
 

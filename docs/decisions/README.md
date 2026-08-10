@@ -32,3 +32,4 @@ link superseding records in both directions.
 | [013](013-chat-first-desktop-workflow.md) | Accepted | Chat-first desktop workflow and settings ownership |
 | [014](014-default-remote-spend-policy.md) | Accepted | Unlimited-by-default remote spend with prominent opt-in controls |
 | [015](015-stateless-mcp-connections.md) | Accepted | Stateless MCP connections and agent tool safety |
+| [016](016-model-accessible-ide-capabilities.md) | Accepted | Model-accessible IDE capability catalog and authority |

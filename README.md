@@ -14,8 +14,10 @@ development — see `docs/roadmap.md` Stage 3 and `docs/tasks/README.md` for the
 remaining concrete gaps. Chat-first orchestration, multi-workspace use, Roslyn
 validation/intellisense/refactoring, and messy-repository recovery are now delivered;
 accepted goal branches now include deliberate manual push/PR/merge guidance. The
-planned daily-use gaps are closed. Task 038 (agent-quality feedback loop) remains
-explicitly deferred as an optional evaluation track.
+remaining daily-use gaps, including visual verification, documentation/package
+research and the model-accessible IDE capability catalog, are concrete planned tasks.
+Task 038 (agent-quality feedback loop) remains explicitly deferred as an optional
+evaluation track.
 
 Framework discovery, the production service slices, and the default docked desktop
 workflow are implemented. The application has
@@ -153,6 +155,7 @@ Start with:
 - [Accepted architecture](docs/architecture.md)
 - [Runtime configuration](docs/configuration.md)
 - [Settings ownership and delivery](docs/settings.md)
+- [Model-accessible IDE capability map](docs/agent-ide-capabilities.md)
 - [Delivery outline](docs/roadmap.md)
 - [Decision records](docs/decisions/README.md)
 

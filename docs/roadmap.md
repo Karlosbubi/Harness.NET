@@ -280,6 +280,34 @@ of Stage 3 below.
   deterministic package validation, SBOM format/export/refresh ownership, citations,
   licensing/retention, and deterministic testing without live services.
 
+### Planned: model-accessible IDE capabilities
+
+- Make the deterministic IDE services available to models through the product-owned
+  catalog in ADR 016 instead of leaving rich Roslyn and workbench state available only
+  to Presentation. Rider 2026.2's live MCP catalog is the breadth reference; the
+  maintained mapping is `docs/agent-ide-capabilities.md`. (Task 047)
+- Keep bounded workspace/project/Git inspection as the direct bootstrap surface. Let a
+  role request semantic analysis, transformations, build/test/run, debugger, database,
+  performance, notebook/analyzer, visual or external-MCP toolsets for its next bounded
+  turn. Inject the actual typed schemas only after role, context and authority policy
+  validates the request, keeping the complete catalog out of ambient prompts.
+- Share compiler/project truth between developer and model workflows: diagnostics,
+  symbol information, navigation, calls/types, tests, formatting, namespace/import
+  cleanup and refactorings come from deterministic services. Every transformation is
+  preview/fingerprint/apply with exact baselines and post-edit evidence.
+- Treat build, test, run, debug, query, notebook, profiler and analyzer execution as
+  repository or sensitive execution—not passive reads. Debug evaluation may call code;
+  database read-only mode is enforced by its principal; process attach, memory artifacts,
+  credentials and captures retain focused approval/privacy boundaries.
+- Add **Settings → Agent tools** with the first catalog slice. Show sources, modules,
+  health, roles, direct/on-demand state and authority classes without turning Settings
+  enablement into goal approval.
+- Do not add a generic dynamic executor or unrestricted terminal. Justified commands
+  use typed run/configuration modules. Exclude every Unreal-specific capability,
+  including non-`ue_*` Rider tools for assets, Blueprints, actors and viewports. Keep
+  XDG-portal visual verification and optional Unity/.NET profiling as independent
+  platform capabilities.
+
 ### Workflow friction (delivered)
 
 - Users can retain multiple trusted workspaces, switch through a dirty-document
@@ -312,7 +340,7 @@ of Stage 3 below.
 
 Deferred within Stage 3: opt-in Ollama behavioral evaluation and regression
 datasets for planning, tool-selection, and review quality (Task 038) are parked
-below every item above until the professional-IDE baseline and Tasks 045-046 close.
+below every item above until the professional-IDE baseline and Tasks 045-047 close.
 
 Stage 3 exits when a user can run real, non-scripted development work through the
 app, across multiple sessions and repositories, without the friction or gaps above
