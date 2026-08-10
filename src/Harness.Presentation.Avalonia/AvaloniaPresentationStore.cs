@@ -13,6 +13,7 @@ using Harness.BusinessLogic.Retrieval;
 using Harness.BusinessLogic.Tools;
 using Harness.BusinessLogic.Workflows;
 using Harness.BusinessLogic.Workspaces;
+using Harness.BusinessLogic.VisualCapture;
 using Microsoft.Extensions.Logging;
 
 namespace Harness.Presentation.Avalonia;
@@ -34,7 +35,8 @@ internal sealed class AvaloniaPresentationStore(
     ILogger<AvaloniaPresentationStore> logger,
     IModelProviderSettingsService? modelProviderSettingsService = null,
     IRemoteSpendPreferenceService? remoteSpendPreferenceService = null,
-    IMcpSettingsService? mcpSettingsService = null) : IDisposable
+    IMcpSettingsService? mcpSettingsService = null,
+    IVisualCaptureService? visualCaptureService = null) : IDisposable
 {
     private readonly BehaviorSubject<AvaloniaShellState> states = new(AvaloniaShellState.Initial);
     private readonly SemaphoreSlim commandGate = new(1, 1);
@@ -63,6 +65,9 @@ internal sealed class AvaloniaPresentationStore(
             RemoteSpendPreference remoteSpendPreference = remoteSpendPreferenceService is null
                 ? RemoteSpendPreference.Default
                 : await remoteSpendPreferenceService.GetAsync(cancellationToken);
+            VisualCaptureSettingsSnapshot? visualCaptureSettings = visualCaptureService is null
+                ? null
+                : await visualCaptureService.GetSettingsAsync(cancellationToken);
             IReadOnlyList<WorkspaceView> workspaces = await workspaceService.ListAsync(cancellationToken);
             IReadOnlyList<GoalView> goals = await LoadGoalsAsync(workspaces, cancellationToken);
             Publish(Current with
@@ -74,6 +79,7 @@ internal sealed class AvaloniaPresentationStore(
                     AgentDefaults = agentDefaults,
                     ProviderSettings = providerSettings,
                     McpSettings = mcpSettings,
+                    VisualCaptureSettings = visualCaptureSettings,
                     RemoteSpendPreference = remoteSpendPreference,
                 },
                 Workspaces = Current.Workspaces with { Registered = workspaces },
@@ -88,6 +94,106 @@ internal sealed class AvaloniaPresentationStore(
             logger.LogError(exception, "Avalonia presentation initialization failed");
             Publish(Current with { IsLoading = false, Error = exception.Message });
         }
+    }
+
+    internal async ValueTask SaveVisualCaptureSettingsAsync(
+        VisualCapturePreferences preferences,
+        CancellationToken cancellationToken)
+    {
+        if (visualCaptureService is null)
+        {
+            Publish(Current with { Settings = Current.Settings with
+                { Status = "Visual capture is unavailable." } });
+            return;
+        }
+        Publish(Current with { Settings = Current.Settings with
+            { IsBusy = true, Status = "Saving visual verification settings…" } });
+        VisualCaptureSettingsResult result = await visualCaptureService.SaveSettingsAsync(
+            preferences, cancellationToken);
+        Publish(Current with { Settings = Current.Settings with
+        {
+            VisualCaptureSettings = result.Snapshot ?? Current.Settings.VisualCaptureSettings,
+            IsBusy = false,
+            Status = result.Error ?? "Visual verification settings saved.",
+        } });
+    }
+
+    internal async ValueTask CaptureVisualAsync(
+        VisualCaptureTarget target,
+        VisualCaptureUiScale? uiScale,
+        VisualCaptureParentWindow? parentWindow,
+        CancellationToken cancellationToken)
+    {
+        GoalId? goalId = Current.Goals.SelectedGoalId;
+        if (visualCaptureService is null || goalId is null)
+        {
+            Publish(Current with { Settings = Current.Settings with
+                { Status = "Select a goal before capturing visual evidence." } });
+            return;
+        }
+        Publish(Current with { Settings = Current.Settings with
+            { IsBusy = true, Status = "Waiting for portal consent…" } });
+        VisualCaptureResult result = await visualCaptureService.CaptureAsync(new(
+            goalId,
+            new ToolCorrelationId($"developer-capture-{Guid.NewGuid():N}"),
+            VisualCaptureInitiator.Developer,
+            new("Manual visual verification"),
+            new("Harness.NET"),
+            target,
+            TimeProvider.System.GetUtcNow(),
+            parentWindow,
+            uiScale), cancellationToken);
+        await RefreshVisualCapturesAsync(cancellationToken);
+        if (result.Capture is not null)
+        {
+            await InspectVisualCaptureAsync(result.Capture.Id, cancellationToken);
+        }
+        Publish(Current with { Settings = Current.Settings with
+            { IsBusy = false, Status = result.Error ?? "Visual evidence captured." } });
+    }
+
+    internal async ValueTask RefreshVisualCapturesAsync(CancellationToken cancellationToken)
+    {
+        GoalId? goalId = Current.Goals.SelectedGoalId;
+        if (visualCaptureService is null || goalId is null)
+        {
+            return;
+        }
+        VisualCaptureListResult result = await visualCaptureService.ListAsync(goalId, cancellationToken);
+        Publish(Current with { Settings = Current.Settings with
+            { VisualCaptures = result.Captures, Status = result.Error ?? Current.Settings.Status } });
+    }
+
+    internal async ValueTask InspectVisualCaptureAsync(
+        VisualCaptureId captureId,
+        CancellationToken cancellationToken)
+    {
+        GoalId? goalId = Current.Goals.SelectedGoalId;
+        if (visualCaptureService is null || goalId is null)
+        {
+            return;
+        }
+        VisualCaptureInspectionResult result = await visualCaptureService.InspectAsync(
+            goalId, captureId, VisualCaptureModelAccess.Local, cancellationToken);
+        Publish(Current with { Settings = Current.Settings with
+        {
+            SelectedVisualCapture = result.Content,
+            Status = result.Error ?? "Showing the exact stored frame available to agents.",
+        } });
+    }
+
+    internal async ValueTask DeleteVisualCaptureAsync(
+        VisualCaptureId captureId,
+        CancellationToken cancellationToken)
+    {
+        GoalId? goalId = Current.Goals.SelectedGoalId;
+        if (visualCaptureService is null || goalId is null)
+        {
+            return;
+        }
+        await visualCaptureService.DeleteAsync(goalId, captureId, cancellationToken);
+        Publish(Current with { Settings = Current.Settings with { SelectedVisualCapture = null } });
+        await RefreshVisualCapturesAsync(cancellationToken);
     }
 
     internal async ValueTask RefreshMcpAsync(CancellationToken cancellationToken)

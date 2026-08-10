@@ -33,3 +33,4 @@ records in both directions.
 | [014](014-default-remote-spend-policy.md) | Accepted | Default remote spending |
 | [015](015-stateless-mcp-connections.md) | Accepted | Stateless MCP connections and agent tool safety |
 | [016](016-model-accessible-ide-capabilities.md) | Accepted | Model-accessible IDE capabilities |
+| [017](017-portal-visual-verification.md) | Accepted | Portal-mediated visual verification |

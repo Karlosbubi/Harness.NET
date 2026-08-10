@@ -1,5 +1,7 @@
 using System.Runtime.CompilerServices;
 using Harness.BusinessLogic.Agents;
+using Harness.BusinessLogic.Goals;
+using Harness.BusinessLogic.VisualCapture;
 using Harness.DataAccess.Models;
 using Microsoft.Extensions.AI;
 using AIChatRole = Microsoft.Extensions.AI.ChatRole;
@@ -43,6 +45,38 @@ public sealed class ModelProviderChatClientTests
         ChatToolResult result = Assert.Single(provider.Requests[1].Messages,
             message => message.ToolResult is not null).ToolResult!;
         Assert.Equal("read_file", result.ToolName?.Value);
+    }
+
+    [Fact]
+    public async Task Attaches_exact_capture_bytes_after_the_typed_tool_result()
+    {
+        CapturingReasoningProvider provider = new();
+        ModelProviderChatClient client = new(
+            provider, new("vision-model"), remoteGoalId: null, AgentRole.Reviewer);
+        VisualCaptureView capture = new(
+            new("11111111111111111111111111111111"), new GoalId("goal-a"), "workspace-a",
+            VisualCaptureInitiator.Reviewer, new("Verify UI"), new("Harness.NET"),
+            VisualCaptureTarget.Window, VisualCaptureIdentityState.Unavailable, null, null,
+            VisualCaptureScaleState.ApplicationSupplied, new(2), new(10, 20),
+            new("image/png"), new(3), new(new string('a', 64)), DateTimeOffset.UtcNow);
+        Microsoft.Extensions.AI.ChatMessage tool = new(
+            AIChatRole.Tool,
+            [new FunctionResultContent("call-image", new VisualCaptureInspectionResult(
+                VisualCaptureOutcome.Succeeded,
+                new(capture, new("AQID")),
+                null,
+                null))]);
+
+        _ = await client.GetResponseAsync([tool]);
+
+        ChatRequest request = Assert.Single(provider.Requests);
+        Harness.DataAccess.Models.ChatMessage image = Assert.Single(
+            request.Messages, message => message.Image is not null);
+        Assert.Equal("AQID", image.Image?.Base64.Value);
+        Assert.Contains(capture.Sha256.Value, image.Content, StringComparison.Ordinal);
+        ChatToolResult result = Assert.Single(request.Messages,
+            message => message.ToolResult is not null).ToolResult!;
+        Assert.DoesNotContain("AQID", result.Result.Value, StringComparison.Ordinal);
     }
 
     private sealed class CapturingReasoningProvider : IModelProvider

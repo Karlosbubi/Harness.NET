@@ -76,8 +76,10 @@ typed agent tools, and personal configuration.
   Settings management.
 - Task 047 foundation: model-accessible diagnostics, symbol information, definitions,
   references, implementations, and the Agent tools catalog page.
+- Task 045: consented single-frame XDG portal capture, private goal evidence,
+  developer preview, agent request/inspect tools, and remote-disclosure policy.
 
-### Next: Task 045 — controlled visual verification
+### Completed: Task 045 — controlled visual verification
 
 Add Linux screenshot capture through XDG Desktop Portal.
 
@@ -86,8 +88,8 @@ Requirements:
 1. Record an ADR for ownership, consent, privacy, retention, image limits, and
    platform boundaries.
 2. Define platform-neutral capture contracts.
-3. Implement the Linux portal adapter for single-frame capture. Add ScreenCast and
-   PipeWire only if single frames are insufficient.
+3. Implement the Linux Screenshot portal adapter for single-frame capture. Do not
+   add ScreenCast, PipeWire, video, or input control.
 4. Represent consent, cancellation, denial, portal absence, monitor selection, and
    scaling as typed outcomes.
 5. Store bounded captures as goal-scoped evidence with workspace, goal, time,
@@ -103,7 +105,7 @@ Requirements:
 Visual evidence supplements deterministic UI tests, AT-SPI, Build/Test, and human
 review. It does not replace them.
 
-### Task 046 — documentation, dependencies, and SBOM
+### Next: Task 046 — documentation, dependencies, and SBOM
 
 The MCP transport and Settings foundation are complete. Remaining work:
 

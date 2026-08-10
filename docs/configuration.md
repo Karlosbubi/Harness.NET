@@ -121,6 +121,21 @@ Settings → MCP connections can add, edit, enable, disable, remove, refresh, an
 protocol, eligible/rejected counts, and failures. Changes require restart because
 active clients and schemas are fixed for the process lifetime.
 
+## Visual verification
+
+Settings → Visual verification persists ordinary capture defaults in SQLite:
+
+- capture enabled;
+- maximum encoded frame size from 1 through 16 MiB;
+- retention from 1 through 90 days;
+- maximum retained frames per goal from 1 through 100;
+- remote-model access, disabled by default.
+
+The page also reports live XDG Screenshot portal availability. Frames and manifests
+are private XDG state, not XML configuration, backup content, or repository files.
+Changing these settings takes effect immediately and cleanup applies the current
+retention policy.
+
 ## Framework rules
 
 ```xml

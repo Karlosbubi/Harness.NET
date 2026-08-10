@@ -22,6 +22,8 @@
     <PackageReference Include="Serilog.Extensions.Logging" />
     <PackageReference Include="Serilog.Sinks.File" />
     <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" />
+    <PackageReference Include="Tmds.DBus.Generator" PrivateAssets="all" />
+    <PackageReference Include="Tmds.DBus.Protocol" />
   </ItemGroup>
 
   <ItemGroup>
@@ -32,5 +34,11 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Persistence/Migrations/*.sql" />
+    <AdditionalFiles Include="VisualCapture/Dbus/org.freedesktop.portal.Request.xml"
+                     Namespace="Harness.DataAccess.VisualCapture.DBus"
+                     GenerateDBusTypes="true" />
+    <AdditionalFiles Include="VisualCapture/Dbus/org.freedesktop.portal.Screenshot.xml"
+                     Namespace="Harness.DataAccess.VisualCapture.DBus"
+                     GenerateDBusTypes="true" />
   </ItemGroup>
 </Project>

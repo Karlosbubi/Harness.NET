@@ -78,7 +78,7 @@ implementation, and review quality. Do this after Tasks 045–047.
 
 ### 045 — controlled visual verification
 
-Status: `Planned`
+Status: `Delivered`
 
 Dependencies: 013, 035, 040.
 

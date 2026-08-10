@@ -16,6 +16,8 @@ internal static class AgentToolPolicy
             AgentToolKind.FindDefinition,
             AgentToolKind.FindReferences,
             AgentToolKind.FindImplementations,
+            AgentToolKind.RequestVisualCapture,
+            AgentToolKind.InspectVisualCapture,
         ],
         AgentRole.Implementer =>
         [
@@ -34,6 +36,8 @@ internal static class AgentToolPolicy
             AgentToolKind.ApplyRename,
             AgentToolKind.Build,
             AgentToolKind.Test,
+            AgentToolKind.RequestVisualCapture,
+            AgentToolKind.InspectVisualCapture,
         ],
         AgentRole.Reviewer =>
         [
@@ -48,6 +52,8 @@ internal static class AgentToolPolicy
             AgentToolKind.FindReferences,
             AgentToolKind.FindImplementations,
             AgentToolKind.ListEvidence,
+            AgentToolKind.RequestVisualCapture,
+            AgentToolKind.InspectVisualCapture,
         ],
         _ => throw new ArgumentOutOfRangeException(nameof(role)),
     };

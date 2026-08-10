@@ -11,4 +11,7 @@ public sealed record ApplicationPaths(
 {
     public string WorkbenchLayoutPath =>
         Path.Combine(StateDirectory, "workbench-layout.json");
+
+    public string VisualCaptureDirectory =>
+        Path.Combine(StateDirectory, "visual-captures");
 }

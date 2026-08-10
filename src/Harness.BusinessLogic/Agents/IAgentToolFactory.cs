@@ -7,5 +7,6 @@ internal interface IAgentToolFactory
     IList<AITool> Create(
         AgentRole role,
         Goals.GoalId goalId,
-        IReadOnlyList<AgentFileArea> fileAreas);
+        IReadOnlyList<AgentFileArea> fileAreas,
+        ModelAccess modelAccess = ModelAccess.Local);
 }

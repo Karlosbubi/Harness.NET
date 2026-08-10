@@ -51,7 +51,7 @@ Status meanings:
 | memory dump and mixed/native attach | Post-mortem and advanced debugger modules | Planned | Sensitive artifact/process approval and retention |
 | notebook execution | .NET Interactive notebook/cell discovery and bounded execution | Planned | Trusted repository execution; output/artifact limits |
 | inspection-KTS/PSI generator tools | Typed Roslyn analyzer/code-fix authoring examples, syntax trees and validation fixtures | Planned | Local docs plus deterministic compile/test harness |
-| engine/editor screenshots | XDG-portal approved visual evidence from Task 045 | Planned | Portal consent, privacy, goal binding; no input control |
+| engine/editor screenshots | XDG-portal approved visual evidence | Delivered | Portal consent, privacy, goal binding; no input control |
 | `execute_tool` router | On-demand typed toolset activation for the next bounded role turn | Planned | Catalog/role/policy validation; never dynamic invoke-by-name |
 | `ue_*` and Unreal-specific asset/Blueprint/actor/viewport tools | No Harness.NET equivalent | Excluded | Explicit product exclusion |
 
@@ -86,7 +86,7 @@ permitted direct exposure in Settings.
 | Database | connection health, schema/object inspection, bounded queries | Role and connection policy dependent |
 | Performance | snapshot metadata, timelines, call trees, memory dumps, Unity profiler | Implementer/Reviewer with artifact authority |
 | Notebook/analyzer lab | .NET cells, analyzer API/examples, syntax model, fixture validation | Implementer with execution authority |
-| Visual verification | request and inspect portal-approved captures | Implementer/Reviewer under Task 045 policy |
+| Visual verification | request and inspect portal-approved captures | Lead/Implementer/Reviewer under Task 045 policy |
 
 ## Delivery rule
 

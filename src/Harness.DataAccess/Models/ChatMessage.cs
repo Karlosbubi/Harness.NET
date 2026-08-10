@@ -5,4 +5,5 @@ public sealed record ChatMessage(
     string Content,
     IReadOnlyList<ChatToolCall>? ToolCalls = null,
     ChatToolResult? ToolResult = null,
-    ChatReasoning? Reasoning = null);
+    ChatReasoning? Reasoning = null,
+    ChatImage? Image = null);

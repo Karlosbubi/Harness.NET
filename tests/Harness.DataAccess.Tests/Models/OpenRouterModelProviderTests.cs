@@ -95,6 +95,38 @@ public sealed class OpenRouterModelProviderTests
     }
 
     [Fact]
+    public async Task Sends_exact_visual_evidence_as_openrouter_multimodal_content()
+    {
+        string? requestJson = null;
+        using HttpClient httpClient = CreateClient(async (request, cancellationToken) =>
+        {
+            if (request.Method == HttpMethod.Get)
+            {
+                return JsonResponse(ModelsJson("openai/gpt-5-mini", "text"));
+            }
+            requestJson = await request.Content!.ReadAsStringAsync(cancellationToken);
+            return JsonResponse(
+                "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]," +
+                "\"usage\":{\"cost\":0.000001}}\n\ndata: [DONE]\n\n",
+                "text/event-stream");
+        });
+        OpenRouterModelProvider provider = CreateProvider(httpClient, new StubRemoteCostStore());
+
+        _ = await CollectAsync(provider.StreamChatAsync(new(
+            "openai/gpt-5-mini",
+            [new(ChatRole.User, "Inspect exact frame", Image: new(new("image/png"), new("AQID")))],
+            new("goal-image", ProviderPrivacyPolicy.NoCollectionAndZeroDataRetention,
+                RemoteModelRole.Reviewer))));
+
+        using JsonDocument body = JsonDocument.Parse(requestJson!);
+        JsonElement content = body.RootElement.GetProperty("messages")[0].GetProperty("content");
+        Assert.Equal("text", content[0].GetProperty("type").GetString());
+        Assert.Equal("Inspect exact frame", content[0].GetProperty("text").GetString());
+        Assert.Equal("data:image/png;base64,AQID", content[1].GetProperty("image_url")
+            .GetProperty("url").GetString());
+    }
+
+    [Fact]
     public async Task Capped_goal_derives_provider_output_boundary_from_remaining_money()
     {
         string? requestJson = null;

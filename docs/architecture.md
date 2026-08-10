@@ -38,7 +38,7 @@ types remain in the code-intelligence adapter.
 | Task | One delegated unit with file areas and acceptance criteria. |
 | Artifact | Patch, plan, report, decision, or verification result. |
 | Approval | Typed authority for an exact consequential action. |
-| Evidence | Diff, diagnostic, Build/Test, review, usage, or tool result. |
+| Evidence | Diff, diagnostic, Build/Test, review, usage, visual capture, or tool result. |
 | Source context | Trusted original workspace or approved goal worktree plus entry point and identity. |
 
 ## Request flow
@@ -63,7 +63,7 @@ on the UI thread.
 - XDG configuration: provider/MCP modules, framework settings, and themes.
 - SQLite: goals, conversations, prompts, outputs, tools, approvals, checkpoints,
   usage, artifacts, vectors, summaries, overlays, and preferences.
-- XDG state: logs, worktree state, and workbench layout.
+- XDG state: logs, worktree state, workbench layout, and private bounded visual captures.
 - XDG cache: disposable data.
 - Linux Secret Service: credentials, with configured environment fallback.
 - User repository: goal branches and user-approved source or existing guidance only.
@@ -106,11 +106,18 @@ and the goal’s privacy and spending policy.
 MCP transport and SDK mapping stay in Data Access. Business Logic exposes only
 enabled tools that explicitly declare read-only and non-destructive behavior.
 
+Visual capture policy stays in Business Logic. The Linux Data Access adapter uses
+only the XDG Screenshot portal for a single interactive frame. Presentation supplies
+application context and UI scale, renders the exact stored bytes, and never invents
+window or display identity omitted by the portal. Remote inspection requires a
+separate saved opt-in.
+
 ## Platform boundary
 
 Linux is the release target. Presentation owns windows, pickers, clipboard,
 notifications, shortcuts, screen geometry, and accessibility. Data Access owns XDG,
-filesystem, Secret Service, and process behavior. Host composes these focused
+filesystem, Secret Service, process behavior, and the replaceable Linux portal
+adapter. Host composes these focused
 capabilities. Business Logic contains no platform checks.
 
 ## Required checks

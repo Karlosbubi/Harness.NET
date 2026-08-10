@@ -308,8 +308,20 @@ internal sealed class OpenRouterModelProvider(
             ChatRole.Tool => "tool",
             _ => throw new ArgumentOutOfRangeException(nameof(message)),
         },
-        Content = message.ToolResult?.Result.Value ??
-            (string.IsNullOrEmpty(message.Content) ? null : message.Content),
+        Content = message.Image is null
+            ? message.ToolResult?.Result.Value ??
+              (string.IsNullOrEmpty(message.Content) ? null : message.Content)
+            : new object[]
+            {
+                new OpenRouterTextContent { Text = message.Content },
+                new OpenRouterImageContent
+                {
+                    ImageUrl = new()
+                    {
+                        Url = $"data:{message.Image.MediaType.Value};base64,{message.Image.Base64.Value}",
+                    },
+                },
+            },
         Reasoning = string.IsNullOrEmpty(message.Reasoning?.Text.Value)
             ? null
             : message.Reasoning.Text.Value,
@@ -693,6 +705,7 @@ internal sealed class OpenRouterModelProvider(
         long estimatedInputTokens = request.Messages.Sum(message =>
             (long)Encoding.UTF8.GetByteCount(message.Role.ToString()) +
             Encoding.UTF8.GetByteCount(message.Content) +
+            (message.Image is null ? 0 : message.Image.Base64.Value.Length / 4) +
             (message.ToolCalls?.Sum(call =>
                 Encoding.UTF8.GetByteCount(call.Id.Value) +
                 Encoding.UTF8.GetByteCount(call.Name.Value) +

@@ -79,6 +79,28 @@ public sealed class OllamaModelProviderTests
     }
 
     [Fact]
+    public async Task Sends_exact_visual_evidence_as_an_ollama_image()
+    {
+        string? requestJson = null;
+        using HttpClient httpClient = CreateClient(async (request, cancellationToken) =>
+        {
+            requestJson = await request.Content!.ReadAsStringAsync(cancellationToken);
+            return JsonResponse("{\"message\":{\"content\":\"seen\"},\"done\":true}\n",
+                "application/x-ndjson");
+        });
+        OllamaModelProvider provider = new(httpClient);
+
+        _ = await CollectAsync(provider.StreamChatAsync(new(
+            "vision-model",
+            [new(ChatRole.User, "Inspect exact frame", Image: new(new("image/png"), new("AQID")))])));
+
+        using JsonDocument body = JsonDocument.Parse(requestJson!);
+        JsonElement message = body.RootElement.GetProperty("messages")[0];
+        Assert.Equal("Inspect exact frame", message.GetProperty("content").GetString());
+        Assert.Equal("AQID", message.GetProperty("images")[0].GetString());
+    }
+
+    [Fact]
     public async Task Maps_mid_stream_errors()
     {
         using HttpClient httpClient = CreateClient((_, _) => JsonResponse(

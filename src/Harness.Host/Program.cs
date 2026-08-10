@@ -17,6 +17,7 @@ using Harness.BusinessLogic.Operations;
 using Harness.BusinessLogic.Retrieval;
 using Harness.BusinessLogic.Workspaces;
 using Harness.BusinessLogic.Workflows;
+using Harness.BusinessLogic.VisualCapture;
 using Harness.DataAccess.Agents;
 using Harness.DataAccess.Approvals;
 using Harness.DataAccess.Appearance;
@@ -43,6 +44,7 @@ using Harness.DataAccess.SemanticIndex;
 using Harness.DataAccess.Workspaces;
 using Harness.DataAccess.Worktrees;
 using Harness.DataAccess.Workflows;
+using Harness.DataAccess.VisualCapture;
 using Harness.Host;
 using Harness.Host.Configuration;
 using Harness.Presentation.Terminal;
@@ -98,9 +100,7 @@ builder.Services.AddSingleton(new McpConnectionConfigurationOptions(
         connection.IsEnabled,
         RequiresRestart: false)).ToArray()));
 builder.Services.AddSingleton<IMcpConnectionConfigurationStore, XdgMcpConnectionConfigurationStore>();
-builder.Services.AddSingleton<StatelessHttpMcpToolClient>();
-builder.Services.AddSingleton<IMcpToolClient>(services =>
-    services.GetRequiredService<StatelessHttpMcpToolClient>());
+builder.Services.AddSingleton<IMcpToolClient, StatelessHttpMcpToolClient>();
 builder.Services.AddSingleton<IMcpSettingsService, McpSettingsService>();
 builder.Services.AddSingleton<IMcpToolService, McpToolService>();
 builder.Services.AddSingleton<IConversationStore, SqliteConversationStore>();
@@ -118,6 +118,11 @@ builder.Services.AddSingleton<ICapabilityApprovalStore, SqliteCapabilityApproval
 builder.Services.AddSingleton<ICapabilityApprovalService, CapabilityApprovalService>();
 builder.Services.AddSingleton<IToolEvidenceStore, SqliteToolEvidenceStore>();
 builder.Services.AddSingleton<IToolEvidenceService, ToolEvidenceService>();
+builder.Services.AddSingleton<IVisualCapturePreferenceStore, SqliteVisualCapturePreferenceStore>();
+builder.Services.AddSingleton<IVisualCapturePortal, XdgDesktopPortalVisualCapture>();
+builder.Services.AddSingleton<IVisualCaptureImageSourceReader, PortalFileImageSourceReader>();
+builder.Services.AddSingleton<IVisualCaptureArtifactStore, FileVisualCaptureArtifactStore>();
+builder.Services.AddSingleton<IVisualCaptureService, VisualCaptureService>();
 builder.Services.AddSingleton<IRunOutputService, RunOutputService>();
 builder.Services.AddSingleton<IGoalService, GoalService>();
 builder.Services.AddSingleton<IGoalWorktreeManager, GitGoalWorktreeManager>();
@@ -214,7 +219,9 @@ builder.Services.AddSingleton<IAgentRoleRunner>(services => new AgentRoleRunner(
         services.GetRequiredService<IToolEvidenceService>(),
         services.GetRequiredService<IGoalContextService>(),
         services.GetRequiredService<IGoalCodeIntelligenceService>(),
-        services.GetRequiredService<IMcpToolService>()),
+        services.GetRequiredService<IMcpToolService>(),
+        services.GetRequiredService<IVisualCaptureService>(),
+        services.GetRequiredService<TimeProvider>()),
     services.GetRequiredService<ILoggerFactory>(),
     services.GetRequiredService<IGoalWorkspaceInspectionService>(),
     services.GetRequiredService<IWorkspaceMutationService>()));
@@ -296,6 +303,8 @@ try
     DatabaseInitializationResult database = await host.Services
         .GetRequiredService<IDatabaseInitializer>()
         .InitializeAsync(shutdown.Token);
+    await host.Services.GetRequiredService<IVisualCaptureService>()
+        .CleanupAsync(shutdown.Token);
     await host.Services.GetRequiredService<IMcpSettingsService>()
         .RefreshAsync(shutdown.Token);
 

@@ -36,6 +36,7 @@ internal sealed class ToolEvidenceService(
                     DataAccess.Evidence.ToolKind.Build => ToolKind.Build,
                     DataAccess.Evidence.ToolKind.Test => ToolKind.Test,
                     DataAccess.Evidence.ToolKind.Restore => ToolKind.Restore,
+                    DataAccess.Evidence.ToolKind.VisualCapture => ToolKind.VisualCapture,
                     _ => throw new InvalidOperationException("The stored tool kind is unsupported."),
                 },
                 item.RequestJson,

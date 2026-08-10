@@ -10,6 +10,7 @@ Settings owns ordinary defaults. Goal-specific authority remains on the goal.
 | Model providers | Delivered. | Typed Business Logic service, private XDG XML, Secret Service. |
 | MCP connections | Delivered. | MCP Data Access adapter, Business Logic policy, private XDG XML. |
 | Agent tools | Partial. Catalog status is delivered; optional exposure persistence and activation remain. | Business Logic catalog and policy. |
+| Visual verification | Delivered. | Typed Business Logic policy, SQLite preference, XDG portal and private state adapters. |
 | Models & roles | Delivered. | `IAgentDefaultsService`, role-capability policy, SQLite defaults, goal route store. |
 | Privacy & limits | Delivered for default and goal Unlimited/Capped/LocalOnly mode and review cycles. | Business Logic preferences and goal records. |
 | Storage & recovery | Delivered. | XDG paths, SQLite, backup, layout, and restore services. |
@@ -60,6 +61,18 @@ configured MCP source count.
 
 Optional module enablement, safe exposure preferences, on-demand activation, and run
 evidence remain Task 047 work. Settings never grants goal authority.
+
+## Visual verification
+
+This page reports Screenshot portal availability and target support. It configures
+capture enablement, the 1–16 MiB frame limit, 1–90 day retention, 1–100 captures per
+goal, and remote-model disclosure. Remote disclosure is off by default.
+
+For the selected goal, the page requests one interactive frame, lists retained
+evidence, shows the exact stored bytes available to agents, and deletes a selected
+frame. Every request goes through desktop consent. Harness.NET exposes no background
+capture, video, generic desktop API, or input control. Captures use private XDG state
+and are excluded from application backups and user repositories.
 
 ## Models and roles
 

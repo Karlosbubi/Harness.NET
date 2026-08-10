@@ -44,6 +44,8 @@
     <PackageVersion Include="System.Reactive" Version="7.0.0" />
     <PackageVersion Include="Terminal.Gui" Version="2.4.17" />
     <PackageVersion Include="Terminal.Gui.Editor" Version="2.4.1" />
+    <PackageVersion Include="Tmds.DBus.Generator" Version="0.92.0" />
+    <PackageVersion Include="Tmds.DBus.Protocol" Version="0.92.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />

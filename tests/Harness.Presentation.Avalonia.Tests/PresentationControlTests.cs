@@ -29,6 +29,7 @@ using Harness.BusinessLogic.Mutations;
 using Harness.BusinessLogic.Mcp;
 using Harness.BusinessLogic.Workspaces;
 using Harness.BusinessLogic.Workflows;
+using Harness.BusinessLogic.VisualCapture;
 using Harness.UI.Avalonia;
 
 namespace Harness.Presentation.Avalonia.Tests;
@@ -232,7 +233,7 @@ public sealed class PresentationControlTests
     [Fact]
     public void Settings_search_matches_stable_categories_and_related_terms()
     {
-        Assert.Equal(10, SettingsCatalog.All.Count);
+        Assert.Equal(11, SettingsCatalog.All.Count);
         Assert.Equal(
             SettingsCategoryId.Appearance,
             Assert.Single(SettingsCatalog.Filter("contrast")).Id);
@@ -249,10 +250,13 @@ public sealed class PresentationControlTests
             SettingsCategoryId.AgentTools,
             Assert.Single(SettingsCatalog.Filter("definition")).Id);
         Assert.Equal(
+            SettingsCategoryId.VisualVerification,
+            Assert.Single(SettingsCatalog.Filter("screenshot")).Id);
+        Assert.Equal(
             SettingsCategoryId.StorageAndRecovery,
             Assert.Single(SettingsCatalog.Filter("backup")).Id);
         Assert.Empty(SettingsCatalog.Filter("not-a-real-setting"));
-        Assert.Equal(6, SettingsCatalog.All.Count(category => category.IsAvailable));
+        Assert.Equal(7, SettingsCatalog.All.Count(category => category.IsAvailable));
     }
 
     [Fact]
@@ -339,6 +343,38 @@ public sealed class PresentationControlTests
             Assert.Contains("2026-07-28", text, StringComparison.Ordinal);
             Assert.Contains("1 eligible", text, StringComparison.Ordinal);
             Assert.Contains("fail closed", text, StringComparison.OrdinalIgnoreCase);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Visual_settings_expose_consent_privacy_limits_and_exact_frame_controls()
+    {
+        using AvaloniaPresentationStore store = AvaloniaPresentationStoreTests.CreateStore(
+            visualCaptureService: new VisualCaptureService());
+        await store.LoadAsync(CancellationToken.None);
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            SettingsWindow window = new(store, CancellationToken.None);
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            ListBox categories = Assert.Single(window.GetLogicalDescendants().OfType<ListBox>());
+            categories.SelectedItem = SettingsCatalog.All.Single(category =>
+                category.Id is SettingsCategoryId.VisualVerification);
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.Contains(window.GetLogicalDescendants().OfType<Control>(), control =>
+                AutomationProperties.GetName(control) == "Enable visual verification capture");
+            Assert.Contains(window.GetLogicalDescendants().OfType<Control>(), control =>
+                AutomationProperties.GetName(control) == "Allow remote model access to visual captures");
+            Assert.Contains(window.GetLogicalDescendants().OfType<Control>(), control =>
+                AutomationProperties.GetName(control) == "Capture one visual verification frame");
+            string text = string.Join('\n', window.GetLogicalDescendants()
+                .OfType<TextBlock>().Select(block => block.Text));
+            Assert.Contains("XDG portal v3 available", text, StringComparison.Ordinal);
+            Assert.Contains("Off by default", text, StringComparison.Ordinal);
             window.Close();
         }, CancellationToken.None);
     }
@@ -2844,6 +2880,51 @@ public sealed class PresentationControlTests
             McpConnectionName name,
             CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(new McpSettingsResult(snapshot, null, null));
+    }
+
+    private sealed class VisualCaptureService : IVisualCaptureService
+    {
+        private static readonly VisualCaptureSettingsSnapshot Settings = new(
+            VisualCapturePreferences.Default,
+            new(true, 3,
+                [VisualCaptureTarget.UserSelection, VisualCaptureTarget.Window], null, null),
+            "Private XDG state; excluded from repositories and backups.");
+
+        public ValueTask<VisualCaptureSettingsSnapshot> GetSettingsAsync(
+            CancellationToken cancellationToken = default) => ValueTask.FromResult(Settings);
+
+        public ValueTask<VisualCaptureSettingsResult> SaveSettingsAsync(
+            VisualCapturePreferences preferences,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new VisualCaptureSettingsResult(
+                Settings with { Preferences = preferences }, null, null));
+
+        public ValueTask<VisualCaptureResult> CaptureAsync(
+            VisualCaptureRequest request,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new VisualCaptureResult(
+                VisualCaptureOutcome.Cancelled, null, "capture_cancelled", "Cancelled"));
+
+        public ValueTask<VisualCaptureListResult> ListAsync(
+            GoalId goalId,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new VisualCaptureListResult([], null, null));
+
+        public ValueTask<VisualCaptureInspectionResult> InspectAsync(
+            GoalId goalId,
+            VisualCaptureId captureId,
+            VisualCaptureModelAccess access,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new VisualCaptureInspectionResult(
+                VisualCaptureOutcome.NotFound, null, "capture_not_found", "Not found"));
+
+        public ValueTask<bool> DeleteAsync(
+            GoalId goalId,
+            VisualCaptureId captureId,
+            CancellationToken cancellationToken = default) => ValueTask.FromResult(false);
+
+        public ValueTask CleanupAsync(CancellationToken cancellationToken = default) =>
+            ValueTask.CompletedTask;
     }
 
     private sealed class LayoutService : IWorkbenchLayoutService

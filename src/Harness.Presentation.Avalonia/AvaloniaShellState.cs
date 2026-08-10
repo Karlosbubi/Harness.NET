@@ -11,6 +11,7 @@ using Harness.BusinessLogic.Mcp;
 using Harness.BusinessLogic.Retrieval;
 using Harness.BusinessLogic.Workflows;
 using Harness.BusinessLogic.Workspaces;
+using Harness.BusinessLogic.VisualCapture;
 
 namespace Harness.Presentation.Avalonia;
 
@@ -45,6 +46,9 @@ internal sealed record ApplicationSettingsState(
     AgentDefaultsSnapshot? AgentDefaults,
     ModelProviderSettingsSnapshot? ProviderSettings,
     McpSettingsSnapshot? McpSettings,
+    VisualCaptureSettingsSnapshot? VisualCaptureSettings,
+    IReadOnlyList<VisualCaptureView> VisualCaptures,
+    VisualCaptureContentView? SelectedVisualCapture,
     RemoteSpendPreference RemoteSpendPreference,
     bool IsBusy,
     string? Status)
@@ -53,6 +57,9 @@ internal sealed record ApplicationSettingsState(
         AgentDefaults: null,
         ProviderSettings: null,
         McpSettings: null,
+        VisualCaptureSettings: null,
+        VisualCaptures: [],
+        SelectedVisualCapture: null,
         RemoteSpendPreference: RemoteSpendPreference.Default,
         IsBusy: false,
         Status: null);

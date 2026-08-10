@@ -301,6 +301,25 @@ def exercise_orca_speech(application: AtSpiApplication) -> None:
     time.sleep(1)
 
 
+def verify_visual_settings_accessibility(application: AtSpiApplication) -> None:
+    application.invoke("Open Settings")
+    application.wait_for_name("Settings", "frame")
+    application.invoke_containing("Visual verification", "list item")
+    for name in (
+        "Enable visual verification capture",
+        "Maximum visual capture size in MiB",
+        "Visual capture retention days",
+        "Maximum visual captures per goal",
+        "Allow remote model access to visual captures",
+        "Capture one visual verification frame",
+        "Stored visual captures for selected goal",
+        "Delete selected visual capture",
+    ):
+        application.wait_for_name(name)
+    application.invoke("Close")
+    time.sleep(1)
+
+
 def verify_orca_speech(debug_log: Path) -> None:
     speech_lines = [
         line for line in debug_log.read_text(encoding="utf-8").splitlines()
@@ -569,6 +588,7 @@ def main() -> int:
 
             process, application = launch(executable, environment, accessibility_bus)
             verify_initial_accessibility(application)
+            verify_visual_settings_accessibility(application)
             if arguments.with_orca:
                 exercise_orca_speech(application)
             register_workspace(application, repository)

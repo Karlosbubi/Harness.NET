@@ -43,7 +43,7 @@ internal sealed class OpenRouterRequestMessage
     public string Role { get; init; } = string.Empty;
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public string? Content { get; init; }
+    public object? Content { get; init; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Reasoning { get; init; }
@@ -59,6 +59,25 @@ internal sealed class OpenRouterRequestMessage
     [JsonPropertyName("tool_call_id")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? ToolCallId { get; init; }
+}
+
+internal sealed class OpenRouterTextContent
+{
+    public string Type { get; init; } = "text";
+    public string Text { get; init; } = string.Empty;
+}
+
+internal sealed class OpenRouterImageContent
+{
+    public string Type { get; init; } = "image_url";
+
+    [JsonPropertyName("image_url")]
+    public OpenRouterImageUrl ImageUrl { get; init; } = new();
+}
+
+internal sealed class OpenRouterImageUrl
+{
+    public string Url { get; init; } = string.Empty;
 }
 
 internal sealed class OpenRouterReasoningOptions

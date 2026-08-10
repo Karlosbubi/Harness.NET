@@ -97,6 +97,9 @@ internal sealed class OllamaRequestMessage
     public string Content { get; init; } = string.Empty;
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string[]? Images { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Thinking { get; init; }
 
     [JsonPropertyName("tool_name")]

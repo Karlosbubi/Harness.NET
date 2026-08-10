@@ -23,6 +23,7 @@ public enum AgentToolAuthority
     TrustedRead,
     ApprovedWorktreeMutation,
     RepositoryExecution,
+    ExternalOrSensitive,
 }
 
 public sealed record AgentToolModule(
@@ -79,6 +80,18 @@ public sealed record AgentToolCatalog(IReadOnlyList<AgentToolModule> Modules)
             AgentToolAuthority.ApprovedWorktreeMutation,
             [new("preview_symbol_rename"), new("apply_symbol_rename")],
             IsOptional: false,
+            UnavailableReason: null),
+        new(
+            new("visual-verification"),
+            "Visual verification",
+            "One user-approved portal frame, stored as bounded goal evidence and inspected only under the configured local or remote disclosure policy.",
+            new("Harness.NET · XDG Desktop Portal"),
+            AgentToolModuleAvailability.Available,
+            [AgentRole.Lead, AgentRole.Implementer, AgentRole.Reviewer],
+            AgentToolExposure.Direct,
+            AgentToolAuthority.ExternalOrSensitive,
+            [new("request_visual_capture"), new("inspect_visual_capture")],
+            IsOptional: true,
             UnavailableReason: null),
         new(
             new("semantic-hierarchy"),

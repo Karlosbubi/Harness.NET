@@ -6,6 +6,7 @@ using Harness.BusinessLogic.Retrieval;
 using Harness.BusinessLogic.CodeIntelligence;
 using Harness.BusinessLogic.Mcp;
 using Harness.BusinessLogic.Tools;
+using Harness.BusinessLogic.VisualCapture;
 using Microsoft.Extensions.AI;
 
 namespace Harness.BusinessLogic.Agents;
@@ -16,15 +17,20 @@ internal sealed class AgentToolFactory(
     IToolEvidenceService evidenceService,
     IGoalContextService contextService,
     IGoalCodeIntelligenceService codeIntelligenceService,
-    IMcpToolService? mcpToolService = null) : IAgentToolFactory
+    IMcpToolService? mcpToolService = null,
+    IVisualCaptureService? visualCaptureService = null,
+    TimeProvider? timeProvider = null) : IAgentToolFactory
 {
     public IList<AITool> Create(
         AgentRole role,
         GoalId goalId,
-        IReadOnlyList<AgentFileArea> fileAreas)
+        IReadOnlyList<AgentFileArea> fileAreas,
+        ModelAccess modelAccess = ModelAccess.Local)
     {
         List<AITool> tools = AgentToolPolicy.AllowedFor(role)
-            .Select(kind => Create(kind, goalId, role, fileAreas))
+            .Where(kind => visualCaptureService is not null ||
+                kind is not AgentToolKind.RequestVisualCapture and not AgentToolKind.InspectVisualCapture)
+            .Select(kind => Create(kind, goalId, role, fileAreas, modelAccess))
             .ToList();
         if (mcpToolService is not null)
         {
@@ -38,7 +44,8 @@ internal sealed class AgentToolFactory(
         AgentToolKind kind,
         GoalId goalId,
         AgentRole role,
-        IReadOnlyList<AgentFileArea> fileAreas) => kind switch
+        IReadOnlyList<AgentFileArea> fileAreas,
+        ModelAccess modelAccess) => kind switch
     {
         AgentToolKind.ReadFile => AIFunctionFactory.Create(
             (string relativePath, CancellationToken cancellationToken) =>
@@ -168,6 +175,30 @@ internal sealed class AgentToolFactory(
             (CancellationToken cancellationToken) =>
                 evidenceService.ListAsync(goalId.Value, cancellationToken),
             Options("list_tool_evidence", "List durable mutation and verification evidence for the goal.")),
+        AgentToolKind.RequestVisualCapture => AIFunctionFactory.Create(
+            (string correlationId, string relatedAction, VisualCaptureTarget target,
+                    CancellationToken cancellationToken) =>
+                visualCaptureService!.CaptureAsync(new(
+                    goalId,
+                    new ToolCorrelationId(correlationId),
+                    Initiator(role),
+                    new(relatedAction),
+                    new("Harness.NET"),
+                    target,
+                    (timeProvider ?? TimeProvider.System).GetUtcNow()), cancellationToken),
+            Options("request_visual_capture",
+                "Ask the user to approve one interactive XDG Desktop Portal screenshot for a specific verification action. No frame is captured without portal consent.")),
+        AgentToolKind.InspectVisualCapture => AIFunctionFactory.Create(
+            (string captureId, CancellationToken cancellationToken) =>
+                visualCaptureService!.InspectAsync(
+                    goalId,
+                    new(captureId),
+                    modelAccess is ModelAccess.Remote
+                        ? VisualCaptureModelAccess.Remote
+                        : VisualCaptureModelAccess.Local,
+                    cancellationToken),
+            Options("inspect_visual_capture",
+                "Inspect the exact stored bytes and metadata of one goal-scoped capture. Remote disclosure must be enabled explicitly in Settings.")),
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 
@@ -175,6 +206,14 @@ internal sealed class AgentToolFactory(
         role is AgentRole.Lead
             ? GoalWorkspaceScope.Original
             : GoalWorkspaceScope.ApprovedWorktree;
+
+    private static VisualCaptureInitiator Initiator(AgentRole role) => role switch
+    {
+        AgentRole.Lead => VisualCaptureInitiator.Lead,
+        AgentRole.Implementer => VisualCaptureInitiator.Implementer,
+        AgentRole.Reviewer => VisualCaptureInitiator.Reviewer,
+        _ => throw new ArgumentOutOfRangeException(nameof(role)),
+    };
 
     private static RenameSymbolPreviewRequest RenameRequest(
         GoalId goalId,

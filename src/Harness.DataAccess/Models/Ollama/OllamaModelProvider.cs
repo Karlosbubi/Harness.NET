@@ -217,6 +217,7 @@ internal sealed class OllamaModelProvider(HttpClient httpClient) : IModelProvide
             _ => throw new ArgumentOutOfRangeException(nameof(message)),
         },
         Content = message.ToolResult?.Result.Value ?? message.Content,
+        Images = message.Image is null ? null : [message.Image.Base64.Value],
         Thinking = message.Reasoning?.Text.Value,
         ToolName = message.ToolResult?.ToolName?.Value,
         ToolCalls = message.ToolCalls?.Select(call => new OllamaToolCall

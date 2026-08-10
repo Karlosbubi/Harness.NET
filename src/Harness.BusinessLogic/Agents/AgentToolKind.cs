@@ -18,4 +18,6 @@ internal enum AgentToolKind
     Build,
     Test,
     ListEvidence,
+    RequestVisualCapture,
+    InspectVisualCapture,
 }

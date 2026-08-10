@@ -41,7 +41,7 @@ process_id=$!
 
 ready=0
 for _ in $(seq 1 100); do
-  if grep -q "Harness.NET ready (schema 21)" "$output_file"; then
+  if grep -q "Harness.NET ready (schema 25)" "$output_file"; then
     ready=1
     break
   fi
@@ -87,7 +87,7 @@ env -i \
   XDG_CACHE_HOME="$smoke_root/cache" \
   "$publish_root/Harness.Host" --backup-path="$backup_path" \
   >"$smoke_root/backup.log" 2>&1
-grep -q "Harness.NET backup created (schema 21" "$smoke_root/backup.log"
+grep -q "Harness.NET backup created (schema 25" "$smoke_root/backup.log"
 test -f "$backup_path"
 test "$(unzip -Z1 "$backup_path" | sort | tr '\n' ' ')" = \
   "harness.db manifest.json workbench-layout.json "
@@ -103,7 +103,7 @@ test -n "$expected_layout_sha"
 test "$actual_database_sha" = "$expected_database_sha"
 test "$actual_layout_sha" = "$expected_layout_sha"
 grep -q '"Format":"harness-backup-v2"' <<<"$manifest"
-grep -q '"SchemaVersion":21' <<<"$manifest"
+grep -q '"SchemaVersion":25' <<<"$manifest"
 
 mkdir -p "$recovery_root/config" "$recovery_root/data/harness.net" \
   "$recovery_root/state/harness.net" "$recovery_root/cache"
@@ -118,7 +118,7 @@ test "$(sqlite3 "$recovered_database" \
   "SELECT COUNT(*) FROM conversations WHERE id='release-proof';")" = "1"
 
 sqlite3 "$recovered_database" \
-  "DROP TABLE appearance_preferences; DROP TABLE agent_role_defaults; DROP TABLE goal_budget_extensions; DELETE FROM SchemaVersions WHERE ScriptName LIKE '%018_AppearancePreferences.sql' OR ScriptName LIKE '%019_AgentRoleDefaults.sql' OR ScriptName LIKE '%020_RenameEvidence.sql' OR ScriptName LIKE '%021_GoalBudgetExtensions.sql'; UPDATE application_metadata SET value='17' WHERE key='schema_version';"
+  "DROP TABLE appearance_preferences; DROP TABLE agent_role_defaults; DROP TABLE goal_budget_extensions; DROP TABLE remote_spend_preferences; DROP TABLE visual_capture_preferences; DELETE FROM SchemaVersions WHERE ScriptName LIKE '%018_AppearancePreferences.sql' OR ScriptName LIKE '%019_AgentRoleDefaults.sql' OR ScriptName LIKE '%020_RenameEvidence.sql' OR ScriptName LIKE '%021_GoalBudgetExtensions.sql' OR ScriptName LIKE '%022_RemoteSpendPreferences.sql' OR ScriptName LIKE '%023_AgentOutputTokenLimits.sql' OR ScriptName LIKE '%024_RemoveAgentOutputTokenLimits.sql' OR ScriptName LIKE '%025_VisualCapturePreferences.sql'; UPDATE application_metadata SET value='17' WHERE key='schema_version';"
 env -i \
   PATH="$recovery_root/no-installed-tools" \
   DOTNET_ROOT="$recovery_root/no-installed-dotnet" \
@@ -127,7 +127,7 @@ env -i \
   XDG_STATE_HOME="$recovery_root/state" \
   XDG_CACHE_HOME="$recovery_root/cache" \
   "$publish_root/Harness.Host" --no-ui >"$recovery_root/upgrade.log" 2>&1
-grep -q "Harness.NET ready (schema 21)" "$recovery_root/upgrade.log"
+grep -q "Harness.NET ready (schema 25)" "$recovery_root/upgrade.log"
 test -n "$(find "$recovery_root/data/harness.net/backups" \
   -type f -name 'pre-upgrade-*.zip' -print -quit)"
 test "$(sqlite3 "$recovered_database" \

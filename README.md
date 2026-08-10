@@ -28,13 +28,15 @@ Delivered:
 - Roslyn validation before model-authored source writes;
 - typed, role-scoped agent tools for files, Git, .NET metadata, Build/Test, semantic
   retrieval, diagnostics, symbols, navigation, edits, and rename;
+- XDG Desktop Portal visual verification with per-frame consent, private goal-scoped
+  evidence, exact-byte developer preview, typed agent tools, retention, revocation,
+  and remote-disclosure controls;
 - SQLite persistence, restart recovery, verified application backup, XDG paths,
   Secret Service credentials, structured logs, and optional OTLP export.
 
 Open work is tracked in [the roadmap](docs/roadmap.md) and
-[task ledger](docs/tasks/README.md). The next planned task is XDG Desktop Portal
-capture for controlled visual verification. Documentation/package lookup and the
-remaining model-accessible IDE tools follow it.
+[task ledger](docs/tasks/README.md). The next task is version-matched documentation,
+dependency validation, and SBOM management.
 
 ## Safety model
 
@@ -50,6 +52,8 @@ remaining model-accessible IDE tools follow it.
   separate authority checks.
 - Commits require approval of the exact branch, HEAD, message, author, and diff hash.
 - Credentials stay in Linux Secret Service or the configured environment boundary.
+- Screenshot requests always use desktop-portal consent. Captures are bounded,
+  revocable, and unavailable to remote models unless the user opts in.
 
 See [architecture](docs/architecture.md), [framework](docs/framework.md), and
 [decision records](docs/decisions/README.md) for the exact rules.

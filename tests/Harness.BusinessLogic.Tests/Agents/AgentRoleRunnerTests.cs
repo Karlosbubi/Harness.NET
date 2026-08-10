@@ -480,7 +480,8 @@ public sealed class AgentRoleRunnerTests
         public IList<AITool> Create(
             AgentRole role,
             GoalId goalId,
-            IReadOnlyList<AgentFileArea> fileAreas) => [];
+            IReadOnlyList<AgentFileArea> fileAreas,
+            ModelAccess modelAccess) => [];
     }
 
     private sealed class CapturingAgentToolFactory : IAgentToolFactory
@@ -492,7 +493,8 @@ public sealed class AgentRoleRunnerTests
         public IList<AITool> Create(
             AgentRole role,
             GoalId goalId,
-            IReadOnlyList<AgentFileArea> fileAreas) =>
+            IReadOnlyList<AgentFileArea> fileAreas,
+            ModelAccess modelAccess) =>
         [
             AIFunctionFactory.Create(
                 (string relativePath) =>

@@ -23,6 +23,8 @@ public sealed class AgentToolPolicyTests
         Assert.Contains(AgentToolKind.SemanticContext, tools);
         Assert.Contains(AgentToolKind.GetSymbolInfo, tools);
         Assert.Contains(AgentToolKind.FindDefinition, tools);
+        Assert.Contains(AgentToolKind.RequestVisualCapture, tools);
+        Assert.Contains(AgentToolKind.InspectVisualCapture, tools);
         Assert.DoesNotContain(AgentToolKind.ApplyFileEdit, tools);
         Assert.DoesNotContain(AgentToolKind.Build, tools);
         Assert.DoesNotContain(AgentToolKind.ListEvidence, tools);
@@ -42,6 +44,8 @@ public sealed class AgentToolPolicyTests
         Assert.Contains(AgentToolKind.InspectCodeProblems, tools);
         Assert.Contains(AgentToolKind.FindReferences, tools);
         Assert.Contains(AgentToolKind.FindImplementations, tools);
+        Assert.Contains(AgentToolKind.RequestVisualCapture, tools);
+        Assert.Contains(AgentToolKind.InspectVisualCapture, tools);
         Assert.DoesNotContain(AgentToolKind.ListEvidence, tools);
     }
 
@@ -55,6 +59,8 @@ public sealed class AgentToolPolicyTests
         Assert.Contains(AgentToolKind.SemanticContext, tools);
         Assert.Contains(AgentToolKind.GetSymbolInfo, tools);
         Assert.Contains(AgentToolKind.FindReferences, tools);
+        Assert.Contains(AgentToolKind.RequestVisualCapture, tools);
+        Assert.Contains(AgentToolKind.InspectVisualCapture, tools);
         Assert.DoesNotContain(AgentToolKind.ApplyFileEdit, tools);
         Assert.DoesNotContain(AgentToolKind.Build, tools);
         Assert.DoesNotContain(AgentToolKind.Test, tools);

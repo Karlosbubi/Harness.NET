@@ -203,6 +203,10 @@ requires clarification.
   workspace. A selected approved goal targets its worktree instead.
 - Search, editor, Git, and diff use the same source context.
 - Run output shows typed Build/Test/Restore evidence and is not a terminal.
+- Visual verification requests one consented XDG Screenshot frame. Captures are
+  bounded, goal-scoped, revocable, private, and withheld from remote models unless
+  Settings explicitly enables disclosure. No video, background capture, or input
+  control is allowed.
 - Avalonia is the default UI. Terminal.Gui remains available with `--ui=terminal`.
 - Linux is the release gate.
 - Presentation owns native UI integration. Data Access owns XDG, filesystem,

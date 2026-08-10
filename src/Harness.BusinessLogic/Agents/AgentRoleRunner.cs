@@ -73,7 +73,7 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
             GoalModelRoute route = resolved.Route;
 
             IList<AITool> tools = toolFactory.Create(
-                request.Role, request.GoalId, request.FileAreas ?? []);
+                request.Role, request.GoalId, request.FileAreas ?? [], route.Access);
             BootstrapInspection? bootstrap = await BootstrapExactFileInspectionAsync(
                 request, tools, cancellationToken);
             bool inspectionBootstrapped = bootstrap is not null;

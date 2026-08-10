@@ -7,4 +7,5 @@ public enum ToolKind
     Build,
     Test,
     Restore,
+    VisualCapture,
 }

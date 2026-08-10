@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Harness.BusinessLogic.Goals;
+using Harness.BusinessLogic.VisualCapture;
 using Harness.DataAccess.Models;
 using Microsoft.Extensions.AI;
 using AIChatRole = Microsoft.Extensions.AI.ChatRole;
@@ -140,7 +141,8 @@ internal sealed class ModelProviderChatClient(
                         "inspect_code_problems" or "get_symbol_info" or
                         "find_symbol_definition" or "find_symbol_references" or
                         "find_symbol_implementations" or "apply_file_edit" or
-                        "preview_symbol_rename" or "apply_symbol_rename");
+                        "preview_symbol_rename" or "apply_symbol_rename" or
+                        "request_visual_capture" or "inspect_visual_capture");
         }
 
         IReadOnlyList<ChatToolDefinition> tools = offeredTools
@@ -278,10 +280,39 @@ internal sealed class ModelProviderChatClient(
                 ToolCalls: null,
                 new(
                     new(result.CallId),
-                    new(JsonSerializer.Serialize(result.Result)),
+                    new(SerializeToolResult(result.Result)),
                     toolNamesByCallId.GetValueOrDefault(result.CallId)));
+            if (result.Result is VisualCaptureInspectionResult
+                {
+                    Outcome: VisualCaptureOutcome.Succeeded,
+                    Content: { } capture,
+                })
+            {
+                yield return new(
+                    ProviderChatRole.User,
+                    $"Exact stored visual evidence {capture.Capture.Id.Value}. " +
+                    $"Goal {capture.Capture.GoalId.Value}; action " +
+                    $"{capture.Capture.RelatedAction.Value}; " +
+                    $"{capture.Capture.PixelSize.Width}x{capture.Capture.PixelSize.Height}; " +
+                    $"SHA-256 {capture.Capture.Sha256.Value}.",
+                    Image: new(
+                        new(capture.Capture.MediaType.Value),
+                        new(capture.Content.Base64)));
+            }
         }
     }
+
+    private static string SerializeToolResult(object? result) =>
+        result is VisualCaptureInspectionResult { Content: { } content } inspection
+            ? JsonSerializer.Serialize(new
+            {
+                inspection.Outcome,
+                content.Capture,
+                inspection.ErrorCode,
+                inspection.Error,
+                imageAttachedToFollowingMessage = true,
+            })
+            : JsonSerializer.Serialize(result);
 
     private static IDictionary<string, object?> DeserializeArguments(ChatToolArgumentsJson arguments)
     {

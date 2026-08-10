@@ -15,6 +15,7 @@ using Harness.BusinessLogic.Retrieval;
 using Harness.BusinessLogic.Tools;
 using Harness.BusinessLogic.Workflows;
 using Harness.BusinessLogic.Workspaces;
+using Harness.BusinessLogic.VisualCapture;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Harness.Presentation.Avalonia.Tests;
@@ -25,7 +26,8 @@ public sealed class AvaloniaPresentationStoreTests
     /// <summary>Builds a store over the deterministic fakes so other suites can drive real dialogs.</summary>
     internal static AvaloniaPresentationStore CreateStore(
         IModelProviderSettingsService? providerSettingsService = null,
-        IMcpSettingsService? mcpSettingsService = null) => new(
+        IMcpSettingsService? mcpSettingsService = null,
+        IVisualCaptureService? visualCaptureService = null) => new(
         new DashboardService(),
         new AppearanceService(),
         new WorkspaceService(),
@@ -42,7 +44,8 @@ public sealed class AvaloniaPresentationStoreTests
         NullLogger<AvaloniaPresentationStore>.Instance,
         providerSettingsService,
         remoteSpendPreferenceService: null,
-        mcpSettingsService);
+        mcpSettingsService,
+        visualCaptureService);
 
     [Theory]
     [InlineData("I am **Gemma 4** 😊</blockquote>", "I am Gemma 4 😊")]
