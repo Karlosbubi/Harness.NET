@@ -1853,12 +1853,28 @@ internal sealed class WorkbenchDockHost
             else if (args.Key is Key.F12 && args.KeyModifiers == KeyModifiers.None)
             {
                 args.Handled = true;
-                await NavigateSymbolAsync(session, references: false);
+                await NavigateSymbolAsync(session, SemanticNavigationKind.Definition);
             }
             else if (args.Key is Key.F12 && args.KeyModifiers == KeyModifiers.Shift)
             {
                 args.Handled = true;
-                await NavigateSymbolAsync(session, references: true);
+                await NavigateSymbolAsync(session, SemanticNavigationKind.References);
+            }
+            else if (args.Key is Key.F12 && args.KeyModifiers == KeyModifiers.Control)
+            {
+                args.Handled = true;
+                await NavigateSymbolAsync(session, SemanticNavigationKind.Implementations);
+            }
+            else if (args.Key is Key.F7 && args.KeyModifiers == KeyModifiers.Alt)
+            {
+                args.Handled = true;
+                await NavigateSymbolAsync(session, SemanticNavigationKind.References);
+            }
+            else if (args.Key is Key.B &&
+                     args.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Alt))
+            {
+                args.Handled = true;
+                await NavigateSymbolAsync(session, SemanticNavigationKind.Implementations);
             }
             else if (args.Key is Key.F2 && args.KeyModifiers == KeyModifiers.None)
             {
@@ -1917,6 +1933,15 @@ internal sealed class WorkbenchDockHost
         surface.Save.Click += async (_, _) => await SaveSourceDocumentAsync(session);
         surface.Reload.Click += async (_, _) => await ReloadSourceDocumentAsync(session, confirmDiscard: true);
         surface.Close.Click += async (_, _) => await RequestSourceDocumentCloseAsync(session);
+        surface.Completion.Click += async (_, _) => await ShowCompletionAsync(
+            session, WorkbenchCodeCompletionTriggerKind.Invoke, triggerCharacter: null);
+        surface.SymbolInfo.Click += async (_, _) => await ShowQuickInfoAsync(session);
+        surface.Definition.Click += async (_, _) => await NavigateSymbolAsync(
+            session, SemanticNavigationKind.Definition);
+        surface.References.Click += async (_, _) => await NavigateSymbolAsync(
+            session, SemanticNavigationKind.References);
+        surface.Implementations.Click += async (_, _) => await NavigateSymbolAsync(
+            session, SemanticNavigationKind.Implementations);
         sourceDocuments.Add(id, session);
         session.SynchronizeDirtyState();
         ScheduleDiagnostics(session, immediate: true);
@@ -2327,7 +2352,7 @@ internal sealed class WorkbenchDockHost
 
     private async ValueTask NavigateSymbolAsync(
         SourceDocumentSession session,
-        bool references)
+        SemanticNavigationKind kind)
     {
         if (!CanUseSemanticAssistance(session))
         {
@@ -2348,9 +2373,23 @@ internal sealed class WorkbenchDockHost
 
             WorkbenchCodeInteractiveSnapshot snapshot = InteractiveSnapshot(
                 session, codeSession, version);
-            WorkbenchCodeNavigationView result = references
-                ? await codeIntelligenceService.FindReferencesAsync(snapshot, token)
-                : await codeIntelligenceService.FindDefinitionAsync(snapshot, token);
+            session.SetStatus(kind switch
+            {
+                SemanticNavigationKind.Definition => "Finding definition with Roslyn…",
+                SemanticNavigationKind.References => "Finding usages with Roslyn…",
+                SemanticNavigationKind.Implementations => "Finding implementations with Roslyn…",
+                _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+            });
+            WorkbenchCodeNavigationView result = kind switch
+            {
+                SemanticNavigationKind.Definition =>
+                    await codeIntelligenceService.FindDefinitionAsync(snapshot, token),
+                SemanticNavigationKind.References =>
+                    await codeIntelligenceService.FindReferencesAsync(snapshot, token),
+                SemanticNavigationKind.Implementations =>
+                    await codeIntelligenceService.FindImplementationsAsync(snapshot, token),
+                _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+            };
             if (!session.IsCurrentInteraction(version))
             {
                 return;
@@ -2360,9 +2399,9 @@ internal sealed class WorkbenchDockHost
                 .Where(destination => destination.Kind is WorkbenchCodeDestinationKind.Source &&
                     destination.Path is not null && destination.Range is not null)
                 .ToArray();
-            if (!references && source.FirstOrDefault() is { } definition)
+            if (kind is not SemanticNavigationKind.References && source.Length == 1)
             {
-                await NavigateToSymbolAsync(definition, session.View.GoalId);
+                await NavigateToSymbolAsync(source[0], session.View.GoalId);
                 return;
             }
 
@@ -2373,6 +2412,9 @@ internal sealed class WorkbenchDockHost
                 return;
             }
 
+            session.SetStatus($"Found {source.Length:N0} source {NavigationLabel(kind)} " +
+                              (source.Length == 1 ? "destination." : "destinations."));
+
             ListBox list = new()
             {
                 ItemsSource = source.Select(destination => new SymbolDestinationChoice(destination))
@@ -2381,7 +2423,8 @@ internal sealed class WorkbenchDockHost
                 MinWidth = 420,
             };
             AutomationProperties.SetName(list,
-                $"{source.Length} source reference destinations for {session.View.Path.Value}");
+                $"{source.Length} source {NavigationLabel(kind)} destinations for " +
+                session.View.Path.Value);
             InsightWindow window = new(session.Editor.TextArea)
             {
                 Child = list,
@@ -2403,6 +2446,21 @@ internal sealed class WorkbenchDockHost
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
         }
+    }
+
+    private static string NavigationLabel(SemanticNavigationKind kind) => kind switch
+    {
+        SemanticNavigationKind.Definition => "definition",
+        SemanticNavigationKind.References => "usage",
+        SemanticNavigationKind.Implementations => "implementation",
+        _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+    };
+
+    private enum SemanticNavigationKind
+    {
+        Definition,
+        References,
+        Implementations,
     }
 
     private async ValueTask NavigateToSymbolAsync(

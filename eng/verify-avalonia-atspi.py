@@ -429,6 +429,14 @@ def verify_documents_and_search(
         raise AssertionError("AT-SPI could not switch between real source documents")
 
     application.wait_for_name("Save Program.cs", "push button")
+    for action in (
+        "Show IntelliSense for Program.cs",
+        "Show symbol information for Program.cs",
+        "Go to definition in Program.cs",
+        "Find usages in Program.cs",
+        "Go to implementation in Program.cs",
+    ):
+        application.wait_for_name(action, "push button")
     application.invoke("Focus the active editor document")
     worktree_lines = subprocess.check_output(
         ["git", "-C", str(repository), "worktree", "list", "--porcelain"],

@@ -31,4 +31,11 @@ internal interface IGoalCodeIntelligenceService
         WorkbenchCodeDocumentPath path,
         WorkbenchCodePosition position,
         CancellationToken cancellationToken = default);
+
+    ValueTask<GoalCodeNavigationView> FindImplementationsAsync(
+        GoalId goalId,
+        GoalWorkspaceScope scope,
+        WorkbenchCodeDocumentPath path,
+        WorkbenchCodePosition position,
+        CancellationToken cancellationToken = default);
 }

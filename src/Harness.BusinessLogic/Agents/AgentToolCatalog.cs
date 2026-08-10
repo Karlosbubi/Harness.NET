@@ -57,14 +57,15 @@ public sealed record AgentToolCatalog(IReadOnlyList<AgentToolModule> Modules)
         new(
             new("roslyn-semantic-analysis"),
             "Roslyn semantic analysis",
-            "Current compiler diagnostics, symbol information, definitions, and references from the exact role source context.",
+            "Current compiler diagnostics, symbol information, definitions, references, and implementations from the exact role source context.",
             new("Harness.NET · Roslyn"),
             AgentToolModuleAvailability.Available,
             [AgentRole.Lead, AgentRole.Implementer, AgentRole.Reviewer],
             AgentToolExposure.Direct,
             AgentToolAuthority.TrustedRead,
             [new("inspect_code_problems"), new("get_symbol_info"),
-                new("find_symbol_definition"), new("find_symbol_references")],
+                new("find_symbol_definition"), new("find_symbol_references"),
+                new("find_symbol_implementations")],
             IsOptional: false,
             UnavailableReason: null),
         new(
@@ -82,7 +83,7 @@ public sealed record AgentToolCatalog(IReadOnlyList<AgentToolModule> Modules)
         new(
             new("semantic-hierarchy"),
             "Roslyn hierarchy and test discovery",
-            "Symbol search, calls, type/implementation hierarchy, overrides, and associated tests.",
+            "Symbol search, calls, type hierarchy, override hierarchy, and associated tests.",
             new("Harness.NET · Roslyn"),
             AgentToolModuleAvailability.Planned,
             [AgentRole.Lead, AgentRole.Implementer, AgentRole.Reviewer],
@@ -90,7 +91,7 @@ public sealed record AgentToolCatalog(IReadOnlyList<AgentToolModule> Modules)
             AgentToolAuthority.TrustedRead,
             [],
             IsOptional: true,
-            UnavailableReason: "The bounded hierarchy, paging, and test-association contracts are not implemented yet."),
+            UnavailableReason: "The bounded call/type hierarchy, paging, and test-association contracts are not implemented yet."),
         new(
             new("build-test"),
             "Build and test",

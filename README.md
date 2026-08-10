@@ -79,7 +79,12 @@ in AvaloniaEdit by default. If an approved goal is selected, source instead reso
 to its isolated worktree. Both user save paths use confined exact-baseline writes;
 agent edits still require the approved goal mutation boundary. Dirty switching/closing
 and external-change conflicts require explicit decisions. Search, Git state, diff,
-and source resolve to the same context. Truncated source remains read-only. Bounded run-output separation
+and source resolve to the same context. C# documents expose a visible semantic toolbar
+for IntelliSense, symbol information, definitions, usages, and implementations, with
+the corresponding Ctrl+Space, Ctrl+K, F12, Shift+F12/Alt+F7, and
+Ctrl+F12/Ctrl+Alt+B shortcuts. Completion, signature help, navigation, and enriched
+syntax categories are driven by the same exact-buffer Roslyn session used for live
+diagnostics. Truncated source remains read-only. Bounded run-output separation
 is implemented as a distinct Dock tool over durable typed Build/Test/Restore evidence
 without adding a terminal. The rendered Dock content boundary, minimum-size fallback,
 keyboard restoration, floating ownership, accessible names, and 200% scaling are now
@@ -105,7 +110,8 @@ Trusted-workspace tools now provide confined file reads, tracked-text search,
 bounded Git status/diff evidence, non-evaluating .NET metadata, approved atomic file
 edits, and cancellable .NET execution in isolated goal worktrees. Agent tools also
 expose Roslyn compiler diagnostics, symbol information, definitions, and
-references without requiring a model to construct editor sessions or source snapshots.
+references and implementations without requiring a model to construct editor sessions
+or source snapshots.
 Lead queries use the trusted original workspace; Implementer and Reviewer queries use
 the approved goal worktree. Settings → Agent tools shows the built-in module source,
 health, eligible roles, exposure, authority, and exact model-facing operations. Agent

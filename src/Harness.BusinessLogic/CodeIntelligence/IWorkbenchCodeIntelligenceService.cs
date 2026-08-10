@@ -39,6 +39,18 @@ public interface IWorkbenchCodeIntelligenceService
         WorkbenchCodeInteractiveSnapshot snapshot,
         CancellationToken cancellationToken = default);
 
+    ValueTask<WorkbenchCodeNavigationView> FindImplementationsAsync(
+        WorkbenchCodeInteractiveSnapshot snapshot,
+        CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult(new WorkbenchCodeNavigationView(
+            snapshot.SessionId,
+            snapshot.Path,
+            snapshot.BufferVersion,
+            WorkbenchCodeResultState.Failed,
+            [],
+            [new(new("implementations_not_supported"),
+                new("Implementation lookup is unavailable."))]));
+
     ValueTask<WorkbenchCodeRenamePreviewView> PreviewRenameAsync(
         WorkbenchCodeRenamePreviewRequest request,
         CancellationToken cancellationToken = default) =>

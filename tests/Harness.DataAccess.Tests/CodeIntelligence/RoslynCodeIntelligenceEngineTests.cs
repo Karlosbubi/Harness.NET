@@ -325,6 +325,50 @@ public sealed class RoslynCodeIntelligenceEngineTests(ITestOutputHelper output) 
     }
 
     [Fact]
+    public async Task Implementation_lookup_resolves_interface_and_override_sources()
+    {
+        const string source = """
+            interface IRunner
+            {
+                void Run();
+            }
+            class BaseRunner
+            {
+                public virtual void Execute() { }
+            }
+            class Runner : BaseRunner, IRunner
+            {
+                public void Run() { }
+                public override void Execute() { }
+            }
+            """;
+        await CreateProjectAsync(source);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("implementations-context");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+
+        CodeIntelligenceNavigationResult interfaceImplementations =
+            await engine.FindImplementationsAsync(InteractiveSnapshot(
+                contextId,
+                session.SessionId!,
+                source,
+                source.IndexOf("IRunner", StringComparison.Ordinal) + 2));
+        CodeIntelligenceNavigationResult overrideImplementations =
+            await engine.FindImplementationsAsync(InteractiveSnapshot(
+                contextId,
+                session.SessionId!,
+                source,
+                source.IndexOf("Execute()", StringComparison.Ordinal) + 2));
+
+        Assert.Contains(interfaceImplementations.Destinations, destination =>
+            destination.Kind is CodeIntelligenceDestinationKind.Source &&
+            destination.Display.Value.Contains("Runner", StringComparison.Ordinal));
+        Assert.Contains(overrideImplementations.Destinations, destination =>
+            destination.Kind is CodeIntelligenceDestinationKind.Source &&
+            destination.Display.Value.Contains("Runner.Execute", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Rename_preview_resolves_a_partial_type_across_files_without_writing()
     {
         const string declaration = "public partial class Widget { public void Run() { } }\n";

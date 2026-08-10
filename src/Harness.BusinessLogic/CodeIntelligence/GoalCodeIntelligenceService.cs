@@ -52,7 +52,8 @@ internal sealed class GoalCodeIntelligenceService(
         WorkbenchCodeDocumentPath path,
         WorkbenchCodePosition position,
         CancellationToken cancellationToken = default) =>
-        NavigateAsync(goalId, scope, path, position, references: false, cancellationToken);
+        NavigateAsync(goalId, scope, path, position, NavigationKind.Definition,
+            cancellationToken);
 
     public ValueTask<GoalCodeNavigationView> FindReferencesAsync(
         GoalId goalId,
@@ -60,7 +61,17 @@ internal sealed class GoalCodeIntelligenceService(
         WorkbenchCodeDocumentPath path,
         WorkbenchCodePosition position,
         CancellationToken cancellationToken = default) =>
-        NavigateAsync(goalId, scope, path, position, references: true, cancellationToken);
+        NavigateAsync(goalId, scope, path, position, NavigationKind.References,
+            cancellationToken);
+
+    public ValueTask<GoalCodeNavigationView> FindImplementationsAsync(
+        GoalId goalId,
+        GoalWorkspaceScope scope,
+        WorkbenchCodeDocumentPath path,
+        WorkbenchCodePosition position,
+        CancellationToken cancellationToken = default) =>
+        NavigateAsync(goalId, scope, path, position, NavigationKind.Implementations,
+            cancellationToken);
 
     private async ValueTask<GoalCodeSymbolView> SymbolAsync(
         GoalId goalId,
@@ -94,7 +105,7 @@ internal sealed class GoalCodeIntelligenceService(
         GoalWorkspaceScope scope,
         WorkbenchCodeDocumentPath path,
         WorkbenchCodePosition position,
-        bool references,
+        NavigationKind kind,
         CancellationToken cancellationToken)
     {
         PreparedQuery prepared = await PrepareAsync(
@@ -106,11 +117,19 @@ internal sealed class GoalCodeIntelligenceService(
 
         try
         {
-            WorkbenchCodeNavigationView result = references
-                ? await codeIntelligenceService.FindReferencesAsync(
-                    prepared.Interactive!, cancellationToken)
-                : await codeIntelligenceService.FindDefinitionAsync(
-                    prepared.Interactive!, cancellationToken);
+            WorkbenchCodeNavigationView result = kind switch
+            {
+                NavigationKind.Definition =>
+                    await codeIntelligenceService.FindDefinitionAsync(
+                        prepared.Interactive!, cancellationToken),
+                NavigationKind.References =>
+                    await codeIntelligenceService.FindReferencesAsync(
+                        prepared.Interactive!, cancellationToken),
+                NavigationKind.Implementations =>
+                    await codeIntelligenceService.FindImplementationsAsync(
+                        prepared.Interactive!, cancellationToken),
+                _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+            };
             return new(path, position, result.State, result.Destinations,
                 result.Issues.FirstOrDefault());
         }
@@ -118,6 +137,13 @@ internal sealed class GoalCodeIntelligenceService(
         {
             await codeIntelligenceService.StopAsync(prepared.SessionId!, CancellationToken.None);
         }
+    }
+
+    private enum NavigationKind
+    {
+        Definition,
+        References,
+        Implementations,
     }
 
     private async ValueTask<PreparedQuery> PrepareAsync(

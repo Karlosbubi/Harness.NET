@@ -28,8 +28,8 @@ Status meanings:
 | `get_solution_projects`, `get_project_dependencies` | Evaluated solution/project graph, exact project/package references and resolved versions | Partial | Trusted evaluation; no implicit restore |
 | `get_project_problems`, `get_file_problems`, `lint_files` | Versioned file/project/changed-set diagnostics with stable identities and delta | Partial | Models now receive exact-file Roslyn diagnostics; project/changed-set and lint scopes remain |
 | `get_symbol_info` | Quick info, declaration, documentation, type and source/metadata destination | Delivered | Role-scoped source is loaded at the current exact file baseline |
-| definition/reference navigation | Roslyn definition and bounded reference destinations | Delivered | Original workspace for Lead; approved goal worktree for Implementer/Reviewer |
-| `analyze_calls`, class hierarchy tools | Incoming/outgoing call, type, implementation and override hierarchy | Planned | Roslyn semantic identity, paging and depth bounds |
+| definition/reference/implementation navigation | Roslyn definition and bounded usage/implementation destinations | Delivered | Original workspace for Lead; approved goal worktree for Implementer/Reviewer |
+| `analyze_calls`, class hierarchy tools | Incoming/outgoing call, type and override hierarchy | Planned | Roslyn semantic identity, paging and depth bounds |
 | `findTests` | Discover tests associated with symbol/project and exact runnable test cases | Planned | Deterministic test adapters; no model guess |
 | `post_edit_quality_check` | One changed-set gate combining diagnostics, formatting, tests/build evidence and unresolved findings | Partial | Reuse evidence; never self-certify model output |
 | `reformat_file` | Preview/apply repository code style and format changed files | Planned | Deterministic formatter, exact baseline, post-check |
@@ -66,7 +66,7 @@ Keep this set small and role-adjusted:
 - discover/request relevant IDE toolsets for the next bounded role turn.
 
 The first shared Roslyn slice keeps exact-file diagnostics, symbol information,
-definition, and reference lookup direct for every role. Harness.NET loads the current
+definition, reference, and implementation lookup direct for every role. Harness.NET loads the current
 file and creates the short-lived exact-context session itself; models do not provide
 session IDs, baseline hashes, buffer versions, or duplicated source text. Broader
 hierarchy and test-discovery schemas remain on-demand work.
@@ -80,7 +80,7 @@ permitted direct exposure in Settings.
 | Toolset | Representative operations | Default roles |
 |---|---|---|
 | Workspace exploration | tree/glob/regex/open-document context/dependency source | Lead, Implementer, Reviewer |
-| Semantic analysis | diagnostics, symbol info/search, definitions/references, calls/types, test association | Lead, Implementer, Reviewer |
+| Semantic analysis | diagnostics, symbol info/search, definitions/references/implementations, calls/types, test association | Lead, Implementer, Reviewer |
 | Deterministic transformations | format, imports/namespaces, rename, signature, extract, move, safe delete | Implementer; Reviewer preview only |
 | Build and test | asynchronous build state, test discovery/filter/run/cancel | Implementer, Reviewer verification |
 | Run configurations | launch discovery, typed one-run overrides, process output/stop | Implementer with execution authority |

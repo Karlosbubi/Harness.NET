@@ -92,6 +92,12 @@ internal sealed class AgentToolFactory(
                     goalId, Scope(role), new(relativePath), new(line, character), cancellationToken),
             Options("find_symbol_references",
                 "Find bounded references to the symbol at a zero-based line and character with Roslyn.")),
+        AgentToolKind.FindImplementations => AIFunctionFactory.Create(
+            (string relativePath, int line, int character, CancellationToken cancellationToken) =>
+                codeIntelligenceService.FindImplementationsAsync(
+                    goalId, Scope(role), new(relativePath), new(line, character), cancellationToken),
+            Options("find_symbol_implementations",
+                "Find bounded source implementations of the symbol at a zero-based line and character with Roslyn.")),
         AgentToolKind.ApplyFileEdit => AIFunctionFactory.Create(
             (string correlationId, string relativePath, string? expectedSha256, string content,
                     CancellationToken cancellationToken) =>

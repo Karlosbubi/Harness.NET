@@ -11,6 +11,7 @@ internal enum AgentToolKind
     GetSymbolInfo,
     FindDefinition,
     FindReferences,
+    FindImplementations,
     ApplyFileEdit,
     PreviewRename,
     ApplyRename,

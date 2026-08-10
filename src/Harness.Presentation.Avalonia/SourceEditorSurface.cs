@@ -39,7 +39,12 @@ internal sealed class SourceEditorSurface : IDisposable
         TextBlock status,
         Button save,
         Button reload,
-        Button close)
+        Button close,
+        Button completion,
+        Button symbolInfo,
+        Button definition,
+        Button references,
+        Button implementations)
     {
         Control = control;
         Editor = editor;
@@ -47,6 +52,11 @@ internal sealed class SourceEditorSurface : IDisposable
         Save = save;
         Reload = reload;
         Close = close;
+        Completion = completion;
+        SymbolInfo = symbolInfo;
+        Definition = definition;
+        References = references;
+        Implementations = implementations;
     }
 
     internal Control Control { get; }
@@ -55,6 +65,11 @@ internal sealed class SourceEditorSurface : IDisposable
     internal Button Save { get; }
     internal Button Reload { get; }
     internal Button Close { get; }
+    internal Button Completion { get; }
+    internal Button SymbolInfo { get; }
+    internal Button Definition { get; }
+    internal Button References { get; }
+    internal Button Implementations { get; }
 
     internal static SourceEditorSurface Create(WorkbenchDocumentView view)
     {
@@ -75,6 +90,17 @@ internal sealed class SourceEditorSurface : IDisposable
         save.IsEnabled = false;
         Button reload = Action("Reload", $"Reload {view.Path.Value}", "Reload from worktree");
         Button close = Action("Close", $"Close {view.Path.Value}", "Close · Ctrl+W");
+        Button completion = Action("IntelliSense", $"Show IntelliSense for {view.Path.Value}",
+            "Code completion · Ctrl+Space");
+        Button symbolInfo = Action("Symbol info", $"Show symbol information for {view.Path.Value}",
+            "Quick info · Ctrl+K");
+        Button definition = Action("Definition", $"Go to definition in {view.Path.Value}",
+            "Go to definition · F12");
+        Button references = Action("Usages", $"Find usages in {view.Path.Value}",
+            "Find usages · Shift+F12 or Alt+F7");
+        Button implementations = Action("Implementations",
+            $"Go to implementation in {view.Path.Value}",
+            "Go to implementation · Ctrl+F12 or Ctrl+Alt+B");
 
         SourceEditorSurface surface = new(
             BuildRoot(editor, status),
@@ -82,11 +108,17 @@ internal sealed class SourceEditorSurface : IDisposable
             status,
             save,
             reload,
-            close);
+            close,
+            completion,
+            symbolInfo,
+            definition,
+            references,
+            implementations);
         surface.renderer = new(editor);
         surface.accessBadge.Child = surface.access;
         surface.accessBadge.Classes.Add("editor-access");
         surface.BuildHeader(save, reload, close);
+        surface.BuildAssistanceBar(completion, symbolInfo, definition, references, implementations);
         surface.UpdateView(view);
         surface.UpdateMetrics();
         editor.TextArea.Caret.PositionChanged += (_, _) => surface.UpdateMetrics();
@@ -107,6 +139,13 @@ internal sealed class SourceEditorSurface : IDisposable
         accessBadge.Classes.Add(view.IsTruncated
             ? "truncated"
             : view.Access is WorkbenchDocumentAccess.Editable ? "editable" : "read-only");
+        bool semanticAssistance = !view.IsTruncated && Path.GetExtension(view.Path.Value)
+            .Equals(".cs", StringComparison.OrdinalIgnoreCase);
+        Completion.IsEnabled = semanticAssistance;
+        SymbolInfo.IsEnabled = semanticAssistance;
+        Definition.IsEnabled = semanticAssistance;
+        References.IsEnabled = semanticAssistance;
+        Implementations.IsEnabled = semanticAssistance;
         AutomationProperties.SetName(path, $"Repository path {view.Path.Value}");
         AutomationProperties.SetName(Status, $"Editing status for {view.Path.Value}");
         AutomationProperties.SetName(metrics, $"Caret and format for {view.Path.Value}");
@@ -115,7 +154,7 @@ internal sealed class SourceEditorSurface : IDisposable
             view.IsTruncated
                 ? $"Truncated read-only source {view.Path.Value}"
                 : view.Access is WorkbenchDocumentAccess.Editable
-                    ? $"Editable approved goal source {view.Path.Value}"
+                    ? $"Editable source {view.Path.Value}"
                     : $"Read-only original workspace source {view.Path.Value}");
         UpdateMetrics();
     }
@@ -179,8 +218,8 @@ internal sealed class SourceEditorSurface : IDisposable
 
     private static Grid BuildRoot(TextEditor editor, TextBlock status)
     {
-        Grid root = new() { RowDefinitions = new("Auto,*,Auto") };
-        Grid.SetRow(editor, 1);
+        Grid root = new() { RowDefinitions = new("Auto,Auto,*,Auto") };
+        Grid.SetRow(editor, 2);
         root.Children.Add(editor);
 
         Grid footer = new()
@@ -192,9 +231,23 @@ internal sealed class SourceEditorSurface : IDisposable
         footer.Classes.Add("editor-statusbar");
         Border footerBorder = new() { Child = footer };
         footerBorder.Classes.Add("editor-status-surface");
-        Grid.SetRow(footerBorder, 2);
+        Grid.SetRow(footerBorder, 3);
         root.Children.Add(footerBorder);
         return root;
+    }
+
+    private void BuildAssistanceBar(params Button[] actions)
+    {
+        WrapPanel commands = new() { Orientation = Orientation.Horizontal };
+        foreach (Button action in actions)
+        {
+            commands.Children.Add(action);
+        }
+
+        Border surface = new() { Child = commands };
+        surface.Classes.Add("editor-assistance-toolbar");
+        Grid.SetRow(surface, 1);
+        ((Grid)Control).Children.Add(surface);
     }
 
     private void BuildHeader(Button save, Button reload, Button close)

@@ -192,9 +192,11 @@ of Stage 3 below.
   diagnostics inline and in a navigable, filterable Problems tool with measured cold,
   warm, memory, and cancellation behavior. Model-authored candidate changes fail closed
   when they introduce compiler errors and retain warning/analyzer evidence. (Task 042)
-- Add completion, quick info, signature help, go-to-definition, and find-references
-  over the exact active trusted source context, with stale-result rejection and
-  measured warm interaction latency. (Task 043)
+- Add completion, quick info, signature help, go-to-definition, find-usages, and
+  find-implementations over the exact active trusted source context, with visible
+  editor actions, stale-result rejection, enriched semantic syntax colors, and
+  measured warm interaction latency. Deterministic adapter/control/theme verification
+  is available through `eng/verify-editor-intelligence.py`. (Task 043, complete)
 - Add preview-first semantic rename over a Roslyn-resolved symbol and atomic multi-file
   baselines. The editor and agents share the same typed operation; text-search rename
   is not an accepted agent behavior. (Task 044)

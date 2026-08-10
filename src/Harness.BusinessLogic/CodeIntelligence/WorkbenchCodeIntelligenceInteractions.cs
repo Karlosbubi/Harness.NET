@@ -122,12 +122,17 @@ internal sealed partial class WorkbenchCodeIntelligenceService
     public ValueTask<WorkbenchCodeNavigationView> FindDefinitionAsync(
         WorkbenchCodeInteractiveSnapshot snapshot,
         CancellationToken cancellationToken = default) =>
-        NavigationAsync(snapshot, references: false, cancellationToken);
+        NavigationAsync(snapshot, NavigationKind.Definition, cancellationToken);
 
     public ValueTask<WorkbenchCodeNavigationView> FindReferencesAsync(
         WorkbenchCodeInteractiveSnapshot snapshot,
         CancellationToken cancellationToken = default) =>
-        NavigationAsync(snapshot, references: true, cancellationToken);
+        NavigationAsync(snapshot, NavigationKind.References, cancellationToken);
+
+    public ValueTask<WorkbenchCodeNavigationView> FindImplementationsAsync(
+        WorkbenchCodeInteractiveSnapshot snapshot,
+        CancellationToken cancellationToken = default) =>
+        NavigationAsync(snapshot, NavigationKind.Implementations, cancellationToken);
 
     private async ValueTask<WorkbenchCodeQuickInfoView> QuickInfoAsync(
         WorkbenchCodeInteractiveSnapshot snapshot,
@@ -214,7 +219,7 @@ internal sealed partial class WorkbenchCodeIntelligenceService
 
     private async ValueTask<WorkbenchCodeNavigationView> NavigationAsync(
         WorkbenchCodeInteractiveSnapshot snapshot,
-        bool references,
+        NavigationKind kind,
         CancellationToken cancellationToken)
     {
         if (!TryInteractive(snapshot, out ActiveSession? session, out WorkbenchCodeIssue? issue))
@@ -226,9 +231,16 @@ internal sealed partial class WorkbenchCodeIntelligenceService
         try
         {
             CodeIntelligenceInteractiveSnapshot data = ToDataSnapshot(snapshot, session!);
-            result = references
-                ? await engine.FindReferencesAsync(data, cancellationToken)
-                : await engine.FindDefinitionAsync(data, cancellationToken);
+            result = kind switch
+            {
+                NavigationKind.Definition =>
+                    await engine.FindDefinitionAsync(data, cancellationToken),
+                NavigationKind.References =>
+                    await engine.FindReferencesAsync(data, cancellationToken),
+                NavigationKind.Implementations =>
+                    await engine.FindImplementationsAsync(data, cancellationToken),
+                _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+            };
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -255,6 +267,13 @@ internal sealed partial class WorkbenchCodeIntelligenceService
                     destination.Path is null ? null : new(destination.Path.Value),
                     destination.Range is null ? null : Map(destination.Range))).ToArray(),
             MapIssues(result.Issues));
+    }
+
+    private enum NavigationKind
+    {
+        Definition,
+        References,
+        Implementations,
     }
 
     private bool TryInteractive(

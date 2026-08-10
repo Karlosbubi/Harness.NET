@@ -773,16 +773,21 @@ internal sealed partial class RoslynCodeIntelligenceEngine(IMSBuildRuntime msBui
     public ValueTask<CodeIntelligenceNavigationResult> FindDefinitionAsync(
         CodeIntelligenceInteractiveSnapshot snapshot,
         CancellationToken cancellationToken = default) =>
-        NavigateAsync(snapshot, references: false, cancellationToken);
+        NavigateAsync(snapshot, NavigationKind.Definition, cancellationToken);
 
     public ValueTask<CodeIntelligenceNavigationResult> FindReferencesAsync(
         CodeIntelligenceInteractiveSnapshot snapshot,
         CancellationToken cancellationToken = default) =>
-        NavigateAsync(snapshot, references: true, cancellationToken);
+        NavigateAsync(snapshot, NavigationKind.References, cancellationToken);
+
+    public ValueTask<CodeIntelligenceNavigationResult> FindImplementationsAsync(
+        CodeIntelligenceInteractiveSnapshot snapshot,
+        CancellationToken cancellationToken = default) =>
+        NavigateAsync(snapshot, NavigationKind.Implementations, cancellationToken);
 
     private async ValueTask<CodeIntelligenceNavigationResult> NavigateAsync(
         CodeIntelligenceInteractiveSnapshot snapshot,
-        bool references,
+        NavigationKind kind,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
@@ -818,37 +823,62 @@ internal sealed partial class RoslynCodeIntelligenceEngine(IMSBuildRuntime msBui
                     session.Issues.ToArray());
             }
 
-            IReadOnlyList<Location> locations;
-            if (references)
+            IReadOnlyList<CodeIntelligenceSymbolDestination> destinations;
+            if (kind is NavigationKind.References)
             {
                 IEnumerable<ReferencedSymbol> found = await SymbolFinder.FindReferencesAsync(
                     symbol, prepared.Document!.Project.Solution, cancellationToken);
-                locations = found
+                IReadOnlyList<Location> locations = found
                     .SelectMany(item => item.Locations)
                     .Select(item => item.Location)
+                    .Take(MaximumNavigationItems)
+                    .ToArray();
+                destinations = locations.Select(location => MapDestination(
+                        location,
+                        symbol.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+                        session.RootPath))
+                    .ToArray();
+            }
+            else if (kind is NavigationKind.Implementations)
+            {
+                IEnumerable<ISymbol> found = await SymbolFinder.FindImplementationsAsync(
+                    symbol, prepared.Document!.Project.Solution, cancellationToken: cancellationToken);
+                IEnumerable<ISymbol> overrides = symbol is IMethodSymbol or IPropertySymbol or IEventSymbol
+                    ? await SymbolFinder.FindOverridesAsync(
+                        symbol,
+                        prepared.Document.Project.Solution,
+                        cancellationToken: cancellationToken)
+                    : [];
+                destinations = found.Concat(overrides)
+                    .Distinct(SymbolEqualityComparer.Default)
+                    .SelectMany(implementation => implementation.Locations.Select(location =>
+                        MapDestination(
+                            location,
+                            implementation.ToDisplayString(
+                                SymbolDisplayFormat.MinimallyQualifiedFormat),
+                            session.RootPath)))
                     .Take(MaximumNavigationItems)
                     .ToArray();
             }
             else
             {
-                locations = symbol.OriginalDefinition.Locations
+                destinations = symbol.OriginalDefinition.Locations
                     .Take(MaximumNavigationItems)
+                    .Select(location => MapDestination(
+                        location,
+                        symbol.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+                        session.RootPath))
                     .ToArray();
             }
-
-            IReadOnlyList<CodeIntelligenceSymbolDestination> destinations = locations
-                .Select(location => MapDestination(
-                    location,
-                    symbol.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
-                    session.RootPath))
-                .ToArray();
             if (destinations.Count == 0)
             {
-                destinations = [new(
-                    CodeIntelligenceDestinationKind.Metadata,
-                    new(Bound(symbol.ToDisplayString(), MaximumIssueLength)),
-                    null,
-                    null)];
+                destinations = kind is NavigationKind.Implementations
+                    ? [UnavailableDestination("No source implementation is available for this symbol.")]
+                    : [new(
+                        CodeIntelligenceDestinationKind.Metadata,
+                        new(Bound(symbol.ToDisplayString(), MaximumIssueLength)),
+                        null,
+                        null)];
             }
 
             return new(
@@ -874,6 +904,13 @@ internal sealed partial class RoslynCodeIntelligenceEngine(IMSBuildRuntime msBui
         {
             session.OperationGate.Release();
         }
+    }
+
+    private enum NavigationKind
+    {
+        Definition,
+        References,
+        Implementations,
     }
 
     public async ValueTask CloseAsync(

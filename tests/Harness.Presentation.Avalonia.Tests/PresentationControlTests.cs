@@ -679,6 +679,22 @@ public sealed class PresentationControlTests
         }, CancellationToken.None);
     }
 
+    [Theory]
+    [InlineData("Comment", UiThemeColorToken.CodeComment)]
+    [InlineData("StringInterpolation", UiThemeColorToken.CodeString)]
+    [InlineData("Digits", UiThemeColorToken.CodeNumber)]
+    [InlineData("MethodCall", UiThemeColorToken.CodeMethod)]
+    [InlineData("Preprocessor", UiThemeColorToken.CodePreprocessor)]
+    [InlineData("Punctuation", UiThemeColorToken.CodePunctuation)]
+    [InlineData("ValueTypeKeywords", UiThemeColorToken.CodeType)]
+    [InlineData("Visibility", UiThemeColorToken.CodeKeyword)]
+    public void Csharp_highlighting_uses_distinct_semantic_theme_colors(
+        string highlightingCategory,
+        UiThemeColorToken expected)
+    {
+        Assert.Equal(expected, CodeEditorView.ThemeTokenFor(highlightingCategory));
+    }
+
     [Fact]
     public async Task Empty_workbench_offers_a_direct_workspace_folder_action()
     {
@@ -880,7 +896,9 @@ public sealed class PresentationControlTests
             Button[] documentActions = sourceContent.GetVisualDescendants()
                 .OfType<Button>()
                 .ToArray();
-            Assert.Equal(["Save", "Reload", "Close"],
+            Assert.Equal(
+                ["Save", "Reload", "Close", "IntelliSense", "Symbol info", "Definition",
+                    "Usages", "Implementations"],
                 documentActions.Select(item => item.Content?.ToString() ?? string.Empty).ToArray());
             Assert.All(documentActions, item => Assert.False(
                 string.IsNullOrWhiteSpace(AutomationProperties.GetName(item))));
@@ -1582,6 +1600,63 @@ public sealed class PresentationControlTests
 
             Assert.Equal(1, workbench.ActiveSourceEditor?.TextArea.Caret.Line);
             Assert.Equal(3, workbench.ActiveSourceEditor?.TextArea.Caret.Column);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Editor_toolbar_exposes_intellisense_navigation_usages_and_implementations()
+    {
+        using HeadlessUnitTestSession testSession =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await testSession.Dispatch(() =>
+        {
+            CodeIntelligenceService codeIntelligence = new()
+            {
+                Implementations = snapshot => new(
+                    snapshot.SessionId,
+                    snapshot.Path,
+                    snapshot.BufferVersion,
+                    WorkbenchCodeResultState.Ready,
+                    [new(
+                        WorkbenchCodeDestinationKind.Source,
+                        new("Example implementation"),
+                        snapshot.Path,
+                        new(new(0, 5), new(0, 12)))],
+                    []),
+            };
+            WorkbenchDockHost workbench = CreateWorkbench(
+                TrustedShell(), new(), codeIntelligence: codeIntelligence);
+            Window window = new() { Width = 1280, Height = 800, Content = workbench.Control };
+            window.Show();
+            workbench.OpenFileAsync("src/App.cs").AsTask().GetAwaiter().GetResult();
+
+            string[] actionLabels =
+            [
+                "IntelliSense",
+                "Symbol info",
+                "Definition",
+                "Usages",
+                "Implementations",
+            ];
+            Control sourceContent = Assert.IsAssignableFrom<Control>(
+                workbench.Documents.ActiveDockable?.Context);
+            Button[] actions = sourceContent.GetVisualDescendants().OfType<Button>()
+                .Where(button => actionLabels.Contains(button.Content?.ToString()))
+                .ToArray();
+            Assert.Equal(actionLabels.Length, actions.Length);
+            Assert.All(actions, action => Assert.True(action.IsEnabled));
+            Assert.Contains(actions, action =>
+                AutomationProperties.GetName(action) == "Show IntelliSense for src/App.cs");
+
+            Button implementations = Assert.Single(actions, action =>
+                Equals(action.Content, "Implementations"));
+            implementations.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.Equal(1, codeIntelligence.ImplementationCallCount);
+            Assert.Equal(1, workbench.ActiveSourceEditor?.TextArea.Caret.Line);
+            Assert.Equal(6, workbench.ActiveSourceEditor?.TextArea.Caret.Column);
             window.Close();
         }, CancellationToken.None);
     }
@@ -2552,6 +2627,12 @@ public sealed class PresentationControlTests
             get;
             init;
         }
+        internal Func<WorkbenchCodeInteractiveSnapshot, WorkbenchCodeNavigationView>? Implementations
+        {
+            get;
+            init;
+        }
+        internal int ImplementationCallCount { get; private set; }
 
         public ValueTask<WorkbenchCodeSessionView> StartAsync(
             WorkbenchCodeSessionRequest request,
@@ -2634,6 +2715,16 @@ public sealed class PresentationControlTests
                 References?.Invoke(snapshot) ?? new(
                     snapshot.SessionId, snapshot.Path, snapshot.BufferVersion,
                     WorkbenchCodeResultState.Ready, [], []));
+        public ValueTask<WorkbenchCodeNavigationView> FindImplementationsAsync(
+            WorkbenchCodeInteractiveSnapshot snapshot,
+            CancellationToken cancellationToken = default)
+        {
+            ImplementationCallCount++;
+            return ValueTask.FromResult(
+                Implementations?.Invoke(snapshot) ?? new(
+                    snapshot.SessionId, snapshot.Path, snapshot.BufferVersion,
+                    WorkbenchCodeResultState.Ready, [], []));
+        }
 
         public ValueTask StopAsync(
             WorkbenchCodeSessionId sessionId,

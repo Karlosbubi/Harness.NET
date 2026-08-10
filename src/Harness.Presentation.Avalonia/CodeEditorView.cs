@@ -51,7 +51,7 @@ internal static class CodeEditorView
         foreach (HighlightingColor color in editor.SyntaxHighlighting.NamedHighlightingColors)
         {
             if (Application.Current?.TryFindResource(
-                    HarnessThemeResources.Key(Token(color.Name)), out object? value) is true &&
+                    HarnessThemeResources.Key(ThemeTokenFor(color.Name)), out object? value) is true &&
                 value is SolidColorBrush brush)
             {
                 color.Foreground = new SimpleHighlightingBrush(brush.Color);
@@ -61,12 +61,12 @@ internal static class CodeEditorView
         editor.TextArea.TextView.Redraw();
     }
 
-    private static UiThemeColorToken Token(string? name)
+    internal static UiThemeColorToken ThemeTokenFor(string? name)
     {
         string normalized = name ?? string.Empty;
         if (normalized.Contains("Comment", StringComparison.OrdinalIgnoreCase))
         {
-            return UiThemeColorToken.TextDim;
+            return UiThemeColorToken.CodeComment;
         }
 
         if (normalized.Contains("String", StringComparison.OrdinalIgnoreCase) ||
@@ -75,25 +75,31 @@ internal static class CodeEditorView
             return UiThemeColorToken.CodeString;
         }
 
-        if (normalized.Contains("Type", StringComparison.OrdinalIgnoreCase))
+        if (normalized.Contains("Type", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains("Semantic", StringComparison.OrdinalIgnoreCase))
         {
             return UiThemeColorToken.CodeType;
         }
 
         if (normalized.Contains("Number", StringComparison.OrdinalIgnoreCase) ||
-            normalized.Contains("Method", StringComparison.OrdinalIgnoreCase))
+            normalized.Contains("Digit", StringComparison.OrdinalIgnoreCase))
         {
-            return UiThemeColorToken.Info;
+            return UiThemeColorToken.CodeNumber;
+        }
+
+        if (normalized.Contains("Method", StringComparison.OrdinalIgnoreCase))
+        {
+            return UiThemeColorToken.CodeMethod;
         }
 
         if (normalized.Contains("Preprocessor", StringComparison.OrdinalIgnoreCase))
         {
-            return UiThemeColorToken.Warning;
+            return UiThemeColorToken.CodePreprocessor;
         }
 
         if (normalized.Contains("Punctuation", StringComparison.OrdinalIgnoreCase))
         {
-            return UiThemeColorToken.TextMuted;
+            return UiThemeColorToken.CodePunctuation;
         }
 
         return UiThemeColorToken.CodeKeyword;

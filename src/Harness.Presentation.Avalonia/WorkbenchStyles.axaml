@@ -275,6 +275,12 @@
     <Setter Property="Background" Value="{DynamicResource Harness.Editor}" />
     <Setter Property="Foreground" Value="{DynamicResource Harness.TextPrimary}" />
   </Style>
+  <Style Selector="Border.editor-assistance-toolbar">
+    <Setter Property="Padding" Value="8,3" />
+    <Setter Property="Background" Value="{DynamicResource Harness.Panel}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Harness.Border}" />
+    <Setter Property="BorderThickness" Value="0,0,0,1" />
+  </Style>
   <Style Selector="Border.editor-status-surface">
     <Setter Property="Background" Value="{DynamicResource Harness.Panel}" />
     <Setter Property="BorderBrush" Value="{DynamicResource Harness.Border}" />

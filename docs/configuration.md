@@ -192,6 +192,9 @@ only named color tokens:
 
 IDs use lowercase letters, digits, dots, underscores, and hyphens. Supported tokens
 are the semantic names defined by `ThemeColorToken`; colors are opaque `#RRGGBB`.
+Editor syntax can be tailored independently with `CodeKeyword`, `CodeType`,
+`CodeString`, `CodeComment`, `CodeNumber`, `CodeMethod`, `CodePreprocessor`, and
+`CodePunctuation`.
 Harness.NET reads at most 64 files of 64 KiB each, prohibits DTDs and external
 resources, and excludes palettes that are malformed or fail required contrast.
 Executable AXAML, fonts, includes, and external assets are never loaded from a theme.

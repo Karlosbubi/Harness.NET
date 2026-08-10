@@ -15,6 +15,7 @@ internal static class AgentToolPolicy
             AgentToolKind.GetSymbolInfo,
             AgentToolKind.FindDefinition,
             AgentToolKind.FindReferences,
+            AgentToolKind.FindImplementations,
         ],
         AgentRole.Implementer =>
         [
@@ -27,6 +28,7 @@ internal static class AgentToolPolicy
             AgentToolKind.GetSymbolInfo,
             AgentToolKind.FindDefinition,
             AgentToolKind.FindReferences,
+            AgentToolKind.FindImplementations,
             AgentToolKind.ApplyFileEdit,
             AgentToolKind.PreviewRename,
             AgentToolKind.ApplyRename,
@@ -44,6 +46,7 @@ internal static class AgentToolPolicy
             AgentToolKind.GetSymbolInfo,
             AgentToolKind.FindDefinition,
             AgentToolKind.FindReferences,
+            AgentToolKind.FindImplementations,
             AgentToolKind.ListEvidence,
         ],
         _ => throw new ArgumentOutOfRangeException(nameof(role)),

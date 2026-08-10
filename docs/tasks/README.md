@@ -80,7 +80,7 @@ but the end-user workflow is not complete.
 | 040 | Done | Collaborate through chat instead of a chain of pop-ups | 035 | - | Conversation is the primary goal surface; typed inline cards expose plans, cost/capability decisions, progress, validation, evidence, Restore, commit, and handoff. Plan, spending, Restore, destructive, budget-extension, and exact-commit authority remain explicit typed actions. Ordinary role/model defaults move to one searchable Settings surface, goal overrides use progressive disclosure, and obsolete dialog paths are removed. Production wide/compact and AT-SPI acceptance is recorded in `docs/acceptance/chat-first-workflow-2026-07-29.md`. |
 | 041 | Done | Recover application state without the verifier script | 026 | - | Avalonia and TUI Operations inspect exact v1/v2 archive evidence, require sensitive-state confirmation, and stage without changing the running app. The next cold start revalidates staged hashes, layout, schema, and SQLite integrity before replacement, retains bounded rollback material, and fails closed on tampering or publication failure. |
 | 042 | Done | Validate every edit, model or manual, before it is trusted | 017, 018, 032 | - | An in-process Roslyn implementation behind implementation-neutral Data Access and Business Logic contracts loads only trusted source contexts without implicit restore. Versioned live buffers show syntax/compiler/analyzer diagnostics inline and in a Problems tool. Every model-authored candidate is compared with baseline diagnostics, is rejected before disk when it introduces a compiler Error, records warnings/findings as evidence, applies through an atomic baseline-protected boundary, and is verified again after apply. |
-| 043 | Done | Get semantic assistance while editing | 042 | - | Warm, cancellable completion, quick info, signature help, go-to-definition, and find-references operate on the exact active Roslyn source context; stale responses are discarded, keyboard and pointer interactions are accessible, and detailed targets plus degraded states follow ADR 012. Production-control and real-workspace evidence is recorded in `docs/acceptance/roslyn-interactive-assistance-2026-07-31.md`. |
+| 043 | Done | Get semantic assistance while editing | 042 | - | Warm, cancellable completion, quick info, signature help, definition, usage, and implementation navigation operate on the exact active Roslyn source context; stale responses are discarded, visible actions plus keyboard and pointer interactions are accessible, and detailed targets plus degraded states follow ADR 012. Production-control and real-workspace evidence is recorded in `docs/acceptance/roslyn-interactive-assistance-2026-07-31.md` and `docs/acceptance/editor-intelligence-2026-08-10.md`. |
 | 044 | Done | Use deterministic Roslyn transformations for deterministic work | 042 | - | Semantic rename resolves a symbol through Roslyn, previews every affected file and conflict with exact baselines and a fingerprint, enforces goal/task path grants, applies all files atomically or none, and records post-apply diagnostics and complete bounded diff evidence. F2 in the editor and the Implementer's preview/apply tools use the same typed operation; no model-authored text-search rename path exists. Acceptance evidence is recorded in `docs/acceptance/roslyn-deterministic-rename-2026-07-31.md`. |
 | 045 | Planned | Let developers and models verify UI work in the same visual context | 013, 035, 040 | Visual debugging currently depends on external screenshot tools and out-of-band image sharing, so the developer cannot see exactly which frame and app action a model evaluated. | A Linux-first XDG Desktop Portal capture capability produces explicitly consented, bounded, goal-scoped visual evidence. The developer can inspect each frame with its initiating model/tool action, and models can request and inspect approved captures through typed tools without receiving unrestricted desktop capture or input control. |
 | 046 | Partial | Answer library and package questions from version-matched, validated evidence without bloating model context | 010, 014, 016, 024 | Stateless MCP 2.x connections, startup discovery, fail-closed read-only agent tools, and first-class Settings management are delivered. The shared local/MCP/web lookup manager, version-resolved documentation catalog, deterministic package validation, and managed SBOM remain. | A shared lookup manager gives developers and agents typed, on-demand access to exact local/package docs, curated vector-indexed docs, configured MCP sources, and web search as a visible fallback. A non-model dependency service resolves project/package versions, validates candidate compatibility and supply-chain metadata, and maintains a provenance-rich SBOM. Results are bounded, ranked, cited, version-aware, privacy-governed, and injected only when requested by concrete work. |
@@ -211,7 +211,7 @@ merely to complete the final visual design at once.
    accessible item text, and stale-result rejection.
 2. Add quick info and signature help with bounded documentation rendering and correct
    placement at the active versioned caret.
-3. Add go-to-definition and find-references across the resolved source context,
+3. Add go-to-definition, find-references, and find-implementations across the resolved source context,
    opening real documents and reporting generated/metadata/unavailable destinations
    honestly.
 4. Run the representative small/large-workspace latency and memory checks from ADR
@@ -222,10 +222,14 @@ interactive result tied to its source context, path, baseline, buffer version, a
 caret. AvaloniaEdit now provides accessible caret-anchored completion with filtering,
 keyboard/pointer selection, Enter/Tab and item-specific punctuation commits; hover and
 Ctrl+K quick info; parameter-highlighted signature help on `(` and `,`; F12 definition;
-and Shift+F12 source-reference selection. Generated, metadata, unavailable, cancelled,
+Shift+F12/Alt+F7 source-usage selection; and Ctrl+F12/Ctrl+Alt+B implementation
+navigation. The same operations are visible in the editor toolbar, and syntax colors
+distinguish comments, numbers, methods, preprocessors, and punctuation. Generated, metadata, unavailable, cancelled,
 degraded, and stale destinations remain explicit. Real Harness measurements and the
 production-control editing pass are recorded in
-`docs/acceptance/roslyn-interactive-assistance-2026-07-31.md`.
+`docs/acceptance/roslyn-interactive-assistance-2026-07-31.md`; the discoverability and
+implementation extension is recorded in
+`docs/acceptance/editor-intelligence-2026-08-10.md`.
 
 #### Task 044: deterministic transformations
 

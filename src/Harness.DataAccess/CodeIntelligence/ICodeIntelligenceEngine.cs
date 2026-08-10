@@ -39,6 +39,19 @@ public interface ICodeIntelligenceEngine
         CodeIntelligenceInteractiveSnapshot snapshot,
         CancellationToken cancellationToken = default);
 
+    ValueTask<CodeIntelligenceNavigationResult> FindImplementationsAsync(
+        CodeIntelligenceInteractiveSnapshot snapshot,
+        CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult(new CodeIntelligenceNavigationResult(
+            snapshot.ContextId,
+            snapshot.SessionId,
+            snapshot.Path,
+            snapshot.BufferVersion,
+            CodeIntelligenceResultState.Failed,
+            [],
+            [new(new("implementations_not_supported"),
+                new("Implementation lookup is unavailable."))]));
+
     ValueTask<CodeIntelligenceRenamePreviewResult> PreviewRenameAsync(
         CodeIntelligenceRenamePreviewRequest request,
         CancellationToken cancellationToken = default) =>

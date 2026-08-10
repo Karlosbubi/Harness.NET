@@ -148,6 +148,10 @@ public sealed class GoalCodeIntelligenceServiceTests
             CancellationToken cancellationToken = default) =>
             Navigation(snapshot);
 
+        public ValueTask<WorkbenchCodeNavigationView> FindImplementationsAsync(
+            WorkbenchCodeInteractiveSnapshot snapshot,
+            CancellationToken cancellationToken = default) => Navigation(snapshot);
+
         public ValueTask StopAsync(
             WorkbenchCodeSessionId sessionId,
             CancellationToken cancellationToken = default)
