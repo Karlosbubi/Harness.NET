@@ -142,6 +142,7 @@ builder.Services.AddSingleton<IWorkbenchDocumentService, WorkbenchDocumentServic
 builder.Services.AddSingleton<IWorkbenchLayoutStore, FileWorkbenchLayoutStore>();
 builder.Services.AddSingleton<IWorkbenchLayoutService, WorkbenchLayoutService>();
 builder.Services.AddSingleton<IGoalWorkspaceInspectionService, GoalWorkspaceInspectionService>();
+builder.Services.AddSingleton<IGoalCodeIntelligenceService, GoalCodeIntelligenceService>();
 builder.Services.AddSingleton<ITrackedTextCatalogReader, GitTrackedTextCatalogReader>();
 builder.Services.AddSingleton<ISemanticIndexStore, SqliteSemanticIndexStore>();
 builder.Services.AddSingleton<IFrameworkResolver, FrameworkResolver>();
@@ -212,6 +213,7 @@ builder.Services.AddSingleton<IAgentRoleRunner>(services => new AgentRoleRunner(
         services.GetRequiredService<IWorkspaceMutationService>(),
         services.GetRequiredService<IToolEvidenceService>(),
         services.GetRequiredService<IGoalContextService>(),
+        services.GetRequiredService<IGoalCodeIntelligenceService>(),
         services.GetRequiredService<IMcpToolService>()),
     services.GetRequiredService<ILoggerFactory>(),
     services.GetRequiredService<IGoalWorkspaceInspectionService>(),

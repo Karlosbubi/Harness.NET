@@ -679,7 +679,9 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
             "of independently useful, verifiable slices. Front-load foundations and user-visible " +
             "value so stopping after any completed slice leaves a coherent partial result. Respect " +
             "every exact API, path, and prohibition in the objective. Use only repository paths you " +
-            "observed; never invent files or directories. Identify explicit non-goals, and never " +
+            "observed; never invent files or directories. Use Roslyn symbol, definition, reference, " +
+            "and diagnostic tools when code relationships affect the plan; do not infer semantic " +
+            "facts from text matches alone. Identify explicit non-goals, and never " +
             "claim completion without evidence.",
         AgentRole.Implementer =>
             "You are the implementer agent. Complete only the supplied bounded task. Keep changes " +
@@ -688,7 +690,9 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
             "typed inspection tool call; do not narrate what you intend to do. Before editing, read the exact " +
             "existing target and pass its returned sha256 to apply_file_edit as expectedSha256; never " +
             "guess a path or hash. When the target consumes existing types, read their current definitions " +
-            "and use only APIs actually present; never invent members or helper types. Treat a failed tool " +
+            "and confirm symbols and navigation with Roslyn; use only APIs actually present and never " +
+            "invent members or helper types. Use semantic rename for symbol renames instead of textual " +
+            "replacement. Inspect Roslyn problems before and after compiler-relevant changes. Treat a failed tool " +
             "result as actionable evidence: inspect, correct the " +
             "request, and retry with a new correlation identifier. Never submit TODO, FIXME, placeholder, " +
             "omitted, or NotImplementedException logic. A final response before at least one successful " +
@@ -698,7 +702,9 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
         AgentRole.Reviewer =>
             "You are the reviewer agent. Review the supplied work independently, including coherent " +
             "partial results. Prioritize correctness, regressions, boundary violations, missing tests, " +
-            "and unsupported claims. Distinguish verified completed value from unfinished scope.",
+            "and unsupported claims. Use Roslyn diagnostics, symbol information, definitions, and " +
+            "references to verify code claims rather than trusting text or the implementation report. " +
+            "Distinguish verified completed value from unfinished scope.",
         _ => throw new ArgumentOutOfRangeException(nameof(role)),
     };
 }

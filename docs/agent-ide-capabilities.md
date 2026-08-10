@@ -26,8 +26,9 @@ Status meanings:
 | `get_all_open_file_paths`, `open_file_in_editor` | Read active/open document context and request developer-visible navigation | Internal/Planned | Presentation performs navigation; no model desktop control |
 | `create_new_file`, `apply_patch` | Exact-baseline create/patch in delegated goal areas with Roslyn preflight | Partial | Approved worktree, atomic mutation, evidence |
 | `get_solution_projects`, `get_project_dependencies` | Evaluated solution/project graph, exact project/package references and resolved versions | Partial | Trusted evaluation; no implicit restore |
-| `get_project_problems`, `get_file_problems`, `lint_files` | Versioned file/project/changed-set diagnostics with stable identities and delta | Internal/Planned | Roslyn/analyzers, cancellation and freshness |
-| `get_symbol_info` | Quick info, declaration, documentation, type and source/metadata destination | Internal | Bounded exact buffer version |
+| `get_project_problems`, `get_file_problems`, `lint_files` | Versioned file/project/changed-set diagnostics with stable identities and delta | Partial | Models now receive exact-file Roslyn diagnostics; project/changed-set and lint scopes remain |
+| `get_symbol_info` | Quick info, declaration, documentation, type and source/metadata destination | Delivered | Role-scoped source is loaded at the current exact file baseline |
+| definition/reference navigation | Roslyn definition and bounded reference destinations | Delivered | Original workspace for Lead; approved goal worktree for Implementer/Reviewer |
 | `analyze_calls`, class hierarchy tools | Incoming/outgoing call, type, implementation and override hierarchy | Planned | Roslyn semantic identity, paging and depth bounds |
 | `findTests` | Discover tests associated with symbol/project and exact runnable test cases | Planned | Deterministic test adapters; no model guess |
 | `post_edit_quality_check` | One changed-set gate combining diagnostics, formatting, tests/build evidence and unresolved findings | Partial | Reuse evidence; never self-certify model output |
@@ -63,6 +64,12 @@ Keep this set small and role-adjusted:
 - bounded file read, text search, Git inspection and .NET graph inspection;
 - bounded semantic repository retrieval and durable evidence listing where eligible;
 - discover/request relevant IDE toolsets for the next bounded role turn.
+
+The first shared Roslyn slice keeps exact-file diagnostics, symbol information,
+definition, and reference lookup direct for every role. Harness.NET loads the current
+file and creates the short-lived exact-context session itself; models do not provide
+session IDs, baseline hashes, buffer versions, or duplicated source text. Broader
+hierarchy and test-discovery schemas remain on-demand work.
 
 Existing mutation tools remain present only for an approved Implementer task. MCP
 tools and future optional modules are on-demand unless the user explicitly chooses a

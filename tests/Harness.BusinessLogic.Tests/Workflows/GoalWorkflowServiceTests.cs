@@ -51,13 +51,19 @@ public sealed class GoalWorkflowServiceTests
             agents.Requests.Select(request => request.Role));
         Assert.Contains("call inspect_dotnet", agents.Requests[0].Task.Value,
             StringComparison.Ordinal);
+        Assert.Contains("find_symbol_references", agents.Requests[0].Task.Value,
+            StringComparison.Ordinal);
         Assert.Contains("Objective", agents.Requests[0].Task.Value,
             StringComparison.Ordinal);
         Assert.Contains("FULL GOAL OBJECTIVE (AUTHORITATIVE)",
             agents.Requests[1].Task.Value, StringComparison.Ordinal);
         Assert.Contains("expectedSha256", agents.Requests[1].Task.Value,
             StringComparison.Ordinal);
+        Assert.Contains("inspect_code_problems", agents.Requests[1].Task.Value,
+            StringComparison.Ordinal);
         Assert.Contains("FULL GOAL OBJECTIVE", agents.Requests[2].Task.Value,
+            StringComparison.Ordinal);
+        Assert.Contains("Roslyn problems", agents.Requests[2].Task.Value,
             StringComparison.Ordinal);
         Assert.Equal(GoalTaskState.Completed, Assert.Single(completedReview.Tasks).State);
     }

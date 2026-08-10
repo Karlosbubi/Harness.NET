@@ -1002,7 +1002,9 @@ internal sealed class GoalWorkflowService(
     private static string LeadTask(GoalView goal) => $$"""
         Inspect the trusted workspace with your read-only typed tools before answering. At minimum,
         call inspect_dotnet and inspect the relevant existing source/test paths with read_file or
-        search_text. Then propose a bounded, verifiable implementation plan for this goal.
+        search_text. Use get_symbol_info, find_symbol_definition, find_symbol_references, and
+        inspect_code_problems wherever semantic code relationships affect the work. Then propose a
+        bounded, verifiable implementation plan for this goal.
 
         Goal: {{goal.Title}}
         Objective: {{goal.Objective}}
@@ -1047,7 +1049,9 @@ internal sealed class GoalWorkflowService(
         inspect each exact existing target with read_file before editing and pass the returned
         sha256 as expectedSha256 to apply_file_edit. Never invent a path or baseline. If a tool
         rejects a request, use its error as evidence, inspect the workspace, and correct the request
-        with a new correlation identifier. Use atomic edits, then run the
+        with a new correlation identifier. Verify existing APIs with get_symbol_info and navigation,
+        use preview_symbol_rename/apply_symbol_rename for symbol renames, and inspect_code_problems
+        around compiler-relevant edits. Use atomic edits, then run the
         narrowest relevant build and tests without restore. Do not broaden scope or claim
         success without durable tool evidence. Work in small durable increments. Before broadening
         the change, leave the current increment coherent and run its narrow validation. If the
@@ -1104,8 +1108,9 @@ internal sealed class GoalWorkflowService(
         PlanView plan,
         AgentOutput implementation) => $$"""
         Independently review the approved goal worktree. Use inspect_git and list_tool_evidence;
-        inspect relevant files as needed. Check correctness, regressions, architecture, tests,
-        and unsupported completion claims against the approved plan.
+        inspect relevant files and Roslyn problems, symbols, definitions, and references as needed.
+        Check correctness, regressions, architecture, tests, and unsupported completion claims
+        against the approved plan.
 
         GOAL: {{goal.Title}}
         FULL GOAL OBJECTIVE:

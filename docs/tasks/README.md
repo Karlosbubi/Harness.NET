@@ -347,6 +347,10 @@ and apply tools share this operation. Deterministic acceptance is recorded in
    unavailable reason. Permit disabling optional modules and safe exposure preferences
    without weakening required goal approvals. Project toolset requests and use into
    conversation/run evidence.
+   Initial visibility delivered: the typed built-in catalog and Settings page show
+   module source, health, role eligibility, direct/on-demand state, authority, exact
+   operations, unavailable reason, and configured external-MCP source count. Optional
+   module persistence and conversation/run projection remain with on-demand activation.
 3. Complete workspace exploration and project health: bounded tree/glob/regex/ranged
    reads, active/open-document context, source/dependency navigation, solution/project
    graph and readiness, exact package/project dependencies, file/project/changed-set
@@ -356,6 +360,12 @@ and apply tools share this operation. Deterministic acceptance is recorded in
    incoming/outgoing calls, type/implementation/override hierarchy, associated-test
    discovery and one deterministic post-edit quality result. Tie every result to exact
    context/buffer identity with paging, depth, size, timeout and cancellation bounds.
+   Partial: exact-file diagnostics, symbol information, definitions, and bounded
+   references are now direct typed tools for all roles. The service reads the current
+   source itself, selects original versus approved-worktree context by role, creates
+   and closes the Roslyn session, and fails closed on incomplete input. Symbol search,
+   calls, hierarchy, associated tests, project/changed-set scopes, paging, and the
+   combined post-edit quality result remain.
 5. Add closed preview/fingerprint/apply transformations for formatting, imports and
    namespaces, signature change, extract method/interface/base, move type and safe
    delete. Reuse atomic baselines, task file-area grants, Roslyn candidate diagnostics

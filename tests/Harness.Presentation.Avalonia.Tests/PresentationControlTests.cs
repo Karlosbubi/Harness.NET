@@ -232,7 +232,7 @@ public sealed class PresentationControlTests
     [Fact]
     public void Settings_search_matches_stable_categories_and_related_terms()
     {
-        Assert.Equal(9, SettingsCatalog.All.Count);
+        Assert.Equal(10, SettingsCatalog.All.Count);
         Assert.Equal(
             SettingsCategoryId.Appearance,
             Assert.Single(SettingsCatalog.Filter("contrast")).Id);
@@ -246,10 +246,41 @@ public sealed class PresentationControlTests
             SettingsCategoryId.McpConnections,
             Assert.Single(SettingsCatalog.Filter("stateless")).Id);
         Assert.Equal(
+            SettingsCategoryId.AgentTools,
+            Assert.Single(SettingsCatalog.Filter("definition")).Id);
+        Assert.Equal(
             SettingsCategoryId.StorageAndRecovery,
             Assert.Single(SettingsCatalog.Filter("backup")).Id);
         Assert.Empty(SettingsCatalog.Filter("not-a-real-setting"));
-        Assert.Equal(5, SettingsCatalog.All.Count(category => category.IsAvailable));
+        Assert.Equal(6, SettingsCatalog.All.Count(category => category.IsAvailable));
+    }
+
+    [Fact]
+    public async Task Agent_tool_settings_show_semantic_health_roles_and_authority()
+    {
+        using AvaloniaPresentationStore store = AvaloniaPresentationStoreTests.CreateStore();
+        await store.LoadAsync(CancellationToken.None);
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            SettingsWindow window = new(store, CancellationToken.None);
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            ListBox categories = Assert.Single(window.GetLogicalDescendants().OfType<ListBox>());
+            categories.SelectedItem = SettingsCatalog.All.Single(category =>
+                category.Id is SettingsCategoryId.AgentTools);
+            Dispatcher.UIThread.RunJobs();
+
+            string text = string.Join('\n', window.GetLogicalDescendants()
+                .OfType<TextBlock>().Select(block => block.Text));
+            Assert.Contains("Roslyn semantic analysis", text, StringComparison.Ordinal);
+            Assert.Contains("inspect_code_problems", text, StringComparison.Ordinal);
+            Assert.Contains("Lead, Implementer, Reviewer", text, StringComparison.Ordinal);
+            Assert.Contains("Authority: TrustedRead", text, StringComparison.Ordinal);
+            Assert.Contains("External MCP sources", text, StringComparison.Ordinal);
+            window.Close();
+        }, CancellationToken.None);
     }
 
     [Fact]

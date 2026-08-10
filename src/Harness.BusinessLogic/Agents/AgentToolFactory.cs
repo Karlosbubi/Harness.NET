@@ -15,6 +15,7 @@ internal sealed class AgentToolFactory(
     IWorkspaceMutationService mutationService,
     IToolEvidenceService evidenceService,
     IGoalContextService contextService,
+    IGoalCodeIntelligenceService codeIntelligenceService,
     IMcpToolService? mcpToolService = null) : IAgentToolFactory
 {
     public IList<AITool> Create(
@@ -66,6 +67,31 @@ internal sealed class AgentToolFactory(
             Options("search_semantic_context",
                 "Retrieve 1-8 relevant bounded chunks from the compatible semantic index. " +
                 "Remote embeddings are separately cost-attributed to this goal.")),
+        AgentToolKind.InspectCodeProblems => AIFunctionFactory.Create(
+            (string relativePath, CancellationToken cancellationToken) =>
+                codeIntelligenceService.InspectProblemsAsync(
+                    goalId, Scope(role), new(relativePath), cancellationToken),
+            Options("inspect_code_problems",
+                "Ask Roslyn for current compiler diagnostics in one complete source file. " +
+                "The file and exact baseline are loaded from the role's source context.")),
+        AgentToolKind.GetSymbolInfo => AIFunctionFactory.Create(
+            (string relativePath, int line, int character, CancellationToken cancellationToken) =>
+                codeIntelligenceService.GetSymbolAsync(
+                    goalId, Scope(role), new(relativePath), new(line, character), cancellationToken),
+            Options("get_symbol_info",
+                "Ask Roslyn for the symbol at a zero-based line and character in a source file.")),
+        AgentToolKind.FindDefinition => AIFunctionFactory.Create(
+            (string relativePath, int line, int character, CancellationToken cancellationToken) =>
+                codeIntelligenceService.FindDefinitionAsync(
+                    goalId, Scope(role), new(relativePath), new(line, character), cancellationToken),
+            Options("find_symbol_definition",
+                "Resolve the definition of the symbol at a zero-based line and character with Roslyn.")),
+        AgentToolKind.FindReferences => AIFunctionFactory.Create(
+            (string relativePath, int line, int character, CancellationToken cancellationToken) =>
+                codeIntelligenceService.FindReferencesAsync(
+                    goalId, Scope(role), new(relativePath), new(line, character), cancellationToken),
+            Options("find_symbol_references",
+                "Find bounded references to the symbol at a zero-based line and character with Roslyn.")),
         AgentToolKind.ApplyFileEdit => AIFunctionFactory.Create(
             (string correlationId, string relativePath, string? expectedSha256, string content,
                     CancellationToken cancellationToken) =>

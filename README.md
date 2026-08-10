@@ -103,8 +103,13 @@ return the interface to new-goal composition; its history, evidence, and worktre
 preserved while it is removed from the continuation list.
 Trusted-workspace tools now provide confined file reads, tracked-text search,
 bounded Git status/diff evidence, non-evaluating .NET metadata, approved atomic file
-edits, and cancellable .NET execution in isolated goal worktrees. Agent role
-execution now runs lead, implementer, and reviewer prompts through Microsoft Agent
+edits, and cancellable .NET execution in isolated goal worktrees. Agent tools also
+expose Roslyn compiler diagnostics, symbol information, definitions, and
+references without requiring a model to construct editor sessions or source snapshots.
+Lead queries use the trusted original workspace; Implementer and Reviewer queries use
+the approved goal worktree. Settings → Agent tools shows the built-in module source,
+health, eligible roles, exposure, authority, and exact model-facing operations. Agent
+role execution now runs lead, implementer, and reviewer prompts through Microsoft Agent
 Framework behind semantic Business Logic contracts, with each role using its
 configured local default or goal-specific selection. Remote role execution carries
 the goal identity and strict privacy policy into the cost-controlled provider boundary.

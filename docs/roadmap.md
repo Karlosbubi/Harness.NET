@@ -280,12 +280,18 @@ of Stage 3 below.
   deterministic package validation, SBOM format/export/refresh ownership, citations,
   licensing/retention, and deterministic testing without live services.
 
-### Planned: model-accessible IDE capabilities
+### In progress: model-accessible IDE capabilities
 
 - Make the deterministic IDE services available to models through the product-owned
   catalog in ADR 016 instead of leaving rich Roslyn and workbench state available only
   to Presentation. Rider 2026.2's live MCP catalog is the breadth reference; the
   maintained mapping is `docs/agent-ide-capabilities.md`. (Task 047)
+- Delivered first shared slice: every role now has typed exact-file Roslyn diagnostics,
+  symbol information, definition, and reference tools. Harness.NET selects the role's
+  original/worktree context and exact file baseline, owns the temporary session, and
+  rejects incomplete source. A typed built-in module catalog and **Settings → Agent
+  tools** expose source, health, roles, direct/on-demand state, authority, operations,
+  MCP-source count, and honest planned status.
 - Keep bounded workspace/project/Git inspection as the direct bootstrap surface. Let a
   role request semantic analysis, transformations, build/test/run, debugger, database,
   performance, notebook/analyzer, visual or external-MCP toolsets for its next bounded

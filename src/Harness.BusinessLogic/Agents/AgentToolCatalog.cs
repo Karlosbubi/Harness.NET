@@ -1,0 +1,107 @@
+namespace Harness.BusinessLogic.Agents;
+
+public sealed record AgentToolModuleId(string Value);
+
+public sealed record AgentToolSourceName(string Value);
+
+public sealed record AgentToolOperationName(string Value);
+
+public enum AgentToolModuleAvailability
+{
+    Available,
+    Planned,
+}
+
+public enum AgentToolExposure
+{
+    Direct,
+    OnDemand,
+}
+
+public enum AgentToolAuthority
+{
+    TrustedRead,
+    ApprovedWorktreeMutation,
+    RepositoryExecution,
+}
+
+public sealed record AgentToolModule(
+    AgentToolModuleId Id,
+    string DisplayName,
+    string Summary,
+    AgentToolSourceName Source,
+    AgentToolModuleAvailability Availability,
+    IReadOnlyList<AgentRole> Roles,
+    AgentToolExposure Exposure,
+    AgentToolAuthority Authority,
+    IReadOnlyList<AgentToolOperationName> Operations,
+    bool IsOptional,
+    string? UnavailableReason);
+
+public sealed record AgentToolCatalog(IReadOnlyList<AgentToolModule> Modules)
+{
+    public static AgentToolCatalog Default { get; } = new(
+    [
+        new(
+            new("workspace-inspection"),
+            "Workspace inspection",
+            "Bounded files, text, Git state, and evaluated .NET project metadata.",
+            new("Harness.NET"),
+            AgentToolModuleAvailability.Available,
+            [AgentRole.Lead, AgentRole.Implementer, AgentRole.Reviewer],
+            AgentToolExposure.Direct,
+            AgentToolAuthority.TrustedRead,
+            [new("read_file"), new("search_text"), new("inspect_git"), new("inspect_dotnet")],
+            IsOptional: false,
+            UnavailableReason: null),
+        new(
+            new("roslyn-semantic-analysis"),
+            "Roslyn semantic analysis",
+            "Current compiler diagnostics, symbol information, definitions, and references from the exact role source context.",
+            new("Harness.NET · Roslyn"),
+            AgentToolModuleAvailability.Available,
+            [AgentRole.Lead, AgentRole.Implementer, AgentRole.Reviewer],
+            AgentToolExposure.Direct,
+            AgentToolAuthority.TrustedRead,
+            [new("inspect_code_problems"), new("get_symbol_info"),
+                new("find_symbol_definition"), new("find_symbol_references")],
+            IsOptional: false,
+            UnavailableReason: null),
+        new(
+            new("roslyn-transformations"),
+            "Roslyn deterministic transformations",
+            "Previewed and fingerprinted semantic changes with exact-baseline apply.",
+            new("Harness.NET · Roslyn"),
+            AgentToolModuleAvailability.Available,
+            [AgentRole.Implementer],
+            AgentToolExposure.Direct,
+            AgentToolAuthority.ApprovedWorktreeMutation,
+            [new("preview_symbol_rename"), new("apply_symbol_rename")],
+            IsOptional: false,
+            UnavailableReason: null),
+        new(
+            new("semantic-hierarchy"),
+            "Roslyn hierarchy and test discovery",
+            "Symbol search, calls, type/implementation hierarchy, overrides, and associated tests.",
+            new("Harness.NET · Roslyn"),
+            AgentToolModuleAvailability.Planned,
+            [AgentRole.Lead, AgentRole.Implementer, AgentRole.Reviewer],
+            AgentToolExposure.OnDemand,
+            AgentToolAuthority.TrustedRead,
+            [],
+            IsOptional: true,
+            UnavailableReason: "The bounded hierarchy, paging, and test-association contracts are not implemented yet."),
+        new(
+            new("build-test"),
+            "Build and test",
+            "Typed build and test execution without an implicit restore.",
+            new("Harness.NET · .NET SDK"),
+            AgentToolModuleAvailability.Available,
+            [AgentRole.Implementer],
+            AgentToolExposure.Direct,
+            AgentToolAuthority.RepositoryExecution,
+            [new("dotnet_build"), new("dotnet_test")],
+            IsOptional: false,
+            UnavailableReason: null),
+    ]);
+}

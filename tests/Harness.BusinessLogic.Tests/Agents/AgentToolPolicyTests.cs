@@ -1,4 +1,5 @@
 using Harness.BusinessLogic.Agents;
+using Harness.BusinessLogic.CodeIntelligence;
 using Harness.BusinessLogic.Evidence;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Inspection;
@@ -20,6 +21,8 @@ public sealed class AgentToolPolicyTests
         Assert.Contains(AgentToolKind.ReadFile, tools);
         Assert.Contains(AgentToolKind.InspectGit, tools);
         Assert.Contains(AgentToolKind.SemanticContext, tools);
+        Assert.Contains(AgentToolKind.GetSymbolInfo, tools);
+        Assert.Contains(AgentToolKind.FindDefinition, tools);
         Assert.DoesNotContain(AgentToolKind.ApplyFileEdit, tools);
         Assert.DoesNotContain(AgentToolKind.Build, tools);
         Assert.DoesNotContain(AgentToolKind.ListEvidence, tools);
@@ -36,6 +39,8 @@ public sealed class AgentToolPolicyTests
         Assert.Contains(AgentToolKind.Build, tools);
         Assert.Contains(AgentToolKind.Test, tools);
         Assert.Contains(AgentToolKind.SemanticContext, tools);
+        Assert.Contains(AgentToolKind.InspectCodeProblems, tools);
+        Assert.Contains(AgentToolKind.FindReferences, tools);
         Assert.DoesNotContain(AgentToolKind.ListEvidence, tools);
     }
 
@@ -47,6 +52,8 @@ public sealed class AgentToolPolicyTests
         Assert.Contains(AgentToolKind.InspectGit, tools);
         Assert.Contains(AgentToolKind.ListEvidence, tools);
         Assert.Contains(AgentToolKind.SemanticContext, tools);
+        Assert.Contains(AgentToolKind.GetSymbolInfo, tools);
+        Assert.Contains(AgentToolKind.FindReferences, tools);
         Assert.DoesNotContain(AgentToolKind.ApplyFileEdit, tools);
         Assert.DoesNotContain(AgentToolKind.Build, tools);
         Assert.DoesNotContain(AgentToolKind.Test, tools);
@@ -54,11 +61,11 @@ public sealed class AgentToolPolicyTests
 
     [Theory]
     [InlineData(AgentRole.Lead,
-        "read_file,search_text,inspect_git,inspect_dotnet,search_semantic_context")]
+        "read_file,search_text,inspect_git,inspect_dotnet,search_semantic_context,inspect_code_problems,get_symbol_info,find_symbol_definition,find_symbol_references")]
     [InlineData(AgentRole.Implementer,
-        "read_file,search_text,inspect_git,inspect_dotnet,search_semantic_context,apply_file_edit,preview_symbol_rename,apply_symbol_rename,dotnet_build,dotnet_test")]
+        "read_file,search_text,inspect_git,inspect_dotnet,search_semantic_context,inspect_code_problems,get_symbol_info,find_symbol_definition,find_symbol_references,apply_file_edit,preview_symbol_rename,apply_symbol_rename,dotnet_build,dotnet_test")]
     [InlineData(AgentRole.Reviewer,
-        "read_file,search_text,inspect_git,inspect_dotnet,search_semantic_context,list_tool_evidence")]
+        "read_file,search_text,inspect_git,inspect_dotnet,search_semantic_context,inspect_code_problems,get_symbol_info,find_symbol_definition,find_symbol_references,list_tool_evidence")]
     public void Factory_exposes_only_the_closed_role_scope(
         AgentRole role,
         string expectedNames)
@@ -67,7 +74,8 @@ public sealed class AgentToolPolicyTests
             new UnsupportedInspectionService(),
             new UnsupportedMutationService(),
             new UnsupportedEvidenceService(),
-            new UnsupportedContextService());
+            new UnsupportedContextService(),
+            new UnsupportedCodeIntelligenceService());
 
         IList<AITool> tools = factory.Create(
             role,
@@ -99,6 +107,7 @@ public sealed class AgentToolPolicyTests
             new UnsupportedMutationService(),
             new UnsupportedEvidenceService(),
             new UnsupportedContextService(),
+            new UnsupportedCodeIntelligenceService(),
             mcp);
 
         AIFunction tool = Assert.IsType<McpAgentFunction>(factory.Create(
@@ -114,6 +123,32 @@ public sealed class AgentToolPolicyTests
         Assert.Equal("Avalonia binding", mcp.Invocation?.Arguments["query"]);
         Assert.Equal("ok", Assert.IsType<System.Text.Json.JsonElement>(result)
             .GetProperty("result").GetString());
+    }
+
+    [Fact]
+    public async Task Semantic_tool_uses_the_role_source_context_without_model_snapshot_inputs()
+    {
+        CapturingCodeIntelligenceService code = new();
+        AgentToolFactory factory = new(
+            new UnsupportedInspectionService(),
+            new UnsupportedMutationService(),
+            new UnsupportedEvidenceService(),
+            new UnsupportedContextService(),
+            code);
+        AIFunction tool = Assert.IsAssignableFrom<AIFunction>(factory.Create(
+            AgentRole.Reviewer, new("goal-1"), []).Single(item =>
+                item.Name == "get_symbol_info"));
+
+        await tool.InvokeAsync(new AIFunctionArguments
+        {
+            ["relativePath"] = "src/Program.cs",
+            ["line"] = 4,
+            ["character"] = 7,
+        });
+
+        Assert.Equal(GoalWorkspaceScope.ApprovedWorktree, code.Scope);
+        Assert.Equal("src/Program.cs", code.Path?.Value);
+        Assert.Equal(new WorkbenchCodePosition(4, 7), code.Position);
     }
 
     [Theory]
@@ -179,6 +214,69 @@ public sealed class AgentToolPolicyTests
     {
         public ValueTask<SemanticSearchResult> SearchAsync(
             GoalContextRequest request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private sealed class UnsupportedCodeIntelligenceService : IGoalCodeIntelligenceService
+    {
+        public ValueTask<GoalCodeProblemsView> InspectProblemsAsync(
+            GoalId goalId,
+            GoalWorkspaceScope scope,
+            WorkbenchCodeDocumentPath path,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public ValueTask<GoalCodeSymbolView> GetSymbolAsync(
+            GoalId goalId,
+            GoalWorkspaceScope scope,
+            WorkbenchCodeDocumentPath path,
+            WorkbenchCodePosition position,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public ValueTask<GoalCodeNavigationView> FindDefinitionAsync(
+            GoalId goalId,
+            GoalWorkspaceScope scope,
+            WorkbenchCodeDocumentPath path,
+            WorkbenchCodePosition position,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public ValueTask<GoalCodeNavigationView> FindReferencesAsync(
+            GoalId goalId,
+            GoalWorkspaceScope scope,
+            WorkbenchCodeDocumentPath path,
+            WorkbenchCodePosition position,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private sealed class CapturingCodeIntelligenceService : IGoalCodeIntelligenceService
+    {
+        internal GoalWorkspaceScope? Scope { get; private set; }
+        internal WorkbenchCodeDocumentPath? Path { get; private set; }
+        internal WorkbenchCodePosition? Position { get; private set; }
+
+        public ValueTask<GoalCodeSymbolView> GetSymbolAsync(
+            GoalId goalId,
+            GoalWorkspaceScope scope,
+            WorkbenchCodeDocumentPath path,
+            WorkbenchCodePosition position,
+            CancellationToken cancellationToken = default)
+        {
+            Scope = scope;
+            Path = path;
+            Position = position;
+            return ValueTask.FromResult(new GoalCodeSymbolView(
+                path, position, WorkbenchCodeResultState.Ready, null, [], null));
+        }
+
+        public ValueTask<GoalCodeProblemsView> InspectProblemsAsync(
+            GoalId goalId, GoalWorkspaceScope scope, WorkbenchCodeDocumentPath path,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<GoalCodeNavigationView> FindDefinitionAsync(
+            GoalId goalId, GoalWorkspaceScope scope, WorkbenchCodeDocumentPath path,
+            WorkbenchCodePosition position,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<GoalCodeNavigationView> FindReferencesAsync(
+            GoalId goalId, GoalWorkspaceScope scope, WorkbenchCodeDocumentPath path,
+            WorkbenchCodePosition position,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 

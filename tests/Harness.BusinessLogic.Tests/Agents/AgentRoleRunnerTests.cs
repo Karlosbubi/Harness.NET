@@ -45,6 +45,7 @@ public sealed class AgentRoleRunnerTests
         Assert.Equal(expectedModel, request.Model);
         Assert.Equal(Harness.DataAccess.Models.ChatRole.System, request.Messages[0].Role);
         Assert.Contains(expectedPrompt, request.Messages[0].Content, StringComparison.Ordinal);
+        Assert.Contains("Roslyn", request.Messages[0].Content, StringComparison.Ordinal);
         if (role is AgentRole.Implementer)
         {
             Assert.Contains("first action must be a typed inspection tool call",

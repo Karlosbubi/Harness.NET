@@ -22,6 +22,7 @@ internal enum SettingsCategoryId
     Appearance,
     ModelProviders,
     McpConnections,
+    AgentTools,
     ModelsAndRoles,
     PrivacyAndLimits,
     StorageAndRecovery,
@@ -52,6 +53,8 @@ internal static class SettingsCatalog
             ["model", "provider", "ollama", "openrouter", "remote", "local", "pricing"], IsAvailable: true),
         new(SettingsCategoryId.McpConnections, "MCP connections", "Stateless external tools and discovery",
             ["mcp", "model context protocol", "tool", "documentation", "stateless", "streamable http"], IsAvailable: true),
+        new(SettingsCategoryId.AgentTools, "Agent tools", "Built-in IDE capabilities and authority",
+            ["agent", "tool", "roslyn", "diagnostics", "symbol", "definition", "references", "authority", "on-demand"], IsAvailable: true),
         new(SettingsCategoryId.ModelsAndRoles, "Models & roles", "Default routes for agent roles",
             ["model", "provider", "lead", "implementer", "reviewer", "output"], IsAvailable: true),
         new(SettingsCategoryId.PrivacyAndLimits, "Privacy & limits", "Routing and ordinary default limits",
@@ -222,7 +225,7 @@ internal sealed class SettingsWindow : Window
         if ((categories.SelectedItem as SettingsCategory)?.Id is
             SettingsCategoryId.Appearance or SettingsCategoryId.ModelProviders or
             SettingsCategoryId.McpConnections or SettingsCategoryId.ModelsAndRoles or
-            SettingsCategoryId.PrivacyAndLimits)
+            SettingsCategoryId.PrivacyAndLimits or SettingsCategoryId.AgentTools)
         {
             RenderSelectedPage();
         }
@@ -244,6 +247,7 @@ internal sealed class SettingsWindow : Window
             SettingsCategoryId.Appearance => AppearancePage(),
             SettingsCategoryId.ModelProviders => ModelProvidersPage(),
             SettingsCategoryId.McpConnections => McpConnectionsPage(),
+            SettingsCategoryId.AgentTools => AgentToolsPage(),
             SettingsCategoryId.ModelsAndRoles => ModelsAndRolesPage(),
             SettingsCategoryId.PrivacyAndLimits => PrivacyAndLimitsPage(),
             _ => PlannedPage(category),
@@ -744,6 +748,70 @@ internal sealed class SettingsWindow : Window
                     },
                 },
             });
+    }
+
+    private Control AgentToolsPage()
+    {
+        StackPanel modules = new() { Spacing = 12 };
+        foreach (AgentToolModule module in AgentToolCatalog.Default.Modules)
+        {
+            string roles = string.Join(", ", module.Roles.Select(role => role.ToString()));
+            string operations = module.Operations.Count == 0
+                ? "No model schemas exposed"
+                : string.Join(", ", module.Operations.Select(operation => operation.Value));
+            string status = module.Availability is AgentToolModuleAvailability.Available
+                ? "Available"
+                : $"Planned · {module.UnavailableReason}";
+            modules.Children.Add(new Border
+            {
+                Classes = { "card", "row" },
+                Child = new StackPanel
+                {
+                    Spacing = 6,
+                    Children =
+                    {
+                        new TextBlock
+                        {
+                            Text = module.DisplayName,
+                            FontSize = 16,
+                            FontWeight = FontWeight.SemiBold,
+                        },
+                        new TextBlock
+                        {
+                            Text = module.Summary,
+                            TextWrapping = TextWrapping.Wrap,
+                        },
+                        new TextBlock
+                        {
+                            Text = $"{status}\nSource: {module.Source.Value} · Roles: {roles}\n" +
+                                   $"Exposure: {module.Exposure} · Authority: {module.Authority}\n" +
+                                   $"Mode: {(module.IsOptional ? "Optional" : "Required core")}\n" +
+                                   $"Operations: {operations}",
+                            Classes = { "muted" },
+                            TextWrapping = TextWrapping.Wrap,
+                        },
+                    },
+                },
+            });
+        }
+
+        int externalConnections = settingsState.McpSettings?.Connections.Count ?? 0;
+        modules.Children.Add(new Border
+        {
+            Classes = { "card" },
+            Child = new TextBlock
+            {
+                Text = $"External MCP sources: {externalConnections} configured. " +
+                       "Connection health and read-only eligibility are managed under MCP connections. " +
+                       "External tools do not inherit built-in authority.",
+                TextWrapping = TextWrapping.Wrap,
+            },
+        });
+
+        return Page(
+            "Agent tools",
+            "See what models can use, where each capability comes from, and which authority boundary applies. Required core tools are policy-managed; optional on-demand modules become configurable when their implementation ships.",
+            modules);
     }
 
     private Control McpConnectionCard(McpConnectionSettingsView connection)
