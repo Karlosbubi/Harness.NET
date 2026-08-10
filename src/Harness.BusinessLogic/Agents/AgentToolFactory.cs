@@ -4,6 +4,7 @@ using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Mutations;
 using Harness.BusinessLogic.Retrieval;
 using Harness.BusinessLogic.CodeIntelligence;
+using Harness.BusinessLogic.Mcp;
 using Harness.BusinessLogic.Tools;
 using Microsoft.Extensions.AI;
 
@@ -13,15 +14,24 @@ internal sealed class AgentToolFactory(
     IGoalWorkspaceInspectionService inspectionService,
     IWorkspaceMutationService mutationService,
     IToolEvidenceService evidenceService,
-    IGoalContextService contextService) : IAgentToolFactory
+    IGoalContextService contextService,
+    IMcpToolService? mcpToolService = null) : IAgentToolFactory
 {
     public IList<AITool> Create(
         AgentRole role,
         GoalId goalId,
-        IReadOnlyList<AgentFileArea> fileAreas) =>
-        AgentToolPolicy.AllowedFor(role)
+        IReadOnlyList<AgentFileArea> fileAreas)
+    {
+        List<AITool> tools = AgentToolPolicy.AllowedFor(role)
             .Select(kind => Create(kind, goalId, role, fileAreas))
             .ToList();
+        if (mcpToolService is not null)
+        {
+            tools.AddRange(mcpToolService.EligibleTools.Select(tool =>
+                (AITool)new McpAgentFunction(tool, mcpToolService)));
+        }
+        return tools;
+    }
 
     private AITool Create(
         AgentToolKind kind,

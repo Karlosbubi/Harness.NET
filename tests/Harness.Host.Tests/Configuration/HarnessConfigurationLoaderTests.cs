@@ -28,6 +28,34 @@ public sealed class HarnessConfigurationLoaderTests : IDisposable
         Assert.Equal("OPENROUTER_API_KEY", openRouter.ApiKeyReference?.EnvironmentVariable);
         Assert.Equal(1536, openRouter.EmbeddingDimensions);
         Assert.Equal("Ollama", configuration.Routing.Embedding);
+        Assert.Empty(configuration.McpConnections);
+    }
+
+    [Fact]
+    public void Loads_named_stateless_mcp_connections_from_private_configuration()
+    {
+        Directory.CreateDirectory(ConfigDirectory);
+        File.WriteAllText(
+            Path.Combine(ConfigDirectory, "harness.xml"),
+            """
+            <?xml version="1.0" encoding="utf-8" ?>
+            <Harness>
+              <McpConnections>
+                <docs>
+                  <Endpoint>https://docs.example.test/mcp</Endpoint>
+                  <RequestTimeoutSeconds>45</RequestTimeoutSeconds>
+                  <Enabled>true</Enabled>
+                </docs>
+              </McpConnections>
+            </Harness>
+            """);
+
+        McpConnectionConfiguration connection = Assert.Single(Load().McpConnections);
+
+        Assert.Equal("docs", connection.Name);
+        Assert.Equal(new Uri("https://docs.example.test/mcp"), connection.Endpoint);
+        Assert.Equal(TimeSpan.FromSeconds(45), connection.RequestTimeout);
+        Assert.True(connection.IsEnabled);
     }
 
     [Fact]

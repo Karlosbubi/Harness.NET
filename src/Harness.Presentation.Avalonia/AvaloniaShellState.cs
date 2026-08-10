@@ -7,6 +7,7 @@ using Harness.BusinessLogic.Dashboard;
 using Harness.BusinessLogic.Framework;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Operations;
+using Harness.BusinessLogic.Mcp;
 using Harness.BusinessLogic.Retrieval;
 using Harness.BusinessLogic.Workflows;
 using Harness.BusinessLogic.Workspaces;
@@ -43,6 +44,7 @@ internal sealed record AvaloniaShellState(
 internal sealed record ApplicationSettingsState(
     AgentDefaultsSnapshot? AgentDefaults,
     ModelProviderSettingsSnapshot? ProviderSettings,
+    McpSettingsSnapshot? McpSettings,
     RemoteSpendPreference RemoteSpendPreference,
     bool IsBusy,
     string? Status)
@@ -50,6 +52,7 @@ internal sealed record ApplicationSettingsState(
     internal static ApplicationSettingsState Initial { get; } = new(
         AgentDefaults: null,
         ProviderSettings: null,
+        McpSettings: null,
         RemoteSpendPreference: RemoteSpendPreference.Default,
         IsBusy: false,
         Status: null);

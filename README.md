@@ -34,6 +34,12 @@ models that declare every capability required by that role. The provider page ed
 the private XDG endpoint/model/embedding/timeout override and writes OpenRouter keys
 directly to Linux Secret Service without echoing or persisting the credential.
 
+First-class MCP support uses the stable official C# SDK 2.x and the stateless
+`2026-07-28` Streamable HTTP lifecycle. Enabled private-XDG connections are discovered
+at startup without inference; only explicitly read-only, non-destructive tools are
+namespaced into agent roles. Settings owns add/edit/enable/remove, timeout, negotiated
+protocol, eligible/rejected counts, failures, and restart state from the initial slice.
+
 Semantic indexing now reads bounded eligible text directly from the Git index,
 filters generated, binary, sensitive, and oversized content, and creates deterministic
 overlapping chunks. The configured embedding route writes atomically replaceable

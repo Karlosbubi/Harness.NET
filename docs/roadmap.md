@@ -8,6 +8,10 @@ chunk is committed regularly using a Conventional Commits description, with its
 tests and relevant plan/task updates included. Unrelated roadmap work is kept in
 separate commits.
 
+Every configurable capability is delivered with its typed Settings ownership,
+management UI, validation, persistence, observable status, and documentation in the
+same chunk. A runtime adapter plus hand-edited configuration is not a complete slice.
+
 ## Stage 0: Framework discovery (complete)
 
 - Defined product scope, first workflow, and success boundary.

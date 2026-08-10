@@ -19,6 +19,9 @@
   Only interfaces, records, and enums may cross those boundaries, and data/contracts
   flow upward except where dependency injection requires reverse-boundary composition.
 - Deliver new behavior as end-to-end feature slices.
+- When behavior is configurable, deliver its typed Settings ownership, management UI,
+  validation, persistence, status, and documentation in the same slice; raw
+  configuration keys alone are not complete.
 - Keep presentation modular and free of business logic. The first adapter is a TUI;
   supported future surfaces are Avalonia applications and APIs such as gRPC, not web UI.
 - Enable nullable analysis and keep compiler warnings at zero.

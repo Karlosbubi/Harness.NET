@@ -22,6 +22,7 @@
       <RequestTimeoutSeconds>600</RequestTimeoutSeconds>
     </OpenRouter>
   </Providers>
+  <McpConnections></McpConnections>
   <Routing>
     <MainLlm>Ollama</MainLlm>
     <Reviewer>Ollama</Reviewer>

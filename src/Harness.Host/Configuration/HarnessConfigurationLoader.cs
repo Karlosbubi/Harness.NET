@@ -41,6 +41,7 @@ internal static class HarnessConfigurationLoader
 
         return new(
             providers,
+            ParseMcpConnections(configuration),
             routing,
             new(
                 Required(configuration, "Conversation:Id"),
@@ -49,6 +50,17 @@ internal static class HarnessConfigurationLoader
             new(ParseOptionalUri(configuration["Observability:OtlpEndpoint"])),
             ParseFramework(configuration));
     }
+
+    private static IReadOnlyList<McpConnectionConfiguration> ParseMcpConnections(
+        IConfiguration configuration) => configuration
+        .GetSection("McpConnections")
+        .GetChildren()
+        .Select(section => new McpConnectionConfiguration(
+            section.Key,
+            RequiredUri(section, "Endpoint"),
+            TimeSpan.FromSeconds(RequiredPositiveInt(section, "RequestTimeoutSeconds")),
+            ParseBoolean(section, "Enabled")))
+        .ToArray();
 
     private static FrameworkConfiguration ParseFramework(IConfiguration configuration)
     {

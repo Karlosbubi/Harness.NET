@@ -12,6 +12,7 @@ routes alone still grant no authority.
 | Editor | Buffer/editor behavior; future Roslyn features | Presentation for transient buffers; ADR 012 will add typed code-intelligence contracts | Planned |
 | Appearance & accessibility | Preferred theme and installed user themes | SQLite appearance preference and XDG theme sources through `IAppearanceService` | Delivered; selection is persisted and applies immediately |
 | Model providers | Ollama and OpenRouter catalogs, endpoints, model/embedding defaults, dimensions, timeouts, secret references, access class, pricing readiness, and discovery health | Typed Business Logic service over a private XDG XML override and Linux Secret Service; active provider objects remain host-composed | Delivered; validated configuration edits require restart, API keys are write-only, and catalog discovery performs no inference or authorization |
+| MCP connections | Named stateless Streamable HTTP endpoints, enablement, timeouts, protocol/tool discovery, and fail-closed agent eligibility | Official MCP SDK 2.x isolated in Data Access; Business Logic owns read-only policy; private XDG XML owns configuration | Delivered; add/edit/enable/remove and refresh are first-class Settings actions, discovery performs no inference, and active-process changes require restart |
 | Models & roles | Capability-qualified default role routes and output maxima | Business Logic owns the role-capability matrix; host XML supplies fallbacks; schema 19 stores typed application defaults through `IAgentDefaultsService`; per-goal overrides remain in the goal-model selection store | Delivered; each picker contains only models that fully support its role, and invalid saved defaults are reported |
 | Privacy & limits | Default and per-goal remote-spend mode, optional aggregate cap, review cycles, and per-run output maxima | Typed Business Logic preference and goal contracts over private SQLite state | Delivered for unlimited/capped/local-only spend defaults and draft-goal overrides; other ordinary workflow defaults remain planned |
 | Storage & recovery | SQLite private state, layout file, verified backup, and staged next-start restore | XDG application paths and typed operations/layout services | Available |
@@ -35,6 +36,13 @@ routes alone still grant no authority.
   write-only, and sent directly to Secret Service; snapshots never contain them.
   Configuration changes clearly require restart, while explicit refresh replaces the
   cached catalog and can validate a credential replaced against the active reference.
+- Interactive startup also discovers enabled MCP endpoints through the stateless
+  `2026-07-28` flow. The MCP connections page manages named endpoints, timeouts, and
+  enablement; reports protocol, eligible/rejected tools, and failures; and exposes no
+  arbitrary invocation control. Only explicitly read-only, non-destructive tools are
+  namespaced into agent schemas. Catalog, description, and schema bounds keep a server
+  from expanding ambient agent context without limit; rejected entries are reflected
+  in the page counts.
 - Models & roles projects all three effective role routes, distinguishes host
   fallbacks from saved defaults, filters every picker through the Business Logic role
   capability policy, reports unavailable or incompatible saved defaults, and persists

@@ -10,6 +10,7 @@ using Harness.BusinessLogic.Dashboard;
 using Harness.BusinessLogic.Framework;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Operations;
+using Harness.BusinessLogic.Mcp;
 using Harness.BusinessLogic.Retrieval;
 using Harness.BusinessLogic.Tools;
 using Harness.BusinessLogic.Workflows;
@@ -23,7 +24,8 @@ public sealed class AvaloniaPresentationStoreTests
 {
     /// <summary>Builds a store over the deterministic fakes so other suites can drive real dialogs.</summary>
     internal static AvaloniaPresentationStore CreateStore(
-        IModelProviderSettingsService? providerSettingsService = null) => new(
+        IModelProviderSettingsService? providerSettingsService = null,
+        IMcpSettingsService? mcpSettingsService = null) => new(
         new DashboardService(),
         new AppearanceService(),
         new WorkspaceService(),
@@ -38,7 +40,9 @@ public sealed class AvaloniaPresentationStoreTests
         new CapabilityApprovalService(),
         new FrameworkService(),
         NullLogger<AvaloniaPresentationStore>.Instance,
-        providerSettingsService);
+        providerSettingsService,
+        remoteSpendPreferenceService: null,
+        mcpSettingsService);
 
     [Theory]
     [InlineData("I am **Gemma 4** 😊</blockquote>", "I am Gemma 4 😊")]

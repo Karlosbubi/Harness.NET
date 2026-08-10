@@ -12,6 +12,7 @@ using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Layouts;
 using Harness.BusinessLogic.Mutations;
+using Harness.BusinessLogic.Mcp;
 using Harness.BusinessLogic.Operations;
 using Harness.BusinessLogic.Retrieval;
 using Harness.BusinessLogic.Workspaces;
@@ -33,6 +34,7 @@ using Harness.DataAccess.Models;
 using Harness.DataAccess.Models.Configuration;
 using Harness.DataAccess.Models.Ollama;
 using Harness.DataAccess.Models.OpenRouter;
+using Harness.DataAccess.Mcp;
 using Harness.DataAccess.Mutations;
 using Harness.DataAccess.Observability;
 using Harness.DataAccess.Persistence;
@@ -88,6 +90,19 @@ builder.Services.AddSingleton(new ModelProviderConfigurationOptions(
         RequiresRestart: false)).ToArray()));
 builder.Services.AddSingleton<IModelProviderConfigurationStore, XdgModelProviderConfigurationStore>();
 builder.Services.AddSingleton<IModelProviderSettingsService, ModelProviderSettingsService>();
+builder.Services.AddSingleton(new McpConnectionConfigurationOptions(
+    configuration.McpConnections.Select(connection => new Harness.DataAccess.Mcp.McpConnectionConfiguration(
+        new(connection.Name),
+        new(connection.Endpoint),
+        new(connection.RequestTimeout),
+        connection.IsEnabled,
+        RequiresRestart: false)).ToArray()));
+builder.Services.AddSingleton<IMcpConnectionConfigurationStore, XdgMcpConnectionConfigurationStore>();
+builder.Services.AddSingleton<StatelessHttpMcpToolClient>();
+builder.Services.AddSingleton<IMcpToolClient>(services =>
+    services.GetRequiredService<StatelessHttpMcpToolClient>());
+builder.Services.AddSingleton<IMcpSettingsService, McpSettingsService>();
+builder.Services.AddSingleton<IMcpToolService, McpToolService>();
 builder.Services.AddSingleton<IConversationStore, SqliteConversationStore>();
 builder.Services.AddSingleton<IFrameworkSourceReader, FileFrameworkSourceReader>();
 builder.Services.AddSingleton<IFrameworkOverlayStore, SqliteFrameworkOverlayStore>();
@@ -196,7 +211,8 @@ builder.Services.AddSingleton<IAgentRoleRunner>(services => new AgentRoleRunner(
         services.GetRequiredService<IGoalWorkspaceInspectionService>(),
         services.GetRequiredService<IWorkspaceMutationService>(),
         services.GetRequiredService<IToolEvidenceService>(),
-        services.GetRequiredService<IGoalContextService>()),
+        services.GetRequiredService<IGoalContextService>(),
+        services.GetRequiredService<IMcpToolService>()),
     services.GetRequiredService<ILoggerFactory>(),
     services.GetRequiredService<IGoalWorkspaceInspectionService>(),
     services.GetRequiredService<IWorkspaceMutationService>()));
@@ -278,6 +294,8 @@ try
     DatabaseInitializationResult database = await host.Services
         .GetRequiredService<IDatabaseInitializer>()
         .InitializeAsync(shutdown.Token);
+    await host.Services.GetRequiredService<IMcpSettingsService>()
+        .RefreshAsync(shutdown.Token);
 
     ILogger logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
     if (restore.Applied)

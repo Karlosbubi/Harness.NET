@@ -31,3 +31,4 @@ link superseding records in both directions.
 | [012](012-roslyn-code-intelligence.md) | Accepted | Roslyn code intelligence and verified transformations |
 | [013](013-chat-first-desktop-workflow.md) | Accepted | Chat-first desktop workflow and settings ownership |
 | [014](014-default-remote-spend-policy.md) | Accepted | Unlimited-by-default remote spend with prominent opt-in controls |
+| [015](015-stateless-mcp-connections.md) | Accepted | Stateless MCP connections and agent tool safety |

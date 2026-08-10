@@ -14,6 +14,7 @@ behavior Harness.NET will provide.
 | Boundaries | Only interfaces, records, and enums cross layer boundaries, moving upward except for DI composition. |
 | Domain types | Default to semantic enums and immutable single-value records; retain primitives only where they carry no distinct domain meaning. |
 | Delivery | Implement new behavior as end-to-end feature slices. |
+| Configuration | Ship typed Settings ownership and management with every configurable feature slice; raw keys alone are not delivered UX. |
 | Style | Prefer functional composition, immutable data, and LINQ where idiomatic. |
 | Reactivity | Use Rx.NET for event streams and state management where it fits. |
 | Observability | Use structured logging and OpenTelemetry. |
@@ -130,6 +131,8 @@ overlay, `AGENTS.md`, or a suitable existing documentation file.
 - Business Logic defines an agent-role abstraction around Microsoft's agent
   abstractions; Microsoft types do not cross into Presentation.
 - Data Access provides Ollama and OpenRouter chat and embedding connectors.
+- Data Access owns official MCP SDK 2.x clients and stateless Streamable HTTP transport;
+  Business Logic owns MCP tool eligibility and agent exposure.
 - Models are configurable per role through provider-neutral Business Logic records.
 - Interactive startup discovers every configured provider catalog without inference,
   validates persisted role defaults, and exposes an immutable availability snapshot
@@ -191,6 +194,9 @@ overlay, `AGENTS.md`, or a suitable existing documentation file.
   protected files, applies them atomically, and validates the result; agents do not
   emulate rename through repository-wide text replacement.
 - No unrestricted shell is available to agents.
+- Enabled MCP endpoints use the stateless `2026-07-28` discovery path. Only tools
+  explicitly declaring read-only, non-destructive behavior enter agent tool lists;
+  ambiguous tools fail closed, and mutating MCP requires a future typed approval.
 - LibGit2Sharp handles supported Git operations. A structured Git CLI adapter handles
   worktrees or other required operations LibGit2Sharp does not support.
 

@@ -4,10 +4,17 @@ namespace Harness.Host.Configuration;
 
 internal readonly record struct HarnessConfiguration(
     IReadOnlyDictionary<string, ModelProviderConfiguration> Providers,
+    IReadOnlyList<McpConnectionConfiguration> McpConnections,
     ProviderRoutingConfiguration Routing,
     ConversationConfiguration Conversation,
     ObservabilityConfiguration Observability,
     FrameworkConfiguration Framework);
+
+internal readonly record struct McpConnectionConfiguration(
+    string Name,
+    Uri Endpoint,
+    TimeSpan RequestTimeout,
+    bool IsEnabled);
 
 internal readonly record struct ModelProviderConfiguration(
     string Name,

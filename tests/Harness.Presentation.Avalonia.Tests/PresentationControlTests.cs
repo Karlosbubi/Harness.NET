@@ -26,6 +26,7 @@ using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Layouts;
 using Harness.BusinessLogic.Mutations;
+using Harness.BusinessLogic.Mcp;
 using Harness.BusinessLogic.Workspaces;
 using Harness.BusinessLogic.Workflows;
 using Harness.UI.Avalonia;
@@ -231,7 +232,7 @@ public sealed class PresentationControlTests
     [Fact]
     public void Settings_search_matches_stable_categories_and_related_terms()
     {
-        Assert.Equal(8, SettingsCatalog.All.Count);
+        Assert.Equal(9, SettingsCatalog.All.Count);
         Assert.Equal(
             SettingsCategoryId.Appearance,
             Assert.Single(SettingsCatalog.Filter("contrast")).Id);
@@ -242,10 +243,13 @@ public sealed class PresentationControlTests
             SettingsCategoryId.ModelProviders,
             Assert.Single(SettingsCatalog.Filter("openrouter")).Id);
         Assert.Equal(
+            SettingsCategoryId.McpConnections,
+            Assert.Single(SettingsCatalog.Filter("stateless")).Id);
+        Assert.Equal(
             SettingsCategoryId.StorageAndRecovery,
             Assert.Single(SettingsCatalog.Filter("backup")).Id);
         Assert.Empty(SettingsCatalog.Filter("not-a-real-setting"));
-        Assert.Equal(4, SettingsCatalog.All.Count(category => category.IsAvailable));
+        Assert.Equal(5, SettingsCatalog.All.Count(category => category.IsAvailable));
     }
 
     [Fact]
@@ -272,6 +276,38 @@ public sealed class PresentationControlTests
             Assert.Contains("Opt into a cap or local-only", string.Join('\n', window
                 .GetLogicalDescendants().OfType<TextBlock>().Select(block => block.Text)),
                 StringComparison.Ordinal);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Mcp_settings_manage_stateless_connections_from_the_first_slice()
+    {
+        McpSettingsService mcp = new();
+        using AvaloniaPresentationStore store = AvaloniaPresentationStoreTests.CreateStore(
+            mcpSettingsService: mcp);
+        await store.LoadAsync(CancellationToken.None);
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            SettingsWindow window = new(store, CancellationToken.None);
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            ListBox categories = Assert.Single(window.GetLogicalDescendants().OfType<ListBox>());
+            categories.SelectedItem = SettingsCatalog.All.Single(category =>
+                category.Id is SettingsCategoryId.McpConnections);
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.Contains(window.GetLogicalDescendants().OfType<Button>(), button =>
+                Equals(button.Content, "Add connection"));
+            Assert.Contains(window.GetLogicalDescendants().OfType<Button>(), button =>
+                Equals(button.Content, "Refresh active connections"));
+            string text = string.Join('\n', window.GetLogicalDescendants()
+                .OfType<TextBlock>().Select(block => block.Text));
+            Assert.Contains("2026-07-28", text, StringComparison.Ordinal);
+            Assert.Contains("1 eligible", text, StringComparison.Ordinal);
+            Assert.Contains("fail closed", text, StringComparison.OrdinalIgnoreCase);
             window.Close();
         }, CancellationToken.None);
     }
@@ -2652,6 +2688,40 @@ public sealed class PresentationControlTests
             [],
             new(Fingerprint),
             []);
+    }
+
+    private sealed class McpSettingsService : IMcpSettingsService
+    {
+        private readonly McpSettingsSnapshot snapshot = new([
+            new(
+                new("docs"),
+                new("https://docs.example.test/mcp"),
+                new(30),
+                IsEnabled: true,
+                McpConnectionState.Ready,
+                "2026-07-28",
+                DiscoveredTools: 2,
+                AgentEligibleTools: 1,
+                RejectedTools: 1,
+                Message: null,
+                RequiresRestart: false),
+        ]);
+
+        public ValueTask<McpSettingsSnapshot> GetAsync(
+            CancellationToken cancellationToken = default) => ValueTask.FromResult(snapshot);
+
+        public ValueTask<McpSettingsSnapshot> RefreshAsync(
+            CancellationToken cancellationToken = default) => ValueTask.FromResult(snapshot);
+
+        public ValueTask<McpSettingsResult> SaveAsync(
+            McpConnectionSettingsUpdate request,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new McpSettingsResult(snapshot, null, null));
+
+        public ValueTask<McpSettingsResult> DeleteAsync(
+            McpConnectionName name,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new McpSettingsResult(snapshot, null, null));
     }
 
     private sealed class LayoutService : IWorkbenchLayoutService

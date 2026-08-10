@@ -3,7 +3,9 @@ using Harness.BusinessLogic.Evidence;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Mutations;
+using Harness.BusinessLogic.Mcp;
 using Harness.BusinessLogic.Retrieval;
+using Harness.DataAccess.Mcp;
 using Microsoft.Extensions.AI;
 
 namespace Harness.BusinessLogic.Tests.Agents;
@@ -75,6 +77,45 @@ public sealed class AgentToolPolicyTests
         Assert.Equal(expectedNames.Split(','), tools.Select(tool => tool.Name));
     }
 
+    [Fact]
+    public async Task Factory_namespaces_discovered_mcp_schema_and_invokes_the_exact_tool()
+    {
+        using System.Text.Json.JsonDocument schema = System.Text.Json.JsonDocument.Parse(
+            "{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\"}},\"required\":[\"query\"]}");
+        CapturingMcpToolService mcp = new(new(
+            new("docs-api"),
+            new("query/docs"),
+            "Documentation lookup",
+            "Find exact documentation.",
+            schema.RootElement.Clone(),
+            null,
+            IsReadOnly: true,
+            IsDestructive: false,
+            IsOpenWorld: false,
+            IsAgentEligible: true,
+            RejectionReason: null));
+        AgentToolFactory factory = new(
+            new UnsupportedInspectionService(),
+            new UnsupportedMutationService(),
+            new UnsupportedEvidenceService(),
+            new UnsupportedContextService(),
+            mcp);
+
+        AIFunction tool = Assert.IsType<McpAgentFunction>(factory.Create(
+            AgentRole.Lead, new("goal-1"), []).Last());
+        object? result = await tool.InvokeAsync(new AIFunctionArguments
+        {
+            ["query"] = "Avalonia binding",
+        });
+
+        Assert.StartsWith("mcp_docs_api_query_docs_", tool.Name, StringComparison.Ordinal);
+        Assert.Equal(32, tool.Name.Length);
+        Assert.Equal("query/docs", mcp.Invocation?.Tool.Value);
+        Assert.Equal("Avalonia binding", mcp.Invocation?.Arguments["query"]);
+        Assert.Equal("ok", Assert.IsType<System.Text.Json.JsonElement>(result)
+            .GetProperty("result").GetString());
+    }
+
     [Theory]
     [InlineData("src/Feature/File.cs", true)]
     [InlineData("src/Feature", true)]
@@ -139,5 +180,21 @@ public sealed class AgentToolPolicyTests
         public ValueTask<SemanticSearchResult> SearchAsync(
             GoalContextRequest request,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private sealed class CapturingMcpToolService(McpToolDefinition tool) : IMcpToolService
+    {
+        public IReadOnlyList<McpToolDefinition> EligibleTools { get; } = [tool];
+
+        internal McpToolInvocation? Invocation { get; private set; }
+
+        public ValueTask<McpToolInvocationResult> InvokeAsync(
+            McpToolInvocation invocation,
+            CancellationToken cancellationToken = default)
+        {
+            Invocation = invocation;
+            return ValueTask.FromResult(new McpToolInvocationResult(
+                "{\"result\":\"ok\"}", false, null, null));
+        }
     }
 }

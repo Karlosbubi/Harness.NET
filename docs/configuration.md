@@ -45,6 +45,43 @@ example. A user override may contain only the values it changes:
 </Harness>
 ```
 
+## Stateless MCP connections
+
+Each child of `McpConnections` is a named remote Streamable HTTP endpoint:
+
+```xml
+<McpConnections>
+  <AvaloniaDocs>
+    <Endpoint>https://docs.example.test/mcp</Endpoint>
+    <RequestTimeoutSeconds>30</RequestTimeoutSeconds>
+    <Enabled>true</Enabled>
+  </AvaloniaDocs>
+</McpConnections>
+```
+
+Harness.NET uses the stable official C# MCP SDK 2.x. It does not force a legacy
+protocol version, so discovery starts with the stateless `2026-07-28`
+`server/discover` flow. Streamable HTTP is explicit; no MCP session identifier is
+persisted or resumed, and stdio/SSE transports are not enabled. Remote endpoints must
+use HTTPS. Plain HTTP is accepted only for loopback development endpoints.
+
+Enabled connections are discovered at application startup without model inference.
+Only tools that explicitly declare `readOnlyHint: true` and do not declare
+`destructiveHint: true` are namespaced and exposed to Lead, Implementer, and Reviewer.
+Missing or unsafe annotations are counted in Settings but fail closed. Enabling an
+endpoint explicitly trusts it to execute those read-only calls; mutating MCP tools
+require a future typed approval and are not reachable through a generic call-by-name
+escape hatch. Catalogs are bounded to 256 advertised tools, with at most 32 eligible
+tools per connection exposed to agents. Descriptions and individual input/output
+schemas are also bounded before they may enter model context; duplicates and excess
+tools remain rejected and visible rather than being silently truncated into authority.
+
+Use **Settings → MCP connections** to add, edit, enable/disable, remove, and inspect
+connections. It shows negotiated protocol, eligible/rejected tool counts, and
+connection failures. Changes are written to the private XDG override while preserving
+unrelated configuration and require restart because active MCP clients and tool
+schemas are fixed for the process lifetime.
+
 Each child of `Providers` is a named module. Routing refers to module names, not
 implementation types, so several differently configured modules can use the same
 provider implementation. All routes are validated at startup. Supported kinds are

@@ -11,6 +11,7 @@ using Harness.BusinessLogic.Agents;
 using Harness.BusinessLogic.Appearance;
 using Harness.BusinessLogic.Costs;
 using Harness.BusinessLogic.Goals;
+using Harness.BusinessLogic.Mcp;
 
 namespace Harness.Presentation.Avalonia;
 
@@ -20,6 +21,7 @@ internal enum SettingsCategoryId
     Editor,
     Appearance,
     ModelProviders,
+    McpConnections,
     ModelsAndRoles,
     PrivacyAndLimits,
     StorageAndRecovery,
@@ -48,6 +50,8 @@ internal static class SettingsCatalog
             ["color", "theme", "contrast", "accessibility"], IsAvailable: true),
         new(SettingsCategoryId.ModelProviders, "Model providers", "Ollama and OpenRouter availability",
             ["model", "provider", "ollama", "openrouter", "remote", "local", "pricing"], IsAvailable: true),
+        new(SettingsCategoryId.McpConnections, "MCP connections", "Stateless external tools and discovery",
+            ["mcp", "model context protocol", "tool", "documentation", "stateless", "streamable http"], IsAvailable: true),
         new(SettingsCategoryId.ModelsAndRoles, "Models & roles", "Default routes for agent roles",
             ["model", "provider", "lead", "implementer", "reviewer", "output"], IsAvailable: true),
         new(SettingsCategoryId.PrivacyAndLimits, "Privacy & limits", "Routing and ordinary default limits",
@@ -217,7 +221,8 @@ internal sealed class SettingsWindow : Window
         settingsState = applicationSettings;
         if ((categories.SelectedItem as SettingsCategory)?.Id is
             SettingsCategoryId.Appearance or SettingsCategoryId.ModelProviders or
-            SettingsCategoryId.ModelsAndRoles or SettingsCategoryId.PrivacyAndLimits)
+            SettingsCategoryId.McpConnections or SettingsCategoryId.ModelsAndRoles or
+            SettingsCategoryId.PrivacyAndLimits)
         {
             RenderSelectedPage();
         }
@@ -238,6 +243,7 @@ internal sealed class SettingsWindow : Window
         {
             SettingsCategoryId.Appearance => AppearancePage(),
             SettingsCategoryId.ModelProviders => ModelProvidersPage(),
+            SettingsCategoryId.McpConnections => McpConnectionsPage(),
             SettingsCategoryId.ModelsAndRoles => ModelsAndRolesPage(),
             SettingsCategoryId.PrivacyAndLimits => PrivacyAndLimitsPage(),
             _ => PlannedPage(category),
@@ -622,6 +628,201 @@ internal sealed class SettingsWindow : Window
                     },
                 },
             });
+    }
+
+    private Control McpConnectionsPage()
+    {
+        Button refresh = new()
+        {
+            Content = "Refresh active connections",
+            IsEnabled = !settingsState.IsBusy,
+        };
+        refresh.Classes.Add("command");
+        AutomationProperties.SetName(refresh, "Refresh stateless MCP connections");
+        refresh.Click += async (_, _) => await store.RefreshMcpAsync(cancellationToken);
+
+        TextBox name = ProviderTextBox(string.Empty, "New MCP connection name");
+        name.PlaceholderText = "docs";
+        TextBox endpoint = ProviderTextBox(string.Empty, "New MCP endpoint");
+        endpoint.PlaceholderText = "https://example.test/mcp";
+        NumericUpDown timeout = ProviderNumber(30, 1, 3_600, "New MCP request timeout seconds");
+        CheckBox enabled = new() { Content = "Enable after restart", IsChecked = true };
+        AutomationProperties.SetName(enabled, "Enable new MCP connection after restart");
+        Button add = new() { Content = "Add connection", IsEnabled = !settingsState.IsBusy };
+        add.Classes.Add("accent");
+        AutomationProperties.SetName(add, "Add stateless MCP connection");
+        add.Click += async (_, _) =>
+        {
+            await store.SaveMcpConnectionAsync(new(
+                new(name.Text ?? string.Empty),
+                new(endpoint.Text ?? string.Empty),
+                new(decimal.ToInt32(timeout.Value ?? 30)),
+                enabled.IsChecked == true), cancellationToken);
+            if (store.Current.Settings.Status?.StartsWith(
+                    "MCP connection saved", StringComparison.Ordinal) == true)
+            {
+                name.Text = string.Empty;
+                endpoint.Text = string.Empty;
+            }
+        };
+
+        Grid newFields = new()
+        {
+            ColumnDefinitions = new("*,*"),
+            RowDefinitions = new("Auto,Auto,Auto"),
+            ColumnSpacing = 10,
+            RowSpacing = 8,
+        };
+        AddProviderField(newFields, 0, 0, "Connection name", name);
+        AddProviderField(newFields, 0, 1, "Streamable HTTP endpoint", endpoint);
+        AddProviderField(newFields, 1, 0, "Request timeout (seconds)", timeout);
+        Grid.SetRow(enabled, 1);
+        Grid.SetColumn(enabled, 1);
+        newFields.Children.Add(enabled);
+        Grid.SetRow(add, 2);
+        newFields.Children.Add(add);
+
+        StackPanel connections = new() { Spacing = 12 };
+        foreach (McpConnectionSettingsView connection in
+                 settingsState.McpSettings?.Connections ?? [])
+        {
+            connections.Children.Add(McpConnectionCard(connection));
+        }
+
+        if (connections.Children.Count == 0)
+        {
+            connections.Children.Add(new TextBlock
+            {
+                Text = "No MCP connections are configured. Add a stateless Streamable HTTP endpoint above.",
+                Classes = { "muted" },
+                TextWrapping = TextWrapping.Wrap,
+            });
+        }
+
+        return Page(
+            "MCP connections",
+            "Manage first-class Model Context Protocol endpoints. Harness.NET uses the stateless 2026-07-28 discovery flow and exposes only explicitly read-only, non-destructive tools to agents.",
+            new StackPanel
+            {
+                Spacing = 14,
+                Children =
+                {
+                    new Border
+                    {
+                        Classes = { "card", "attention" },
+                        Child = new TextBlock
+                        {
+                            Text = "Enabling a connection permits startup discovery and read-only tool calls to that endpoint. Tool annotations that are missing or unsafe fail closed. Saved changes live in private XDG configuration and require restart.",
+                            TextWrapping = TextWrapping.Wrap,
+                        },
+                    },
+                    new Border
+                    {
+                        Classes = { "card", "row" },
+                        Child = new StackPanel
+                        {
+                            Spacing = 10,
+                            Children =
+                            {
+                                new TextBlock
+                                {
+                                    Text = "Add stateless connection",
+                                    FontSize = 16,
+                                    FontWeight = FontWeight.SemiBold,
+                                },
+                                newFields,
+                            },
+                        },
+                    },
+                    refresh,
+                    connections,
+                    new TextBlock
+                    {
+                        Text = settingsState.Status ?? string.Empty,
+                        Classes = { "muted" },
+                        TextWrapping = TextWrapping.Wrap,
+                    },
+                },
+            });
+    }
+
+    private Control McpConnectionCard(McpConnectionSettingsView connection)
+    {
+        TextBox endpoint = ProviderTextBox(connection.Endpoint.Value,
+            $"{connection.Name.Value} MCP endpoint");
+        NumericUpDown timeout = ProviderNumber(
+            connection.RequestTimeout.Value, 1, 3_600,
+            $"{connection.Name.Value} MCP request timeout seconds");
+        CheckBox enabled = new()
+        {
+            Content = "Enabled",
+            IsChecked = connection.IsEnabled,
+            IsEnabled = !settingsState.IsBusy,
+        };
+        AutomationProperties.SetName(enabled, $"Enable {connection.Name.Value} MCP connection");
+        Button save = new() { Content = "Save", IsEnabled = !settingsState.IsBusy };
+        save.Classes.Add("command");
+        save.Click += async (_, _) => await store.SaveMcpConnectionAsync(new(
+            connection.Name,
+            new(endpoint.Text ?? string.Empty),
+            new(decimal.ToInt32(timeout.Value ?? 0)),
+            enabled.IsChecked == true), cancellationToken);
+        Button remove = new() { Content = "Remove", IsEnabled = !settingsState.IsBusy };
+        remove.Classes.Add("danger");
+        AutomationProperties.SetName(remove, $"Remove {connection.Name.Value} MCP connection");
+        remove.Click += async (_, _) => await store.DeleteMcpConnectionAsync(
+            connection.Name, cancellationToken);
+
+        Grid fields = new()
+        {
+            ColumnDefinitions = new("*,Auto"),
+            ColumnSpacing = 10,
+            Children = { endpoint },
+        };
+        Grid.SetColumn(timeout, 1);
+        fields.Children.Add(timeout);
+        StackPanel actions = new()
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            Children = { enabled, save, remove },
+        };
+        string protocol = connection.NegotiatedProtocolVersion is null
+            ? "No protocol negotiated"
+            : $"MCP {connection.NegotiatedProtocolVersion}";
+        return new Border
+        {
+            Classes = { "card", "row" },
+            Child = new StackPanel
+            {
+                Spacing = 8,
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = connection.Name.Value,
+                        FontSize = 16,
+                        FontWeight = FontWeight.SemiBold,
+                    },
+                    new TextBlock
+                    {
+                        Text = $"{connection.State} · {protocol} · {connection.DiscoveredTools} tool(s), {connection.AgentEligibleTools} eligible, {connection.RejectedTools} rejected",
+                        Classes = { "muted" },
+                        TextWrapping = TextWrapping.Wrap,
+                    },
+                    fields,
+                    actions,
+                    new TextBlock
+                    {
+                        Text = connection.Message ?? (connection.RequiresRestart
+                            ? "Restart required before this saved configuration becomes active."
+                            : "Connection discovery is ready."),
+                        Classes = { "muted" },
+                        TextWrapping = TextWrapping.Wrap,
+                    },
+                },
+            },
+        };
     }
 
     private Control ProviderCard(
