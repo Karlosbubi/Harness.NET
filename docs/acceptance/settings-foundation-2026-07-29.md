@@ -1,25 +1,25 @@
 # Settings foundation acceptance — 2026-07-29
 
-Task 040's first increment was inspected in the production Avalonia host with isolated
+Task 040's first increment was inspected in the Avalonia host with isolated
 XDG configuration/data/state/cache directories. No workspace, model, provider call, or
 remote spend was used.
 
 ## Hands-on review
 
-- The header's Settings action opened the same focused surface exposed by application
+- The header Settings action opened the same window as application
   navigation, the command palette, and `Ctrl+,`.
 - The 980×700 logical-pixel window kept all seven stable categories visible, with a
-  strong selected state and honest **Planned** labels for categories that do not yet
+  clear selected state and **Planned** labels for categories that do not yet
   have persisted contracts.
 - Appearance loaded the real built-in theme catalog through `IAppearanceService`.
   Theme choice, validation status, and reload are visually grouped without crowding
   the workbench header.
 - AT-SPI exposed **Search settings**, **Settings categories**, and **Preferred color
-  theme** from the production process before capture.
+  theme** from the running application before capture.
 - The search vocabulary is covered by a deterministic presentation test, including
   category names and related terms such as `contrast`, `reviewer`, and `backup`.
 - Searching for `reviewer` selects Models & roles. Before explicit discovery, each
-  role truthfully shows its effective host fallback and explains how to unlock edits;
+  role shows its effective host fallback and explains how to unlock edits;
   it does not render an empty enabled selector. The page states that a remote default
   cannot authorize spend.
 

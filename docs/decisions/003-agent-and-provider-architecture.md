@@ -2,135 +2,88 @@
 
 - Status: Accepted
 - Date: 2026-07-26
+- Amended: 2026-08-08, 2026-08-10
 
 ## Context
 
-Harness.NET needs multi-step, human-in-the-loop collaboration without allowing an
-agent framework or inference provider to define its business and presentation APIs.
+Agent and provider libraries must not define Business Logic or Presentation APIs.
+Model selection, tool compatibility, privacy, and spending need explicit policy.
 
 ## Decision
 
-Use Microsoft Agent Framework as the agent engine. Business Logic owns an agent-role
-abstraction for lead, implementer, and reviewer roles; Microsoft types remain behind
-that boundary.
+Use Microsoft Agent Framework behind a Business Logic role interface for Lead,
+Implementer, and Reviewer. Keep Microsoft types behind that interface.
 
-Data Access provides Ollama and OpenRouter chat and embedding connectors. Models are
-configurable per role. Ollama defaults to `gemma4:latest` for chat and
-`embeddinggemma` for retrieval. OpenRouter model lists are discovered dynamically.
+Data Access owns Ollama and OpenRouter chat and embedding adapters. Provider payloads
+map to Harness records before crossing the boundary. Models are configurable per
+role. OpenRouter catalogs are discovered at runtime.
 
-OpenRouter is authorized per goal. [ADR 014](014-default-remote-spend-policy.md)
-replaces the former mandatory-cap default with typed unlimited, capped, and local-only
-modes. Normal routing is the default; a workspace can require no-collection and ZDR routing.
+OpenRouter authorization is goal-scoped. [ADR 014](014-default-remote-spend-policy.md)
+defines unlimited, capped, and local-only modes. A workspace may require
+no-collection and zero-data-retention routing.
 
-### Capability-qualified routing amendment (2026-08-08)
+### Model discovery and selection
 
-Model availability and role compatibility are different facts. Data Access continues
-to normalize provider-declared model capabilities; Business Logic owns the role
-requirements. Every current production role is instantiated with typed tools, so a
-model must be a chat model and declare `tools` support to qualify for Lead,
-Implementer, or Reviewer. The role matrix remains explicit even where requirements
-currently coincide, allowing later role-specific requirements without moving policy
-into Presentation. Default and goal-specific selection commands reject incompatible
-models even if a caller bypasses the UI.
+- Data Access normalizes provider-declared capabilities.
+- Business Logic defines role requirements.
+- Current production roles require chat and `tools` support.
+- Selection commands reject incompatible routes even if the UI is bypassed.
+- Interactive startup discovers every configured catalog without inference.
+- Discovery reports provider failures and invalid saved routes. It does not authorize
+  spending or replace a saved route.
+- Every model selector searches the complete discovered catalog, then applies the
+  required role filter.
+- Catalog visibility, role compatibility, and spending authority are separate.
+- Plan generation selects and persists an explicit Lead route before the call.
 
-Interactive startup performs catalog discovery for every configured provider without
-inference. The resulting immutable snapshot includes provider availability, compatible
-roles, and validation issues for persisted defaults. Avalonia Settings and the TUI
-reuse that snapshot so selection is immediately populated; an explicit refresh may
-replace it. Discovery failure is reported per provider and does not authorize remote
-spending or silently replace a saved route.
+### Provider Settings
 
-OpenRouter is a first-class Settings provider beside Ollama, with its remote access
-class, configured default, discovered compatible-model count, pricing availability,
-and discovery failure visible. Provider credentials remain owned by Secret Service or
-the configured environment boundary and are never rendered back to the UI.
+Settings exposes each Ollama and OpenRouter endpoint, chat and embedding defaults,
+embedding dimensions, and timeouts. It writes validated changes to the private XDG
+configuration override. Existing unrelated settings remain unchanged.
 
-Plan generation includes an explicit compatible Lead-model choice. It defaults to the
-effective configured Lead route (or an existing goal Lead override), persists the
-chosen goal-bound route before the Lead call, and retains the spend-policy and
-explicit-confirmation requirements for OpenRouter. Implementer and Reviewer keep
-their effective role routes until separately overridden.
+Provider instances and index partition identity do not change during a process
+lifetime. Provider configuration changes therefore require restart.
 
-### Interactive provider configuration amendment (2026-08-08)
+OpenRouter credentials are write-only. Settings writes them to Linux Secret Service
+and reports only configured, missing, or unavailable state. XML, SQLite, logs, and UI
+snapshots do not contain the value. Saving a credential does not authorize inference.
 
-The Model providers Settings page exposes the effective configuration of every named
-Ollama and OpenRouter module: endpoint, chat and embedding defaults, embedding
-dimensions, connect timeout, and request timeout. Validated edits are written as a
-minimal private XDG `harness.xml` provider override. Existing unrelated user
-configuration is preserved. Provider instances, routing, conversation clients, and
-semantic-index partition identity remain immutable for a running process, so these
-edits explicitly require restart and never partially mutate an active route.
+### Output and retry
 
-OpenRouter credentials are write-only on this surface. The secret value crosses a
-typed Presentation-to-Business-Logic command and is written to the configured Linux
-Secret Service reference; snapshots expose only whether a credential resolves and
-the configured environment-fallback name. XML, SQLite, logs, and UI state never
-contain or echo the secret. Replacing a credential does not authorize inference or
-spending. Because providers resolve credentials per operation, a replacement against
-the active reference can be verified by an explicit catalog refresh without restart.
+Token counts are evidence, not user-configured limits. Capped remote calls may derive
+a provider output boundary from published pricing and remaining money. Unlimited
+calls omit an application token ceiling.
 
-### Complete catalog presentation amendment (2026-08-08)
+A failed role retry may change the model, add guidance, do both, or do neither.
+Guidance does not expand file, tool, mutation, or spending authority.
 
-Every model-selection surface receives the complete discovered chat catalog from all
-configured providers, then applies only the Business Logic role-capability constraint
-appropriate to that selection. A local-only goal no longer hides compatible remote
-models: it may inspect and search them, but selecting one remains blocked by the
-goal spend mode and explicit-confirmation boundary.
+### Reasoning and tool calls
 
-Avalonia uses one shared searchable typed model picker for plan generation, failed-role
-retry, per-goal routing, and role defaults; the conversation model control is searchable
-as well. Terminal model lists provide provider/model filtering. Search matches provider,
-model, access class, and advertised capabilities and never turns arbitrary entered text
-into a route. Catalog visibility, route compatibility, and spending authority remain
-separate facts.
+Tool availability does not disable model reasoning. `ProviderDefault` omits a
+reasoning override. The deterministic structured local-file proposal path requests
+no reasoning because it expects a small machine-readable result.
 
-### Long-output and retry amendment (2026-08-08)
+Harness carries reasoning text and optional provider-specific JSON through typed
+records. Business Logic maps opaque JSON to Microsoft protected reasoning content and
+returns it unchanged on the next call to the same provider. It is not rendered as
+ordinary assistant output.
 
-ADR 014's monetary-only execution amendment supersedes user-configured role output
-maxima. Token counts remain usage evidence. Capped remote calls derive any provider
-request boundary from published pricing and remaining money; unlimited calls omit an
-application output ceiling.
-
-Explicit failed-role retry accepts optional additional guidance. An empty guidance field
-means to retry the same bounded work with the selected route, allowing
-an unchanged retry or model-only change. Supplying guidance augments the prompt without
-expanding tool, file-area, mutation, or spending authority.
-
-### Provider reasoning continuity amendment (2026-08-10)
-
-Reasoning and typed tools are independent model capabilities. Harness must not disable
-provider reasoning merely because a request offers tools. Provider-default reasoning is
-therefore represented explicitly and omitted from the wire request; only the bounded
-structured local-file proposal path requests no reasoning because that path needs a
-small deterministic payload rather than agent deliberation. A provider-neutral closed
-reasoning-effort set supports deliberate overrides without leaking provider SDK types.
-
-Reasoning continuity is part of the tool protocol. Data Access normalizes displayable
-reasoning text and may carry provider-specific structured reasoning as an opaque typed
-JSON value. Business Logic maps that value to Microsoft Agent Framework protected
-reasoning content so it can be returned unchanged on the next request to the same
-provider. Opaque reasoning is not rendered as ordinary assistant output. Ollama receives
-its assistant `thinking` text and named tool results; OpenRouter receives its original
-`reasoning_details`. Completed streamed tool calls are accumulated and emitted once,
-even when a provider sends a later usage-only completion chunk.
-
-These changes do not weaken typed-tool eligibility, workspace scope, privacy routing,
-approval, or monetary reservation. They remove a protocol restriction while retaining
-the provider-neutral boundary and deterministic validation of every mutation.
+Ollama receives prior assistant `thinking` and named tool results. OpenRouter receives
+prior `reasoning_details`. Stream adapters accumulate partial tool calls and emit each
+completed call once, including when a provider sends a later usage-only chunk.
 
 ## Consequences
 
-- Provider SDK and Microsoft Agent Framework types are mapped to internal interfaces
-  and records before moving upward.
-- Provider capabilities and failures must be normalized without hiding useful detail.
-- OpenRouter costs are reserved before calls and reconciled from returned usage.
-- Model-specific indexes are partitioned and never mixed.
-- Provider reasoning state remains scoped to the active provider conversation and is
-  mapped through Harness records rather than exposing provider payload types upward.
+- Provider SDK and Agent Framework types remain inside their adapters.
+- Capability and failure mapping is required for every provider.
+- OpenRouter reserves cost before a call and reconciles returned cost afterward.
+- Semantic indexes remain partitioned by provider and model configuration.
+- Opaque reasoning state is scoped to the active provider conversation.
+- Typed tools, workspace scope, privacy, approval, monetary controls, and Roslyn
+  validation are unchanged by reasoning support.
 
 ## Alternatives considered
 
-- Owning a complete custom agent loop was rejected in favor of the established .NET
-  agent framework.
-- Building Business Logic directly around provider SDKs was rejected because it
-  would couple workflows and presentation to provider payloads.
+- A custom agent loop would duplicate framework behavior.
+- Provider types in Business Logic would couple workflows to wire formats.

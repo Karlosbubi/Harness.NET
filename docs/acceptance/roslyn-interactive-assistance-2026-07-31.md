@@ -18,20 +18,20 @@
   Up/Down select overloads.
 - F12 opens a source definition at its exact range. Shift+F12 presents bounded source
   references at the caret; selecting one opens its real document and range. Metadata,
-  generated, and unavailable destinations are reported honestly instead of inventing
+  generated, and unavailable destinations are reported explicitly instead of inventing
   repository paths.
 - Business Logic rejects untrusted/unknown sessions, invalid paths/baselines/carets,
   identity mismatches, and results superseded by a newer live buffer. Cancellation is
   explicit and all compiler work stays off the UI thread.
 
-## Deterministic and production-control checks
+## Deterministic and UI checks
 
 - Real synthetic-project adapter tests cover committable completion without disk
   mutation, quick info, documented signature help, active-parameter selection, source
   definition/references, metadata, and unavailable destinations.
 - The deterministic Business Logic adapter test starts completion on buffer version 1,
   activates version 2 before the result returns, and proves the older result is Stale.
-- Headless production-control tests open a real source tab, invoke Ctrl+Space, inspect
+- Headless UI tests open a source tab, invoke Ctrl+Space, inspect
   accessible completion content, commit a Roslyn text change, invoke Ctrl+K quick info,
   verify accessible signature parameter text, and use F12 to move to an exact source
   range. The full Avalonia suite passes 94 tests.

@@ -6,10 +6,9 @@
 
 ## Context
 
-Harness.NET persists private prompts, workflow evidence, approvals, costs, and vector
-state in SQLite. Additive migrations protect compatibility but do not by themselves
-provide a recovery point if an upgrade is interrupted, a database is corrupted, or a
-user needs to move deliberate application state to a clean installation.
+SQLite contains private prompts, evidence, approvals, costs, and vector state.
+Migrations do not provide a recovery copy for an interrupted upgrade, corruption, or
+transfer to a clean installation.
 
 Secrets, logs, model blobs, goal worktrees, and user repositories have different
 ownership and recovery boundaries and must not be silently copied into an export.
@@ -41,7 +40,7 @@ same verified archive under the XDG data backup directory. Abort the upgrade if 
 recovery point cannot be created. Clean-install initialization does not create an
 empty backup.
 
-Recovery is an offline operation: extract and hash-verify the database into a fresh
+Manual recovery is offline: extract and hash-verify the database into a fresh
 XDG data root and the optional layout into a fresh XDG state root while Harness.NET
 is stopped, then start the current binary so additive migrations run normally and
 Presentation independently validates machine-specific layout state. Release
@@ -51,16 +50,14 @@ weaken process and approval safety.
 
 ### Staged in-app recovery amendment (2026-07-31)
 
-Avalonia and the TUI may initiate recovery, but the running application still never
-replaces its live database. The Operations surface selects and fully verifies a v1/v2
-archive, shows its schema, creation time, database/layout hashes and sensitivity, and
-requires an explicit restore confirmation. Data Access then extracts verified content
-into a private, bounded pending-restore directory and atomically records one pending
-request. The staging request carries the archive SHA-256 shown at confirmation and
-fails if the path now names different bytes. No live state changes at this point.
+Avalonia and the TUI may stage recovery, but the running application never replaces
+its live database. Operations verifies a v1/v2 archive, shows schema, creation time,
+hashes, and sensitivity, then requires confirmation. Data Access extracts verified
+content to a bounded private staging directory and atomically records one request.
+The request includes the confirmed archive SHA-256. Staging fails if the file changes.
 
-On the next process start, before SQLite initialization or any Business Logic service
-can observe state, the Host invokes a focused Data Access restore bootstrapper. It
+On the next start, before SQLite initialization, the Host runs the Data Access restore
+bootstrapper. It
 revalidates the marker, staged hashes, schema, layout envelope, and SQLite integrity;
 copies any existing database, WAL, shared-memory file, and layout into a private
 rollback directory; publishes the staged
@@ -74,8 +71,7 @@ Staging refuses unknown entries, path traversal, unsupported formats, hash/size/
 mismatches, corrupt SQLite, oversized content, an existing pending request, and a
 source archive inside Harness.NET restore staging. Presentation tells the user
 that work performed after staging will be replaced and that a restart is required.
-This amends the earlier exclusion only for verified next-start publication; online
-replacement remains prohibited.
+Online replacement remains prohibited.
 
 ## Consequences
 

@@ -1,22 +1,25 @@
 # Configuration
 
-Harness.NET loads typed configuration at startup through
-`Microsoft.Extensions.Configuration` in this order:
+Harness.NET loads configuration once at startup in this order:
 
-1. The shipped `harness.xml` beside the executable.
-2. An optional XDG override at `$XDG_CONFIG_HOME/harness.net/harness.xml`, or
+1. `harness.xml` beside the executable.
+2. `$XDG_CONFIG_HOME/harness.net/harness.xml`, or
    `~/.config/harness.net/harness.xml` when `XDG_CONFIG_HOME` is unset.
 3. Environment variables prefixed with `HARNESS_`.
 4. Command-line configuration keys.
 
-Later sources override earlier sources. The shipped file is a complete working
-example. A user override may contain only the values it changes:
+Later sources override earlier sources. An XDG file may contain only changed values.
+
+## Provider modules
+
+Each child of `Providers` is a named Ollama or OpenRouter module. Routes refer to the
+module name.
 
 ```xml
 <?xml version="1.0" encoding="utf-8" ?>
 <Harness>
   <Providers>
-    <LocalCoding>
+    <Ollama>
       <Kind>Ollama</Kind>
       <Endpoint>http://192.168.1.101:11434</Endpoint>
       <ChatModel>gemma4:latest</ChatModel>
@@ -24,71 +27,36 @@ example. A user override may contain only the values it changes:
       <EmbeddingDimensions>768</EmbeddingDimensions>
       <ConnectTimeoutSeconds>5</ConnectTimeoutSeconds>
       <RequestTimeoutSeconds>600</RequestTimeoutSeconds>
-    </LocalCoding>
+    </Ollama>
   </Providers>
   <Routing>
-    <MainLlm>LocalCoding</MainLlm>
-    <Reviewer>LocalCoding</Reviewer>
-    <ToolLlm>LocalCoding</ToolLlm>
-    <Embedding>LocalCoding</Embedding>
+    <MainLlm>Ollama</MainLlm>
+    <Reviewer>Ollama</Reviewer>
+    <ToolLlm>Ollama</ToolLlm>
+    <Embedding>Ollama</Embedding>
   </Routing>
-  <Framework>
-    <Rules>
-      <ApprovalPolicy>
-        <Value>explicit</Value>
-        <Precedence>0</Precedence>
-        <Layer>global</Layer>
-        <Locked>true</Locked>
-      </ApprovalPolicy>
-    </Rules>
-  </Framework>
 </Harness>
 ```
 
-## Stateless MCP connections
+All routes are validated at startup. `Routing:Embedding` is independent of the chat
+routes. Provider, model, embedding dimensions, and chunking version form the vector
+partition identity; incompatible partitions are never mixed.
 
-Each child of `McpConnections` is a named remote Streamable HTTP endpoint:
+Use Settings → Model providers to edit endpoint, chat/embedding defaults, embedding
+dimensions, secret references, and timeouts. Settings writes the private XDG override
+without replacing unrelated XML. Active providers, routes, clients, and index
+identity do not change during the process, so these edits require restart.
 
-```xml
-<McpConnections>
-  <AvaloniaDocs>
-    <Endpoint>https://docs.example.test/mcp</Endpoint>
-    <RequestTimeoutSeconds>30</RequestTimeoutSeconds>
-    <Enabled>true</Enabled>
-  </AvaloniaDocs>
-</McpConnections>
+Temporary environment override:
+
+```bash
+HARNESS_Providers__Ollama__Endpoint=http://localhost:11434 \
+dotnet run --project src/Harness.Host/Harness.Host.csproj
 ```
 
-Harness.NET uses the stable official C# MCP SDK 2.x. It does not force a legacy
-protocol version, so discovery starts with the stateless `2026-07-28`
-`server/discover` flow. Streamable HTTP is explicit; no MCP session identifier is
-persisted or resumed, and stdio/SSE transports are not enabled. Remote endpoints must
-use HTTPS. Plain HTTP is accepted only for loopback development endpoints.
+Environment key separators use `__`.
 
-Enabled connections are discovered at application startup without model inference.
-Only tools that explicitly declare `readOnlyHint: true` and do not declare
-`destructiveHint: true` are namespaced and exposed to Lead, Implementer, and Reviewer.
-Missing or unsafe annotations are counted in Settings but fail closed. Enabling an
-endpoint explicitly trusts it to execute those read-only calls; mutating MCP tools
-require a future typed approval and are not reachable through a generic call-by-name
-escape hatch. Catalogs are bounded to 256 advertised tools, with at most 32 eligible
-tools per connection exposed to agents. Descriptions and individual input/output
-schemas are also bounded before they may enter model context; duplicates and excess
-tools remain rejected and visible rather than being silently truncated into authority.
-
-Use **Settings → MCP connections** to add, edit, enable/disable, remove, and inspect
-connections. It shows negotiated protocol, eligible/rejected tool counts, and
-connection failures. Changes are written to the private XDG override while preserving
-unrelated configuration and require restart because active MCP clients and tool
-schemas are fixed for the process lifetime.
-
-Each child of `Providers` is a named module. Routing refers to module names, not
-implementation types, so several differently configured modules can use the same
-provider implementation. All routes are validated at startup. Supported kinds are
-`Ollama` and `OpenRouter`.
-
-OpenRouter modules add semantic secret references while keeping the credential out
-of XML:
+### OpenRouter
 
 ```xml
 <OpenRouter>
@@ -104,83 +72,87 @@ of XML:
 </OpenRouter>
 ```
 
-Every OpenRouter inference request also requires an authorized goal with a persisted
-remote-spend mode. New goals default to Unlimited; Settings and goal creation expose
-Capped and Local-only as prominent cost-control opt-ins. Explicit goal-role selection authorizes planning inference before plan
-approval without granting repository mutation; plan approval separately authorizes
-the isolated worktree capabilities. For capped goals, the connector derives a provider
-request boundary from the remaining monetary budget so it can reserve a conservative
-estimate before sending content. Unlimited goals omit an application output-token
-ceiling. Strict
-workspace privacy is represented as a typed policy and sends both no-collection and
-zero-data-retention routing constraints.
+The API key is not stored in XML. Harness.NET resolves `ApiKeySecret` through Linux
+Secret Service, then uses the configured environment variable as fallback. It does
+not load repository `.env` files. Environment names are case-sensitive on Linux.
 
-Configured chat routes remain separate from spending authority. In the
-Goals menu, **Models** discovers each configured provider catalog without performing
-inference and lets the user select a provider/model separately for lead, implementer,
-and reviewer. A local default may run without a stored override. A remote default or
-override must be explicitly selected for that goal, and its spend mode must be Unlimited
-or Capped. Every agent call remains subject to that goal's monetary spend policy.
-Selections persist by goal and role; changing one role does not authorize another.
-Published input/output prices are shown per million tokens, and missing pricing is
-shown explicitly because paid calls fail closed when the provider cannot price them.
+Settings accepts a write-only API key and sends it directly to Secret Service. The
+control is cleared after save. Snapshots report only `Missing`, `Configured`, or
+`Unavailable`.
 
-`Routing:Embedding` selects the named module used for semantic indexing and query
-embeddings independently of the three chat roles. `EmbeddingDimensions` is required
-because vector dimensions are part of the durable partition identity; changing the
-provider, model, dimensions, or chunking version never mixes incompatible vectors.
+A key or route does not authorize a paid call. The goal spend mode must be Unlimited
+or Capped. Every request requires pricing and cost reservation. Capped calls may
+derive a provider output boundary from remaining money; Unlimited calls omit an
+application token ceiling. Strict workspace privacy requests no-collection and
+zero-data-retention routing.
 
-For temporary overrides, configuration key separators become double underscores:
+Startup catalog discovery performs no inference. Model choices persist separately for
+Lead, Implementer, and Reviewer. Business Logic filters each role to models that
+declare its required capabilities. Missing pricing is shown and paid calls fail
+closed.
 
-```bash
-HARNESS_Providers__Ollama__Endpoint=http://localhost:11434 \
-dotnet run --project src/Harness.Host/Harness.Host.csproj
+## MCP connections
+
+Each child of `McpConnections` is a named Streamable HTTP endpoint:
+
+```xml
+<McpConnections>
+  <AvaloniaDocs>
+    <Endpoint>https://docs.example.test/mcp</Endpoint>
+    <RequestTimeoutSeconds>30</RequestTimeoutSeconds>
+    <Enabled>true</Enabled>
+  </AvaloniaDocs>
+</McpConnections>
 ```
 
-Provider credentials do not belong in XML. They remain references resolved through
-Linux Secret Service with narrowly scoped environment fallback.
-Harness.NET does not automatically load repository `.env` files. Environment
-fallback names are case-sensitive on Linux and must match the configured
-`ApiKeyEnvironmentVariable` exactly; the shipped OpenRouter name is
-`OPENROUTER_API_KEY`.
+Rules:
 
-The Avalonia **Settings → Model providers** page exposes each effective named module.
-It can persist endpoint, chat and embedding defaults, embedding dimensions, connect
-and request timeouts, and OpenRouter secret-reference changes into the XDG
-`harness.xml` override while preserving unrelated XML configuration. Active provider
-objects, routes, conversation clients, and semantic-index partition identity remain
-fixed for the process lifetime, so the page marks these changes as requiring restart.
-Environment variables and command-line configuration retain their documented higher
-precedence after restart.
+- remote endpoints require HTTPS; plain HTTP is allowed only for loopback;
+- discovery uses official C# SDK 2.x and starts with stateless protocol `2026-07-28`;
+- no MCP session ID is persisted;
+- stdio and legacy SSE transports are disabled;
+- only enabled tools that declare read-only and non-destructive behavior reach agents;
+- ambiguous or unsafe tools remain visible in Settings and are rejected;
+- at most 256 tools may be advertised and 32 eligible tools exposed per connection;
+- descriptions and schemas also have size limits;
+- there is no generic call-by-name MCP function.
 
-An OpenRouter API key entered in Settings is write-only: it is stored at the selected
-Secret Service reference, cleared from the control, and never written to XML, SQLite,
-logs, or a settings snapshot. The UI reports only `Missing`, `Configured`, or
-`Unavailable`. Saving a key is still not permission by itself to make a paid request;
-the selected goal's persisted spend mode supplies that authority.
+Settings → MCP connections can add, edit, enable, disable, remove, refresh, and show
+protocol, eligible/rejected counts, and failures. Changes require restart because
+active clients and schemas are fixed for the process lifetime.
 
-Each child of `Framework/Rules` is a named typed rule. Higher precedence values are
-more specific. A locked effective rule blocks later overrides; conflicting values at
-the same precedence make the effective framework invalid until resolved.
+## Framework rules
+
+```xml
+<Framework>
+  <Rules>
+    <ApprovalPolicy>
+      <Value>explicit</Value>
+      <Precedence>0</Precedence>
+      <Layer>global</Layer>
+      <Locked>true</Locked>
+    </ApprovalPolicy>
+  </Rules>
+</Framework>
+```
+
+Higher precedence is more specific. A locked effective rule blocks later overrides.
+Conflicting values at the same precedence invalidate the effective framework until
+resolved.
 
 ## Operational modes
 
-`--no-ui` initializes and migrates Harness.NET, prints its ready/schema status, and
-exits. `--wait-for-shutdown` performs the same non-interactive initialization and
-then waits for SIGINT or SIGTERM. These flags are host operations rather than
-configuration keys and are removed before command-line configuration binding.
+- `--ui=avalonia`: select the default desktop UI.
+- `--ui=terminal`: select Terminal.Gui; attached input and output are required.
+- `--no-ui`: initialize, migrate, print readiness/schema, and exit.
+- `--wait-for-shutdown`: initialize, report readiness, and wait for SIGINT/SIGTERM.
 
-Avalonia is the default interactive frontend, including when no console streams are
-attached. Use `--ui=terminal` to run the Terminal.Gui adapter or `--ui=avalonia` to
-select the default explicitly. Terminal mode requires attached input and output.
 `--ui` cannot be combined with backup, wait, or non-UI modes.
 
 ## User themes
 
-The selected semantic theme ID is stored in application state. User palettes are
-loaded from `$XDG_CONFIG_HOME/harness.net/themes/*.xml` (or the platform fallback for
-`XDG_CONFIG_HOME`). A palette inherits a built-in Light or Dark base and overrides
-only named color tokens:
+User palettes are loaded from `$XDG_CONFIG_HOME/harness.net/themes/*.xml`. The
+selected theme ID is stored in application state.
 
 ```xml
 <harnessTheme version="1" id="nord" name="Nord" base="dark">
@@ -190,12 +162,10 @@ only named color tokens:
 </harnessTheme>
 ```
 
-IDs use lowercase letters, digits, dots, underscores, and hyphens. Supported tokens
-are the semantic names defined by `ThemeColorToken`; colors are opaque `#RRGGBB`.
-Editor syntax can be tailored independently with `CodeKeyword`, `CodeType`,
-`CodeString`, `CodeComment`, `CodeNumber`, `CodeMethod`, `CodePreprocessor`, and
-`CodePunctuation`.
-Harness.NET reads at most 64 files of 64 KiB each, prohibits DTDs and external
-resources, and excludes palettes that are malformed or fail required contrast.
-Executable AXAML, fonts, includes, and external assets are never loaded from a theme.
-Use Reload in the desktop theme selector after editing a file.
+IDs allow lowercase letters, digits, dots, underscores, and hyphens. Colors are
+opaque `#RRGGBB`. Supported names come from `ThemeColorToken`, including the
+`Code*` syntax tokens.
+
+Harness.NET reads at most 64 theme files of 64 KiB each. It rejects malformed files,
+unsafe contrast, DTDs, and external resources. Themes cannot load AXAML, code, fonts,
+includes, or external assets. Use Reload after editing a palette.

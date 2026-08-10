@@ -5,8 +5,7 @@
 
 ## Context
 
-The framework must be durable and layered without adding product-specific clutter to
-repositories or hiding shared engineering rules in an application database.
+Engineering rules need clear ownership, precedence, and storage.
 
 ## Decision
 
@@ -20,18 +19,17 @@ Do not create a `.harness` directory. Store global private framework data in XDG
 configuration storage and operational/private workspace data in Harness.NET's
 SQLite database.
 
-Rule promotion always presents a diff and lets the user choose global private,
-workspace private, `AGENTS.md`, or an existing documentation destination.
+Promotion shows a diff and requires the user to choose global private storage,
+workspace private storage, `AGENTS.md`, or an existing documentation file.
 
 ## Consequences
 
 - User repositories contain only guidance they already use or explicitly approve.
-- Private overlays and summaries are local and do not surprise collaborators.
+- Private overlays and summaries remain local.
 - Shared rules remain reviewable through the repository's normal Git workflow.
 - The application must explain rule provenance, precedence, and locks.
 
 ## Alternatives considered
 
-- A repository `.harness` directory was rejected to keep user repositories clean.
-- SQLite-only framework storage was rejected because shared guidance must remain
-  human-readable and reviewable.
+- A `.harness` directory adds product-specific repository state.
+- SQLite-only storage hides shared rules from normal review.

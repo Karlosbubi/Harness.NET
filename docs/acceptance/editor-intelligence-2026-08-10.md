@@ -24,14 +24,14 @@ Run the focused, inference-free gate from the repository root:
 ./eng/verify-editor-intelligence.py
 ```
 
-Use `--no-build` after an existing build, or `--atspi` to additionally launch the
-production Linux accessibility verifier. The gate covers the real Roslyn adapter,
+Use `--no-build` after an existing build, or `--atspi` to also launch the Linux
+accessibility verifier. The gate covers the Roslyn adapter,
 Business Logic freshness boundary, headless editor controls, and theme contract.
 
 The 2026-08-10 focused run passed 21 Roslyn adapter tests, 13 semantic-boundary tests,
 56 editor-control tests, and 2 theme-contract tests. It performs no provider call,
 model inference, restore, or paid operation.
 
-The `--atspi` run also passed against the production Avalonia application and found
+The `--atspi` run also passed against the Avalonia application and found
 the five semantic actions by their developer-facing accessible names in a real source
 document.

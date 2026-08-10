@@ -1,16 +1,15 @@
 # Model-accessible IDE capability map
 
-This is the implementation map for [ADR 016](decisions/016-model-accessible-ide-capabilities.md).
-It was checked against the live JetBrains Rider MCP Server 2026.2 catalog on
+This table tracks [ADR 016](decisions/016-model-accessible-ide-capabilities.md).
+It was compared with the JetBrains Rider MCP Server 2026.2 catalog on
 2026-08-10 and against the published
 [Rider MCP tool documentation](https://www.jetbrains.com/help/rider/mcp-server.html).
-Rider is a breadth and UX reference; Harness.NET owns its contracts and authority.
+Rider is an inventory reference. Harness.NET owns its schemas and authority rules.
 
 Status meanings:
 
 - **Delivered:** a role already receives the typed capability.
-- **Internal:** the IDE or Business Logic has the behavior, but models do not yet
-  receive an equivalent typed tool.
+- **Internal:** Harness.NET has the behavior, but models cannot use it yet.
 - **Partial:** a narrower typed behavior exists.
 - **Planned:** no end-to-end model-accessible slice exists yet.
 - **Excluded:** deliberately outside the product contract.
@@ -46,7 +45,7 @@ Status meanings:
 | debugger expression/variable mutation | Explicitly risk-classified evaluate/set operations | Planned | Consequential confirmation; evaluation may execute code |
 | database connection/schema/object inspection | Named secret-backed connections and bounded metadata inspection | Planned | Settings + Secret Service; source/credential status |
 | SQL execute/fetch/cancel and table preview | Bounded query sessions, pagination and cancellation | Planned | Server-enforced read-only principal or explicit mutation approval |
-| create/edit/test database connection | First-class database Settings management | Planned | Write-only secrets, validation and restart/runtime status |
+| create/edit/test database connection | Database connection Settings | Planned | Write-only secrets, validation and restart/runtime status |
 | dotTrace snapshot/timeline/call-tree tools | Local .NET performance snapshot inspection and rendered evidence | Planned | Bounded local artifacts; capture/attach authority separate |
 | Unity profiler overview/frame/analyze | Optional Unity/.NET profiling module | Planned | Module availability, bounded artifacts, no ambient context |
 | memory dump and mixed/native attach | Post-mortem and advanced debugger modules | Planned | Sensitive artifact/process approval and retention |
@@ -58,18 +57,17 @@ Status meanings:
 
 ## Always-present bootstrap toolset
 
-Keep this set small and role-adjusted:
+Direct tools remain small and role-specific:
 
 - inspect workspace/project readiness and current source context;
 - bounded file read, text search, Git inspection and .NET graph inspection;
 - bounded semantic repository retrieval and durable evidence listing where eligible;
 - discover/request relevant IDE toolsets for the next bounded role turn.
 
-The first shared Roslyn slice keeps exact-file diagnostics, symbol information,
-definition, reference, and implementation lookup direct for every role. Harness.NET loads the current
-file and creates the short-lived exact-context session itself; models do not provide
-session IDs, baseline hashes, buffer versions, or duplicated source text. Broader
-hierarchy and test-discovery schemas remain on-demand work.
+Every role has direct exact-file diagnostics, symbol information, definition,
+reference, and implementation lookup. Harness.NET loads the file and creates the
+short-lived source session. Models do not supply session IDs, hashes, buffer versions,
+or duplicate source text. Hierarchy and test discovery remain planned.
 
 Existing mutation tools remain present only for an approved Implementer task. MCP
 tools and future optional modules are on-demand unless the user explicitly chooses a
@@ -92,7 +90,6 @@ permitted direct exposure in Settings.
 
 ## Delivery rule
 
-Every slice adds its catalog entry, role policy, typed implementation, deterministic
-fake, focused integration tests, evidence/status projection and **Settings → Agent
-tools** management at the same time. A catalog row may say unavailable, but it may not
-pretend a raw adapter or command string is a delivered IDE capability.
+Each slice includes catalog entry, role policy, typed implementation, deterministic
+fake, integration tests, run status/evidence, and Settings management. A catalog row
+may be unavailable. A raw adapter or command string is not a delivered capability.

@@ -21,7 +21,7 @@
   though the atomic write itself completed.
 - Files outside the compiler workspace, such as Markdown documentation, receive an
   explicit `NotApplicable` disposition. Known project-system inputs fail closed while
-  they cannot be represented honestly as an in-memory Roslyn document candidate.
+  they cannot be represented as an in-memory Roslyn document candidate.
 
 ## Deterministic checks
 

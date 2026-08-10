@@ -7,9 +7,8 @@
 
 ## Context
 
-The presentation-neutral Business Logic contracts are ready for a graphical adapter.
-The desktop UI also needs reusable theming, accessibility, and adaptive-layout
-infrastructure without coupling those concerns to Harness.NET orchestration.
+Harness.NET needs a graphical adapter and reusable Avalonia theme, accessibility, and
+layout code without moving application behavior into the toolkit.
 
 ## Decision
 
@@ -23,9 +22,9 @@ framework API rather than application layer contracts. This exception applies on
 to `Harness.UI.Avalonia`; Presentation continues to expose only interfaces, records,
 and enums. The analyzer enforces the distinct toolkit layer and reference direction.
 
-Use Rx.NET inside the Avalonia adapter to reduce commands, asynchronous streams, and
-snapshots into immutable view state. Do not introduce shared Business Logic event
-streams until another adapter requires them.
+Use Rx.NET inside the Avalonia adapter to produce immutable view state from commands,
+streams, and snapshots. Do not add shared Business Logic streams until another
+adapter needs them.
 
 Avalonia becomes the default interactive frontend. The Terminal.Gui adapter remains
 available through `--ui=terminal`; operational non-UI modes remain unchanged.
@@ -40,10 +39,8 @@ workspace-inspection request, but storage-provider types and picker lifecycle re
 inside Presentation. Keep an editable path fallback for desktops without a folder
 picker and never treat selection as repository trust or execution approval.
 
-The initial `AdaptiveWorkspace` and modal inspection surfaces are bootstrap
-infrastructure, not the final desktop information architecture. The v1 desktop
-requires a central multi-document editor workbench and movable tool panels as
-specified by ADR 010.
+ADR 010 replaces the initial `AdaptiveWorkspace` and modal inspector with a
+multi-document workbench and movable tools.
 
 ## Consequences
 

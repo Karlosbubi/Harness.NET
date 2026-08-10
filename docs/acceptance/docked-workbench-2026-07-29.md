@@ -1,141 +1,77 @@
-# Docked workbench acceptance checkpoint — 2026-07-29
+# Docked workbench acceptance — 2026-07-29
 
-This checkpoint records the production Avalonia host on Linux x64 with isolated,
-empty XDG configuration, data, and state directories. It contains no seeded
-workspace, goal, conversation, evidence, or diagnostic content.
+The Linux x64 Avalonia host ran with empty isolated XDG configuration, data, and state.
+No workspace, goal, conversation, evidence, or diagnostics were preloaded.
 
-## Hands-on visual review
+## Visual review
 
-- Wide, 2084×1358 captured window pixels: real Workspace/Files, Goal context,
-  Conversation, and Run
-  output Dock regions surround the center document region; the honest no-workspace
-  state is readable and all header commands remain visible.
-- Minimum window, 1319×1040 captured window pixels on the scaled desktop: side and bottom
-  production content collapses behind its Dock chrome, leaving the center document
-  readable; compact header labels are removed while every command remains reachable.
+- At 2084×1358 captured pixels, Workspace/Files, Goal context, Conversation, Run
+  output, and the central document region were visible. Header commands fit.
+- At 1319×1040 captured pixels on the scaled desktop, side and bottom content
+  collapsed behind Dock tabs and the document remained readable. Commands remained
+  reachable.
 
-![Wide honest empty state](workbench-wide-empty.png)
+![Wide empty state](workbench-wide-empty.png)
 
-![Minimum-size honest empty state](workbench-compact-empty.png)
+![Minimum-size empty state](workbench-compact-empty.png)
 
-## Workspace-onboarding UX follow-up
+Follow-up changes added the centered Open workspace card, native folder picker with
+manual path fallback, hierarchical Git-tracked Files tree, compact layout controls,
+and theme-bound conversation cards. Folder selection did not grant trust.
 
-A subsequent hands-on pass replaced the passive no-workspace message with a centered
-onboarding card and primary **Open workspace** actions in both the header and editor.
-The initial left tool now opens on Workspace rather than an unusable empty Files list;
-the right tool contains goal context and evidence instead of duplicating provider and
-appearance summaries already represented by the header and status bar. Persistent
-layout actions use compact icon controls with full accessible names and tooltips.
+## Deterministic UI checks
 
-The workspace window now separates registered repositories from opening a new one.
-Its primary route launches Avalonia's real platform single-folder picker, starts in a
-well-known local folder, converts only a locally accessible selection, and immediately
-scans through the production workspace-inspection boundary. Manual path entry remains
-available when the platform cannot pick folders. Selection alone grants neither trust
-nor execution authority. The KDE/Wayland native chooser and the redesigned manager
-were rendered and inspected on 2026-07-29 with isolated XDG state; no repository or
-model call was created by that visual check.
+`Harness.Presentation.Avalonia.Tests` verifies:
 
-The Files follow-up removes manual relative-path entry. A conventional hierarchical
-tree now presents existing Git-tracked paths from the resolved original repository or
-approved goal worktree, with local filtering, refresh, keyboard selection, and the
-existing content search retained below it. Conversation cards use dynamic theme
-resources, preventing the unreadable combination of a retained light card background
-and newly selected dark-theme text.
+- opened AvaloniaEdit content belongs to the rendered window tree;
+- default-layout replacement retains the seven tool controls;
+- tracked paths form a directory-first tree and filtering keeps hierarchy;
+- conversation cards update with theme resources;
+- Ctrl+Shift+E, Ctrl+Shift+G, Ctrl+J, and F6 restore compact tools;
+- focus targets and automation names;
+- floating-window ownership and layout recovery;
+- 200% framebuffer scaling doubles pixels without changing logical layout.
 
-## Deterministic evidence
+## AT-SPI and Orca
 
-`Harness.Presentation.Avalonia.Tests` verifies that a real opened AvaloniaEdit source
-editor belongs to the rendered window visual tree, not merely a Dock context object.
-It also replaces the live layout with the safe default and verifies that the active
-overview, workspace, conversation, and goal-context controls remain in that rendered
-tree. It also verifies tracked paths become a directory-first file tree, filtering
-preserves hierarchy, and message-card backgrounds follow effective theme-resource
-changes. The same suite verifies compact tool restoration through Ctrl+Shift+E,
-Ctrl+Shift+G, Ctrl+J, and F6; focusable targets; explicit automation names; floating
-window ownership; layout recovery; and a 200% framebuffer whose pixel dimensions
-double without changing logical layout.
+`./eng/verify-avalonia-atspi.py` runs against `Harness.Host --ui=avalonia` with a
+temporary Git repository and isolated XDG state. It:
 
-## Assistive-technology checkpoint
+1. registers, selects, and trusts the repository;
+2. creates a local-only goal and approves a manual plan and worktree;
+3. opens and edits two worktree documents;
+4. searches tracked text;
+5. saves layout, restarts, and verifies restoration;
+6. injects invalid layout state, restarts, and verifies default fallback.
 
-The production `Harness.Host --ui=avalonia` process was inspected through the Linux
-AT-SPI bus, rather than through a headless control-tree surrogate. The accessible
-tree exposed the real Files/search, source editor region, Conversation, Run output,
-Goal context, Git, header, layout, provider, and workspace controls. Dock menu, pin,
-maximize/restore, close, title chrome, and proportional splitters have contextual
-names instead of template type names. AT-SPI actions successfully selected the
-Workspace page and opened the real workspace-management dialog.
+The script restores desktop accessibility settings and removes temporary files. It
+performs no model call.
 
-`./eng/verify-avalonia-atspi.py` makes that checkpoint repeatable in a graphical
-Linux session. With isolated XDG directories and a temporary real Git repository it:
+`./eng/verify-avalonia-atspi.py --with-orca` runs Orca 50.2 with an isolated profile.
+It refuses to replace an existing Orca process and rejects speech containing known
+Avalonia or Dock implementation type names. The passing trace included application
+labels for the conversation model, editor documents, layout save, Workspace tab,
+workspace manager, repository path, folder picker, and inspection action. This checks
+generated speech output, not human comprehension.
 
-- registers, selects, and explicitly trusts the repository through the production
-  workspace dialogs;
-- creates a local-only goal, enters a manual plan, approves the plan and capabilities,
-  and proves the isolated goal worktree contains editable source;
-- opens `Program.cs` and the project file from that worktree, switches and focuses
-  them through accessible editor commands, and searches real Git-tracked text;
-- saves private layout, restarts the production process, and observes restoration;
-- replaces the private layout with an integrity failure, restarts again, and proves
-  the safe default workbench remains accessible.
+## Complete goal workflow
 
-The verifier restores the session's original accessibility flags, invokes no model,
-and removes its temporary repository and XDG state. It passed on 2026-07-29.
+`./eng/verify-avalonia-workflow.py` uses a deterministic loopback Ollama HTTP server.
+It exercises the real UI, provider adapter, typed tools, Git worktree, and SQLite
+state without external inference.
 
-Orca 50.2 was then attached to the same production host with an isolated application
-profile. Its debug speech-generation trace initially recorded framework containers
-between the useful application announcements. Avalonia 12.1's Linux AT-SPI bridge
-exports raw peers without applying their control/content classification and falls
-back to CLR class names for unnamed peers. Harness.NET now makes only those peers
-that Avalonia itself classifies as neither control nor content anonymous and
-role-neutral, retaining their semantic descendants.
+The verifier:
 
-`./eng/verify-avalonia-atspi.py --with-orca` makes the speech checkpoint repeatable.
-It refuses to replace an existing Orca process, isolates Orca's profile, restores
-the original AT-SPI and desktop accessibility settings, and rejects speech containing
-known Avalonia or Dock implementation type names. Its passing trace records contextual
-utterances including
-“Conversation model, combo box”, “Open editor documents, combo box”, “Save current
-panel layout, button”, “Workspace, page tab”, “Manage workspaces, button”,
-“Repository path, entry”, “Browse for repository folder, button”, and “Inspect,
-button”. This verifies the actual screen-reader
-speech pipeline rather than inferring output from automation properties, but it is
-not represented as a human listening study. No model was invoked and the original
-desktop accessibility settings were restored after the run.
+1. registers and trusts a temporary .NET repository;
+2. runs Lead planning after an `inspect_dotnet` call;
+3. stops at `AwaitingPlanApproval`, verifies SQLite, restarts, and approves;
+4. applies an exact-baseline `Program.cs` edit;
+5. records successful Build and Test evidence;
+6. runs Reviewer after Git diff and evidence inspection;
+7. creates and separately approves an exact-diff commit request.
 
-The verifier passed on 2026-07-29 without speaking `Grid`, `StackPanel`, `Border`,
-content-presenter, `DockableControl`, deferred-content, or visual-layer type names.
-Meaningful application regions such as “Editor document navigation, panel” remain.
-
-## Complete production workflow
-
-`./eng/verify-avalonia-workflow.py` configures the production host to use a
-deterministic loopback server through the real Ollama HTTP boundary. The server is
-owned by the verifier, has no credential or external route, and returns bounded Lead,
-Implementer, and Reviewer responses plus typed tool calls. It is test infrastructure,
-not a mock or filler mode in the application.
-
-Through the real Avalonia UI and AT-SPI actions, the verifier:
-
-- registers, selects, and trusts a temporary real .NET Git repository;
-- starts Lead planning, whose real `inspect_dotnet` tool call precedes a persisted
-  bounded delegation;
-- terminates the production process at `AwaitingPlanApproval`, verifies that durable
-  boundary in SQLite, restarts, and approves the plan and isolated worktree;
-- has Implementer apply one exact-baseline `Program.cs` edit and produce successful
-  durable Build and Test evidence through the typed tools;
-- has Reviewer inspect the real Git diff and list durable tool evidence before
-  returning an accepted structured decision;
-- records a pending exact-diff request in the UI, separately confirms it, and creates
-  the local commit on the isolated goal branch.
-
-The passing verifier asserts that the original repository content and one-commit
-`main` history are unchanged; the isolated branch is clean with exactly one additional
-commit and a `Harness-Diff-SHA256` trailer. It also queries the private application
-database and requires the exact nine-checkpoint workflow from `Started` through
-`Accepted`, succeeded FileEdit/Build/Test records, and a committed one-file approval
-with a commit SHA. The production provider/tool sequence is asserted exactly, so a
-text-only model response cannot satisfy the gate.
-
-Task 033 acceptance is complete. This checkpoint verifies generated Orca speech and
-AT-SPI operation; it does not claim to be a human screen-reader listening study.
+Assertions require the original repository and one-commit `main` history to remain
+unchanged. The isolated branch must be clean with one additional commit and a
+`Harness-Diff-SHA256` trailer. SQLite must contain the expected nine checkpoints,
+successful FileEdit/Build/Test evidence, and the commit SHA. The provider/tool
+sequence is exact; a text-only response cannot pass.

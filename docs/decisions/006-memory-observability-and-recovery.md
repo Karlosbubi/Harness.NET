@@ -5,8 +5,8 @@
 
 ## Context
 
-Runs must be auditable and recoverable, and semantic memory must remain compatible
-with the model that created it. Model content is also sensitive operational data.
+Runs need local audit history and safe restart behavior. Vector data must remain
+compatible with its embedding configuration. Model content is sensitive.
 
 ## Decision
 
@@ -29,23 +29,19 @@ default. Store provider secrets in Linux Secret Service with environment fallbac
 - Detailed exchanges remain locally auditable and appear summarized but expandable
   in the TUI.
 - Changing an embedding configuration creates or rebuilds a compatible index.
-- Normal tests use deterministic fakes; opt-in Ollama evaluations protect behavioral
-  planning, tool-selection, and review expectations.
+- Normal tests use deterministic fakes. Live model tests are opt-in.
 
 ### Explicit role retry and budget recovery amendment (2026-07-31)
 
-A role call that fails or becomes uncertain remains a durable `NeedsDirection`
-boundary. Harness.NET identifies the exact failed role but never restarts it merely
-because the application, provider, or network recovered. After inspecting the recovery
-notice, cost ledger, and tool evidence, the user may explicitly retry that exact role
-from the last durable checkpoint. The retry itself is another checkpoint and is subject
-to the same typed mutation baselines and aggregate cost cap.
+A failed or uncertain role call becomes a durable `NeedsDirection` state. Recovery of
+the application, provider, or network does not restart it. The user may retry the
+failed role from the last durable checkpoint after reviewing recovery, cost, and tool
+evidence. The retry uses the same mutation baselines and aggregate cost policy.
 
-Remote-cap recovery is a separate authority decision. An active trusted goal may receive
-an increase-only compare-and-swap budget extension with a required reason. The old cap,
-new cap, reason, and approval time are durable audit state. Extending a cap does not retry
-a model call, and retrying does not extend a cap. Decreases and stale extensions fail
-closed.
+Budget extension is a separate decision. It is increase-only, requires a reason, and
+uses compare-and-swap state. Persist the old cap, new cap, reason, and approval time.
+Extension does not retry a call; retry does not extend a cap. Reject decreases and
+stale requests.
 
 ## Alternatives considered
 

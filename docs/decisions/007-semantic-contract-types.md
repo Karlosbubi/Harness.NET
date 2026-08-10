@@ -7,10 +7,8 @@
 
 ## Context
 
-Harness.NET coordinates approvals, goals, tools, providers, money, paths, and workflow
-states across explicit layer boundaries. Representing distinct concepts with repeated
-primitive strings and integers makes invalid combinations easy to construct and
-leaves validation scattered through orchestration code.
+Distinct identifiers, paths, money, limits, roles, and states cross layer boundaries.
+Using the same primitive type for each makes accidental interchange possible.
 
 ADR 001 originally restricted public layer contracts to interfaces and records.
 Closed semantic sets are represented more clearly and safely by enums, so that
@@ -31,11 +29,9 @@ Use semantic types as the default throughout new and changed code:
   edges. Validate undefined enum values and invalid single-value records at the
   boundary that accepts them.
 
-Apply the rule incrementally to touched feature slices; a flag-day rewrite of stable
-contracts is not required. A primitive remains appropriate only when it has no
-distinct domain meaning or accidental-interchange risk. Treat that as a deliberate
-boundary decision rather than the default. Do not add a wrapper that provides no
-domain distinction or safety benefit.
+Apply the rule to new and changed code. Do not rewrite stable contracts only for type
+style. Keep a primitive when it has no separate domain meaning. Do not add wrappers
+that add no distinction or validation.
 
 ## Consequences
 
@@ -52,5 +48,4 @@ domain distinction or safety benefit.
   validation is weaker and intent is less visible.
 - Sharing one domain assembly across all layers was rejected because it would weaken
   the accepted direct layer direction.
-- Rewriting every existing contract immediately was rejected because incremental
-  migration keeps feature delivery reviewable.
+- Rewriting every existing contract would add risk without changing behavior.

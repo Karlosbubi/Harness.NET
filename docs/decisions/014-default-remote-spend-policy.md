@@ -1,67 +1,48 @@
-# ADR 014: Default remote-spend policy
+# ADR 014: Default remote spending
 
 - Status: Accepted
 - Date: 2026-08-08
 
 ## Context
 
-Requiring a positive per-goal cap before any OpenRouter call made a configured remote
-route unexpectedly unusable during ordinary chat-first work. Model selection and
-planning became a multi-dialog recovery exercise even when the user had deliberately
-configured a provider and preferred remote model.
-
-This replaces only the default-authorization portions of ADR 003, ADR 013, and the
-accepted framework. Provider credentials, pricing visibility, usage attribution,
-reservation reconciliation, and explicit model selection remain unchanged.
+The earlier mandatory cap made a configured OpenRouter route unusable until the user
+entered a per-goal amount. It also mixed monetary policy with model output-token
+settings.
 
 ## Decision
 
-New goals authorize unlimited remote-model spend by default. “Unlimited” means no
-application-enforced aggregate monetary ceiling; provider billing and account limits
-still apply. Every request retains its published-price preflight, durable estimated-cost
-reservation, and reconciled actual-cost evidence.
+New goals use one of three typed modes:
 
-### Monetary-only execution amendment (2026-08-08)
+- `Unlimited`: default; Harness.NET applies no aggregate monetary ceiling.
+- `Capped`: reject a request that would exceed the explicit aggregate USD cap.
+- `LocalOnly`: reject every remote model call.
 
-Harness.NET no longer exposes, persists, or accepts user-configured model output-token
-ceilings. Token usage remains observable evidence, not an execution policy. Unlimited
-goals omit `max_tokens` and allow the provider/model to apply its native output behavior.
-For a Capped goal, the OpenRouter adapter may derive a request-local provider maximum
-from the currently remaining micro-USD budget and published output price. That value is
-an implementation detail of enforcing the monetary cap, not a user token setting.
+Provider billing and account limits still apply to Unlimited. Every remote request
+still requires published pricing, reserves estimated cost before the call, and
+reconciles returned cost afterward.
 
-Lead plans order independently useful end-to-end slices so each completed prefix is a
-coherent partial result. Role prompts require incremental validation and an explicit
-completed/verified/remaining report when execution stops. If the monetary boundary
-rejects the next role call, the workflow records `PartiallyCompleted` above its durable
-`NeedsDirection` checkpoint, preserves completed tasks and evidence, and offers cap
-extension/removal, explicit retry, or abort without automatic replay.
-
-Cost control is a prominent opt-in with three typed modes:
-
-- **Unlimited** — the convenient default for new goals;
-- **Capped** — fail closed when an explicit aggregate USD limit would be exceeded;
-- **Local only** — reject every remote model call.
-
-Settings owns the persisted default for newly created goals. Goal creation shows the
-same three choices and allows an explicit override. Draft goal settings may change the
-mode before planning begins. Upgrade maps existing pre-planning goals that still carry
-the old implicit local-only default to Unlimited; approved and running goals retain
+Settings stores the default for new goals. Goal creation shows the same modes and may
+override the default before planning starts. Existing approved and running goals keep
 their stored authority.
 
-The existing positive integer budget column remains the cost-store boundary. Unlimited
-is represented there by the maximum supported micro-USD amount and is mapped immediately
-to the typed `Unlimited` mode above Business Logic. Presentation must never render that
-storage sentinel as a dollar cap.
+Do not expose or persist user output-token ceilings. Token usage remains evidence.
+Unlimited requests omit an application `max_tokens`. For Capped goals, the adapter may
+derive a request-local provider maximum from remaining money and published output
+price. That value is an enforcement detail, not a user setting.
+
+Plan tasks should be independently useful in order. Role reports state completed,
+verified, and remaining work. If the next call cannot fit the cap, persist completed
+tasks and evidence, mark partial completion, and offer cap change, retry, or abort.
+Do not replay automatically.
+
+The cost store represents Unlimited with its maximum supported micro-USD value.
+Business Logic maps that sentinel to the typed mode immediately. Presentation never
+shows the sentinel as a dollar amount.
 
 ## Consequences
 
-- A configured OpenRouter route works for a newly created goal without first entering
-  an arbitrary cap.
-- Users who want hard cost control must deliberately opt into a cap or local-only mode;
-  both choices remain visible in Settings and goal creation.
-- Remote calls still fail closed when credentials or pricing are unavailable.
-- Monetary caps remain enforceable without making users guess a model-specific token
-  budget; unlimited goals are not accidentally constrained by an application ceiling.
-- Existing per-call model confirmation remains a route/privacy disclosure, not the
-  mechanism that grants aggregate spend authority.
+- A configured remote route works for a new goal without entering a cap.
+- Hard cost control is opt-in and remains prominent in Settings and goal creation.
+- Missing credentials or pricing still fail closed.
+- Token limits are not confused with monetary policy.
+- Per-call route/privacy confirmation does not replace the goal spend mode.

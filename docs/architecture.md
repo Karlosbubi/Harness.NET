@@ -1,148 +1,125 @@
-# Accepted Architecture
+# Architecture
 
-## Process and layers
+## Projects and references
 
-Harness.NET begins as a single-process modular application. It uses direct upward
-layer references and a dedicated composition root:
+Harness.NET is a single-process modular application.
 
 ```text
-Data Access -> Business Logic -> Presentation -> UI Toolkit (Avalonia-only support)
+Data Access -> Business Logic -> Presentation -> Harness.UI.Avalonia
       \              |              /
-       +---------- Host/DI ----------+
+       +----------- Host -----------+
 ```
 
-The solution contains Data Access, Business Logic, Avalonia and Terminal Presentation,
-an app-neutral Avalonia UI toolkit, Host, and architecture-test projects with central
-package management. A Roslyn analyzer now enforces layer direction and public
-contract shape during every runtime build.
+- Data Access contains persistence and external adapters.
+- Business Logic contains policy, use cases, and workflow state.
+- Presentation contains Avalonia and Terminal.Gui adapters.
+- `Harness.UI.Avalonia` contains app-neutral Avalonia controls and themes and
+  references no Harness runtime project.
+- Host is the composition root.
+- The analyzer project enforces references and public boundary types.
 
-Only interfaces, records, and enums form layer contracts. Prefer enums for closed
-sets and immutable single-value records where primitive values have distinct domain
-meaning. Implementations remain internal where practical; DI composition is the
-documented exception. Provider SDK payloads
-remain inside Data Access. Microsoft Agent Framework objects remain behind the
-Business Logic agent-role boundary. Roslyn, MSBuild, and any future LSP protocol
-objects remain inside the code-intelligence implementation boundary.
+Only interfaces, records, and enums cross runtime layer boundaries. Prefer enums for
+closed sets and single-value records for values with distinct domain meaning.
+Implementations remain internal except where DI construction requires visibility.
 
-## Business concepts
+Provider and MCP SDK types remain in Data Access. Microsoft Agent Framework types
+remain behind the Business Logic role interface. Roslyn, MSBuild, and future LSP
+types remain in the code-intelligence adapter.
 
-| Concept | Responsibility |
+## Core records
+
+| Record | Meaning |
 |---|---|
-| Workspace | A trusted Git-backed .NET repository plus private Harness.NET settings. |
-| Framework | Layered guidance, enforceable policy, locks, and reusable skills. |
-| Goal | The user-owned outcome, provider choices, cost cap, and review-cycle cap. |
-| Plan | A reviewable proposal that must be approved before mutation. |
-| Agent role | Lead, implementer, or reviewer behavior wrapped by Business Logic. |
-| Run | One checkpointed attempt to complete a goal. |
-| Task | A bounded unit delegated by the lead. |
-| Artifact | A patch, file, plan, decision, report, or verification result. |
-| Approval | User authorization for a plan or consequential capability. |
-| Evidence | Build, test, diff, review, usage, or other completion proof. |
-| Code intelligence | Versioned compiler diagnostics, semantic navigation, and typed transformations for one trusted source context. |
+| Workspace | Registered Git repository, selected .NET entry point, trust, and private settings. |
+| Framework | Layered rules, locks, and procedures. |
+| Goal | User outcome, role routes, spend mode, and review limit. |
+| Plan | Ordered bounded tasks that require approval before mutation. |
+| Run | One checkpointed goal attempt. |
+| Task | One delegated unit with file areas and acceptance criteria. |
+| Artifact | Patch, plan, report, decision, or verification result. |
+| Approval | Typed authority for an exact consequential action. |
+| Evidence | Diff, diagnostic, Build/Test, review, usage, or tool result. |
+| Source context | Trusted original workspace or approved goal worktree plus entry point and identity. |
 
-## Module responsibilities
+## Request flow
 
-- **Data Access:** SQLite/Dapper repositories, DbUp migrations, SQLite vector
-  connector, Ollama/OpenRouter connectors, Git adapters, file access, typed process
-  tools, keyring access, the in-process Roslyn/MSBuild implementation, and Serilog
-  sinks.
-- **Business Logic:** goals, plans, roles, delegation, policy evaluation, approvals,
-  budgets, checkpoints, context assembly, retrieval coordination, trusted code-
-  intelligence lifecycle and validation policy, and workflow state.
-- **UI toolkit:** public Avalonia controls, semantic themes, accessibility helpers,
-  and adaptive layouts with no dependency on another Harness runtime project.
-- **Presentation:** Avalonia and Terminal.Gui adapters consuming only Business Logic
-  interfaces, records, commands, and streams. Avalonia owns its Rx.NET view state,
-  chat-first workflow cards, transient editor buffers, and focused native desktop
-  capabilities such as pickers, clipboard, screen geometry, and accessibility.
-- **Host/composition:** lifecycle, configuration, DI registration, cancellation,
-  startup migrations, and presentation selection.
-- **Analyzer:** compile-time diagnostics for reference direction and cross-layer
-  contract shape.
+1. Presentation sends a record command to Business Logic.
+2. Business Logic validates state and authority.
+3. Data Access performs database, provider, filesystem, Git, Roslyn, process, MCP, or
+   platform work and returns Harness records.
+4. Business Logic persists the completed boundary and advances state.
+5. Presentation refreshes correlated state.
 
-## Data flow
+Long-running operations accept cancellation. Persist a completed tool result before
+the next model call. Mark interrupted calls uncertain and do not replay them.
 
-1. Presentation sends a record command to a Business Logic interface.
-2. Business Logic validates state and policy, then calls Data Access interfaces.
-3. Data Access maps SDK, database, filesystem, Git, or process results into records.
-4. Business Logic advances and checkpoints the workflow.
-5. Presentation observes correlated run events and refreshes the active regions.
+Editor buffers are transient. Presentation sends immutable context-, baseline-, and
+version-bound text. Business Logic validates context. Data Access computes semantic
+results. Presentation discards stale context or buffer versions. Roslyn does not run
+on the UI thread.
 
-Long-running calls accept cancellation. A completed tool call is persisted before
-the next workflow step. An interrupted call is marked uncertain and is not replayed
-automatically.
+## Storage
 
-Live editor buffers follow a separate transient path: Presentation sends an immutable
-context-, baseline-, and version-bound document snapshot; Business Logic validates
-the source context; Data Access computes semantic results; and Presentation discards
-any result whose context or buffer version is stale. Roslyn work never runs on the UI
-thread and transient buffers are not persisted.
+- XDG configuration: provider/MCP modules, framework settings, and themes.
+- SQLite: goals, conversations, prompts, outputs, tools, approvals, checkpoints,
+  usage, artifacts, vectors, summaries, overlays, and preferences.
+- XDG state: logs, worktree state, and workbench layout.
+- XDG cache: disposable data.
+- Linux Secret Service: credentials, with configured environment fallback.
+- User repository: goal branches and user-approved source or existing guidance only.
 
-## Storage boundary
+Harness.NET does not create a metadata directory in a user repository.
 
-- Global private framework and typed configuration use XDG configuration storage.
-- SQLite stores operational state, private overlays, summaries, full run history,
-  approvals, checkpoints, usage, artifacts, vector data, and the preferred theme ID.
-- Bounded color-token user themes are read from the XDG configuration theme directory.
-- Logs and active worktree state use XDG state locations; disposable caches use the
-  XDG cache location.
-- User repositories receive only goal branches, accepted changes, and explicitly
-  approved edits to existing guidance. No Harness.NET metadata directory is added.
-- Secrets reside in Linux Secret Service with environment fallback.
+## Agent authority
 
-## Tool boundary
+Lead reads the trusted original workspace and cannot mutate it. Implementer reads and
+writes only an approved goal worktree and delegated file areas. Reviewer reads the
+same worktree and evidence but cannot write, Build, or Test.
 
-Agents select typed capabilities; they do not construct shell commands. Paths are
-canonicalized and constrained to the trusted goal worktree. Build and test operations
-execute repository code only after workspace trust. Restore and package operations
-remain separately approval-gated because they may use the network or change project
-metadata.
+Agents receive typed tools, not shell strings. Paths are canonicalized and confined.
+Restore, package work, commit, external access, and destructive operations remain
+separate authority decisions.
 
-Role scopes are closed semantic sets. Before plan approval, the Lead can read,
-search, and inspect only the trusted original workspace. The Implementer can read,
-search, inspect, atomically edit, build, and test only an approved active goal
-worktree. The independent Reviewer can read the same worktree diff and durable tool
-evidence but cannot edit, build, or test. Restore, package, commit, and unrestricted
-shell capabilities are absent from all automatically invoked role tool sets.
-Each Implementer call also carries the delegated task's normalized file-area grant;
-atomic edit calls outside those repository-relative areas fail before reaching the
-mutation service. Review correction calls receive the union of the accepted tasks'
-areas, while build and test remain bound to the registered goal entry point.
+Model-authored compiler-managed changes are applied to an in-memory solution first.
+New compiler errors block the write. Warnings and analyzer findings become evidence.
+Accepted multi-file changes use exact baselines and atomic writes, followed by
+validation. Semantic rename uses Roslyn symbol identity and a preview fingerprint.
+Manual editing remains permissive.
 
-Model-authored mutations are first applied to an in-memory compiler solution. A new
-compiler Error rejects the mutation before disk write; warnings and analyzer findings
-become evidence. Accepted multi-file transformations revalidate all baselines and
-apply atomically, then run post-apply validation. Semantic rename is a closed typed
-operation over a Roslyn-resolved symbol and preview fingerprint, not a text-search
-tool. Manual buffers remain permissive and show diagnostics without blocking typing
-or save.
+## Models and tools
 
-Microsoft Agent Framework function declarations and calls map through provider-neutral
-records before Data Access serializes Ollama or OpenRouter payloads. Tool names,
-roles, calls, results, and scopes use enums or semantic single-value records. Remote
-cost reservation estimates include tool schemas and accumulated tool traffic, and
-each function-call round remains attributed to the goal, role, provider, and model.
-Reasoning follows the same boundary: displayable text and opaque structured continuity
-data cross as Harness records, with Microsoft protected reasoning content carrying the
-provider-specific value between tool rounds. Provider-default reasoning is not disabled
-by tool availability. Ollama named tool results and OpenRouter reasoning details are
-round-tripped, while streamed completed calls are emitted exactly once.
-Every role also receives a typed semantic-context function. Business Logic binds its
-query to the goal's active trusted workspace, a closed 1-8 result limit, and strict
-remote privacy; Data Access alone owns vector and embedding-provider details. Remote
-query embeddings use the same atomic goal reservation and reconciliation boundary.
+Business Logic maps Microsoft tool declarations and messages to provider-neutral
+records. Data Access serializes Ollama or OpenRouter requests.
 
-## Required qualities
+Reasoning text and optional protected provider JSON cross through Harness records.
+The Agent Framework carries protected data between tool calls. Ollama receives prior
+thinking and named tool results; OpenRouter receives `reasoning_details`. Completed
+streamed tool calls are emitted once.
 
-- Provider and agent-framework types stop at their owning boundary.
-- Roslyn, MSBuild, and LSP types stop at the Data Access implementation boundary;
-  diagnostics and semantic operations cross layers only as Harness records and enums.
-- Tools are capability-based, path-checked, cancellable, and correlated.
-- Workflow transitions and cost reconciliation are atomic where state consistency
-  requires it.
-- Logs and OTLP telemetry redact secrets and omit model content by default.
-- Domain behavior is testable without Git, SQLite, a TUI, or a running model server.
-- Architecture rules fail compilation through the analyzer and remain review criteria.
-- Linux-specific Presentation and Data Access behavior is selected through focused
-  Host-composed capabilities rather than operating-system checks in Business Logic or
-  one unrestricted platform service.
+Remote cost estimates include messages and tool schemas. OpenRouter reserves cost
+before a call and reconciles returned cost. Every call remains attributed to goal,
+role, provider, model, and operation.
+
+Semantic retrieval is bound to the role’s active source context, a 1–8 result limit,
+and the goal’s privacy and spending policy.
+
+MCP transport and SDK mapping stay in Data Access. Business Logic exposes only
+enabled tools that explicitly declare read-only and non-destructive behavior.
+
+## Platform boundary
+
+Linux is the release target. Presentation owns windows, pickers, clipboard,
+notifications, shortcuts, screen geometry, and accessibility. Data Access owns XDG,
+filesystem, Secret Service, and process behavior. Host composes these focused
+capabilities. Business Logic contains no platform checks.
+
+## Required checks
+
+- architecture analyzer and architecture tests;
+- nullable and warnings-as-errors build;
+- deterministic domain tests without providers or UI;
+- focused adapter integration tests;
+- explicit opt-in for live providers and paid requests;
+- redacted logs and telemetry without model content by default;
+- cancellation and stale-state tests for long-running work;
+- atomic workflow and cost reconciliation where state consistency requires it.

@@ -5,16 +5,16 @@
 
 ## Context
 
-What forces require a decision? Include relevant constraints and evidence.
+State the problem, constraints, and relevant evidence.
 
 ## Decision
 
-State the chosen direction precisely enough to guide implementation.
+State the decision in testable terms.
 
 ## Consequences
 
-Describe benefits, costs, risks, and follow-up work.
+List the effects, costs, risks, and required follow-up work.
 
 ## Alternatives considered
 
-List credible alternatives and why they were not selected.
+List the alternatives and the reason each was rejected.

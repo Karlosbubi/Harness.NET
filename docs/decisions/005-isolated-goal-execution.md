@@ -6,8 +6,8 @@
 
 ## Context
 
-Agents need enough autonomy to complete useful .NET work while protecting the user's
-current worktree, limiting capabilities, and preserving explicit human authority.
+Agents need write and execution access without modifying the user's active worktree
+or receiving broad process authority.
 
 ## Decision
 
@@ -20,8 +20,8 @@ commits remain approval-gated. No unrestricted shell is exposed. LibGit2Sharp ha
 supported Git operations; a structured Git CLI adapter handles worktrees and other
 required gaps.
 
-The implementer produces changes and evidence, then an independent reviewer approves
-or returns findings. The loop pauses at the goal's configured review-cycle limit.
+The Implementer produces changes and evidence. The Reviewer accepts them or returns
+findings. The run pauses at the review-cycle limit.
 Accepted work is committed to the goal branch only after approval and is never merged
 automatically. Commit approval is a separate durable decision over the exact goal,
 workflow run, isolated branch, expected HEAD, complete diff SHA-256, commit message,
@@ -38,6 +38,6 @@ before writing the commit and can reconcile the same commit after interruption.
 ## Alternatives considered
 
 - Direct current-worktree edits were rejected because they weaken isolation.
-- An allowlisted or unrestricted shell was rejected because typed capabilities are
-  easier to understand and enforce.
+- An allowlisted or unrestricted shell has a broader and less auditable authority
+  boundary than typed operations.
 - Automatic merging was rejected to keep integration under user control.

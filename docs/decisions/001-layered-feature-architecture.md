@@ -6,9 +6,7 @@
 
 ## Context
 
-Harness.NET needs stable boundaries without organizing delivery into disconnected
-horizontal phases. The user's established framework favors familiar layers while
-developing useful behavior one feature at a time.
+Harness.NET needs stable project boundaries and complete feature delivery.
 
 ## Decision
 
@@ -23,15 +21,14 @@ Data Access, and Presentation references Business Logic. Only interfaces, record
 and enums may cross those boundaries. A composition root may reference all
 implementations only to configure dependency injection.
 
-New behavior is delivered as end-to-end feature slices spanning the necessary layers.
-A custom Roslyn analyzer enforces reference direction and boundary type shape; the
-reviewer role applies the same rules as review conventions.
+Deliver each feature through every required layer. A Roslyn analyzer enforces project
+references and public boundary types. Reviewer checks use the same rules.
 
 ## Consequences
 
 - Layer internals cannot leak mutable implementation types to another layer.
 - Presentation remains free of business logic and persistence details.
-- Feature work can be reviewed and verified end to end.
+- Each feature can be tested end to end.
 - Composition must be explicit, and DI registrations must not become a general
   route for bypassing layer direction.
 - Compile-time diagnostics enforce project references and contract shape once
@@ -39,7 +36,5 @@ reviewer role applies the same rules as review conventions.
 
 ## Alternatives considered
 
-- A conventional horizontal-layer delivery plan was rejected because it delays
-  complete, useful workflows.
-- An unconstrained vertical-slice architecture was rejected because it would not
-  preserve the desired layer direction and contract discipline.
+- Horizontal-only delivery delays usable features.
+- Unconstrained vertical slices do not preserve layer direction.

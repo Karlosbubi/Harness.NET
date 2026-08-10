@@ -1,6 +1,6 @@
 # Chat-first workflow acceptance — 2026-07-29
 
-Task 040 was exercised in the production Linux Avalonia host against an isolated XDG
+Task 040 was exercised in the Linux Avalonia host against an isolated XDG
 state root and a real temporary Git-backed .NET workspace. The journey used no paid or
 live model call: it registered and trusted the workspace, created a private draft from
 the composer, wrote a deterministic manual plan from its inline card, explicitly
@@ -22,11 +22,11 @@ share is 45%, and the redundant internal heading was removed to prioritize cards
 
 ## Keyboard and accessibility evidence
 
-`./eng/verify-avalonia-atspi.py` passes against the production host. Its representative
+`./eng/verify-avalonia-atspi.py` passes against the application host. Its
 journey now uses stable accessible composer names, the chat-first creation path, the
 manual-plan fallback, and the inline plan approval action. It also verifies the normal
 workspace, editor/search, layout persistence/recovery, and private-state isolation
-checks already covered by the production gate.
+checks already covered by the desktop gate.
 
 The routine `Goals and plans` modal is no longer reachable from navigation, the goal
 inspector, or the command palette. Goal creation/continuation, settings, plan/run

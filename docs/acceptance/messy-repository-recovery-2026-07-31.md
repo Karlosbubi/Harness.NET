@@ -18,11 +18,11 @@
 - Semantic rebuilds are generation based. A ready partition remains searchable while a
   replacement receives 1,000 chunks; aborting the interrupted rebuild leaves that ready
   generation current and excludes partial content.
-- A definitive provider outage or exhausted cost cap moves the exact Lead, Implementer,
+- A provider outage or exhausted cost cap moves the exact Lead, Implementer,
   or Reviewer role to durable `NeedsDirection`. Neither restart nor provider recovery
   replays it. Avalonia chat and the TUI expose an explicit retry with the prior recovery
-  notice, a capability-qualified replacement model, required bounded user guidance,
-  selected output ceiling, possible prior cost, and aggregate-cap disclosure. Every
+  notice, a capability-qualified replacement model, optional user guidance, possible
+  prior cost, and aggregate-cap disclosure. Every
   non-terminal goal can instead be explicitly aborted; its evidence and worktree remain
   auditable while it disappears from the resumable-goal list.
 - A remote cap can only be increased through a separate typed action on an active trusted
@@ -30,7 +30,7 @@
   schema 21. A stale or decreasing request fails; an extension enables only future cost
   reservations and never retries a call by itself.
 - Interrupted Lead and Implementer results reconcile only from already durable plan/task
-  boundaries. Unknown calls remain paused. Corrupt run-output evidence renders an honest
+  boundaries. Unknown calls remain paused. Corrupt run-output evidence renders an
   error without leaking raw JSON; corrupt layout state falls back to the known default,
   and schema upgrades retain the verified pre-migration recovery archive.
 

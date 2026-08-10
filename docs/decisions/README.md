@@ -1,7 +1,7 @@
 # Architecture Decision Records
 
-Use a decision record for choices that constrain dependencies, project boundaries,
-data ownership, execution policy, deployment, or public contracts.
+Record decisions that constrain dependencies, boundaries, data ownership, execution,
+deployment, or public contracts.
 
 ## States
 
@@ -10,8 +10,8 @@ data ownership, execution policy, deployment, or public contracts.
 - **Superseded:** replaced by another decision.
 - **Rejected:** considered and deliberately not chosen.
 
-Copy `000-template.md` to the next zero-padded number. Keep the title stable and
-link superseding records in both directions.
+Copy `000-template.md` to the next number. Keep the title stable. Link replacement
+records in both directions.
 
 ## Index
 
@@ -30,6 +30,6 @@ link superseding records in both directions.
 | [011](011-private-workbench-layout-state.md) | Accepted | Private workbench layout state and recovery |
 | [012](012-roslyn-code-intelligence.md) | Accepted | Roslyn code intelligence and verified transformations |
 | [013](013-chat-first-desktop-workflow.md) | Accepted | Chat-first desktop workflow and settings ownership |
-| [014](014-default-remote-spend-policy.md) | Accepted | Unlimited-by-default remote spend with prominent opt-in controls |
+| [014](014-default-remote-spend-policy.md) | Accepted | Default remote spending |
 | [015](015-stateless-mcp-connections.md) | Accepted | Stateless MCP connections and agent tool safety |
-| [016](016-model-accessible-ide-capabilities.md) | Accepted | Model-accessible IDE capability catalog and authority |
+| [016](016-model-accessible-ide-capabilities.md) | Accepted | Model-accessible IDE capabilities |

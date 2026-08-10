@@ -1,83 +1,53 @@
-# Product Vision
+# Product scope
 
-## Purpose
+Harness.NET is a local-first .NET development environment for one developer working
+with AI agents. It turns the developer’s preferred libraries, architecture, quality
+rules, and workflow into inspectable configuration and typed operations.
 
-Harness.NET is a local-first AI collaboration application specifically for .NET
-software development. It makes one developer's preferred libraries, architecture,
-quality standards, and working process explicit and operational.
+## Principles
 
-Harness.NET coordinates a lead agent and specialist agents across repository
-inspection, planning, implementation, verification, review, and acceptance. It
-optimizes for useful, inspectable outcomes rather than maximum autonomy.
+- **User-owned rules:** rules are layered, inspectable, editable, and promoted only
+  through a user-approved diff.
+- **Local-first data:** source, prompts, policy, and application state stay local
+  unless the user selects a remote service.
+- **Explicit authority:** plans, remote spending, network/package work, destructive
+  actions, and commits use typed decisions.
+- **Scoped agent work:** after plan approval, agents may inspect, edit, Build, and Test
+  only through role-scoped tools in the goal worktree.
+- **Deterministic .NET operations:** use Roslyn for diagnostics, navigation,
+  validation, and refactoring when the compiler can answer.
+- **Chat-first workflow:** conversation starts and continues work; typed cards show
+  state, authority, evidence, and recovery.
+- **Provider isolation:** provider payloads remain in Data Access.
+- **Auditability:** persist prompts, decisions, tool results, usage, checkpoints, and
+  evidence; omit secrets from logs and telemetry.
+- **Replaceable UI:** Avalonia is the default and Terminal.Gui is retained. Business
+  Logic does not depend on either.
+- **No web UI:** web presentation is outside scope.
+- **Clean repositories:** do not create Harness.NET metadata directories in user
+  repositories.
 
-## Product principles
-
-- **User-owned framework:** preferences are inspectable, editable, layered, and
-  promotable through user-approved diffs.
-- **Local-first control:** source, prompts, execution policy, and operational state
-  remain local unless a selected provider requires remote inference.
-- **Human authority:** the user approves plans, remote-provider use, exceptional
-  capabilities, budget extensions, and Git commits.
-- **Workspace autonomy:** after plan approval, agents may use typed repository-local
-  edit, build, test, and inspection tools without repeated prompts.
-- **Deterministic .NET assistance:** Roslyn checks manual and model-authored edits and
-  performs symbol-aware operations when a compiler answer exists; language-model text
-  does not replace deterministic refactoring.
-- **Conversation-led workflow:** the user collaborates through chat while plans,
-  approvals, progress, validation, evidence, and handoff appear as structured state
-  in context. Agent roles are configurable implementation detail, not the routine
-  interaction model.
-- **Provider boundaries:** Ollama and OpenRouter remain Data Access concerns; model
-  payloads do not define Business Logic or Presentation contracts.
-- **Observable work:** activity, decisions, tool results, usage, and evidence are
-  correlated, persisted, and expandable without exposing secrets in telemetry.
-- **Replaceable presentation:** the first interface is a full-screen TUI. Avalonia
-  applications and APIs such as gRPC can be added without moving business behavior.
-- **No web frontend:** web-based presentation is outside the intended architecture.
-- **Clean repositories:** Harness.NET does not add a custom metadata directory to
-  user repositories.
-
-## First complete workflow
+## Repository workflow
 
 1. Register and trust a Git-backed .NET repository.
-2. Select a solution or project entry point and build its semantic index.
-3. Describe a goal in conversation, using configured role/model defaults and setting
-   only any required goal-specific remote authorization or override.
-4. Let the lead inspect the repository and propose a plan.
-5. Approve, revise, or reject the plan.
-6. Create an isolated goal branch and worktree after approval.
-7. Let the implementer edit through typed tools whose candidate changes are checked
-   by Roslyn, then verify through independent Build/Test evidence.
-8. Let an independent reviewer inspect the diff and evidence.
-9. Repeat within the configured review-cycle limit or pause for user direction.
-10. Inspect the outcome and explicitly approve a commit on the goal branch.
+2. Select a solution or project and optionally build its semantic index.
+3. Describe a goal and select any goal-specific model or spending override.
+4. Lead inspects the original workspace and proposes a bounded plan.
+5. The user approves, changes, or rejects the plan.
+6. Approval creates an isolated goal branch and worktree.
+7. Implementer edits through typed tools; Roslyn validates model-authored C# changes;
+   Build/Test provides separate execution evidence.
+8. Reviewer inspects the diff and evidence.
+9. Correction repeats within the configured review limit or pauses for direction.
+10. The user inspects the result and approves an exact commit on the goal branch.
 
-## Current implementation boundary
+## Current boundary
 
-Harness.NET now includes enforced layer boundaries, XDG storage, additive SQLite
-migrations, local observability, an adaptive accessible Avalonia conversation and
-goal shell,
-the retained Terminal.Gui workflow adapter, Ollama and
-cost-controlled OpenRouter providers, semantic retrieval, durable goals and plans,
-isolated worktrees, and role-scoped typed tools. A goal-bound production coordinator
-runs Lead planning, pauses for plan approval, resumes Implementer work, and invokes an
-independent Reviewer with durable expandable evidence. It checkpoints before model
-calls, resumes completed safe boundaries, reconciles an already-durable plan, and
-never automatically replays an uncertain call. Lead plans persist ordered bounded
-tasks with file areas and acceptance criteria; Implementer calls execute those tasks
-one at a time before bounded review/revision cycles and exact commit approval.
-All roles can retrieve bounded, goal-attributed semantic context, while both adapters
-provide explicit cost-transparent status, rebuild, and preview controls. The
-self-contained release now has deterministic clean-install, migration, outage,
-cancellation, backup, recovery, and representative-repository acceptance evidence.
-Avalonia uses a separate app-neutral toolkit for semantic themes, safe user palettes,
-accessibility infrastructure, and adaptive layout. It now covers trusted workspace
-management plus durable goal creation and the versioned plan-decision boundary. Role
-routing, cost disclosure, bounded/cancellable production runs, and durable task,
-activity, evidence inspection, and explicit semantic context management are now
-available there as well. Exact commit preview, pending request creation, separate
-approve/deny decisions, and approved-commit resumption also have desktop parity.
-Deliberately confirmed application-state backup and exact goal-, target-, and
-correlation-bound Restore approval management now have desktop parity as well.
-Effective framework inspection and private workspace-overlay editing also preserve
-the user-owned framework workflow in the desktop adapter.
+The complete scripted repository workflow is implemented on Linux x64. The desktop
+also includes editable source, Roslyn diagnostics and navigation, semantic rename,
+provider and MCP Settings, multi-workspace state, recovery, and first model-accessible
+IDE tools.
+
+The application is not yet a complete daily-use IDE. Remaining work is listed in the
+[roadmap](roadmap.md): controlled visual capture, version-matched documentation and
+package/SBOM support, and the rest of the typed IDE capability catalog.

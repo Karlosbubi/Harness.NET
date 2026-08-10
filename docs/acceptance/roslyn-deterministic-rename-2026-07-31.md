@@ -40,7 +40,7 @@
 - Data Access tests inject a failure during the second file commit and observe both
   originals restored with no temporary artifacts. They also prove stale-baseline
   all-or-none behavior and cancellation rollback.
-- A headless production-control test opens an editable source tab, previews through
+- A headless UI test opens an editable source tab, previews through
   the shared human operation, applies the accepted fingerprint, refreshes the editor
   with the returned content/hash, and leaves the document clean.
 - SQLite initialization, upgrade backup, and tool evidence tests exercise schema 20

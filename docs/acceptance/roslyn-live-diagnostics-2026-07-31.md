@@ -1,10 +1,10 @@
 # Roslyn live diagnostics acceptance — 2026-07-31
 
-This checkpoint exercises the production Avalonia host on Linux against a temporary
-real .NET 10 Git repository and an approved goal worktree. The repository deliberately
+This checkpoint exercises the Avalonia host on Linux against a temporary .NET 10 Git
+repository and an approved goal worktree. The repository
 contains one C# syntax error. No model provider or package restore is invoked.
 
-## Wide production review
+## Wide review
 
 At 1600×1000 window pixels, the active source document retains useful editor height
 while the dockable Problems tool shows the exact compiler ID, repository-relative
@@ -15,7 +15,7 @@ by default, with accessible filters for users who need them.
 
 ![Wide Roslyn diagnostics](roslyn-diagnostics-wide-2026-07-31.png)
 
-## Compact production review
+## Compact review
 
 At 900×650 window pixels, editor actions, source, code-health status, severity filters,
 and the selected Problems row remain readable without overlap. Problems is a normal
@@ -46,7 +46,7 @@ already-cancelled request.
 
 ## Repeatable evidence
 
-`python3 eng/capture-source-editor.py` builds and launches the production host, enables
+`python3 eng/capture-source-editor.py` builds and launches the application, enables
 AT-SPI, creates and trusts a temporary repository, approves a real isolated goal
 worktree, opens the invalid C# document, waits until AT-SPI exposes its `CS1525`
 problem, and captures both sizes. It now selects the Harness.NET window by exact title
@@ -56,6 +56,6 @@ so another window containing the repository name cannot be captured accidentally
 diagnostics acceptance test verifies buffer version 1, inline-renderer attachment,
 Problems content/status, the durable seventh tool, and exact caret navigation. A clean
 solution build and the architecture boundary test complete with zero warnings. The
-full production `./eng/verify-avalonia-atspi.py` workflow also passes through trust,
+full `./eng/verify-avalonia-atspi.py` workflow also passes through trust,
 goal approval, source/search, layout restart, and corrupt-layout recovery; its search
 field and action now have distinct accessible names.
