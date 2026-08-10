@@ -122,6 +122,11 @@ records before Data Access serializes Ollama or OpenRouter payloads. Tool names,
 roles, calls, results, and scopes use enums or semantic single-value records. Remote
 cost reservation estimates include tool schemas and accumulated tool traffic, and
 each function-call round remains attributed to the goal, role, provider, and model.
+Reasoning follows the same boundary: displayable text and opaque structured continuity
+data cross as Harness records, with Microsoft protected reasoning content carrying the
+provider-specific value between tool rounds. Provider-default reasoning is not disabled
+by tool availability. Ollama named tool results and OpenRouter reasoning details are
+round-tripped, while streamed completed calls are emitted exactly once.
 Every role also receives a typed semantic-context function. Business Logic binds its
 query to the goal's active trusted workspace, a closed 1-8 result limit, and strict
 remote privacy; Data Access alone owns vector and embedding-provider details. Remote

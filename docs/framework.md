@@ -135,6 +135,12 @@ overlay, `AGENTS.md`, or a suitable existing documentation file.
 - Data Access owns official MCP SDK 2.x clients and stateless Streamable HTTP transport;
   Business Logic owns MCP tool eligibility and agent exposure.
 - Models are configurable per role through provider-neutral Business Logic records.
+- Tool-capable requests retain each model's provider-default reasoning behavior.
+  Explicit reasoning effort is a closed provider-neutral policy; the deterministic
+  structured local-file proposal path alone requests no reasoning.
+- Reasoning text and provider-specific protected reasoning details survive typed tool
+  loops. Protected details are returned only to the originating provider and are not
+  presented as assistant output.
 - Interactive startup discovers every configured provider catalog without inference,
   validates persisted role defaults, and exposes an immutable availability snapshot
   to both interactive adapters. Explicit refresh replaces that snapshot.

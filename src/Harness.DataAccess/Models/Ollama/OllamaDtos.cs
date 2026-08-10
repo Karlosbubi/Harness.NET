@@ -76,7 +76,7 @@ internal sealed class OllamaChatRequestPayload
     public OllamaToolDefinition[]? Tools { get; init; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public bool? Think { get; init; }
+    public JsonElement? Think { get; init; }
 
     public OllamaChatOptions Options { get; init; } = new();
 }
@@ -95,6 +95,13 @@ internal sealed class OllamaRequestMessage
     public string Role { get; init; } = string.Empty;
 
     public string Content { get; init; } = string.Empty;
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Thinking { get; init; }
+
+    [JsonPropertyName("tool_name")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ToolName { get; init; }
 
     [JsonPropertyName("tool_calls")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

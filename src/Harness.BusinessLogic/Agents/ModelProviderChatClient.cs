@@ -113,7 +113,15 @@ internal sealed class ModelProviderChatClient(
             providerMessages.Add(new(ProviderChatRole.System, options.Instructions));
         }
 
-        providerMessages.AddRange(inputMessages.SelectMany(MapMessage));
+        IReadOnlyDictionary<string, ChatToolName> toolNamesByCallId = inputMessages
+            .SelectMany(message => message.Contents.OfType<FunctionCallContent>())
+            .GroupBy(call => call.CallId, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => new ChatToolName(group.Last().Name),
+                StringComparer.Ordinal);
+        providerMessages.AddRange(inputMessages.SelectMany(message =>
+            MapMessage(message, toolNamesByCallId)));
 
         IEnumerable<AITool> offeredTools = options?.Tools ?? [];
         if (structuredLocalFileEditProposal)
@@ -177,8 +185,8 @@ internal sealed class ModelProviderChatClient(
                     : null,
                 remoteGoalId is null ? 0 : null,
                 structuredLocalFileEditProposal
-                    ? ModelThinkingMode.Disabled
-                    : ModelThinkingMode.ProviderDefault),
+                    ? ModelReasoningEffort.None
+                    : ModelReasoningEffort.ProviderDefault),
             cancellationToken))
         {
             if (item.Error is not null)
@@ -191,6 +199,14 @@ internal sealed class ModelProviderChatClient(
             if (!string.IsNullOrEmpty(item.Content))
             {
                 contents.Add(new TextContent(item.Content));
+            }
+
+            if (!string.IsNullOrEmpty(item.Thinking) || item.ReasoningDetails is not null)
+            {
+                contents.Add(new TextReasoningContent(item.Thinking)
+                {
+                    ProtectedData = item.ReasoningDetails?.Value,
+                });
             }
 
             if (item.ToolCalls is not null)
@@ -210,7 +226,8 @@ internal sealed class ModelProviderChatClient(
     }
 
     private static IEnumerable<ProviderChatMessage> MapMessage(
-        Microsoft.Extensions.AI.ChatMessage message)
+        Microsoft.Extensions.AI.ChatMessage message,
+        IReadOnlyDictionary<string, ChatToolName> toolNamesByCallId)
     {
         ProviderChatRole role = message.Role == AIChatRole.System
             ? ProviderChatRole.System
@@ -229,6 +246,18 @@ internal sealed class ModelProviderChatClient(
         FunctionResultContent[] results = message.Contents
             .OfType<FunctionResultContent>()
             .ToArray();
+        TextReasoningContent[] reasoning = message.Contents
+            .OfType<TextReasoningContent>()
+            .ToArray();
+        string reasoningText = string.Concat(reasoning.Select(item => item.Text));
+        string? protectedData = reasoning
+            .Select(item => item.ProtectedData)
+            .LastOrDefault(value => !string.IsNullOrWhiteSpace(value));
+        ChatReasoning? providerReasoning = reasoning.Length == 0
+            ? null
+            : new(
+                new(reasoningText),
+                protectedData is null ? null : new(protectedData));
 
         if (results.Length == 0)
         {
@@ -236,7 +265,8 @@ internal sealed class ModelProviderChatClient(
                 role,
                 message.Text,
                 calls.Length == 0 ? null : calls,
-                ToolResult: null);
+                ToolResult: null,
+                providerReasoning);
             yield break;
         }
 
@@ -246,7 +276,10 @@ internal sealed class ModelProviderChatClient(
                 ProviderChatRole.Tool,
                 Content: string.Empty,
                 ToolCalls: null,
-                new(new(result.CallId), new(JsonSerializer.Serialize(result.Result))));
+                new(
+                    new(result.CallId),
+                    new(JsonSerializer.Serialize(result.Result)),
+                    toolNamesByCallId.GetValueOrDefault(result.CallId)));
         }
     }
 

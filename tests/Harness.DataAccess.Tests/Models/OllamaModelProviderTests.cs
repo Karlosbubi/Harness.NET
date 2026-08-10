@@ -133,7 +133,7 @@ public sealed class OllamaModelProviderTests
         using JsonDocument body = JsonDocument.Parse(requestJson!);
         Assert.Equal("read_file", body.RootElement.GetProperty("tools")[0]
             .GetProperty("function").GetProperty("name").GetString());
-        Assert.False(body.RootElement.GetProperty("think").GetBoolean());
+        Assert.False(body.RootElement.TryGetProperty("think", out _));
         Assert.Equal(0, body.RootElement.GetProperty("options")
             .GetProperty("temperature").GetDouble());
         Assert.Equal("{\"content\":\"prior\"}", body.RootElement.GetProperty("messages")[1]
@@ -155,10 +155,79 @@ public sealed class OllamaModelProviderTests
         _ = await CollectAsync(provider.StreamChatAsync(new(
             "thinking-model",
             [new(ChatRole.User, "return deterministic source")],
-            ThinkingMode: ModelThinkingMode.Disabled)));
+            ReasoningEffort: ModelReasoningEffort.None)));
 
         using JsonDocument body = JsonDocument.Parse(requestJson!);
         Assert.False(body.RootElement.GetProperty("think").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Maps_reasoning_effort_without_disabling_tools_by_default()
+    {
+        List<string> requests = [];
+        using HttpClient httpClient = CreateClient(async (request, cancellationToken) =>
+        {
+            requests.Add(await request.Content!.ReadAsStringAsync(cancellationToken));
+            return JsonResponse("{\"message\":{\"content\":\"ok\"},\"done\":true}\n",
+                "application/x-ndjson");
+        });
+        OllamaModelProvider provider = new(httpClient);
+        ChatToolDefinition tool = new(
+            new("read_file"),
+            new("Read a file."),
+            new("{\"type\":\"object\"}"));
+
+        _ = await CollectAsync(provider.StreamChatAsync(new(
+            "reasoning-model",
+            [new(ChatRole.User, "inspect")],
+            Tools: [tool])));
+        _ = await CollectAsync(provider.StreamChatAsync(new(
+            "reasoning-model",
+            [new(ChatRole.User, "inspect")],
+            Tools: [tool],
+            ReasoningEffort: ModelReasoningEffort.Low)));
+
+        using JsonDocument providerDefault = JsonDocument.Parse(requests[0]);
+        using JsonDocument low = JsonDocument.Parse(requests[1]);
+        Assert.False(providerDefault.RootElement.TryGetProperty("think", out _));
+        Assert.Equal("low", low.RootElement.GetProperty("think").GetString());
+    }
+
+    [Fact]
+    public async Task Roundtrips_assistant_thinking_and_named_tool_result()
+    {
+        string? requestJson = null;
+        using HttpClient httpClient = CreateClient(async (request, cancellationToken) =>
+        {
+            requestJson = await request.Content!.ReadAsStringAsync(cancellationToken);
+            return JsonResponse("{\"message\":{\"content\":\"done\"},\"done\":true}\n",
+                "application/x-ndjson");
+        });
+        OllamaModelProvider provider = new(httpClient);
+
+        _ = await CollectAsync(provider.StreamChatAsync(new(
+            "reasoning-model",
+            [
+                new(ChatRole.User, "inspect"),
+                new(
+                    ChatRole.Assistant,
+                    string.Empty,
+                    [new(new("call-1"), new("read_file"), new("{}"))],
+                    Reasoning: new(new("I should inspect first."))),
+                new(
+                    ChatRole.Tool,
+                    string.Empty,
+                    ToolResult: new(
+                        new("call-1"),
+                        new("{\"content\":\"source\"}"),
+                        new("read_file"))),
+            ])));
+
+        using JsonDocument body = JsonDocument.Parse(requestJson!);
+        Assert.Equal("I should inspect first.", body.RootElement.GetProperty("messages")[1]
+            .GetProperty("thinking").GetString());
+        Assert.Equal("read_file", body.RootElement.GetProperty("messages")[2]
+            .GetProperty("tool_name").GetString());
     }
 
     [Fact]

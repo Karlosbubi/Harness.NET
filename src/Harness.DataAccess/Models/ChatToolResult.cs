@@ -2,4 +2,5 @@ namespace Harness.DataAccess.Models;
 
 public sealed record ChatToolResult(
     ChatToolCallId CallId,
-    ChatToolResultJson Result);
+    ChatToolResultJson Result,
+    ChatToolName? ToolName = null);

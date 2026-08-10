@@ -96,6 +96,28 @@ means to retry the same bounded work with the selected route, allowing
 an unchanged retry or model-only change. Supplying guidance augments the prompt without
 expanding tool, file-area, mutation, or spending authority.
 
+### Provider reasoning continuity amendment (2026-08-10)
+
+Reasoning and typed tools are independent model capabilities. Harness must not disable
+provider reasoning merely because a request offers tools. Provider-default reasoning is
+therefore represented explicitly and omitted from the wire request; only the bounded
+structured local-file proposal path requests no reasoning because that path needs a
+small deterministic payload rather than agent deliberation. A provider-neutral closed
+reasoning-effort set supports deliberate overrides without leaking provider SDK types.
+
+Reasoning continuity is part of the tool protocol. Data Access normalizes displayable
+reasoning text and may carry provider-specific structured reasoning as an opaque typed
+JSON value. Business Logic maps that value to Microsoft Agent Framework protected
+reasoning content so it can be returned unchanged on the next request to the same
+provider. Opaque reasoning is not rendered as ordinary assistant output. Ollama receives
+its assistant `thinking` text and named tool results; OpenRouter receives its original
+`reasoning_details`. Completed streamed tool calls are accumulated and emitted once,
+even when a provider sends a later usage-only completion chunk.
+
+These changes do not weaken typed-tool eligibility, workspace scope, privacy routing,
+approval, or monetary reservation. They remove a protocol restriction while retaining
+the provider-neutral boundary and deterministic validation of every mutation.
+
 ## Consequences
 
 - Provider SDK and Microsoft Agent Framework types are mapped to internal interfaces
@@ -103,6 +125,8 @@ expanding tool, file-area, mutation, or spending authority.
 - Provider capabilities and failures must be normalized without hiding useful detail.
 - OpenRouter costs are reserved before calls and reconciled from returned usage.
 - Model-specific indexes are partitioned and never mixed.
+- Provider reasoning state remains scoped to the active provider conversation and is
+  mapped through Harness records rather than exposing provider payload types upward.
 
 ## Alternatives considered
 

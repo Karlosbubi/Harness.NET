@@ -20,6 +20,9 @@ internal sealed class OpenRouterChatRequestPayload
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public OpenRouterProviderPreferences? Provider { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public OpenRouterReasoningOptions? Reasoning { get; init; }
 }
 
 internal sealed class OpenRouterEmbeddingRequestPayload
@@ -42,6 +45,13 @@ internal sealed class OpenRouterRequestMessage
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Content { get; init; }
 
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Reasoning { get; init; }
+
+    [JsonPropertyName("reasoning_details")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JsonElement? ReasoningDetails { get; init; }
+
     [JsonPropertyName("tool_calls")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public OpenRouterToolCall[]? ToolCalls { get; init; }
@@ -49,6 +59,15 @@ internal sealed class OpenRouterRequestMessage
     [JsonPropertyName("tool_call_id")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? ToolCallId { get; init; }
+}
+
+internal sealed class OpenRouterReasoningOptions
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? Enabled { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Effort { get; init; }
 }
 
 internal sealed class OpenRouterToolDefinition
@@ -156,6 +175,9 @@ internal sealed class OpenRouterDelta
     public string? Content { get; init; }
 
     public string? Reasoning { get; init; }
+
+    [JsonPropertyName("reasoning_details")]
+    public JsonElement[] ReasoningDetails { get; init; } = [];
 
     [JsonPropertyName("tool_calls")]
     public OpenRouterToolCall[] ToolCalls { get; init; } = [];

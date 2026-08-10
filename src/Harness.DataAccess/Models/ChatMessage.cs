@@ -4,4 +4,5 @@ public sealed record ChatMessage(
     ChatRole Role,
     string Content,
     IReadOnlyList<ChatToolCall>? ToolCalls = null,
-    ChatToolResult? ToolResult = null);
+    ChatToolResult? ToolResult = null,
+    ChatReasoning? Reasoning = null);

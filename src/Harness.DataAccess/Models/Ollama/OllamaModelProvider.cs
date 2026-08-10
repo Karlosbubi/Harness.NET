@@ -103,14 +103,7 @@ internal sealed class OllamaModelProvider(HttpClient httpClient) : IModelProvide
                 Stream = true,
                 Format = ResponseFormat(request),
                 Tools = MapTools(request.Tools),
-                Think = request.ThinkingMode switch
-                {
-                    ModelThinkingMode.Disabled => false,
-                    ModelThinkingMode.Enabled => true,
-                    ModelThinkingMode.ProviderDefault =>
-                        request.Tools is { Count: > 0 } ? false : null,
-                    _ => throw new ArgumentOutOfRangeException(nameof(request)),
-                },
+                Think = ReasoningValue(request.ReasoningEffort),
                 Options = new()
                 {
                     ContextLength = ResolveContextLength(request),
@@ -156,6 +149,7 @@ internal sealed class OllamaModelProvider(HttpClient httpClient) : IModelProvide
 
             await using Stream stream = await response.Content.ReadAsStreamAsync(cancellationToken);
             using StreamReader reader = new(stream);
+            List<ChatToolCall> accumulatedToolCalls = [];
             while (await reader.ReadLineAsync(cancellationToken) is { } line)
             {
                 if (string.IsNullOrWhiteSpace(line))
@@ -189,13 +183,14 @@ internal sealed class OllamaModelProvider(HttpClient httpClient) : IModelProvide
                 if (chunk is not null)
                 {
                     ChatToolCall[] toolCalls = chunk.Message?.ToolCalls
-                        .Select((call, index) => new ChatToolCall(
-                            new($"ollama-{Guid.NewGuid():N}-{index}"),
+                        .Select(call => new ChatToolCall(
+                            new($"ollama-{Guid.NewGuid():N}"),
                             new(call.Function.Name),
                             new(call.Function.Arguments.ValueKind is JsonValueKind.Undefined
                                 ? "{}"
                                 : call.Function.Arguments.GetRawText())))
                         .ToArray() ?? [];
+                    accumulatedToolCalls.AddRange(toolCalls);
                     yield return new(
                         chunk.Message?.Content ?? string.Empty,
                         chunk.Message?.Thinking ?? string.Empty,
@@ -203,7 +198,9 @@ internal sealed class OllamaModelProvider(HttpClient httpClient) : IModelProvide
                         chunk.DoneReason,
                         new(chunk.PromptEvalCount, chunk.EvalCount),
                         Error: null,
-                        toolCalls.Length == 0 ? null : toolCalls);
+                        chunk.Done && accumulatedToolCalls.Count > 0
+                            ? accumulatedToolCalls.ToArray()
+                            : null);
                 }
             }
         }
@@ -220,6 +217,8 @@ internal sealed class OllamaModelProvider(HttpClient httpClient) : IModelProvide
             _ => throw new ArgumentOutOfRangeException(nameof(message)),
         },
         Content = message.ToolResult?.Result.Value ?? message.Content,
+        Thinking = message.Reasoning?.Text.Value,
+        ToolName = message.ToolResult?.ToolName?.Value,
         ToolCalls = message.ToolCalls?.Select(call => new OllamaToolCall
         {
             Function = new()
@@ -228,6 +227,16 @@ internal sealed class OllamaModelProvider(HttpClient httpClient) : IModelProvide
                 Arguments = JsonDocument.Parse(call.Arguments.Value).RootElement.Clone(),
             },
         }).ToArray(),
+    };
+
+    private static JsonElement? ReasoningValue(ModelReasoningEffort effort) => effort switch
+    {
+        ModelReasoningEffort.ProviderDefault => null,
+        ModelReasoningEffort.None => JsonSerializer.SerializeToElement(false),
+        ModelReasoningEffort.Low => JsonSerializer.SerializeToElement("low"),
+        ModelReasoningEffort.Medium => JsonSerializer.SerializeToElement("medium"),
+        ModelReasoningEffort.High => JsonSerializer.SerializeToElement("high"),
+        _ => throw new ArgumentOutOfRangeException(nameof(effort)),
     };
 
     private static JsonElement? ResponseFormat(ChatRequest request)

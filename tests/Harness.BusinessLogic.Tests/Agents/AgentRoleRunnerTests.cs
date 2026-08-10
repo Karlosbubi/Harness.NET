@@ -253,7 +253,7 @@ public sealed class AgentRoleRunnerTests
         Assert.Single(provider.Requests);
         Assert.Empty(provider.Requests[0].Tools!);
         Assert.Equal(ProviderChatResponseFormat.Text, provider.Requests[0].ResponseFormat);
-        Assert.Equal(ModelThinkingMode.Disabled, provider.Requests[0].ThinkingMode);
+        Assert.Equal(ModelReasoningEffort.None, provider.Requests[0].ReasoningEffort);
         Assert.Null(provider.Requests[0].ResponseSchema);
         Assert.Contains("DETERMINISTIC TYPED INSPECTION", provider.Requests[0].Messages[^1].Content,
             StringComparison.Ordinal);

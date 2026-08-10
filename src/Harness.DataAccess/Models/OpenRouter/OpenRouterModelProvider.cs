@@ -137,6 +137,7 @@ internal sealed class OpenRouterModelProvider(
                 Stream = true,
                 MaxTokens = boundary.ProviderMaximumOutputTokens,
                 Provider = CreateRouting(request.RemoteScope.PrivacyPolicy),
+                Reasoning = MapReasoning(request.ReasoningEffort),
             });
 
             HttpResponseMessage? response = null;
@@ -177,6 +178,7 @@ internal sealed class OpenRouterModelProvider(
                 await using Stream stream = await response.Content.ReadAsStreamAsync(cancellationToken);
                 using StreamReader reader = new(stream);
                 Dictionary<int, OpenRouterToolCallBuilder> toolCalls = [];
+                List<JsonElement> reasoningDetails = [];
                 while (await reader.ReadLineAsync(cancellationToken) is { } line)
                 {
                     if (string.IsNullOrWhiteSpace(line) || line.StartsWith(':'))
@@ -202,7 +204,8 @@ internal sealed class OpenRouterModelProvider(
                                 DoneReason: null,
                                 new(0, 0, actualCost),
                                 Error: null,
-                                CompleteToolCalls(toolCalls));
+                                CompleteToolCalls(toolCalls),
+                                SerializeReasoningDetails(reasoningDetails));
                         }
 
                         break;
@@ -249,13 +252,16 @@ internal sealed class OpenRouterModelProvider(
                         yield break;
                     }
                     bool done = choice?.FinishReason is not null || chunk.Usage is not null;
+                    bool firstCompletion = done && !completed;
                     completed |= done;
                     if (choice?.Delta is not null)
                     {
                         AccumulateToolCalls(choice.Delta.ToolCalls, toolCalls);
+                        reasoningDetails.AddRange(choice.Delta.ReasoningDetails.Select(
+                            detail => detail.Clone()));
                     }
 
-                    IReadOnlyList<ChatToolCall>? completedCalls = done
+                    IReadOnlyList<ChatToolCall>? completedCalls = firstCompletion
                         ? CompleteToolCalls(toolCalls)
                         : null;
                     if (choice is not null || chunk.Usage is not null)
@@ -270,7 +276,8 @@ internal sealed class OpenRouterModelProvider(
                                 chunk.Usage?.CompletionTokens ?? 0,
                                 chunkCost),
                             Error: null,
-                            completedCalls);
+                            completedCalls,
+                            firstCompletion ? SerializeReasoningDetails(reasoningDetails) : null);
                     }
                 }
             }
@@ -303,6 +310,10 @@ internal sealed class OpenRouterModelProvider(
         },
         Content = message.ToolResult?.Result.Value ??
             (string.IsNullOrEmpty(message.Content) ? null : message.Content),
+        Reasoning = string.IsNullOrEmpty(message.Reasoning?.Text.Value)
+            ? null
+            : message.Reasoning.Text.Value,
+        ReasoningDetails = ParseReasoningDetails(message.Reasoning?.Details),
         ToolCalls = message.ToolCalls?.Select(call => new OpenRouterToolCall
         {
             Id = call.Id.Value,
@@ -314,6 +325,33 @@ internal sealed class OpenRouterModelProvider(
         }).ToArray(),
         ToolCallId = message.ToolResult?.CallId.Value,
     };
+
+    private static OpenRouterReasoningOptions? MapReasoning(ModelReasoningEffort effort) =>
+        effort switch
+        {
+            ModelReasoningEffort.ProviderDefault => null,
+            ModelReasoningEffort.None => new() { Enabled = false },
+            ModelReasoningEffort.Low => new() { Effort = "low" },
+            ModelReasoningEffort.Medium => new() { Effort = "medium" },
+            ModelReasoningEffort.High => new() { Effort = "high" },
+            _ => throw new ArgumentOutOfRangeException(nameof(effort)),
+        };
+
+    private static JsonElement? ParseReasoningDetails(ChatReasoningDetailsJson? details)
+    {
+        if (details is null)
+        {
+            return null;
+        }
+
+        using JsonDocument document = JsonDocument.Parse(details.Value);
+        return document.RootElement.Clone();
+    }
+
+    private static ChatReasoningDetailsJson? SerializeReasoningDetails(
+        IReadOnlyList<JsonElement> details) => details.Count == 0
+            ? null
+            : new(JsonSerializer.Serialize(details, JsonOptions));
 
     private static OpenRouterToolDefinition[]? MapTools(
         IReadOnlyList<ChatToolDefinition>? tools)

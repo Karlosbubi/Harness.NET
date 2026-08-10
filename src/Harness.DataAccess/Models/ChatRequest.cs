@@ -8,4 +8,4 @@ public sealed record ChatRequest(
     ChatResponseFormat ResponseFormat = ChatResponseFormat.Text,
     ChatResponseSchema? ResponseSchema = null,
     double? Temperature = null,
-    ModelThinkingMode ThinkingMode = ModelThinkingMode.ProviderDefault);
+    ModelReasoningEffort ReasoningEffort = ModelReasoningEffort.ProviderDefault);

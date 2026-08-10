@@ -188,8 +188,9 @@ public sealed class OpenRouterModelProviderTests
                 "\"name\":\"read_file\",\"arguments\":\"{\\\"relativePath\\\":\\\"\"}}]}}]}\n\n" +
                 "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{" +
                 "\"index\":0,\"function\":{\"arguments\":\"README.md\\\"}\"}}]}," +
-                "\"finish_reason\":\"tool_calls\"}]," +
-                "\"usage\":{\"prompt_tokens\":8,\"completion_tokens\":3,\"cost\":0.000004}}\n\n" +
+                "\"finish_reason\":\"tool_calls\"}]}\n\n" +
+                "data: {\"choices\":[],\"usage\":{" +
+                "\"prompt_tokens\":8,\"completion_tokens\":3,\"cost\":0.000004}}\n\n" +
                 "data: [DONE]\n\n",
                 "text/event-stream");
         });
@@ -212,6 +213,50 @@ public sealed class OpenRouterModelProviderTests
         using JsonDocument body = JsonDocument.Parse(requestJson!);
         Assert.Equal("read_file", body.RootElement.GetProperty("tools")[0]
             .GetProperty("function").GetProperty("name").GetString());
+    }
+
+    [Fact]
+    public async Task Preserves_reasoning_details_and_maps_explicit_effort()
+    {
+        string? requestJson = null;
+        using HttpClient httpClient = CreateClient(async (request, cancellationToken) =>
+        {
+            if (request.Method == HttpMethod.Get)
+            {
+                return JsonResponse(ModelsJson("deepseek/deepseek-v4-flash", "text"));
+            }
+
+            requestJson = await request.Content!.ReadAsStringAsync(cancellationToken);
+            return JsonResponse(
+                "data: {\"choices\":[{\"delta\":{\"reasoning\":\"check\"," +
+                "\"reasoning_details\":[{\"type\":\"reasoning.text\",\"text\":\"check\"}]}," +
+                "\"finish_reason\":\"stop\"}],\"usage\":{\"cost\":0.000001}}\n\n" +
+                "data: [DONE]\n\n",
+                "text/event-stream");
+        });
+        OpenRouterModelProvider provider = CreateProvider(httpClient, new StubRemoteCostStore());
+        const string details = "[{\"type\":\"reasoning.text\",\"text\":\"prior\"}]";
+
+        List<ChatStreamEvent> events = await CollectAsync(provider.StreamChatAsync(new(
+            "deepseek/deepseek-v4-flash",
+            [new(
+                ChatRole.Assistant,
+                string.Empty,
+                Reasoning: new(new("prior"), new(details)))],
+            new("goal-reasoning", ProviderPrivacyPolicy.Normal, RemoteModelRole.Lead),
+            ReasoningEffort: ModelReasoningEffort.Low)));
+
+        ChatStreamEvent completed = Assert.Single(events, item => item.Done);
+        Assert.Equal("check", completed.Thinking);
+        Assert.Contains("reasoning.text", completed.ReasoningDetails?.Value,
+            StringComparison.Ordinal);
+        using JsonDocument body = JsonDocument.Parse(requestJson!);
+        Assert.Equal("low", body.RootElement.GetProperty("reasoning")
+            .GetProperty("effort").GetString());
+        Assert.Equal("prior", body.RootElement.GetProperty("messages")[0]
+            .GetProperty("reasoning").GetString());
+        Assert.Equal("prior", body.RootElement.GetProperty("messages")[0]
+            .GetProperty("reasoning_details")[0].GetProperty("text").GetString());
     }
 
     [Fact]
