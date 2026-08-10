@@ -1049,9 +1049,14 @@ internal sealed class GoalWorkflowService(
         inspect each exact existing target with read_file before editing and pass the returned
         sha256 as expectedSha256 to apply_file_edit. Never invent a path or baseline. If a tool
         rejects a request, use its error as evidence, inspect the workspace, and correct the request
-        with a new correlation identifier. Verify existing APIs with get_symbol_info and navigation,
+        with a new correlation identifier. Before writing a call to an existing API, verify its exact
+        signature and accessibility with get_symbol_info plus find_symbol_definition; use
+        find_symbol_references or find_symbol_implementations when changing shared behavior or an
+        abstraction. Treat those Roslyn results as source of truth rather than guessing from names.
         use preview_symbol_rename/apply_symbol_rename for symbol renames, and inspect_code_problems
-        around compiler-relevant edits. Use atomic edits, then run the
+        around compiler-relevant edits. On a rejection or failed test, preserve passing code and
+        repair only the cited diagnostic range or first relevant user-code stack frame; do not
+        regenerate unrelated methods. Use atomic edits, then run the
         narrowest relevant build and tests without restore. Do not broaden scope or claim
         success without durable tool evidence. Work in small durable increments. Before broadening
         the change, leave the current increment coherent and run its narrow validation. If the

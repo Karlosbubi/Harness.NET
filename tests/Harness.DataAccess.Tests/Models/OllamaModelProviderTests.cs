@@ -141,6 +141,27 @@ public sealed class OllamaModelProviderTests
     }
 
     [Fact]
+    public async Task Disables_thinking_for_a_deterministic_tool_free_request()
+    {
+        string? requestJson = null;
+        using HttpClient httpClient = CreateClient(async (request, cancellationToken) =>
+        {
+            requestJson = await request.Content!.ReadAsStringAsync(cancellationToken);
+            return JsonResponse("{\"message\":{\"content\":\"source\"},\"done\":true}\n",
+                "application/x-ndjson");
+        });
+        OllamaModelProvider provider = new(httpClient);
+
+        _ = await CollectAsync(provider.StreamChatAsync(new(
+            "thinking-model",
+            [new(ChatRole.User, "return deterministic source")],
+            ThinkingMode: ModelThinkingMode.Disabled)));
+
+        using JsonDocument body = JsonDocument.Parse(requestJson!);
+        Assert.False(body.RootElement.GetProperty("think").GetBoolean());
+    }
+
+    [Fact]
     public async Task Requests_native_json_mode_for_structured_role_output()
     {
         string? requestJson = null;

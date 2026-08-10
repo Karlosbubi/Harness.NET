@@ -797,12 +797,13 @@ def approve_and_run(
                     "Implementer-compatible selector; retained the current route."
                 )
         guidance = (
-            "Use the typed tools now. Read the exact existing target path first, pass the "
-            "returned sha256 as expectedSha256 to apply_file_edit, correct any rejected "
-            "request with a new correlation id. Also read GameState.cs and MinimaxSolver.cs "
-            "before writing code that consumes them; use only members actually present. Run "
-            "the relevant build/test before "
-            "reporting. Do not return a prose-only status."
+            "Use the typed tools now. Preserve every passing method and repair only the first "
+            "relevant user-code stack frame or Roslyn diagnostic range. Read the exact existing "
+            "target path first and pass its sha256 as expectedSha256. Before consuming GameState "
+            "or MinimaxSolver, use get_symbol_info and find_symbol_definition to verify the exact "
+            "public signature and accessibility; never invent a constructor or helper. Correct a "
+            "rejected request with a new correlation id, run the relevant build/test, and do not "
+            "return a prose-only status."
             if role == "Implementer"
             else
             "Inspect Git diff and durable tool evidence, then return only the required "
@@ -815,7 +816,7 @@ def approve_and_run(
             f"The workflow paused for {role}; the exercise used the explicit retry UI "
             "with bounded corrective guidance."
         )
-        state = wait_for_checkpoint_count(database, before + 2, timeout)
+        state = wait_for_checkpoint_count(database, before + 2, min(timeout, 600))
         if state == "Running":
             application.wait_for_name("Continue run", "push button")
             application.invoke("Continue run")
@@ -970,6 +971,50 @@ def diagnostic_state(application: Any | None, database: Path) -> dict[str, Any]:
     return result
 
 
+def workflow_metrics(database: Path) -> dict[str, Any]:
+    if not database.is_file():
+        return {}
+    with sqlite3.connect(database) as connection:
+        file_edits = [
+            {
+                "path": row[0],
+                "attempts": row[1],
+                "succeeded": row[2],
+                "failed": row[3],
+            }
+            for row in connection.execute(
+                "SELECT json_extract(request_json, '$.path'), COUNT(*), "
+                "SUM(CASE WHEN state = 'Succeeded' THEN 1 ELSE 0 END), "
+                "SUM(CASE WHEN state = 'Failed' THEN 1 ELSE 0 END) "
+                "FROM tool_calls WHERE tool_name = 'FileEdit' "
+                "GROUP BY json_extract(request_json, '$.path') ORDER BY MIN(started_at)"
+            )
+        ]
+        tool_states = [
+            {"tool": row[0], "state": row[1], "count": row[2]}
+            for row in connection.execute(
+                "SELECT tool_name, state, COUNT(*) FROM tool_calls "
+                "GROUP BY tool_name, state ORDER BY tool_name, state"
+            )
+        ]
+        role_routes = [
+            {"role": row[0], "provider": row[1], "model": row[2]}
+            for row in connection.execute(
+                "SELECT role, provider, model FROM goal_model_selections ORDER BY role"
+            )
+        ]
+        recovery_count = connection.execute(
+            "SELECT COUNT(*) FROM goal_workflow_checkpoints "
+            "WHERE kind = 'UserDirectionRequired'"
+        ).fetchone()[0]
+    return {
+        "file_edits": file_edits,
+        "tool_states": tool_states,
+        "role_routes": role_routes,
+        "recovery_boundaries": recovery_count,
+    }
+
+
 def main() -> int:
     args = parse_args()
     if sys.platform != "linux" or not os.environ.get("DISPLAY"):
@@ -1087,6 +1132,7 @@ def main() -> int:
         raise
     finally:
         report["finished_at"] = datetime.now(timezone.utc).isoformat()
+        report["workflow_metrics"] = workflow_metrics(database)
         report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
         if process is not None:
             support["stop"](process)

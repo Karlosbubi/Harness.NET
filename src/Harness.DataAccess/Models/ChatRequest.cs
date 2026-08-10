@@ -7,4 +7,5 @@ public sealed record ChatRequest(
     IReadOnlyList<ChatToolDefinition>? Tools = null,
     ChatResponseFormat ResponseFormat = ChatResponseFormat.Text,
     ChatResponseSchema? ResponseSchema = null,
-    double? Temperature = null);
+    double? Temperature = null,
+    ModelThinkingMode ThinkingMode = ModelThinkingMode.ProviderDefault);

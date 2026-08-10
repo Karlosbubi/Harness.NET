@@ -73,31 +73,38 @@ internal sealed class AgentToolFactory(
                     goalId, Scope(role), new(relativePath), cancellationToken),
             Options("inspect_code_problems",
                 "Ask Roslyn for current compiler diagnostics in one complete source file. " +
-                "The file and exact baseline are loaded from the role's source context.")),
+                "The file and exact baseline are loaded from the role's source context. " +
+                "Use cited ranges to repair the smallest affected span rather than rewriting " +
+                "unrelated declarations.")),
         AgentToolKind.GetSymbolInfo => AIFunctionFactory.Create(
             (string relativePath, int line, int character, CancellationToken cancellationToken) =>
                 codeIntelligenceService.GetSymbolAsync(
                     goalId, Scope(role), new(relativePath), new(line, character), cancellationToken),
             Options("get_symbol_info",
-                "Ask Roslyn for the symbol at a zero-based line and character in a source file.")),
+                "Ask Roslyn for the exact signature, accessibility, documentation, and destination " +
+                "of the symbol at a zero-based line and character. Call this before consuming or " +
+                "changing an API instead of guessing its members.")),
         AgentToolKind.FindDefinition => AIFunctionFactory.Create(
             (string relativePath, int line, int character, CancellationToken cancellationToken) =>
                 codeIntelligenceService.FindDefinitionAsync(
                     goalId, Scope(role), new(relativePath), new(line, character), cancellationToken),
             Options("find_symbol_definition",
-                "Resolve the definition of the symbol at a zero-based line and character with Roslyn.")),
+                "Resolve the source definition of the symbol at a zero-based line and character " +
+                "with Roslyn. Read the returned definition before editing dependent code.")),
         AgentToolKind.FindReferences => AIFunctionFactory.Create(
             (string relativePath, int line, int character, CancellationToken cancellationToken) =>
                 codeIntelligenceService.FindReferencesAsync(
                     goalId, Scope(role), new(relativePath), new(line, character), cancellationToken),
             Options("find_symbol_references",
-                "Find bounded references to the symbol at a zero-based line and character with Roslyn.")),
+                "Find bounded usages of the symbol at a zero-based line and character with Roslyn. " +
+                "Use this before changing behavior shared by existing consumers.")),
         AgentToolKind.FindImplementations => AIFunctionFactory.Create(
             (string relativePath, int line, int character, CancellationToken cancellationToken) =>
                 codeIntelligenceService.FindImplementationsAsync(
                     goalId, Scope(role), new(relativePath), new(line, character), cancellationToken),
             Options("find_symbol_implementations",
-                "Find bounded source implementations of the symbol at a zero-based line and character with Roslyn.")),
+                "Find bounded source implementations and overrides of the symbol at a zero-based " +
+                "line and character with Roslyn. Inspect them before changing an abstraction.")),
         AgentToolKind.ApplyFileEdit => AIFunctionFactory.Create(
             (string correlationId, string relativePath, string? expectedSha256, string content,
                     CancellationToken cancellationToken) =>
@@ -121,6 +128,8 @@ internal sealed class AgentToolFactory(
                 "For C#, project, solution, props, or targets files, first call read_file on " +
                 "the exact existing path and pass its sha256 as expectedSha256. Do not invent " +
                 "compiler-input paths; new compiler files are rejected without a baseline. " +
+                "Preserve working regions and prefer the smallest coherent change; use Roslyn " +
+                "symbol/navigation results rather than inventing signatures or accessibility. " +
                 "Submit complete production code: TODO, FIXME, placeholder or omitted logic, " +
                 "and NotImplementedException are deterministically rejected.")),
         AgentToolKind.PreviewRename => AIFunctionFactory.Create(

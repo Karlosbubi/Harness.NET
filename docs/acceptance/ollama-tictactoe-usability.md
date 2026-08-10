@@ -24,7 +24,12 @@ tracking includes durable tool calls as well as workflow checkpoints, so an acti
 compiler-correction loop is not misreported as a hung workflow.
 
 Local exact-file generation returns fenced source text rather than embedding source in
-a JSON string; this preserves C# escape sequences. Each accepted model-authored C# edit
+a JSON string; this preserves C# escape sequences. After an initial complete proposal,
+deterministic corrections use one to four exact `SEARCH`/`REPLACE` blocks against the
+last candidate instead of regenerating the file. Explanatory prose is rejected before
+compiler validation. Corrections retain the authoritative goal contract, omit repeated
+plan prose, and load `.cs` files cited by compiler or test evidence through typed,
+read-only workspace inspection. Each accepted model-authored C# edit
 must introduce no compiler warning or error, including errors in transitive dependent
 projects. Harness then runs a no-restore solution build and the real deterministic test
 suite after every C# edit, so a production task cannot close over an already failing
@@ -61,6 +66,13 @@ Failed reports include checkpoint summaries and recent typed-tool errors, making
 model loops and deterministic code-intelligence rejections visible without querying
 the SQLite database manually.
 
+Structured local proposals explicitly disable provider thinking. This keeps a bounded,
+machine-readable edit from silently spending minutes in an unobservable reasoning mode;
+normal chat and tool-driven work retain the provider default. Semantic Roslyn definition,
+symbol, reference, implementation, and diagnostic tools remain available to ordinary
+Implementer calls, while the exact-file path receives deterministic compiler diagnostics
+and cited source directly.
+
 ## Evaluation on 2026-08-09
 
 The exercise found and closed additional false-positive completion paths beyond the
@@ -81,3 +93,34 @@ the console accepted `q` and exited cleanly. The full exercise took about 21 min
 most of that time was local full-file correction inference, so targeted edit repair
 remains the principal usability/performance opportunity even though the end-to-end
 result is now accepted.
+
+## Evaluation on 2026-08-10
+
+The repeated clean exercise exposed a context-compaction defect: repair prompts retained
+the Lead task summary but dropped the authoritative goal. They now preserve the full goal
+contract while omitting only repeated plan prose. It also exposed that stack traces named
+read-only acceptance source which Harness did not feed back into correction. Cited C#
+source is now loaded on demand, response prose cannot reach Roslyn as source, correction
+attempts are capped at four per call, and failed-run reports include aggregate edit/tool/
+route/recovery metrics.
+
+Model comparison was local-only. Qwen 3 14B was fast with thinking disabled but produced
+low-quality duplicate declarations; Ornith 9B did not return a bounded proposal; Gemma 4
+and Mistral Nemo repeatedly derived turn state from one board cell. Codestral was rejected
+before inference because it does not advertise the complete Implementer tool capability.
+Qwen2.5-Coder 14B was pulled and admitted only after Ollama reported `completion`, `tools`,
+and `insert`; it was materially better, reaching three of four GameState acceptance tests
+from the first task, but did not finish the exact `Winner == Mark.Empty` draw contract.
+
+The retained diagnostic run is
+`artifacts/usability/ollama-tictactoe-20260810T121124Z`. It ran for about 9 minutes 39
+seconds before being stopped after repeated bounded identity failures. Its durable metrics
+record seven GameState edit attempts (five accepted by code validation and two rejected),
+five successful builds, five failed deterministic test runs, and four recovery boundaries.
+Independent replay confirms three acceptance tests pass and
+`Full_non_winning_board_is_a_draw` fails because `Winner` throws instead of returning
+`Mark.Empty`; the generated test project still contains its skipped placeholder because
+task one never completed. This is a failed usability result, not an accepted generated
+application. It demonstrates substantially faster, more surgical correction and a much
+clearer failure boundary, while leaving local-model convergence and structured access to
+the full Roslyn query surface as follow-up work.

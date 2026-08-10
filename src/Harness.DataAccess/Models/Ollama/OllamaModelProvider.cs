@@ -103,7 +103,14 @@ internal sealed class OllamaModelProvider(HttpClient httpClient) : IModelProvide
                 Stream = true,
                 Format = ResponseFormat(request),
                 Tools = MapTools(request.Tools),
-                Think = request.Tools is { Count: > 0 } ? false : null,
+                Think = request.ThinkingMode switch
+                {
+                    ModelThinkingMode.Disabled => false,
+                    ModelThinkingMode.Enabled => true,
+                    ModelThinkingMode.ProviderDefault =>
+                        request.Tools is { Count: > 0 } ? false : null,
+                    _ => throw new ArgumentOutOfRangeException(nameof(request)),
+                },
                 Options = new()
                 {
                     ContextLength = ResolveContextLength(request),

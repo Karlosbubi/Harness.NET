@@ -128,7 +128,10 @@ internal sealed class ModelProviderChatClient(
                     .Where(tool => tool.Name == "read_file")
                 : offeredTools
                     .OfType<AIFunctionDeclaration>()
-                    .Where(tool => tool.Name is "apply_file_edit" or
+                    .Where(tool => tool.Name is "read_file" or
+                        "inspect_code_problems" or "get_symbol_info" or
+                        "find_symbol_definition" or "find_symbol_references" or
+                        "find_symbol_implementations" or "apply_file_edit" or
                         "preview_symbol_rename" or "apply_symbol_rename");
         }
 
@@ -172,7 +175,10 @@ internal sealed class ModelProviderChatClient(
                         _ => null,
                     }
                     : null,
-                remoteGoalId is null ? 0 : null),
+                remoteGoalId is null ? 0 : null,
+                structuredLocalFileEditProposal
+                    ? ModelThinkingMode.Disabled
+                    : ModelThinkingMode.ProviderDefault),
             cancellationToken))
         {
             if (item.Error is not null)

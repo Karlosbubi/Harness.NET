@@ -192,6 +192,9 @@ public sealed class AgentRoleRunnerTests
         Assert.Contains("bounded file", readResult.Result.Value, StringComparison.Ordinal);
         Assert.Equal(ProviderChatResponseFormat.Text, provider.Requests[1].ResponseFormat);
         Assert.Contains(provider.Requests[1].Tools!, tool => tool.Name.Value == "apply_file_edit");
+        Assert.Contains(provider.Requests[1].Tools!, tool => tool.Name.Value == "get_symbol_info");
+        Assert.Contains(provider.Requests[1].Tools!,
+            tool => tool.Name.Value == "find_symbol_definition");
         ChatToolResult editResult = Assert.Single(
             provider.Requests[2].Messages,
             message => message.ToolResult?.CallId.Value == "call-2")
@@ -250,6 +253,7 @@ public sealed class AgentRoleRunnerTests
         Assert.Single(provider.Requests);
         Assert.Empty(provider.Requests[0].Tools!);
         Assert.Equal(ProviderChatResponseFormat.Text, provider.Requests[0].ResponseFormat);
+        Assert.Equal(ModelThinkingMode.Disabled, provider.Requests[0].ThinkingMode);
         Assert.Null(provider.Requests[0].ResponseSchema);
         Assert.Contains("DETERMINISTIC TYPED INSPECTION", provider.Requests[0].Messages[^1].Content,
             StringComparison.Ordinal);
@@ -280,6 +284,59 @@ public sealed class AgentRoleRunnerTests
         Assert.Null(result.Error);
         Assert.Equal(source, mutations.Content);
         Assert.Equal([DotNetOperation.Build, DotNetOperation.Test], mutations.Operations);
+    }
+
+    [Fact]
+    public async Task Structured_local_repair_applies_a_small_exact_replacement()
+    {
+        RepairingModelProvider provider = new();
+        RecordingMutationService mutations = new(
+            testFailures: 1,
+            failureOutput: "Failure at tests/Acceptance/ContractTests.cs:line 42");
+        StaticInspectionService inspection = new("Console.WriteLine(\"old\");");
+        AgentRoleRunner runner = new(
+            new StubRouteResolver(role => Route(role, "tool-model", provider)),
+            new CapturingAgentToolFactory { ReturnWorkspaceFileView = true },
+            NullLoggerFactory.Instance,
+            inspection,
+            mutations);
+
+        AgentRunResult result = await runner.RunAsync(new(
+            new("goal-tools"),
+            AgentRole.Implementer,
+            new("""
+                FULL GOAL OBJECTIVE (AUTHORITATIVE)
+                Preserve this authoritative contract during every correction.
+
+                APPROVED PLAN
+                A deliberately verbose plan that does not need repeating.
+
+                DELEGATED TASK
+                Repair the exact source file.
+                """),
+            [new("src/Program.cs")]));
+
+        Assert.Null(result.Error);
+        Assert.Equal("Console.WriteLine(\"good\");", mutations.Content);
+        Assert.Equal(
+            [DotNetOperation.Build, DotNetOperation.Test,
+                DotNetOperation.Build, DotNetOperation.Test],
+            mutations.Operations);
+        Assert.Equal(2, provider.Requests.Count);
+        Assert.Contains("one to four exact replacement blocks",
+            provider.Requests[1].Messages[^1].Content, StringComparison.Ordinal);
+        Assert.Contains("REPAIR BASE SOURCE\nConsole.WriteLine(\"bad\");",
+            provider.Requests[1].Messages[^1].Content, StringComparison.Ordinal);
+        Assert.Contains("Preserve this authoritative contract",
+            provider.Requests[1].Messages[^1].Content, StringComparison.Ordinal);
+        Assert.DoesNotContain("deliberately verbose plan",
+            provider.Requests[1].Messages[^1].Content, StringComparison.Ordinal);
+        Assert.Contains("DETERMINISTIC CITED SOURCE (read-only): " +
+            "tests/Acceptance/ContractTests.cs",
+            provider.Requests[1].Messages[^1].Content, StringComparison.Ordinal);
+        Assert.Contains("assertion expects a value but the cited target frame throws",
+            provider.Requests[1].Messages[^1].Content, StringComparison.Ordinal);
+        Assert.Contains("tests/Acceptance/ContractTests.cs", inspection.Paths);
     }
 
     [Fact]
@@ -352,6 +409,30 @@ public sealed class AgentRoleRunnerTests
 
         Assert.Equal("structured_source_identity_mismatch", result.ErrorCode?.Value);
         Assert.Contains("wrong C# namespace", result.Error?.Value, StringComparison.Ordinal);
+        Assert.Null(mutations.Content);
+        Assert.Empty(mutations.Operations);
+    }
+
+    [Fact]
+    public async Task Structured_local_edit_never_compiles_explanatory_prose_as_source()
+    {
+        CapturingModelProvider provider = new(
+            "I would preserve the existing namespace and update only the failing method.");
+        RecordingMutationService mutations = new();
+        AgentRoleRunner runner = new(
+            new StubRouteResolver(role => Route(role, "tool-model", provider)),
+            new CapturingAgentToolFactory { ReturnWorkspaceFileView = true },
+            NullLoggerFactory.Instance,
+            new StaticInspectionService("namespace Example; public sealed class GameState { }"),
+            mutations);
+
+        AgentRunResult result = await runner.RunAsync(new(
+            new("goal-tools"),
+            AgentRole.Implementer,
+            new("repair the exact game state file"),
+            [new("src/GameState.cs")]));
+
+        Assert.Equal("invalid_structured_file_edit", result.ErrorCode?.Value);
         Assert.Null(mutations.Content);
         Assert.Empty(mutations.Operations);
     }
@@ -455,6 +536,20 @@ public sealed class AgentRoleRunnerTests
                 {
                     Name = "apply_file_edit",
                     Description = "Apply a bounded file edit.",
+                }),
+            AIFunctionFactory.Create(
+                (string relativePath, int line, int character) => "symbol",
+                new()
+                {
+                    Name = "get_symbol_info",
+                    Description = "Inspect a symbol.",
+                }),
+            AIFunctionFactory.Create(
+                (string relativePath, int line, int character) => "definition",
+                new()
+                {
+                    Name = "find_symbol_definition",
+                    Description = "Find a definition.",
                 }),
         ];
     }
@@ -585,6 +680,38 @@ public sealed class AgentRoleRunnerTests
             throw new NotSupportedException();
     }
 
+    private sealed class RepairingModelProvider : IModelProvider
+    {
+        internal List<ChatRequest> Requests { get; } = [];
+
+        public ValueTask<ModelCatalog> GetModelsAsync(CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public async IAsyncEnumerable<ChatStreamEvent> StreamChatAsync(
+            ChatRequest request,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            Requests.Add(request);
+            await Task.Yield();
+            cancellationToken.ThrowIfCancellationRequested();
+            string output = Requests.Count == 1
+                ? "```csharp\nConsole.WriteLine(\"bad\");\n```"
+                : """
+                  <<<<<<< SEARCH
+                  Console.WriteLine("bad");
+                  =======
+                  Console.WriteLine("good");
+                  >>>>>>> REPLACE
+                  """;
+            yield return new(output, string.Empty, true, "stop", new(10, 3), Error: null);
+        }
+
+        public ValueTask<EmbeddingResult> EmbedAsync(
+            EmbeddingRequest request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+
     private sealed class CapturingModelProvider : IModelProvider
     {
         private readonly string? output;
@@ -630,11 +757,16 @@ public sealed class AgentRoleRunnerTests
     private sealed class StaticInspectionService(string content = "baseline")
         : IGoalWorkspaceInspectionService
     {
+        internal List<string> Paths { get; } = [];
+
         public ValueTask<WorkspaceFileView> ReadFileAsync(
             GoalId goalId,
             GoalWorkspaceScope scope,
             string relativePath,
-            CancellationToken cancellationToken = default) => ValueTask.FromResult(new WorkspaceFileView(
+            CancellationToken cancellationToken = default)
+        {
+            Paths.Add(relativePath);
+            return ValueTask.FromResult(new WorkspaceFileView(
                 relativePath,
                 content,
                 new string('a', 64),
@@ -642,6 +774,7 @@ public sealed class AgentRoleRunnerTests
                 IsTruncated: false,
                 ErrorCode: null,
                 Error: null));
+        }
 
         public ValueTask<WorkspaceTextSearchView> SearchTextAsync(
             GoalId goalId, GoalWorkspaceScope scope, string query,
@@ -654,7 +787,9 @@ public sealed class AgentRoleRunnerTests
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
-    private sealed class RecordingMutationService : IWorkspaceMutationService
+    private sealed class RecordingMutationService(
+        int testFailures = 0,
+        string failureOutput = "A focused behavioral contract failed.") : IWorkspaceMutationService
     {
         internal string? Content { get; private set; }
         internal List<DotNetOperation> Operations { get; } = [];
@@ -681,13 +816,14 @@ public sealed class AgentRoleRunnerTests
             CancellationToken cancellationToken = default)
         {
             Operations.Add(request.Operation);
+            bool failed = request.Operation is DotNetOperation.Test && testFailures-- > 0;
             return ValueTask.FromResult(new DotNetOperationView(
                 request.GoalId,
                 request.CorrelationId,
                 request.Operation,
                 "Harness.slnx",
-                ExitCode: 0,
-                StandardOutput: string.Empty,
+                ExitCode: failed ? 1 : 0,
+                StandardOutput: failed ? failureOutput : string.Empty,
                 StandardError: string.Empty,
                 IsOutputTruncated: false,
                 IsErrorTruncated: false,

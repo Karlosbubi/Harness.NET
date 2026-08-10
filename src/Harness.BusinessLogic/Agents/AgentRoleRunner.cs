@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Harness.BusinessLogic.Goals;
@@ -15,6 +16,8 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
 {
     private const int MaximumTaskCharacters = 64 * 1024;
     private const int MaximumModelIterationsPerRequest = 6;
+    private const int MaximumStructuredEditAttempts = 4;
+    private const int MaximumRepairSourceCharacters = 64 * 1024;
     private readonly IGoalModelRouteResolver routeResolver;
     private readonly IAgentToolFactory toolFactory;
     private readonly ILoggerFactory loggerFactory;
@@ -128,16 +131,19 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
                 providerClient.ToolCallCount == 0 &&
                 bootstrap is not null)
             {
-                const int maximumStructuredEditAttempts = 8;
                 AgentRunResult? editResult = null;
                 BootstrapInspection activeBootstrap = bootstrap;
-                for (int attempt = 1; attempt <= maximumStructuredEditAttempts; attempt++)
+                string? proposalBaseContent = null;
+                for (int attempt = 1; attempt <= MaximumStructuredEditAttempts; attempt++)
                 {
                     editResult = await ApplyStructuredLocalFileEditAsync(
                         request.Role, request.GoalId, response.Text, activeBootstrap, tools,
-                        cancellationToken);
+                        proposalBaseContent, cancellationToken);
+                    string? candidateContent = StructuredProposalContent(
+                        response.Text,
+                        proposalBaseContent ?? activeBootstrap.Content);
                     if (editResult.Output is not null ||
-                        attempt == maximumStructuredEditAttempts)
+                        attempt == MaximumStructuredEditAttempts)
                     {
                         return editResult;
                     }
@@ -149,11 +155,11 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
                     {
                         rejection = rejection[..maximumRejectionCharacters];
                     }
-                    string rejectedProposal = response.Text;
-                    const int maximumRejectedProposalCharacters = 16_000;
-                    if (rejectedProposal.Length > maximumRejectedProposalCharacters)
+                    string rejectedProposal = candidateContent ?? proposalBaseContent ??
+                        activeBootstrap.Content ?? response.Text.Trim();
+                    if (rejectedProposal.Length > MaximumRepairSourceCharacters)
                     {
-                        rejectedProposal = rejectedProposal[..maximumRejectedProposalCharacters];
+                        rejectedProposal = rejectedProposal[..MaximumRepairSourceCharacters];
                     }
 
                     BootstrapInspection? refreshed = await BootstrapExactFileInspectionAsync(
@@ -162,24 +168,42 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
                     {
                         activeBootstrap = refreshed;
                     }
+                    string diagnosticDependencyContext =
+                        await ReadDiagnosticDependenciesAsync(
+                            request.GoalId,
+                            activeBootstrap.RelativePath,
+                            rejection,
+                            cancellationToken);
 
                     session = await agent.CreateSessionAsync(cancellationToken);
                     response = await agent.RunAsync(
-                        "CORRECT THE REJECTED FILE PROPOSAL. Return the complete replacement " +
-                        "source in one fenced code block, not JSON, a patch, or a fragment. Preserve " +
-                        "the proposal's correct code, exact namespace, and required public API. " +
-                        "Make the smallest coherent changes that resolve every cited diagnostic; " +
-                        "do not redesign working portions, add alternative implementations, or " +
-                        "duplicate declarations. Consumer code and tests must use only public " +
-                        "members shown in the dependency context; never call a private constructor " +
-                        "or method. Mentally compile the repaired complete file " +
-                        "before returning it.\n\n" +
+                        "CORRECT THE REJECTED FILE PROPOSAL WITH THE SMALLEST COHERENT EDIT. " +
+                        "Preserve every working region, the exact namespace, and the required public " +
+                        "API. Use cited Roslyn diagnostic coordinates and test stack frames as the " +
+                        "repair targets; do not redesign unrelated code. Consumer code and tests " +
+                        "must use only public members shown in dependency context. Never call a " +
+                        "private constructor or method. Return one to four exact replacement blocks " +
+                        "against REPAIR BASE SOURCE using this format and no narration or fence:\n" +
+                        "<<<<<<< SEARCH\nexact current text\n=======\nreplacement text\n" +
+                        ">>>>>>> REPLACE\n" +
+                        "Each SEARCH must occur exactly once. Include the smallest enclosing method " +
+                        "or expression needed for an unambiguous repair. Return a complete fenced " +
+                        "source file only when no safe local replacement exists. If the same test " +
+                        "still fails, do not make a cosmetic or algebraically equivalent change: " +
+                        "derive the required invariant from its expected/actual values and cited " +
+                        "source, then mentally check boundary states before responding. When an " +
+                        "assertion expects a value but the cited target frame throws, preserve the " +
+                        "goal's exact public signature and return its specified sentinel/default " +
+                        "value; do not introduce nullable API or retain a no-result exception unless " +
+                        "the authoritative contract requires it.\n\n" +
                         "DETERMINISTIC REJECTION EVIDENCE\n" + rejection + "\n\n" +
-                        "REJECTED PROPOSAL TO REPAIR\n" + rejectedProposal + "\n\n" +
-                        activeBootstrap.Context + "\n\nBOUNDED TASK\n" +
+                        "REPAIR BASE SOURCE\n" + rejectedProposal + "\n\n" +
+                        activeBootstrap.DependencyContext + diagnosticDependencyContext +
+                        "\n\nBOUNDED TASK\n" +
                         ConciseDelegatedTask(request.Task.Value),
                         session,
                         cancellationToken: cancellationToken);
+                    proposalBaseContent = candidateContent ?? proposalBaseContent;
                 }
 
                 return editResult!;
@@ -313,6 +337,7 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
         string context = "DETERMINISTIC TYPED INSPECTION (already completed by Harness)\n" +
             "Target: " + request.FileAreas[0].Value + "\n" +
             "read_file result: " + serialized;
+        string dependencyContext = string.Empty;
         if (inspectionService is not null)
         {
             string[] dependencyPaths = Regex.Matches(request.Task.Value,
@@ -333,12 +358,62 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
                     cancellationToken);
                 if (dependency is { ErrorCode: null, IsTruncated: false })
                 {
-                    context += "\nDependency: " + dependencyPath + "\nread_file result: " +
+                    dependencyContext += "\nDependency: " + dependencyPath +
+                        "\nread_file result: " +
                         JsonSerializer.Serialize(dependency);
                 }
             }
         }
-        return new(context, request.FileAreas[0].Value, sha256, file?.Content);
+        return new(context + dependencyContext, dependencyContext,
+            request.FileAreas[0].Value, sha256, file?.Content);
+    }
+
+    private async ValueTask<string> ReadDiagnosticDependenciesAsync(
+        GoalId goalId,
+        string targetPath,
+        string rejection,
+        CancellationToken cancellationToken)
+    {
+        if (inspectionService is null)
+        {
+            return string.Empty;
+        }
+
+        string[] citedPaths = Regex.Matches(
+                rejection,
+                @"(?<path>(?:src|tests)/[A-Za-z0-9_./-]+\.cs)(?![A-Za-z0-9_./-])",
+                RegexOptions.CultureInvariant)
+            .Select(match => match.Groups["path"].Value)
+            .Where(path => !string.Equals(path, targetPath, StringComparison.Ordinal))
+            .Distinct(StringComparer.Ordinal)
+            .Take(4)
+            .ToArray();
+        if (citedPaths.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        StringBuilder context = new();
+        foreach (string path in citedPaths)
+        {
+            WorkspaceFileView dependency = await inspectionService.ReadFileAsync(
+                goalId,
+                GoalWorkspaceScope.ApprovedWorktree,
+                path,
+                cancellationToken);
+            if (dependency is { ErrorCode: null, IsTruncated: false })
+            {
+                context.Append("\n\nDETERMINISTIC CITED SOURCE (read-only): ")
+                    .Append(path)
+                    .Append("\nread_file result: ")
+                    .Append(JsonSerializer.Serialize(dependency));
+            }
+        }
+
+        const int maximumCharacters = 32_000;
+        return context.Length <= maximumCharacters
+            ? context.ToString()
+            : context.ToString(0, maximumCharacters);
     }
 
     private async ValueTask<AgentRunResult> ApplyStructuredLocalFileEditAsync(
@@ -347,31 +422,12 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
         string output,
         BootstrapInspection bootstrap,
         IList<AITool> tools,
+        string? proposalBaseContent,
         CancellationToken cancellationToken)
     {
-        string proposal = output.Trim();
-        string? content = null;
-        if (proposal.StartsWith("```", StringComparison.Ordinal))
-        {
-            int firstLine = proposal.IndexOf('\n');
-            int closingFence = proposal.LastIndexOf("```", StringComparison.Ordinal);
-            content = firstLine >= 0 && closingFence > firstLine
-                ? proposal[(firstLine + 1)..closingFence].Trim()
-                : null;
-        }
-        else if (proposal.StartsWith('{'))
-        {
-            try
-            {
-                using JsonDocument document = JsonDocument.Parse(proposal);
-                content = document.RootElement.GetProperty("content").GetString();
-            }
-            catch (JsonException exception)
-            {
-                return new(role, Output: null, new("invalid_structured_file_edit"),
-                    new("The local model did not return a valid file proposal: " + exception.Message));
-            }
-        }
+        string? content = StructuredProposalContent(
+            output,
+            proposalBaseContent ?? bootstrap.Content);
 
         content = PreserveSourceEnvelope(content, bootstrap);
         string? identityError = ValidateSourceIdentity(content, bootstrap);
@@ -462,6 +518,94 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
                 : ["Deterministic code validation completed."],
             remaining = Array.Empty<string>(),
         })), ErrorCode: null, Error: null);
+    }
+
+    private static string? StructuredProposalContent(string output, string? repairBase)
+    {
+        string proposal = output.Trim();
+        if (proposal.StartsWith("```", StringComparison.Ordinal))
+        {
+            int firstLine = proposal.IndexOf('\n');
+            int closingFence = proposal.LastIndexOf("```", StringComparison.Ordinal);
+            return firstLine >= 0 && closingFence > firstLine
+                ? proposal[(firstLine + 1)..closingFence].Trim()
+                : null;
+        }
+        else if (proposal.StartsWith('{'))
+        {
+            try
+            {
+                using JsonDocument document = JsonDocument.Parse(proposal);
+                return document.RootElement.GetProperty("content").GetString();
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
+        }
+
+        if (!proposal.StartsWith("<<<<<<< SEARCH", StringComparison.Ordinal))
+        {
+            // The structured local path deliberately suppresses tools and accepts only an
+            // unambiguous machine-readable proposal. Treat narration, Markdown headings, and
+            // other plain text as a format failure instead of feeding it to Roslyn as C#.
+            return null;
+        }
+
+        if (string.IsNullOrEmpty(repairBase))
+        {
+            return null;
+        }
+
+        const string replacementPattern =
+            @"<<<<<<< SEARCH\r?\n(?<search>.*?)\r?\n=======\r?\n(?<replacement>.*?)\r?\n>>>>>>> REPLACE";
+        MatchCollection replacements = Regex.Matches(
+            proposal,
+            replacementPattern,
+            RegexOptions.Singleline | RegexOptions.CultureInvariant);
+        if (replacements.Count is < 1 or > 4 ||
+            !string.IsNullOrWhiteSpace(Regex.Replace(
+                proposal,
+                replacementPattern,
+                string.Empty,
+                RegexOptions.Singleline | RegexOptions.CultureInvariant)))
+        {
+            return null;
+        }
+
+        string content = repairBase;
+        foreach (Match replacement in replacements)
+        {
+            string search = MatchLineEndings(
+                replacement.Groups["search"].Value,
+                content);
+            string replaceWith = MatchLineEndings(
+                replacement.Groups["replacement"].Value,
+                content);
+            if (string.IsNullOrEmpty(search))
+            {
+                return null;
+            }
+
+            int first = content.IndexOf(search, StringComparison.Ordinal);
+            if (first < 0 ||
+                content.IndexOf(search, first + search.Length, StringComparison.Ordinal) >= 0)
+            {
+                return null;
+            }
+
+            content = content[..first] + replaceWith + content[(first + search.Length)..];
+        }
+
+        return content;
+    }
+
+    private static string MatchLineEndings(string value, string source)
+    {
+        string normalized = value.Replace("\r\n", "\n", StringComparison.Ordinal);
+        return source.Contains("\r\n", StringComparison.Ordinal)
+            ? normalized.Replace("\n", "\r\n", StringComparison.Ordinal)
+            : normalized;
     }
 
     private static bool Succeeded(DotNetOperationView operation) =>
@@ -622,11 +766,16 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
             "through public constructors or factories shown in dependency context, then derive " +
             "needed states through public transition methods. Tests must never synthesize state " +
             "through a private storage constructor or private helper.",
+        "xUnit2017" =>
+            "Replace Assert.True(collection.Contains(expected)) with the analyzer-requested " +
+            "Assert.Contains(expected, collection) form at each cited line; preserve surrounding " +
+            "test setup and assertions.",
         _ => null,
     };
 
     private sealed record BootstrapInspection(
         string Context,
+        string DependencyContext,
         string RelativePath,
         string Sha256,
         string? Content);
@@ -641,10 +790,28 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
 
     private static string ConciseDelegatedTask(string task)
     {
-        const string marker = "DELEGATED TASK";
-        int markerIndex = task.LastIndexOf(marker, StringComparison.Ordinal);
-        string concise = markerIndex >= 0 ? task[markerIndex..] : task;
-        const int maximumCharacters = 8_000;
+        const string objectiveMarker = "FULL GOAL OBJECTIVE (AUTHORITATIVE)";
+        const string planMarker = "APPROVED PLAN";
+        const string delegatedMarker = "DELEGATED TASK";
+        int objectiveIndex = task.IndexOf(objectiveMarker, StringComparison.Ordinal);
+        int planIndex = task.IndexOf(planMarker, StringComparison.Ordinal);
+        int delegatedIndex = task.LastIndexOf(delegatedMarker, StringComparison.Ordinal);
+        string concise;
+        if (objectiveIndex >= 0 && planIndex > objectiveIndex && delegatedIndex >= 0)
+        {
+            // Keep the authoritative contract during repair. The approved plan is useful to the
+            // first implementation call, but repeating it on every deterministic correction both
+            // wastes context and previously caused this helper to discard the actual goal rules.
+            string objective = task[objectiveIndex..planIndex].Trim();
+            string delegated = task[delegatedIndex..].Trim();
+            concise = objective + "\n\n" + delegated;
+        }
+        else
+        {
+            concise = delegatedIndex >= 0 ? task[delegatedIndex..] : task;
+        }
+
+        const int maximumCharacters = 16_000;
         return concise.Length <= maximumCharacters
             ? concise.Trim()
             : concise[..maximumCharacters].Trim();
@@ -690,9 +857,13 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
             "typed inspection tool call; do not narrate what you intend to do. Before editing, read the exact " +
             "existing target and pass its returned sha256 to apply_file_edit as expectedSha256; never " +
             "guess a path or hash. When the target consumes existing types, read their current definitions " +
-            "and confirm symbols, definitions, usages, and implementations with Roslyn; use only APIs actually present and never " +
+            "and confirm exact signatures and accessibility with get_symbol_info and " +
+            "find_symbol_definition; inspect usages or implementations when changing shared behavior " +
+            "or abstractions. Use only APIs actually present and never " +
             "invent members or helper types. Use semantic rename for symbol renames instead of textual " +
-            "replacement. Inspect Roslyn problems before and after compiler-relevant changes. Treat a failed tool " +
+            "replacement. Inspect Roslyn problems before and after compiler-relevant changes. On a " +
+            "diagnostic or test failure, preserve passing code and repair only the cited range or first " +
+            "relevant user-code stack frame rather than regenerating the file. Treat a failed tool " +
             "result as actionable evidence: inspect, correct the " +
             "request, and retry with a new correlation identifier. Never submit TODO, FIXME, placeholder, " +
             "omitted, or NotImplementedException logic. A final response before at least one successful " +
