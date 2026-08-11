@@ -204,6 +204,69 @@ adds unacceptable startup or memory cost, or requires routine large private Rosl
 patches. Retain a working rollback path until the migrated editor passes the complete
 desktop release gate; remove the old stack only in a separate, reviewed cutover.
 
+### Planned: Task 049 — NetPad-level .NET editing and inspection
+
+Close the remaining user-facing code-intelligence gaps identified against
+[NetPad at `0c74746`](https://github.com/tareqimbasher/NetPad/commit/0c74746daf6f5402ad4d9a2cf3958131bdfc8011)
+and use
+[OmniSharp Roslyn at `83fd615`](https://github.com/OmniSharp/omnisharp-roslyn/commit/83fd615eafff33e297a9f59280d929cf09ec0d3c)
+as a service and test reference. Harness.NET already provides completion, quick info,
+signature help, diagnostics, definition, usages, implementations, semantic rename,
+full repository context, Git workflows, deterministic model-write validation, and
+typed agent access. Do not rebuild those features around OmniSharp endpoints.
+
+Add the missing capabilities in this order:
+
+1. Roslyn semantic classification with incremental visible-range updates and theme
+   tokens; document occurrence highlighting; contextual folding; document outline,
+   breadcrumbs, and workspace symbol search.
+2. Configurable parameter and type inlay hints, plus bounded CodeLens for references,
+   implementations, tests, and available run/debug actions. Resolve expensive detail
+   lazily and cancel work for stale or invisible documents.
+3. Format document, selection, changed spans, paste, and supported on-type triggers;
+   organize/fix usings; code actions, quick fixes, refactorings, and fix-all. Every
+   multi-file or model-requested mutation uses preview/fingerprint/apply, exact
+   baselines, affected-path authority, and post-apply diagnostics. Do not expose a
+   raw or arbitrary code-action executor.
+4. Navigate to type, file, region, symbol, metadata/decompiled source, and generated
+   source. Generated and metadata documents are clearly labeled, bounded, read-only,
+   and excluded from ordinary persistence and repository mutation.
+5. Add developer and agent views for syntax trees, symbol details, generated source,
+   and IL. Tie every result to the exact project, target framework, configuration,
+   document version, and build or compilation identity; never present stale output as
+   current.
+6. Add a configurable editor command and keybinding layer with conflict detection,
+   discoverability, reset, import/export of safe declarative bindings, and an
+   optional Vim mode. Keep text input, IME, accessibility, and platform shortcuts
+   correct when a mode is active.
+7. Add a separate project User Secrets slice using the standard .NET store. Listing,
+   revealing, copying, adding, changing, and deleting secrets are distinct developer
+   actions. Secret values stay out of logs, evidence, backups, model context, search,
+   and indexes. Values are masked by default, and portal capture is unavailable while
+   a value is revealed. Agents receive no generic secret-read tool.
+8. Expose deterministic read results and closed transformation previews through the
+   same Business Logic contracts used by the developer UI. This is where Harness.NET
+   must exceed NetPad: the user and models share one live semantic state, while model
+   authority remains narrower than user editing authority.
+
+Keep direct in-process Roslyn as the default implementation. Source may be adapted
+from NetPad or OmniSharp only after license, attribution, version, provenance, tests,
+and SBOM review. Do not download or execute a language server at runtime, add implicit
+Restore or network access, run duplicate Roslyn workspaces, or expose OmniSharp wire
+models across Data Access. An out-of-process OmniSharp adapter is allowed only after
+measurements show a concrete isolation, compatibility, or feature advantage and an
+ADR amends ADR 012. It must then have typed lifecycle, readiness, crash recovery,
+restart, version pinning, integrity, offline installation, and degraded-state UI.
+
+Acceptance compares feature behavior, typing latency, first and warm results, memory,
+cancellation, stale-result rejection, analyzer failures, large solutions, and repeated
+source-context switches. The complete Linux desktop gate covers keyboard-only use,
+IME, AT-SPI, Orca, scaling, Dock restoration, and the chosen Task 048 editor. NetPad's
+script runner, rich object dumping, spreadsheet export, and web shell are not IDE
+parity requirements; the planned notebook, database, run, test, and debugger modules
+in Task 047 cover the relevant development workflows without changing the product
+into a LINQPad clone.
+
 ## Ongoing work
 
 - Repeat hands-on Avalonia usability checks after changes to workspace, editor, goals,

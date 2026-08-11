@@ -232,3 +232,67 @@ Acceptance criteria:
    unacceptable resource cost, or recurring private Roslyn patch burden.
 9. Removal of AvaloniaEdit is a separate reviewed cutover after the migrated editor
    passes acceptance and the rollback evidence is recorded.
+
+### 049 — NetPad-level .NET editing and inspection
+
+Status: `Planned`
+
+Dependencies: 012, 043, 044, 047, 048.
+
+References:
+
+- NetPad `0c74746daf6f5402ad4d9a2cf3958131bdfc8011`;
+- OmniSharp Roslyn `83fd615eafff33e297a9f59280d929cf09ec0d3c`.
+
+Problem: Harness.NET has the core interactive Roslyn operations but lacks several
+features that make NetPad's editor and inspection workflow feel complete: semantic
+classification, inlay hints, CodeLens, occurrence highlighting, contextual folding,
+outline, formatting, code actions, generated and metadata source, syntax/IL views,
+configurable keybindings, optional Vim behavior, and project User Secrets management.
+OmniSharp implements many of the underlying Roslyn services, but adopting its server
+would duplicate the current workspace and add process, download, version, recovery,
+and transport costs.
+
+Acceptance criteria:
+
+1. A maintained parity matrix distinguishes delivered, missing, deliberately
+   excluded, and Task 047 capabilities against the pinned NetPad and OmniSharp
+   revisions.
+2. Semantic classification, occurrence highlighting, folding, outline, breadcrumbs,
+   and workspace symbol search update incrementally from the exact live buffer and
+   discard stale results.
+3. Settings-managed inlay hints and bounded CodeLens resolve lazily and cover
+   references, implementations, tests, and valid run/debug actions.
+4. Formatting, usings, code actions, refactorings, and fix-all use closed typed
+   operations. Multi-file and model-requested changes use
+   preview/fingerprint/apply, path authority, exact baselines, and post-checks.
+5. Type, file, region, symbol, generated-source, and metadata/decompiled-source
+   navigation is bounded. Virtual documents are labeled, read-only, and not written
+   into the repository or normal document persistence.
+6. Syntax-tree, symbol, generated-source, and IL views record the exact source,
+   project, target, configuration, document version, and compilation identity.
+7. Keybindings support validation, conflict display, reset, safe declarative
+   import/export, command discovery, and optional Vim mode without breaking IME,
+   accessibility, or platform shortcuts.
+8. Project User Secrets use the standard .NET store and separate list, reveal, copy,
+   add, change, and delete actions. Values are redacted from logs, evidence, backups,
+   model context, search, and indexes. Values are masked by default, portal capture
+   is blocked while a value is revealed, and no generic agent read is added.
+9. Developer UI and typed model tools share implementation-neutral Business Logic
+   contracts and one semantic buffer state. Agent transforms remain narrower and
+   more auditable than manual editing.
+10. In-process Roslyn remains the default. Reused source requires license,
+    attribution, provenance, version, test, and SBOM review. OmniSharp types stay in
+    Data Access and no runtime download, implicit Restore, or duplicate workspace is
+    introduced.
+11. An out-of-process OmniSharp adapter requires measured benefit and an ADR 012
+    amendment. If approved, it includes pinned offline installation, integrity,
+    lifecycle, readiness, crash recovery, restart, cancellation, and degraded-state
+    behavior.
+12. Deterministic and Linux desktop tests cover correctness, large solutions,
+    latency, memory, cancellation, analyzer failure, source switches, keyboard use,
+    IME, AT-SPI, Orca, scaling, Dock restoration, and Linux x64 publish.
+
+NetPad's playground-only script, rich dump, spreadsheet export, and web-shell
+features are outside this task. Task 047's notebook, database, run, test, and debugger
+modules cover the overlapping development needs.
