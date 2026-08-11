@@ -72,8 +72,8 @@ typed agent tools, and personal configuration.
 - Task 043: completion, quick info, signature help, definitions, usages, and
   implementations.
 - Task 044: deterministic Roslyn rename for users and agents.
-- Task 046 foundation: stateless MCP 2.x discovery, policy, agent exposure, and
-  Settings management.
+- Task 046: cited versioned documentation lookup, deterministic dependency and
+  candidate evidence, package/SBOM previews, and explicit CycloneDX export.
 - Task 047 foundation: model-accessible diagnostics, symbol information, definitions,
   references, implementations, and the Agent tools catalog page.
 - Task 045: consented single-frame XDG portal capture, private goal evidence,
@@ -105,9 +105,9 @@ Requirements:
 Visual evidence supplements deterministic UI tests, AT-SPI, Build/Test, and human
 review. It does not replace them.
 
-### Next: Task 046 — documentation, dependencies, and SBOM
+### Completed: Task 046 — documentation, dependencies, and SBOM
 
-The MCP transport and Settings foundation are complete. Remaining work:
+Delivered behavior:
 
 1. Record an ADR for lookup order, authority, version matching, privacy, cache
    identity, package validation, SBOM ownership, citations, and retention.
@@ -131,7 +131,7 @@ The MCP transport and Settings foundation are complete. Remaining work:
 Unknown or conflicting facts must remain unknown or conflicting. A model may explain
 the evidence but may not replace it.
 
-### Task 047 — remaining model-accessible IDE tools
+### Next: Task 047 — remaining model-accessible IDE tools
 
 Use the maintained [capability map](agent-ide-capabilities.md). Rider is a breadth
 reference only. Unreal-specific tools are excluded.

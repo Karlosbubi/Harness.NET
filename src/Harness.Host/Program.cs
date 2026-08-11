@@ -15,6 +15,7 @@ using Harness.BusinessLogic.Mutations;
 using Harness.BusinessLogic.Mcp;
 using Harness.BusinessLogic.Operations;
 using Harness.BusinessLogic.Retrieval;
+using Harness.BusinessLogic.Research;
 using Harness.BusinessLogic.Workspaces;
 using Harness.BusinessLogic.Workflows;
 using Harness.BusinessLogic.VisualCapture;
@@ -41,6 +42,7 @@ using Harness.DataAccess.Observability;
 using Harness.DataAccess.Persistence;
 using Harness.DataAccess.Secrets;
 using Harness.DataAccess.SemanticIndex;
+using Harness.DataAccess.Research;
 using Harness.DataAccess.Workspaces;
 using Harness.DataAccess.Worktrees;
 using Harness.DataAccess.Workflows;
@@ -103,6 +105,27 @@ builder.Services.AddSingleton<IMcpConnectionConfigurationStore, XdgMcpConnection
 builder.Services.AddSingleton<IMcpToolClient, StatelessHttpMcpToolClient>();
 builder.Services.AddSingleton<IMcpSettingsService, McpSettingsService>();
 builder.Services.AddSingleton<IMcpToolService, McpToolService>();
+builder.Services.AddSingleton(new HttpClient
+{
+  Timeout = TimeSpan.FromSeconds(60),
+  DefaultRequestHeaders =
+    {
+        { "User-Agent", "Harness.NET/1.0 documentation-dependency-research" },
+    },
+});
+builder.Services.AddSingleton<IResearchSettingsStore, XdgResearchSettingsStore>();
+builder.Services.AddSingleton<IDocumentationCache, FileDocumentationCache>();
+builder.Services.AddSingleton<IDocumentationSource, LocalPackageDocumentationSource>();
+builder.Services.AddSingleton<IDocumentationSource, LocalDocumentationIndexSource>();
+builder.Services.AddSingleton<IDocumentationSource, McpDocumentationSource>();
+builder.Services.AddSingleton<IDocumentationSource, HttpDocumentationSource>();
+builder.Services.AddSingleton<IDependencyEvidenceReader, DependencyEvidenceReader>();
+builder.Services.AddSingleton<IPackageCandidateMetadataClient, NuGetPackageCandidateMetadataClient>();
+builder.Services.AddSingleton<ISbomExporter, AtomicSbomExporter>();
+builder.Services.AddSingleton<ResearchWorkspaceResolver>();
+builder.Services.AddSingleton<IDocumentationResearchService, DocumentationResearchService>();
+builder.Services.AddSingleton<IDependencyResearchService, DependencyResearchService>();
+builder.Services.AddSingleton<IResearchSettingsService, ResearchSettingsService>();
 builder.Services.AddSingleton<IConversationStore, SqliteConversationStore>();
 builder.Services.AddSingleton<IFrameworkSourceReader, FileFrameworkSourceReader>();
 builder.Services.AddSingleton<IFrameworkOverlayStore, SqliteFrameworkOverlayStore>();
@@ -221,7 +244,9 @@ builder.Services.AddSingleton<IAgentRoleRunner>(services => new AgentRoleRunner(
         services.GetRequiredService<IGoalCodeIntelligenceService>(),
         services.GetRequiredService<IMcpToolService>(),
         services.GetRequiredService<IVisualCaptureService>(),
-        services.GetRequiredService<TimeProvider>()),
+        services.GetRequiredService<TimeProvider>(),
+        services.GetRequiredService<IDocumentationResearchService>(),
+        services.GetRequiredService<IDependencyResearchService>()),
     services.GetRequiredService<ILoggerFactory>(),
     services.GetRequiredService<IGoalWorkspaceInspectionService>(),
     services.GetRequiredService<IWorkspaceMutationService>()));

@@ -66,6 +66,8 @@ Use small commits with one result. Do not mix unrelated cleanup into feature wor
 | 042 | Roslyn workspace, diagnostics, and model-edit validation. | [Compatibility](../acceptance/roslyn-compatibility-2026-07-31.md), [diagnostics](../acceptance/roslyn-live-diagnostics-2026-07-31.md), [edit validation](../acceptance/roslyn-agent-edit-validation-2026-07-31.md). |
 | 043 | Completion, quick info, signature help, definition, usage, and implementation navigation. | [Interactive assistance](../acceptance/roslyn-interactive-assistance-2026-07-31.md), [editor verification](../acceptance/editor-intelligence-2026-08-10.md). |
 | 044 | Fingerprinted Roslyn rename for users and agents. | [Semantic rename](../acceptance/roslyn-deterministic-rename-2026-07-31.md). |
+| 045 | Controlled XDG-portal visual verification. | [Portal visual verification](../acceptance/portal-visual-verification-2026-08-10.md). |
+| 046 | Documentation research, dependency validation, and SBOM. | [Documentation and supply-chain evidence](../acceptance/documentation-dependency-sbom-2026-08-11.md). |
 
 ## Open tasks
 
@@ -106,7 +108,7 @@ Acceptance criteria:
 
 ### 046 — documentation, dependency validation, and SBOM
 
-Status: `Partial`
+Status: `Delivered`
 
 Dependencies: 010, 014, 016, 024.
 
@@ -117,8 +119,24 @@ Delivered:
 - startup discovery without inference;
 - fail-closed read-only agent tool exposure;
 - MCP connection Settings.
+- ADR 018 lookup, authority, version, privacy, cache, package, citation, retention,
+  and SBOM rules;
+- ordered exact-local, local-index, configured-MCP, and web research manager;
+- bounded ranked versioned evidence with citation, freshness, confidence, conflicts,
+  cache identity, offline behavior, and escalation history;
+- deterministic project, central, lock, direct, transitive, and restored dependency
+  evidence without Restore or model inference;
+- exact candidate availability, framework/runtime assets, transitive ranges,
+  prerelease, listing/deprecation, advisory, license, provenance, and integrity checks;
+- reproducible CycloneDX 1.6 JSON, package/SBOM diff, preview-only agent operation,
+  and explicit developer export;
+- accepted core-library catalog and automatic dependency-version resolution;
+- named developer and agent tools plus complete Settings source/cache/offline/status
+  management;
+- deterministic conflict, stale, mismatch, offline, MCP failure, web fallback,
+  cancellation, deduplication, context, registry, lock, SBOM, and export tests.
 
-Remaining acceptance criteria:
+Acceptance criteria:
 
 1. An ADR defines lookup order, source authority, sufficiency, privacy, version
    matching, cache identity, package validation, SBOM ownership, citations, and

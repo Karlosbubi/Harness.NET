@@ -24,7 +24,7 @@ Status meanings:
 | `search_symbol`, `skill_search` | Roslyn symbol search plus source-neutral capability search | Internal/Planned | Exact semantic context; external symbols opt-in |
 | `get_all_open_file_paths`, `open_file_in_editor` | Read active/open document context and request developer-visible navigation | Internal/Planned | Presentation performs navigation; no model desktop control |
 | `create_new_file`, `apply_patch` | Exact-baseline create/patch in delegated goal areas with Roslyn preflight | Partial | Approved worktree, atomic mutation, evidence |
-| `get_solution_projects`, `get_project_dependencies` | Evaluated solution/project graph, exact project/package references and resolved versions | Partial | Trusted evaluation; no implicit restore |
+| `get_solution_projects`, `get_project_dependencies` | Evaluated solution/project graph, exact project/package references and resolved versions | Partial | Declared/central/locked/direct/transitive/restored package evidence is delivered; broader evaluated project graph remains |
 | `get_project_problems`, `get_file_problems`, `lint_files` | Versioned file/project/changed-set diagnostics with stable identities and delta | Partial | Models now receive exact-file Roslyn diagnostics; project/changed-set and lint scopes remain |
 | `get_symbol_info` | Quick info, declaration, documentation, type and source/metadata destination | Delivered | Role-scoped source is loaded at the current exact file baseline |
 | definition/reference/implementation navigation | Roslyn definition and bounded usage/implementation destinations | Delivered | Original workspace for Lead; approved goal worktree for Implementer/Reviewer |
@@ -62,6 +62,8 @@ Direct tools remain small and role-specific:
 - inspect workspace/project readiness and current source context;
 - bounded file read, text search, Git inspection and .NET graph inspection;
 - bounded semantic repository retrieval and durable evidence listing where eligible;
+- on-demand cited versioned documentation, dependency evidence, exact package
+  validation, and deterministic package/SBOM previews;
 - discover/request relevant IDE toolsets for the next bounded role turn.
 
 Every role has direct exact-file diagnostics, symbol information, definition,
@@ -87,6 +89,7 @@ permitted direct exposure in Settings.
 | Performance | snapshot metadata, timelines, call trees, memory dumps, Unity profiler | Implementer/Reviewer with artifact authority |
 | Notebook/analyzer lab | .NET cells, analyzer API/examples, syntax model, fixture validation | Implementer with execution authority |
 | Visual verification | request and inspect portal-approved captures | Lead/Implementer/Reviewer under Task 045 policy |
+| Documentation and supply chain | versioned lookup, dependency inspection, candidate validation, SBOM/package preview | Lead/Implementer/Reviewer under offline and source policy |
 
 ## Delivery rule
 

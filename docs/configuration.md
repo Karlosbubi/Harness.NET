@@ -121,6 +121,56 @@ Settings → MCP connections can add, edit, enable, disable, remove, refresh, an
 protocol, eligible/rejected counts, and failures. Changes require restart because
 active clients and schemas are fixed for the process lifetime.
 
+## Documentation, dependency, and SBOM research
+
+Settings → Documentation & dependencies writes a `Research` section to the private
+XDG override without replacing unrelated configuration:
+
+```xml
+<Research>
+  <ExactLocalEnabled>true</ExactLocalEnabled>
+  <LocalIndexEnabled>true</LocalIndexEnabled>
+  <McpEnabled>true</McpEnabled>
+  <WebEnabled>true</WebEnabled>
+  <Offline>false</Offline>
+  <RefreshPolicy>OnDemand</RefreshPolicy>
+  <MaximumResults>5</MaximumResults>
+  <MaximumCharacters>12000</MaximumCharacters>
+  <MaximumCacheAgeHours>168</MaximumCacheAgeHours>
+  <RetentionDays>30</RetentionDays>
+  <IndexRoots>
+    <Root>/srv/docs/Avalonia/12.1.0</Root>
+  </IndexRoots>
+  <McpTools>
+    <Tool Connection="AvaloniaDocs" Name="search_docs" />
+  </McpTools>
+  <WebEndpoints>
+    <Endpoint>https://learn.microsoft.com/api/search</Endpoint>
+  </WebEndpoints>
+  <PackageSources>
+    <Source>https://api.nuget.org/v3/index.json</Source>
+  </PackageSources>
+</Research>
+```
+
+Remote endpoints require HTTPS; loopback HTTP is allowed for development. MCP routes
+refer to a connection and exact discovered tool name. The tool must remain closed,
+read-only, non-destructive, and agent-eligible. Web requests contain only library,
+version, question, locale, and result limit. Package sources must expose NuGet v3
+registration and package-content resources.
+
+Documentation cache entries live under `$XDG_CACHE_HOME/harness.net/documentation`.
+Their identity includes source, library, version, question, adapter schema, and privacy
+mode. Retention can delete them; they are not application state or repository files.
+Offline mode permits exact local, indexed, and cached results only.
+
+Dependency inspection reads project XML, `Directory.Packages.props`,
+`packages.lock.json`, and existing `obj/project.assets.json`. It never invokes Restore
+or MSBuild targets. Candidate validation downloads bounded registration and package
+metadata from configured sources and checks exact availability, framework/runtime
+assets, dependencies, listing/deprecation, advisories, license, repository provenance,
+and SHA-512. Missing metadata remains unknown.
+
 ## Visual verification
 
 Settings → Visual verification persists ordinary capture defaults in SQLite:

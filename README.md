@@ -21,6 +21,11 @@ Delivered:
 - provider discovery, per-role model routing, searchable model selection, and
   monetary controls for remote inference;
 - stateless MCP 2.x connections with Settings management and read-only tool policy;
+- on-demand versioned documentation lookup through exact local, indexed, configured
+  MCP, and web sources with citations and offline cache policy;
+- deterministic declared, central, locked, direct, transitive, and restored NuGet
+  evidence, exact package-candidate validation, package/SBOM diffs, and explicit
+  CycloneDX 1.6 export;
 - Git-backed workspace registration, trust, status, diff, search, branches, and
   isolated goal worktrees;
 - an editable Avalonia source editor with diagnostics, completion, quick info,
@@ -35,8 +40,8 @@ Delivered:
   Secret Service credentials, structured logs, and optional OTLP export.
 
 Open work is tracked in [the roadmap](docs/roadmap.md) and
-[task ledger](docs/tasks/README.md). The next task is version-matched documentation,
-dependency validation, and SBOM management.
+[task ledger](docs/tasks/README.md). The next task completes the remaining
+model-accessible IDE toolsets.
 
 ## Safety model
 
@@ -54,6 +59,10 @@ dependency validation, and SBOM management.
 - Credentials stay in Linux Secret Service or the configured environment boundary.
 - Screenshot requests always use desktop-portal consent. Captures are bounded,
   revocable, and unavailable to remote models unless the user opts in.
+- Documentation lookup sends only library, version, and question to configured
+  external sources. Offline mode uses local and cached evidence.
+- Dependency inspection and SBOM preview never restore packages, execute project
+  targets, mutate project files, or export without an explicit developer action.
 
 See [architecture](docs/architecture.md), [framework](docs/framework.md), and
 [decision records](docs/decisions/README.md) for the exact rules.

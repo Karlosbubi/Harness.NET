@@ -12,6 +12,7 @@ using Harness.BusinessLogic.Retrieval;
 using Harness.BusinessLogic.Workflows;
 using Harness.BusinessLogic.Workspaces;
 using Harness.BusinessLogic.VisualCapture;
+using Harness.BusinessLogic.Research;
 
 namespace Harness.Presentation.Avalonia;
 
@@ -46,6 +47,13 @@ internal sealed record ApplicationSettingsState(
     AgentDefaultsSnapshot? AgentDefaults,
     ModelProviderSettingsSnapshot? ProviderSettings,
     McpSettingsSnapshot? McpSettings,
+    ResearchSettingsSnapshot? ResearchSettings,
+    DocumentationLookupResult? DocumentationLookup,
+    DependencyInspectionResult? DependencyInspection,
+    PackageCandidateValidationResult? PackageCandidateValidation,
+    SbomPreviewResult? SbomPreview,
+    PackageChangePreviewResult? PackageChangePreview,
+    SbomExportResult? SbomExport,
     VisualCaptureSettingsSnapshot? VisualCaptureSettings,
     IReadOnlyList<VisualCaptureView> VisualCaptures,
     VisualCaptureContentView? SelectedVisualCapture,
@@ -57,6 +65,13 @@ internal sealed record ApplicationSettingsState(
         AgentDefaults: null,
         ProviderSettings: null,
         McpSettings: null,
+      ResearchSettings: null,
+      DocumentationLookup: null,
+      DependencyInspection: null,
+      PackageCandidateValidation: null,
+      SbomPreview: null,
+      PackageChangePreview: null,
+      SbomExport: null,
         VisualCaptureSettings: null,
         VisualCaptures: [],
         SelectedVisualCapture: null,

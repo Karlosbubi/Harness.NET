@@ -16,6 +16,7 @@ using Harness.BusinessLogic.Tools;
 using Harness.BusinessLogic.Workflows;
 using Harness.BusinessLogic.Workspaces;
 using Harness.BusinessLogic.VisualCapture;
+using Harness.BusinessLogic.Research;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Harness.Presentation.Avalonia.Tests;
@@ -27,7 +28,10 @@ public sealed class AvaloniaPresentationStoreTests
     internal static AvaloniaPresentationStore CreateStore(
         IModelProviderSettingsService? providerSettingsService = null,
         IMcpSettingsService? mcpSettingsService = null,
-        IVisualCaptureService? visualCaptureService = null) => new(
+      IVisualCaptureService? visualCaptureService = null,
+      IResearchSettingsService? researchSettingsService = null,
+      IDocumentationResearchService? documentationResearchService = null,
+      IDependencyResearchService? dependencyResearchService = null) => new(
         new DashboardService(),
         new AppearanceService(),
         new WorkspaceService(),
@@ -45,7 +49,10 @@ public sealed class AvaloniaPresentationStoreTests
         providerSettingsService,
         remoteSpendPreferenceService: null,
         mcpSettingsService,
-        visualCaptureService);
+      visualCaptureService,
+      researchSettingsService,
+      documentationResearchService,
+      dependencyResearchService);
 
     [Theory]
     [InlineData("I am **Gemma 4** 😊</blockquote>", "I am Gemma 4 😊")]

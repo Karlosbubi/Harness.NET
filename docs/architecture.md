@@ -45,8 +45,8 @@ types remain in the code-intelligence adapter.
 
 1. Presentation sends a record command to Business Logic.
 2. Business Logic validates state and authority.
-3. Data Access performs database, provider, filesystem, Git, Roslyn, process, MCP, or
-   platform work and returns Harness records.
+3. Data Access performs database, provider, filesystem, Git, Roslyn, process, MCP,
+   documentation, package-registry, or platform work and returns Harness records.
 4. Business Logic persists the completed boundary and advances state.
 5. Presentation refreshes correlated state.
 
@@ -60,11 +60,13 @@ on the UI thread.
 
 ## Storage
 
-- XDG configuration: provider/MCP modules, framework settings, and themes.
+- XDG configuration: provider/MCP modules, documentation/package sources, framework
+  settings, and themes.
 - SQLite: goals, conversations, prompts, outputs, tools, approvals, checkpoints,
   usage, artifacts, vectors, summaries, overlays, and preferences.
 - XDG state: logs, worktree state, workbench layout, and private bounded visual captures.
-- XDG cache: disposable data.
+- XDG cache: disposable documentation evidence keyed by source, version, query, schema,
+  and privacy mode.
 - Linux Secret Service: credentials, with configured environment fallback.
 - User repository: goal branches and user-approved source or existing guidance only.
 
@@ -105,6 +107,18 @@ and the goal’s privacy and spending policy.
 
 MCP transport and SDK mapping stay in Data Access. Business Logic exposes only
 enabled tools that explicitly declare read-only and non-destructive behavior.
+
+The Business Logic research manager owns documentation lookup order, sufficiency,
+ranking, citations, version matching, cache freshness, offline behavior, and bounded
+context. Data Access owns exact package/SDK files, configured index roots, MCP mapping,
+HTTPS search, NuGet v3 metadata, and cache files. Documentation is requested through a
+typed operation; it is not added to routine prompts.
+
+Dependency evidence comes from project and central package XML, NuGet lock files, and
+existing restored assets. Inspection does not run Restore or project targets. Exact
+candidate validation reports incomplete registry facts as unknown. Business Logic
+generates stable CycloneDX JSON from the resolved graph and owns package/SBOM previews.
+The Data Access exporter writes only an explicitly selected destination.
 
 Visual capture policy stays in Business Logic. The Linux Data Access adapter uses
 only the XDG Screenshot portal for a single interactive frame. Presentation supplies

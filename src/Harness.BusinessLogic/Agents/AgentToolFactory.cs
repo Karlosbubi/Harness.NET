@@ -7,6 +7,7 @@ using Harness.BusinessLogic.CodeIntelligence;
 using Harness.BusinessLogic.Mcp;
 using Harness.BusinessLogic.Tools;
 using Harness.BusinessLogic.VisualCapture;
+using Harness.BusinessLogic.Research;
 using Microsoft.Extensions.AI;
 
 namespace Harness.BusinessLogic.Agents;
@@ -19,7 +20,9 @@ internal sealed class AgentToolFactory(
     IGoalCodeIntelligenceService codeIntelligenceService,
     IMcpToolService? mcpToolService = null,
     IVisualCaptureService? visualCaptureService = null,
-    TimeProvider? timeProvider = null) : IAgentToolFactory
+    TimeProvider? timeProvider = null,
+    IDocumentationResearchService? documentationResearchService = null,
+    IDependencyResearchService? dependencyResearchService = null) : IAgentToolFactory
 {
     public IList<AITool> Create(
         AgentRole role,
@@ -30,6 +33,11 @@ internal sealed class AgentToolFactory(
         List<AITool> tools = AgentToolPolicy.AllowedFor(role)
             .Where(kind => visualCaptureService is not null ||
                 kind is not AgentToolKind.RequestVisualCapture and not AgentToolKind.InspectVisualCapture)
+        .Where(kind => documentationResearchService is not null ||
+            kind is not AgentToolKind.LookupDocumentation)
+        .Where(kind => dependencyResearchService is not null || kind is not
+            (AgentToolKind.InspectDependencies or AgentToolKind.ValidatePackageCandidate or
+             AgentToolKind.PreviewSbom or AgentToolKind.PreviewPackageChange))
             .Select(kind => Create(kind, goalId, role, fileAreas, modelAccess))
             .ToList();
         if (mcpToolService is not null)
@@ -67,6 +75,48 @@ internal sealed class AgentToolFactory(
             (CancellationToken cancellationToken) =>
                 inspectionService.InspectDotNetAsync(goalId, Scope(role), cancellationToken),
             Options("inspect_dotnet", "Inspect solution, project, SDK, and reference metadata.")),
+        AgentToolKind.LookupDocumentation => AIFunctionFactory.Create(
+              (string library, string? version, string question, CancellationToken cancellationToken) =>
+                  documentationResearchService!.LookupAsync(new(
+                      goalId,
+                      new(library),
+                      string.IsNullOrWhiteSpace(version) ? null : new(version),
+                      new(question)), cancellationToken),
+              Options("lookup_documentation",
+                  "Look up version-matched library documentation on demand. Returns a small ranked " +
+                  "set with source, version, freshness, confidence, citation, and escalation history. " +
+                  "Use this before guessing an external API; do not call it for facts already established.")),
+        AgentToolKind.InspectDependencies => AIFunctionFactory.Create(
+              (CancellationToken cancellationToken) => dependencyResearchService!.InspectAsync(
+                  new(goalId, DependencyScope(role)), cancellationToken),
+              Options("inspect_dependencies",
+                  "Read declared, central, direct, transitive, and already-restored package evidence " +
+                  "without restoring or executing project targets.")),
+        AgentToolKind.ValidatePackageCandidate => AIFunctionFactory.Create(
+              (string packageId, string version, bool allowPrerelease,
+                      CancellationToken cancellationToken) =>
+                  dependencyResearchService!.ValidateCandidateAsync(new(
+                      goalId, new(packageId), new(version), allowPrerelease, DependencyScope(role)),
+                      cancellationToken),
+              Options("validate_package_candidate",
+                  "Validate one exact package version against configured sources. Reports framework " +
+                  "compatibility, transitive ranges, listing/deprecation, advisories, license, " +
+                  "provenance, and integrity. This performs no restore or mutation.")),
+        AgentToolKind.PreviewSbom => AIFunctionFactory.Create(
+              (CancellationToken cancellationToken) => dependencyResearchService!.PreviewSbomAsync(
+                  new(goalId, DependencyScope(role)), cancellationToken),
+              Options("preview_sbom",
+                  "Generate deterministic CycloneDX 1.6 JSON from the existing restored graph. " +
+                  "This does not export or change repository files.")),
+        AgentToolKind.PreviewPackageChange => AIFunctionFactory.Create(
+              (string packageId, string version, bool allowPrerelease,
+                      CancellationToken cancellationToken) =>
+                  dependencyResearchService!.PreviewPackageChangeAsync(new(
+                      goalId, new(packageId), new(version), allowPrerelease, DependencyScope(role)),
+                      cancellationToken),
+              Options("preview_package_change",
+                  "Validate one exact package candidate and show dependency and deterministic SBOM " +
+                  "diffs before any separately authorized project mutation.")),
         AgentToolKind.SemanticContext => AIFunctionFactory.Create(
             (string query, int maximumResults, CancellationToken cancellationToken) =>
                 contextService.SearchAsync(
@@ -206,6 +256,11 @@ internal sealed class AgentToolFactory(
         role is AgentRole.Lead
             ? GoalWorkspaceScope.Original
             : GoalWorkspaceScope.ApprovedWorktree;
+
+  private static DependencyInspectionScope DependencyScope(AgentRole role) =>
+      role is AgentRole.Lead
+          ? DependencyInspectionScope.Original
+          : DependencyInspectionScope.ApprovedWorktree;
 
     private static VisualCaptureInitiator Initiator(AgentRole role) => role switch
     {

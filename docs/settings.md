@@ -9,6 +9,7 @@ Settings owns ordinary defaults. Goal-specific authority remains on the goal.
 | Appearance & accessibility | Delivered. | `IAppearanceService`, SQLite preference, XDG theme files. |
 | Model providers | Delivered. | Typed Business Logic service, private XDG XML, Secret Service. |
 | MCP connections | Delivered. | MCP Data Access adapter, Business Logic policy, private XDG XML. |
+| Documentation & dependencies | Delivered. | Research and dependency Business Logic policy, private XDG XML/cache, package/documentation adapters. |
 | Agent tools | Partial. Catalog status is delivered; optional exposure persistence and activation remain. | Business Logic catalog and policy. |
 | Visual verification | Delivered. | Typed Business Logic policy, SQLite preference, XDG portal and private state adapters. |
 | Models & roles | Delivered. | `IAgentDefaultsService`, role-capability policy, SQLite defaults, goal route store. |
@@ -61,6 +62,26 @@ configured MCP source count.
 
 Optional module enablement, safe exposure preferences, on-demand activation, and run
 evidence remain Task 047 work. Settings never grants goal authority.
+
+## Documentation and dependencies
+
+The page configures the fixed lookup chain: exact restored package or SDK docs,
+configured local indexes, named closed read-only MCP documentation tools, and HTTPS
+web search. Web search runs only when earlier evidence is insufficient. Offline mode
+blocks live MCP, web, and package-registry requests. Each result shows source, version,
+freshness, confidence, citation, rank, and lookup escalation.
+
+Index roots, MCP `connection/tool` routes, web endpoints, NuGet v3 service indexes,
+refresh mode, cache age, retention, result count, and context size persist in private
+XDG configuration. The page reports cache size and the last cache failure and can
+apply retention immediately.
+
+The same page provides explicit developer operations to inspect existing project,
+central, lock, and restored dependency evidence; validate one exact package version;
+preview dependency and CycloneDX SBOM changes; preview the current deterministic SBOM;
+and export it to an absolute JSON path. Inspection never restores or changes packages.
+Preview never exports. Export occurs only from the export control and refuses an
+existing destination unless overwrite is checked.
 
 ## Visual verification
 
