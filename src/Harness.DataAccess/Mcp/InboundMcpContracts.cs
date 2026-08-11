@@ -78,9 +78,50 @@ public sealed record InboundMcpTreeRequest(
 
 public sealed record InboundMcpRangeRequest(string RelativePath, int StartLine, int LineCount);
 public sealed record InboundMcpGoalRequest(string GoalId);
+public sealed record InboundMcpGoalCreateRequest(
+    string WorkspaceId,
+    string Title,
+    string Objective,
+    int ReviewCycleLimit,
+    long? RemoteBudgetMicrousd);
+public sealed record InboundMcpGoalSettingsRequest(
+    string GoalId,
+    int ReviewCycleLimit,
+    long? RemoteBudgetMicrousd,
+    DateTimeOffset ExpectedUpdatedAt);
+public sealed record InboundMcpGoalBudgetRequest(
+    string GoalId,
+    long? ExpectedBudgetMicrousd,
+    long NewBudgetMicrousd,
+    string Reason);
+public sealed record InboundMcpGoalModelRequest(
+    string GoalId,
+    string Role,
+    string Provider,
+    string Model);
+public sealed record InboundMcpGoalRetryRequest(
+    string GoalId,
+    string Role,
+    string? Guidance);
+public sealed record InboundMcpGoalAbortRequest(string GoalId, string Reason);
+public sealed record InboundMcpGoalOperationRequest(string GoalId, string OperationId);
 public sealed record InboundMcpPlanDecisionRequest(
     string GoalId, string PlanId, string Decision, string? Reason);
 public sealed record InboundMcpExecutionRequest(string GoalId, string CorrelationId);
+public sealed record InboundMcpCommitApprovalRequest(
+    string GoalId,
+    string RunId,
+    string ExpectedHead,
+    string ExpectedDiffHash,
+    string Message,
+    string AuthorName,
+    string AuthorEmail);
+public sealed record InboundMcpCommitDecisionRequest(
+    string GoalId,
+    string RunId,
+    string ApprovalId,
+    string Decision,
+    string? Reason);
 public sealed record InboundMcpUiActionRequest(string ActionId);
 public sealed record InboundMcpOpenDocumentRequest(string RelativePath, string? GoalId);
 public sealed record InboundMcpCaptureRequest(
@@ -135,6 +176,46 @@ public interface IInboundMcpApplication
         InboundMcpCallContext context, InboundMcpGoalRequest request,
         CancellationToken cancellationToken = default);
 
+    ValueTask<InboundMcpApplicationResult> CreateGoalAsync(
+        InboundMcpCallContext context, InboundMcpGoalCreateRequest request,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<InboundMcpApplicationResult> UpdateGoalSettingsAsync(
+        InboundMcpCallContext context, InboundMcpGoalSettingsRequest request,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<InboundMcpApplicationResult> ExtendGoalBudgetAsync(
+        InboundMcpCallContext context, InboundMcpGoalBudgetRequest request,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<InboundMcpApplicationResult> DiscoverGoalModelsAsync(
+        InboundMcpCallContext context, InboundMcpGoalRequest request,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<InboundMcpApplicationResult> SelectGoalModelAsync(
+        InboundMcpCallContext context, InboundMcpGoalModelRequest request,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<InboundMcpApplicationResult> StartGoalPlanningAsync(
+        InboundMcpCallContext context, InboundMcpGoalRequest request,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<InboundMcpApplicationResult> ResumeGoalAsync(
+        InboundMcpCallContext context, InboundMcpGoalRequest request,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<InboundMcpApplicationResult> RetryGoalAsync(
+        InboundMcpCallContext context, InboundMcpGoalRetryRequest request,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<InboundMcpApplicationResult> AbortGoalAsync(
+        InboundMcpCallContext context, InboundMcpGoalAbortRequest request,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<InboundMcpApplicationResult> CancelGoalOperationAsync(
+        InboundMcpCallContext context, InboundMcpGoalOperationRequest request,
+        CancellationToken cancellationToken = default);
+
     ValueTask<InboundMcpApplicationResult> DecidePlanAsync(
         InboundMcpCallContext context, InboundMcpPlanDecisionRequest request,
         CancellationToken cancellationToken = default);
@@ -145,6 +226,18 @@ public interface IInboundMcpApplication
 
     ValueTask<InboundMcpApplicationResult> TestAsync(
         InboundMcpCallContext context, InboundMcpExecutionRequest request,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<InboundMcpApplicationResult> PreviewCommitAsync(
+        InboundMcpCallContext context, InboundMcpGoalRequest request,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<InboundMcpApplicationResult> RequestCommitApprovalAsync(
+        InboundMcpCallContext context, InboundMcpCommitApprovalRequest request,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<InboundMcpApplicationResult> DecideCommitAsync(
+        InboundMcpCallContext context, InboundMcpCommitDecisionRequest request,
         CancellationToken cancellationToken = default);
 
     ValueTask<InboundMcpApplicationResult> GetUiAsync(

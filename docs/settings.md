@@ -87,6 +87,14 @@ tool from that hold and applying Settings is the explicit approval. Build, Test,
 capture, plan decisions, UI activation, and evaluation reset continue through their
 normal typed policy and identity checks.
 
+The closed goal lifecycle catalog includes draft creation and settings, compatible
+model discovery and per-role selection, planning, retry, resume, cancellation, abort,
+plan decisions, budget extension, accepted-change preview, commit approval, and commit
+decision. Each operation remains separately allowlisted. Planning, retry, and resume
+return a background operation ID immediately; clients poll `harness_goals` and may
+cancel only that exact operation. Commit approval still targets one accepted run,
+branch HEAD, and complete diff fingerprint and never merges the goal branch.
+
 IsolatedEvaluation also requires process startup with
 `--mcp-evaluation-root /tmp/<dedicated-directory>`. The process uses separate XDG-like
 paths, a separate SQLite database, volatile secrets, and a deterministic disposable

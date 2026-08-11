@@ -41,18 +41,35 @@ public sealed class InboundMcpServerTests
             transport, loggerFactory: NullLoggerFactory.Instance);
         IList<McpClientTool> tools = await client.ListToolsAsync();
 
-        Assert.Equal(7, tools.Count);
+        Assert.Equal(12, tools.Count);
         Assert.Contains("no shell", client.ServerInstructions, StringComparison.OrdinalIgnoreCase);
         Assert.All(tools, tool => Assert.StartsWith("harness_", tool.Name, StringComparison.Ordinal));
-        Assert.All(tools.Where(tool => tool.Name != "harness_open_document"),
+        Assert.All(tools.Where(tool => tool.Name is not "harness_open_document" and
+                not "harness_create_goal" and not "harness_select_goal_model" and
+                not "harness_abort_goal"),
             tool => Assert.True(tool.ProtocolTool.Annotations?.ReadOnlyHint));
         Assert.False(tools.Single(tool => tool.Name == "harness_open_document")
             .ProtocolTool.Annotations?.ReadOnlyHint);
+        Assert.True(tools.Single(tool => tool.Name == "harness_abort_goal")
+            .ProtocolTool.Annotations?.DestructiveHint);
+        Assert.DoesNotContain(tools, tool => tool.Name == "harness_start_planning");
         string result = (await tools.Single(tool => tool.Name == "harness_application")
             .CallAsync()).Content.Single().ToString()!;
         Assert.Contains("instance", result, StringComparison.OrdinalIgnoreCase);
         Assert.Single(server.Current.ActiveClients);
         Assert.Equal("test-client", application.LastContext?.ClientId.Value);
+        var created = await tools.Single(tool => tool.Name == "harness_create_goal").CallAsync(
+            new Dictionary<string, object?>
+            {
+                ["expectedInstanceId"] = server.Current.InstanceId.Value,
+                ["workspaceId"] = "workspace-a",
+                ["title"] = "Dogfood lifecycle",
+                ["objective"] = "Exercise the complete goal lifecycle through MCP.",
+                ["reviewCycleLimit"] = 3,
+                ["remoteBudgetMicrousd"] = null,
+            });
+        Assert.NotEqual(true, created.IsError);
+        Assert.Equal("Dogfood lifecycle", application.LastCreate?.Title);
         var stale = await tools.Single(tool => tool.Name == "harness_open_document").CallAsync(
             new Dictionary<string, object?>
             {
@@ -111,8 +128,12 @@ public sealed class InboundMcpServerTests
         true, InboundMcpMode.Normal, endpoint, new("token"), [],
         [new("harness_application"), new("harness_workspace"), new("harness_tree"),
             new("harness_read_range"), new("harness_git"), new("harness_project_graph"),
-            new("harness_build"), new("harness_open_document")],
-        [new("harness_build")], new(TimeSpan.FromSeconds(10)), new(100), new(100), false);
+            new("harness_build"), new("harness_open_document"), new("harness_create_goal"),
+            new("harness_goal_models"), new("harness_select_goal_model"),
+            new("harness_start_planning"), new("harness_abort_goal"),
+            new("harness_commit_preview")],
+        [new("harness_build"), new("harness_start_planning")],
+        new(TimeSpan.FromSeconds(10)), new(100), new(100), false);
 
     private static int FreePort()
     {
@@ -175,6 +196,7 @@ public sealed class InboundMcpServerTests
     private sealed class RecordingApplication : IInboundMcpApplication
     {
         public InboundMcpCallContext? LastContext { get; private set; }
+        public InboundMcpGoalCreateRequest? LastCreate { get; private set; }
         public ValueTask<InboundMcpApplicationResult> GetApplicationAsync(
             InboundMcpCallContext context, CancellationToken cancellationToken = default)
         {
@@ -199,12 +221,43 @@ public sealed class InboundMcpServerTests
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public ValueTask<InboundMcpApplicationResult> ListEvidenceAsync(InboundMcpCallContext context,
             InboundMcpGoalRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<InboundMcpApplicationResult> CreateGoalAsync(InboundMcpCallContext context,
+            InboundMcpGoalCreateRequest request, CancellationToken cancellationToken = default)
+        {
+            LastCreate = request;
+            return ValueTask.FromResult(new InboundMcpApplicationResult(
+                "{\"goal\":\"created\"}", false, null, null));
+        }
+        public ValueTask<InboundMcpApplicationResult> UpdateGoalSettingsAsync(InboundMcpCallContext context,
+            InboundMcpGoalSettingsRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<InboundMcpApplicationResult> ExtendGoalBudgetAsync(InboundMcpCallContext context,
+            InboundMcpGoalBudgetRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<InboundMcpApplicationResult> DiscoverGoalModelsAsync(InboundMcpCallContext context,
+            InboundMcpGoalRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<InboundMcpApplicationResult> SelectGoalModelAsync(InboundMcpCallContext context,
+            InboundMcpGoalModelRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<InboundMcpApplicationResult> StartGoalPlanningAsync(InboundMcpCallContext context,
+            InboundMcpGoalRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<InboundMcpApplicationResult> ResumeGoalAsync(InboundMcpCallContext context,
+            InboundMcpGoalRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<InboundMcpApplicationResult> RetryGoalAsync(InboundMcpCallContext context,
+            InboundMcpGoalRetryRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<InboundMcpApplicationResult> AbortGoalAsync(InboundMcpCallContext context,
+            InboundMcpGoalAbortRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<InboundMcpApplicationResult> CancelGoalOperationAsync(InboundMcpCallContext context,
+            InboundMcpGoalOperationRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public ValueTask<InboundMcpApplicationResult> DecidePlanAsync(InboundMcpCallContext context,
             InboundMcpPlanDecisionRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public ValueTask<InboundMcpApplicationResult> BuildAsync(InboundMcpCallContext context,
             InboundMcpExecutionRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public ValueTask<InboundMcpApplicationResult> TestAsync(InboundMcpCallContext context,
             InboundMcpExecutionRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<InboundMcpApplicationResult> PreviewCommitAsync(InboundMcpCallContext context,
+            InboundMcpGoalRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<InboundMcpApplicationResult> RequestCommitApprovalAsync(InboundMcpCallContext context,
+            InboundMcpCommitApprovalRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<InboundMcpApplicationResult> DecideCommitAsync(InboundMcpCallContext context,
+            InboundMcpCommitDecisionRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public ValueTask<InboundMcpApplicationResult> GetUiAsync(InboundMcpCallContext context,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public ValueTask<InboundMcpApplicationResult> ActivateUiAsync(InboundMcpCallContext context,

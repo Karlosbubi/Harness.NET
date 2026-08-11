@@ -169,7 +169,8 @@ Delivered in the Task 047/059 integration slice: accepted ADR 019; official SDK 
 stateless Streamable HTTP; loopback bearer authentication and one-time enrollment;
 closed client/tool/approval policy; bounded audit and immediate revocation; typed
 workspace, project, Git, goal/plan/workflow/cost/evidence, Roslyn, document/UI,
-Build/Test, plan-decision, capture, and evaluation operations; exact instance/source
+Build/Test, full asynchronous goal lifecycle, accepted-change/commit decision,
+capture, and evaluation operations; exact instance/source
 identities; volatile evaluation secrets; deterministic fixture snapshot/reset;
 Harness-owned evaluation frames and closed accessibility actions; Settings ownership;
 deterministic client/isolation tests; and Linux publish verification.

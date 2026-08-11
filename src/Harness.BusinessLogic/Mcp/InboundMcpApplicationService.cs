@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Harness.BusinessLogic.Acceptance;
 using Harness.BusinessLogic.Agents;
 using Harness.BusinessLogic.CodeIntelligence;
 using Harness.BusinessLogic.Costs;
@@ -23,7 +24,10 @@ internal sealed class InboundMcpApplicationService(
     IWorkspaceGitInspector gitInspector,
     IWorkspaceDotNetInspector dotNetInspector,
     IGoalService goalService,
+    IGoalModelService goalModelService,
     IGoalWorkflowService workflowService,
+    IGoalAcceptanceService acceptanceService,
+    IInboundGoalOperationCoordinator goalOperations,
     IRemoteCostService remoteCostService,
     IToolEvidenceService evidenceService,
     IWorkspaceMutationService mutationService,
@@ -40,12 +44,24 @@ internal sealed class InboundMcpApplicationService(
         Read("harness_application"), Read("harness_workspace"), Read("harness_tree"),
         Read("harness_read_range"), Read("harness_git"), Read("harness_project_graph"),
         Read("harness_goals"), Read("harness_evidence"), Read("harness_ui", sensitive: true),
+        Read("harness_goal_models"), Read("harness_commit_preview"),
         Read("harness_audit", sensitive: true), Read("harness_code_problems"),
         Read("harness_code_symbol"), Read("harness_code_definition"),
         Read("harness_code_references"), Read("harness_code_implementations"),
         Read("harness_inspect_capture", sensitive: true),
         Read("harness_evaluation_snapshot", sensitive: true),
+        Action("harness_create_goal", idempotent: false),
+        Action("harness_configure_goal", idempotent: true),
+        Action("harness_extend_goal_budget"),
+        Action("harness_select_goal_model", idempotent: true),
+        Action("harness_start_planning", execution: true),
+        Action("harness_resume_goal", execution: true),
+        Action("harness_retry_goal", execution: true),
+        Action("harness_cancel_goal_operation", idempotent: true),
+        Action("harness_abort_goal", destructive: true, idempotent: true),
         Action("harness_decide_plan", idempotent: true),
+        Action("harness_request_commit", idempotent: true),
+        Action("harness_decide_commit", idempotent: true),
         Action("harness_open_document", idempotent: true),
         Action("harness_ui_activate", sensitive: true, idempotent: true),
         Action("harness_request_capture", sensitive: true),
@@ -217,6 +233,7 @@ internal sealed class InboundMcpApplicationService(
                 plan = await goalService.GetCurrentPlanAsync(goal.Id, cancellationToken),
                 workflow = await workflowService.GetLatestAsync(goal.Id, cancellationToken),
                 cost = await remoteCostService.GetAsync(goal.Id, cancellationToken),
+                inboundOperation = goalOperations.Get(goal.Id),
             });
         }
         return Success(new
@@ -246,6 +263,219 @@ internal sealed class InboundMcpApplicationService(
             goal.Id,
             evidence,
             freshness = context.RequestedAt
+        });
+    }
+
+    public async ValueTask<InboundMcpApplicationResult> CreateGoalAsync(
+        InboundMcpCallContext context,
+        InboundMcpGoalCreateRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        WorkspaceView? workspace = await TrustedWorkspaceAsync(context, cancellationToken);
+        if (workspace is null) return WorkspaceFailure(context);
+        if (!workspace.Id.Equals(request.WorkspaceId, StringComparison.Ordinal))
+            return Failure("stale_workspace",
+                "The supplied workspace identity is not the active trusted workspace.");
+        GoalResult result = await goalService.CreateAsync(new(
+            request.WorkspaceId,
+            request.Title,
+            request.Objective,
+            new(request.ReviewCycleLimit),
+            request.RemoteBudgetMicrousd is null
+                ? null
+                : new(request.RemoteBudgetMicrousd.Value)), cancellationToken);
+        return result.Error is null
+            ? Success(new
+            {
+                instanceId = context.InstanceId.Value,
+                sourceContextId = SourceId(workspace),
+                result,
+                freshness = context.RequestedAt,
+            })
+            : Failure(result.ErrorCode ?? "goal_creation_failed", result.Error);
+    }
+
+    public async ValueTask<InboundMcpApplicationResult> UpdateGoalSettingsAsync(
+        InboundMcpCallContext context,
+        InboundMcpGoalSettingsRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        (WorkspaceView? workspace, GoalView? goal, InboundMcpApplicationResult? failure) =
+            await GoalAsync(context, request.GoalId, cancellationToken);
+        if (failure is not null) return failure;
+        GoalResult result = await goalService.UpdateSettingsAsync(new(
+            goal!.Id,
+            new(request.ReviewCycleLimit),
+            request.RemoteBudgetMicrousd is null
+                ? null
+                : new(request.RemoteBudgetMicrousd.Value),
+            request.ExpectedUpdatedAt), cancellationToken);
+        return result.Error is null
+            ? Success(new
+            {
+                instanceId = context.InstanceId.Value,
+                sourceContextId = SourceId(workspace!),
+                result,
+                freshness = context.RequestedAt,
+            })
+            : Failure(result.ErrorCode ?? "goal_configuration_failed", result.Error);
+    }
+
+    public async ValueTask<InboundMcpApplicationResult> ExtendGoalBudgetAsync(
+        InboundMcpCallContext context,
+        InboundMcpGoalBudgetRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        (WorkspaceView? workspace, GoalView? goal, InboundMcpApplicationResult? failure) =
+            await GoalAsync(context, request.GoalId, cancellationToken);
+        if (failure is not null) return failure;
+        GoalBudgetExtensionResult result = await goalService.ExtendRemoteBudgetAsync(new(
+            goal!.Id,
+            request.ExpectedBudgetMicrousd is null
+                ? null
+                : new(request.ExpectedBudgetMicrousd.Value),
+            new(request.NewBudgetMicrousd),
+            new(request.Reason)), cancellationToken);
+        return result.Error is null
+            ? Success(new
+            {
+                instanceId = context.InstanceId.Value,
+                sourceContextId = SourceId(workspace!),
+                result,
+                freshness = context.RequestedAt,
+            })
+            : Failure(result.ErrorCode ?? "goal_budget_extension_failed", result.Error);
+    }
+
+    public async ValueTask<InboundMcpApplicationResult> DiscoverGoalModelsAsync(
+        InboundMcpCallContext context,
+        InboundMcpGoalRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        (WorkspaceView? workspace, GoalView? goal, InboundMcpApplicationResult? failure) =
+            await GoalAsync(context, request.GoalId, cancellationToken);
+        if (failure is not null) return failure;
+        GoalModelCatalog result = await goalModelService.DiscoverAsync(
+            goal!.Id, cancellationToken);
+        return result.Error is null
+            ? Success(new
+            {
+                instanceId = context.InstanceId.Value,
+                sourceContextId = SourceId(workspace!),
+                result,
+                selections = await goalModelService.GetSelectionsAsync(
+                    goal.Id, cancellationToken),
+                freshness = context.RequestedAt,
+            })
+            : Failure(result.ErrorCode ?? "goal_model_discovery_failed", result.Error);
+    }
+
+    public async ValueTask<InboundMcpApplicationResult> SelectGoalModelAsync(
+        InboundMcpCallContext context,
+        InboundMcpGoalModelRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        (WorkspaceView? workspace, GoalView? goal, InboundMcpApplicationResult? failure) =
+            await GoalAsync(context, request.GoalId, cancellationToken);
+        if (failure is not null) return failure;
+        if (!Enum.TryParse(request.Role, true, out AgentRole role))
+            return Failure("invalid_goal_role", "Role must be Lead, Implementer, or Reviewer.");
+        GoalModelSelectionResult result = await goalModelService.SelectAsync(new(
+            goal!.Id,
+            role,
+            new(request.Provider),
+            new(request.Model)), cancellationToken);
+        return result.Error is null
+            ? Success(new
+            {
+                instanceId = context.InstanceId.Value,
+                sourceContextId = SourceId(workspace!),
+                result,
+                freshness = context.RequestedAt,
+            })
+            : Failure(result.ErrorCode ?? "goal_model_selection_failed", result.Error);
+    }
+
+    public ValueTask<InboundMcpApplicationResult> StartGoalPlanningAsync(
+        InboundMcpCallContext context,
+        InboundMcpGoalRequest request,
+        CancellationToken cancellationToken = default) => StartGoalOperationAsync(
+            context,
+            request.GoalId,
+            "planning",
+            goalId => token => workflowService.StartPlanningAsync(new(goalId), token),
+            cancellationToken);
+
+    public ValueTask<InboundMcpApplicationResult> ResumeGoalAsync(
+        InboundMcpCallContext context,
+        InboundMcpGoalRequest request,
+        CancellationToken cancellationToken = default) => StartGoalOperationAsync(
+            context,
+            request.GoalId,
+            "resume",
+            goalId => token => workflowService.ResumeAsync(new(goalId), token),
+            cancellationToken);
+
+    public async ValueTask<InboundMcpApplicationResult> RetryGoalAsync(
+        InboundMcpCallContext context,
+        InboundMcpGoalRetryRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (!Enum.TryParse(request.Role, true, out GoalWorkflowRetryRole role))
+            return Failure("invalid_retry_role", "Role must be Lead, Implementer, or Reviewer.");
+        return await StartGoalOperationAsync(
+            context,
+            request.GoalId,
+            $"retry-{role}",
+            goalId => token => workflowService.RetryAsync(new(
+                goalId,
+                role,
+                string.IsNullOrWhiteSpace(request.Guidance)
+                    ? null
+                    : new(request.Guidance)), token),
+            cancellationToken);
+    }
+
+    public async ValueTask<InboundMcpApplicationResult> CancelGoalOperationAsync(
+        InboundMcpCallContext context,
+        InboundMcpGoalOperationRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        (WorkspaceView? workspace, GoalView? goal, InboundMcpApplicationResult? failure) =
+            await GoalAsync(context, request.GoalId, cancellationToken);
+        if (failure is not null) return failure;
+        InboundGoalOperationResult result = await goalOperations.CancelAsync(
+            goal!.Id, new(request.OperationId), cancellationToken);
+        return result.Error is null
+            ? Success(new
+            {
+                instanceId = context.InstanceId.Value,
+                sourceContextId = SourceId(workspace!),
+                result,
+                freshness = context.RequestedAt,
+            })
+            : Failure(result.ErrorCode ?? "goal_operation_cancel_failed", result.Error);
+    }
+
+    public async ValueTask<InboundMcpApplicationResult> AbortGoalAsync(
+        InboundMcpCallContext context,
+        InboundMcpGoalAbortRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        (WorkspaceView? workspace, GoalView? goal, InboundMcpApplicationResult? failure) =
+            await GoalAsync(context, request.GoalId, cancellationToken);
+        if (failure is not null) return failure;
+        if (goalOperations.Get(goal!.Id) is { State: InboundGoalOperationState.Running })
+            return Failure("goal_operation_active",
+                "Cancel the exact active inbound operation before aborting this goal.");
+        GoalWorkflowSnapshot result = await workflowService.AbortAsync(new(
+            goal.Id, new(request.Reason)), cancellationToken);
+        return Success(new
+        {
+            instanceId = context.InstanceId.Value,
+            sourceContextId = SourceId(workspace!),
+            result,
+            freshness = context.RequestedAt,
         });
     }
 
@@ -282,6 +512,87 @@ internal sealed class InboundMcpApplicationService(
         InboundMcpCallContext context, InboundMcpExecutionRequest request,
         CancellationToken cancellationToken = default) =>
         ExecuteAsync(context, request, DotNetOperation.Test, cancellationToken);
+
+    public async ValueTask<InboundMcpApplicationResult> PreviewCommitAsync(
+        InboundMcpCallContext context,
+        InboundMcpGoalRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        (WorkspaceView? workspace, GoalView? goal, InboundMcpApplicationResult? failure) =
+            await GoalAsync(context, request.GoalId, cancellationToken);
+        if (failure is not null) return failure;
+        GoalCommitPreviewResult result = await acceptanceService.PreviewAsync(
+            goal!.Id, cancellationToken);
+        return result.Error is null
+            ? Success(new
+            {
+                instanceId = context.InstanceId.Value,
+                sourceContextId = SourceId(workspace!),
+                result,
+                freshness = context.RequestedAt,
+            })
+            : Failure(result.ErrorCode ?? "commit_preview_failed", result.Error);
+    }
+
+    public async ValueTask<InboundMcpApplicationResult> RequestCommitApprovalAsync(
+        InboundMcpCallContext context,
+        InboundMcpCommitApprovalRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        (WorkspaceView? workspace, GoalView? goal, InboundMcpApplicationResult? failure) =
+            await GoalAsync(context, request.GoalId, cancellationToken);
+        if (failure is not null) return failure;
+        GoalCommitApprovalResult result = await acceptanceService.RequestAsync(new(
+            goal!.Id,
+            new(request.RunId),
+            new(request.ExpectedHead),
+            new(request.ExpectedDiffHash),
+            new(request.Message),
+            new(request.AuthorName),
+            new(request.AuthorEmail)), cancellationToken);
+        return result.Error is null
+            ? Success(new
+            {
+                instanceId = context.InstanceId.Value,
+                sourceContextId = SourceId(workspace!),
+                result,
+                freshness = context.RequestedAt,
+            })
+            : Failure(result.ErrorCode ?? "commit_approval_failed", result.Error);
+    }
+
+    public async ValueTask<InboundMcpApplicationResult> DecideCommitAsync(
+        InboundMcpCallContext context,
+        InboundMcpCommitDecisionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        (WorkspaceView? workspace, GoalView? goal, InboundMcpApplicationResult? failure) =
+            await GoalAsync(context, request.GoalId, cancellationToken);
+        if (failure is not null) return failure;
+        if (!Enum.TryParse(request.Decision, true, out GoalCommitDecision decision))
+            return Failure("invalid_commit_decision", "Decision must be Approve or Deny.");
+        GoalCommitApprovalView? approval = await acceptanceService.GetAsync(
+            goal!.Id, new(request.RunId), cancellationToken);
+        if (approval is null ||
+            !approval.Id.Value.Equals(request.ApprovalId, StringComparison.Ordinal))
+            return Failure("commit_approval_missing",
+                "The approval does not match the active workspace, exact goal, and run.");
+        GoalCommitApprovalResult result = await acceptanceService.DecideAsync(new(
+            approval.Id,
+            decision,
+            string.IsNullOrWhiteSpace(request.Reason)
+                ? null
+                : new(request.Reason)), cancellationToken);
+        return result.Error is null
+            ? Success(new
+            {
+                instanceId = context.InstanceId.Value,
+                sourceContextId = SourceId(workspace!),
+                result,
+                freshness = context.RequestedAt,
+            })
+            : Failure(result.ErrorCode ?? "commit_decision_failed", result.Error);
+    }
 
     private async ValueTask<InboundMcpApplicationResult> ExecuteAsync(
         InboundMcpCallContext context, InboundMcpExecutionRequest request,
@@ -435,6 +746,46 @@ internal sealed class InboundMcpApplicationService(
             result,
             freshness = context.RequestedAt
         });
+    }
+
+    private async ValueTask<InboundMcpApplicationResult> StartGoalOperationAsync(
+        InboundMcpCallContext context,
+        string goalId,
+        string kind,
+        Func<GoalId, Func<CancellationToken, IAsyncEnumerable<GoalWorkflowSnapshot>>> workflow,
+        CancellationToken cancellationToken)
+    {
+        (WorkspaceView? workspace, GoalView? goal, InboundMcpApplicationResult? failure) =
+            await GoalAsync(context, goalId, cancellationToken);
+        if (failure is not null) return failure;
+        InboundGoalOperationResult result = goalOperations.Start(
+            goal!.Id, kind, workflow(goal.Id));
+        return result.Error is null
+            ? Success(new
+            {
+                instanceId = context.InstanceId.Value,
+                sourceContextId = SourceId(workspace!),
+                result,
+                freshness = context.RequestedAt,
+            })
+            : Failure(result.ErrorCode ?? "goal_operation_failed", result.Error);
+    }
+
+    private async ValueTask<(
+        WorkspaceView? Workspace,
+        GoalView? Goal,
+        InboundMcpApplicationResult? Failure)> GoalAsync(
+        InboundMcpCallContext context,
+        string goalId,
+        CancellationToken cancellationToken)
+    {
+        WorkspaceView? workspace = await TrustedWorkspaceAsync(context, cancellationToken);
+        if (workspace is null) return (null, null, WorkspaceFailure(context));
+        GoalView? goal = await goalService.GetAsync(new(goalId), cancellationToken);
+        return goal is null || !goal.WorkspaceId.Equals(workspace.Id, StringComparison.Ordinal)
+            ? (workspace, null,
+                Failure("goal_unavailable", "The goal is not part of the active workspace."))
+            : (workspace, goal, null);
     }
 
     private async ValueTask<WorkspaceView?> TrustedWorkspaceAsync(

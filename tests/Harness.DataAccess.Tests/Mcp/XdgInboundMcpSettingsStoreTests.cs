@@ -15,12 +15,17 @@ public sealed class XdgInboundMcpSettingsStoreTests : IDisposable
         InboundMcpServerSettings defaults = await store.GetAsync();
         Assert.False(defaults.IsEnabled);
         Assert.True(defaults.Endpoint.IsLoopback);
+        Assert.Contains(defaults.AllowedTools,
+            tool => tool.Value == "harness_goal_models");
+        Assert.Contains(defaults.AllowedTools,
+            tool => tool.Value == "harness_commit_preview");
 
         InboundMcpServerSettings saved = await store.SaveAsync(defaults with
         {
             IsEnabled = true,
             Mode = InboundMcpMode.IsolatedEvaluation,
             AllowedClients = [new("codex")],
+            AllowedTools = [.. defaults.AllowedTools, new("harness_create_goal")],
         });
         InboundMcpServerSettings loaded = await store.GetAsync();
 
@@ -28,6 +33,8 @@ public sealed class XdgInboundMcpSettingsStoreTests : IDisposable
         Assert.True(loaded.IsEnabled);
         Assert.Equal(InboundMcpMode.IsolatedEvaluation, loaded.Mode);
         Assert.Equal("codex", Assert.Single(loaded.AllowedClients).Value);
+        Assert.Contains(loaded.AllowedTools,
+            tool => tool.Value == "harness_create_goal");
     }
 
     [Fact]

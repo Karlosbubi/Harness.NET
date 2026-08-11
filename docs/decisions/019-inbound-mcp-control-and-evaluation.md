@@ -60,6 +60,22 @@ document, Roslyn, goal, evidence, Build/Test, accessibility and consented visual
 contracts as those typed facades are registered. An unavailable capability is reported
 as unavailable; it is not approximated through a generic command.
 
+Goal lifecycle tools adapt the same goal, model-routing, workflow, acceptance, and
+commit services used by the desktop UI. They cover creation, draft settings, model
+discovery and selection, planning, retry, resume, abort, plan decisions, budget
+extension, accepted-change preview, commit approval, and commit decision. Calls carry
+the current application instance and exact goal, plan, run, approval, baseline, or
+operation identities required by the underlying command. Enabling an MCP tool does
+not approve a plan, spending increase, worktree mutation, or commit.
+
+Planning, retry, and resume can outlive an HTTP request timeout, especially with local
+models. These commands start one bounded in-process operation per goal and return its
+identity immediately. Durable workflow checkpoints remain the source of truth and are
+polled through goal inspection. A separate exact-identity cancellation command stops
+the active call; shutdown cancels active operations and the workflow records its
+uncertain boundary. This coordinator is not a general job runner and accepts no
+delegate, tool name, prompt, executable, or command string.
+
 Harness.NET never exposes generic shell, SQL, click/type, coordinates, global input,
 desktop control, arbitrary command names, silent screen capture, secret reads or raw
 dependency-injection service dispatch.

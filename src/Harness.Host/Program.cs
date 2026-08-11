@@ -118,6 +118,8 @@ builder.Services.AddSingleton(new InboundMcpApplicationEnvironment(evaluationRoo
 builder.Services.AddSingleton<AvaloniaInboundMcpUiBridge>();
 builder.Services.AddSingleton<IInboundMcpUiBridge>(services =>
     services.GetRequiredService<AvaloniaInboundMcpUiBridge>());
+builder.Services.AddSingleton<IInboundGoalOperationCoordinator,
+    InboundGoalOperationCoordinator>();
 builder.Services.AddSingleton<IInboundMcpApplication, InboundMcpApplicationService>();
 builder.Services.AddSingleton<InboundMcpServer>();
 builder.Services.AddSingleton<IInboundMcpRuntime>(services =>

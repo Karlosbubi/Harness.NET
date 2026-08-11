@@ -95,7 +95,10 @@ internal sealed class InboundMcpServer(
                     options.ServerInstructions = "Use only discovered typed Harness.NET tools. " +
                         "This server grants no shell, SQL, arbitrary command, generic click/type, " +
                         "desktop-control, credential-read, or natural-language authority. " +
-                        "Preserve returned instance, workspace, source, goal, baseline, and continuation identities.";
+                        "Preserve returned instance, workspace, source, goal, plan, run, operation, " +
+                        "approval, baseline, and continuation identities. Goal planning, retry, and " +
+                        "resume return background operation identities; poll harness_goals rather " +
+                        "than replaying them.";
                 })
                 .WithHttpTransport(options =>
                 {
@@ -371,6 +374,105 @@ internal sealed class InboundMcpTools(
         InvokeAsync(new("harness_evidence"), context => application.ListEvidenceAsync(
             context, new(goalId), cancellationToken));
 
+    [McpServerTool(Name = "harness_create_goal", ReadOnly = false, Destructive = false,
+        Idempotent = false, OpenWorld = false)]
+    [Description("Create one draft goal in the exact active trusted workspace. This grants no model, spending, execution, worktree, or mutation authority.")]
+    public ValueTask<string> CreateGoalAsync(
+        string expectedInstanceId, string workspaceId, string title, string objective,
+        int reviewCycleLimit, long? remoteBudgetMicrousd,
+        CancellationToken cancellationToken) =>
+        InvokeAsync(new("harness_create_goal"), context => application.CreateGoalAsync(
+            context, new(workspaceId, title, objective, reviewCycleLimit,
+                remoteBudgetMicrousd), cancellationToken), expectedInstanceId);
+
+    [McpServerTool(Name = "harness_configure_goal", ReadOnly = false,
+        Destructive = false, Idempotent = false, OpenWorld = false)]
+    [Description("Update one exact draft goal's review limit and remote monetary cap using its returned updatedAt baseline. Null remoteBudgetMicrousd means local-only.")]
+    public ValueTask<string> ConfigureGoalAsync(
+        string expectedInstanceId, string goalId, int reviewCycleLimit,
+        long? remoteBudgetMicrousd, DateTimeOffset expectedUpdatedAt,
+        CancellationToken cancellationToken) =>
+        InvokeAsync(new("harness_configure_goal"), context =>
+            application.UpdateGoalSettingsAsync(context,
+                new(goalId, reviewCycleLimit, remoteBudgetMicrousd, expectedUpdatedAt),
+                cancellationToken), expectedInstanceId);
+
+    [McpServerTool(Name = "harness_extend_goal_budget", ReadOnly = false,
+        Destructive = false, Idempotent = false, OpenWorld = false)]
+    [Description("Increase one goal's remote monetary cap from an exact current cap with an explicit reason. This cannot reduce or create other authority.")]
+    public ValueTask<string> ExtendGoalBudgetAsync(
+        string expectedInstanceId, string goalId, long? expectedBudgetMicrousd,
+        long newBudgetMicrousd, string reason, CancellationToken cancellationToken) =>
+        InvokeAsync(new("harness_extend_goal_budget"), context =>
+            application.ExtendGoalBudgetAsync(context,
+                new(goalId, expectedBudgetMicrousd, newBudgetMicrousd, reason),
+                cancellationToken), expectedInstanceId);
+
+    [McpServerTool(Name = "harness_goal_models", ReadOnly = true, Destructive = false,
+        Idempotent = true, OpenWorld = true)]
+    [Description("Discover role-compatible models from configured providers for one exact draft goal and return its current per-role selections. Catalog discovery performs no inference.")]
+    public ValueTask<string> GoalModelsAsync(
+        string goalId, CancellationToken cancellationToken) =>
+        InvokeAsync(new("harness_goal_models"), context =>
+            application.DiscoverGoalModelsAsync(context, new(goalId), cancellationToken));
+
+    [McpServerTool(Name = "harness_select_goal_model", ReadOnly = false,
+        Destructive = false, Idempotent = false, OpenWorld = false)]
+    [Description("Select one discovered fully role-compatible provider/model route for Lead, Implementer, or Reviewer on one exact draft goal.")]
+    public ValueTask<string> SelectGoalModelAsync(
+        string expectedInstanceId, string goalId, string role, string provider,
+        string model, CancellationToken cancellationToken) =>
+        InvokeAsync(new("harness_select_goal_model"), context =>
+            application.SelectGoalModelAsync(context,
+                new(goalId, role, provider, model), cancellationToken), expectedInstanceId);
+
+    [McpServerTool(Name = "harness_start_planning", ReadOnly = false,
+        Destructive = false, Idempotent = false, OpenWorld = true)]
+    [Description("Start one background Lead planning operation for an exact draft goal using its selected route and spending policy. Returns immediately; poll harness_goals with the returned operation identity.")]
+    public ValueTask<string> StartPlanningAsync(
+        string expectedInstanceId, string goalId, CancellationToken cancellationToken) =>
+        InvokeAsync(new("harness_start_planning"), context =>
+            application.StartGoalPlanningAsync(context, new(goalId), cancellationToken),
+            expectedInstanceId);
+
+    [McpServerTool(Name = "harness_resume_goal", ReadOnly = false,
+        Destructive = false, Idempotent = false, OpenWorld = true)]
+    [Description("Start one background resume operation at the exact durable boundary of an approved or paused goal. Existing worktree, spend, evidence, and transition checks apply.")]
+    public ValueTask<string> ResumeGoalAsync(
+        string expectedInstanceId, string goalId, CancellationToken cancellationToken) =>
+        InvokeAsync(new("harness_resume_goal"), context =>
+            application.ResumeGoalAsync(context, new(goalId), cancellationToken),
+            expectedInstanceId);
+
+    [McpServerTool(Name = "harness_retry_goal", ReadOnly = false,
+        Destructive = false, Idempotent = false, OpenWorld = true)]
+    [Description("Start one explicit background retry for the failed Lead, Implementer, or Reviewer call, with optional bounded guidance. No prior model call is replayed implicitly.")]
+    public ValueTask<string> RetryGoalAsync(
+        string expectedInstanceId, string goalId, string role, string? guidance,
+        CancellationToken cancellationToken) =>
+        InvokeAsync(new("harness_retry_goal"), context =>
+            application.RetryGoalAsync(context, new(goalId, role, guidance),
+                cancellationToken), expectedInstanceId);
+
+    [McpServerTool(Name = "harness_cancel_goal_operation", ReadOnly = false,
+        Destructive = false, Idempotent = true, OpenWorld = false)]
+    [Description("Cancel one exact active inbound goal operation. The workflow preserves its last durable boundary and records uncertainty where required.")]
+    public ValueTask<string> CancelGoalOperationAsync(
+        string expectedInstanceId, string goalId, string operationId,
+        CancellationToken cancellationToken) =>
+        InvokeAsync(new("harness_cancel_goal_operation"), context =>
+            application.CancelGoalOperationAsync(context, new(goalId, operationId),
+                cancellationToken), expectedInstanceId);
+
+    [McpServerTool(Name = "harness_abort_goal", ReadOnly = false, Destructive = true,
+        Idempotent = true, OpenWorld = false)]
+    [Description("Abort one exact inactive goal workflow with an explicit reason. Cancel any active operation first. This starts no replacement goal and deletes no repository content.")]
+    public ValueTask<string> AbortGoalAsync(
+        string expectedInstanceId, string goalId, string reason,
+        CancellationToken cancellationToken) =>
+        InvokeAsync(new("harness_abort_goal"), context => application.AbortGoalAsync(
+            context, new(goalId, reason), cancellationToken), expectedInstanceId);
+
     [McpServerTool(Name = "harness_decide_plan", ReadOnly = false, Destructive = false,
         Idempotent = true, OpenWorld = false)]
     [Description("Approve or deny one exact current Harness.NET plan. Existing plan state, worktree, trust, and baseline checks apply.")]
@@ -397,6 +499,36 @@ internal sealed class InboundMcpTools(
         CancellationToken cancellationToken) =>
         InvokeAsync(new("harness_test"), context => application.TestAsync(
             context, new(goalId, correlationId), cancellationToken), expectedInstanceId);
+
+    [McpServerTool(Name = "harness_commit_preview", ReadOnly = true,
+        Destructive = false, Idempotent = true, OpenWorld = false)]
+    [Description("Preview the complete exact diff, branch HEAD, and fingerprint of an accepted goal worktree without committing or integrating it.")]
+    public ValueTask<string> CommitPreviewAsync(
+        string goalId, CancellationToken cancellationToken) =>
+        InvokeAsync(new("harness_commit_preview"), context =>
+            application.PreviewCommitAsync(context, new(goalId), cancellationToken));
+
+    [McpServerTool(Name = "harness_request_commit", ReadOnly = false,
+        Destructive = false, Idempotent = false, OpenWorld = false)]
+    [Description("Create one commit approval request for an exact accepted run, branch HEAD, and complete diff fingerprint. This does not commit.")]
+    public ValueTask<string> RequestCommitAsync(
+        string expectedInstanceId, string goalId, string runId, string expectedHead,
+        string expectedDiffHash, string message, string authorName, string authorEmail,
+        CancellationToken cancellationToken) =>
+        InvokeAsync(new("harness_request_commit"), context =>
+            application.RequestCommitApprovalAsync(context, new(
+                goalId, runId, expectedHead, expectedDiffHash, message, authorName,
+                authorEmail), cancellationToken), expectedInstanceId);
+
+    [McpServerTool(Name = "harness_decide_commit", ReadOnly = false,
+        Destructive = false, Idempotent = true, OpenWorld = false)]
+    [Description("Approve or deny one exact commit approval. Approval revalidates HEAD and the complete diff, commits only the isolated goal branch, and never merges it.")]
+    public ValueTask<string> DecideCommitAsync(
+        string expectedInstanceId, string goalId, string runId, string approvalId,
+        string decision, string? reason, CancellationToken cancellationToken) =>
+        InvokeAsync(new("harness_decide_commit"), context => application.DecideCommitAsync(
+            context, new(goalId, runId, approvalId, decision, reason), cancellationToken),
+            expectedInstanceId);
 
     [McpServerTool(Name = "harness_ui", ReadOnly = true, Destructive = false,
         Idempotent = true, OpenWorld = false)]
