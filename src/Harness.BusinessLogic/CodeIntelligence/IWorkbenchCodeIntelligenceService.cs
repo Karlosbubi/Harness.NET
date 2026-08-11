@@ -51,6 +51,19 @@ public interface IWorkbenchCodeIntelligenceService
             [new(new("implementations_not_supported"),
                 new("Implementation lookup is unavailable."))]));
 
+    ValueTask<WorkbenchCodeSemanticView> SearchSymbolsAsync(
+        WorkbenchCodeSemanticQuery query, CancellationToken cancellationToken = default) =>
+        SemanticUnavailable(query, "symbol_search_not_supported");
+    ValueTask<WorkbenchCodeSemanticView> AnalyzeCallsAsync(
+        WorkbenchCodeSemanticQuery query, CancellationToken cancellationToken = default) =>
+        SemanticUnavailable(query, "call_analysis_not_supported");
+    ValueTask<WorkbenchCodeSemanticView> GetTypeHierarchyAsync(
+        WorkbenchCodeSemanticQuery query, CancellationToken cancellationToken = default) =>
+        SemanticUnavailable(query, "type_hierarchy_not_supported");
+    ValueTask<WorkbenchCodeSemanticView> FindAssociatedTestsAsync(
+        WorkbenchCodeSemanticQuery query, CancellationToken cancellationToken = default) =>
+        SemanticUnavailable(query, "test_association_not_supported");
+
     ValueTask<WorkbenchCodeRenamePreviewView> PreviewRenameAsync(
         WorkbenchCodeRenamePreviewRequest request,
         CancellationToken cancellationToken = default) =>
@@ -71,4 +84,10 @@ public interface IWorkbenchCodeIntelligenceService
     ValueTask StopAsync(
         WorkbenchCodeSessionId sessionId,
         CancellationToken cancellationToken = default);
+
+    private static ValueTask<WorkbenchCodeSemanticView> SemanticUnavailable(
+        WorkbenchCodeSemanticQuery query, string code) => ValueTask.FromResult<WorkbenchCodeSemanticView>(new(
+            query.Snapshot.SessionId, query.Snapshot.Path, query.Snapshot.BufferVersion,
+            WorkbenchCodeResultState.Failed, [], null, false,
+            [new(new(code), new("The requested semantic graph is unavailable."))]));
 }

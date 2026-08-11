@@ -59,7 +59,8 @@ internal sealed class GoalWorkflowService(
         StoredGoalWorkflowSnapshot snapshot = await store.StartAsync(
             new(runId, new(goal.Id.Value), StoredState.Running, new(0), now, now),
             Checkpoint(runId, StoredKind.Started, StoredActor.System,
-                "Goal workflow started.", null, null, now) with { Sequence = 1 },
+                "Goal workflow started.", null, null, now) with
+            { Sequence = 1 },
             cancellationToken);
         yield return await ToViewAsync(snapshot, cancellationToken);
 

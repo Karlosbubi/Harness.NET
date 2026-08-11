@@ -371,11 +371,14 @@ public sealed class WorkbenchCodeIntelligenceServiceTests
     private sealed class DeterministicCodeIntelligenceEngine : ICodeIntelligenceEngine
     {
         internal Func<CodeIntelligenceDocumentSnapshot, CancellationToken,
-            ValueTask<CodeIntelligenceDiagnosticResult>>? Diagnostics { get; init; }
+            ValueTask<CodeIntelligenceDiagnosticResult>>? Diagnostics
+        { get; init; }
         internal Func<CodeIntelligenceCompletionRequest, CancellationToken,
-            ValueTask<CodeIntelligenceCompletionResult>>? Completions { get; init; }
+            ValueTask<CodeIntelligenceCompletionResult>>? Completions
+        { get; init; }
         internal Func<CodeIntelligenceRenamePreviewRequest, CancellationToken,
-            ValueTask<CodeIntelligenceRenamePreviewResult>>? Renames { get; init; }
+            ValueTask<CodeIntelligenceRenamePreviewResult>>? Renames
+        { get; init; }
         internal CodeIntelligenceOpenRequest? OpenRequest { get; private set; }
         internal CodeIntelligenceSessionId? ClosedSession { get; private set; }
         internal int OpenCallCount { get; private set; }

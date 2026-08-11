@@ -134,6 +134,61 @@ internal sealed partial class WorkbenchCodeIntelligenceService
         CancellationToken cancellationToken = default) =>
         NavigationAsync(snapshot, NavigationKind.Implementations, cancellationToken);
 
+    public ValueTask<WorkbenchCodeSemanticView> SearchSymbolsAsync(
+        WorkbenchCodeSemanticQuery query, CancellationToken cancellationToken = default) =>
+        SemanticAsync(query, SemanticKind.Symbols, cancellationToken);
+    public ValueTask<WorkbenchCodeSemanticView> AnalyzeCallsAsync(
+        WorkbenchCodeSemanticQuery query, CancellationToken cancellationToken = default) =>
+        SemanticAsync(query, SemanticKind.Calls, cancellationToken);
+    public ValueTask<WorkbenchCodeSemanticView> GetTypeHierarchyAsync(
+        WorkbenchCodeSemanticQuery query, CancellationToken cancellationToken = default) =>
+        SemanticAsync(query, SemanticKind.Types, cancellationToken);
+    public ValueTask<WorkbenchCodeSemanticView> FindAssociatedTestsAsync(
+        WorkbenchCodeSemanticQuery query, CancellationToken cancellationToken = default) =>
+        SemanticAsync(query, SemanticKind.Tests, cancellationToken);
+
+    private async ValueTask<WorkbenchCodeSemanticView> SemanticAsync(
+        WorkbenchCodeSemanticQuery query, SemanticKind kind, CancellationToken cancellationToken)
+    {
+        if (query is null)
+            return SemanticFailure(null, Issue("invalid_semantic_query", "A valid semantic query is required."));
+        if (!TryInteractive(query.Snapshot, out ActiveSession? session, out WorkbenchCodeIssue? issue))
+            return SemanticFailure(query, issue!);
+        ActiveSession active = session!;
+        CodeIntelligenceSemanticQuery data = new(ToDataSnapshot(query.Snapshot, active),
+            query.Query, query.MaximumResults, query.Offset);
+        CodeIntelligenceSemanticResult result = kind switch
+        {
+            SemanticKind.Symbols => await engine.SearchSymbolsAsync(data, cancellationToken),
+            SemanticKind.Calls => await engine.AnalyzeCallsAsync(data, cancellationToken),
+            SemanticKind.Types => await engine.GetTypeHierarchyAsync(data, cancellationToken),
+            SemanticKind.Tests => await engine.FindAssociatedTestsAsync(data, cancellationToken),
+            _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+        };
+        if (!IsFresh(active, query.Snapshot) || result.SessionId.Value != active.SessionId.Value ||
+            result.Path.Value != query.Snapshot.Path.Value ||
+            result.BufferVersion.Value != query.Snapshot.BufferVersion.Value)
+            return SemanticFailure(query, Issue("stale_buffer", "A newer buffer superseded this semantic result."),
+                WorkbenchCodeResultState.Stale);
+        return new(query.Snapshot.SessionId, query.Snapshot.Path, query.Snapshot.BufferVersion,
+            Map(result.State), result.Items.Select(item => new WorkbenchCodeSemanticItem(
+                Enum.Parse<WorkbenchCodeSemanticRelation>(item.Relation.ToString()),
+                new(item.Display.Value), new(Map(item.Destination.Kind),
+                    new(item.Destination.Display.Value),
+                    item.Destination.Path is null ? null : new(item.Destination.Path.Value),
+                    item.Destination.Range is null ? null : Map(item.Destination.Range)))).ToArray(),
+            result.Continuation, result.IsTruncated, MapIssues(result.Issues));
+    }
+
+    private static WorkbenchCodeSemanticView SemanticFailure(
+        WorkbenchCodeSemanticQuery? query, WorkbenchCodeIssue issue,
+        WorkbenchCodeResultState state = WorkbenchCodeResultState.Failed) => new(
+        query?.Snapshot.SessionId ?? new("unavailable"),
+        query?.Snapshot.Path ?? new("unavailable"),
+        query?.Snapshot.BufferVersion ?? new(0), state, [], null, false, [issue]);
+
+    private enum SemanticKind { Symbols, Calls, Types, Tests }
+
     private async ValueTask<WorkbenchCodeQuickInfoView> QuickInfoAsync(
         WorkbenchCodeInteractiveSnapshot snapshot,
         CancellationToken cancellationToken)

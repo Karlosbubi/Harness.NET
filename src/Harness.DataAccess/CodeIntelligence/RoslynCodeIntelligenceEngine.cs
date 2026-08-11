@@ -785,6 +785,193 @@ internal sealed partial class RoslynCodeIntelligenceEngine(IMSBuildRuntime msBui
         CancellationToken cancellationToken = default) =>
         NavigateAsync(snapshot, NavigationKind.Implementations, cancellationToken);
 
+    public ValueTask<CodeIntelligenceSemanticResult> SearchSymbolsAsync(
+        CodeIntelligenceSemanticQuery query,
+        CancellationToken cancellationToken = default) =>
+        SemanticAsync(query, SemanticKind.Symbols, cancellationToken);
+
+    public ValueTask<CodeIntelligenceSemanticResult> AnalyzeCallsAsync(
+        CodeIntelligenceSemanticQuery query,
+        CancellationToken cancellationToken = default) =>
+        SemanticAsync(query, SemanticKind.Calls, cancellationToken);
+
+    public ValueTask<CodeIntelligenceSemanticResult> GetTypeHierarchyAsync(
+        CodeIntelligenceSemanticQuery query,
+        CancellationToken cancellationToken = default) =>
+        SemanticAsync(query, SemanticKind.Types, cancellationToken);
+
+    public ValueTask<CodeIntelligenceSemanticResult> FindAssociatedTestsAsync(
+        CodeIntelligenceSemanticQuery query,
+        CancellationToken cancellationToken = default) =>
+        SemanticAsync(query, SemanticKind.Tests, cancellationToken);
+
+    private async ValueTask<CodeIntelligenceSemanticResult> SemanticAsync(
+        CodeIntelligenceSemanticQuery query,
+        SemanticKind kind,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        if (query.MaximumResults is < 1 or > 200 || query.Offset < 0 ||
+            query.Query?.Length > 256)
+            return SemanticFailure(query, "invalid_semantic_query",
+                "Result limit, continuation offset, or query is outside the bounded range.");
+        ActiveSession? session = MatchingSession(query.Snapshot);
+        if (session is null)
+            return SemanticFailure(query, "session_unavailable",
+                "The Roslyn session no longer matches this source context.", CodeIntelligenceResultState.Stale);
+
+        await session.OperationGate.WaitAsync(cancellationToken);
+        try
+        {
+            PreparedInteractive prepared = await PrepareInteractiveAsync(
+                session, query.Snapshot, cancellationToken);
+            if (prepared.Issue is not null)
+                return SemanticFailure(query, prepared.Issue.Code.Value,
+                    prepared.Issue.Message.Value, prepared.State);
+            Solution solution = prepared.Document!.Project.Solution;
+            List<CodeIntelligenceSemanticItem> items = [];
+            if (kind is SemanticKind.Symbols)
+            {
+                if (string.IsNullOrWhiteSpace(query.Query))
+                    return SemanticFailure(query, "symbol_query_required", "A symbol name is required.");
+                List<ISymbol> symbols = [];
+                foreach (Project project in solution.Projects)
+                    symbols.AddRange(await SymbolFinder.FindDeclarationsAsync(
+                        project, query.Query, ignoreCase: true, filter: SymbolFilter.TypeAndMember,
+                        cancellationToken: cancellationToken));
+                foreach (ISymbol symbol in symbols.Take(query.Offset + query.MaximumResults + 1))
+                    AddSymbol(items, CodeIntelligenceSemanticRelation.Symbol, symbol, session.RootPath);
+            }
+            else
+            {
+                ISymbol? symbol = await SymbolFinder.FindSymbolAtPositionAsync(
+                    prepared.Document, prepared.Offset, cancellationToken);
+                if (symbol is null)
+                    return SemanticFailure(query, "symbol_unavailable",
+                        "No symbol is available at the requested position.");
+                if (kind is SemanticKind.Calls)
+                {
+                    IEnumerable<SymbolCallerInfo> callers = await SymbolFinder.FindCallersAsync(
+                        symbol, solution, cancellationToken: cancellationToken);
+                    foreach (ISymbol caller in callers.Select(item => item.CallingSymbol)
+                                 .Distinct(SymbolEqualityComparer.Default))
+                        AddSymbol(items, CodeIntelligenceSemanticRelation.IncomingCall, caller, session.RootPath);
+                    foreach (SyntaxReference syntaxReference in symbol.DeclaringSyntaxReferences)
+                    {
+                        SyntaxNode declaration = await syntaxReference.GetSyntaxAsync(cancellationToken);
+                        Document? document = solution.GetDocument(declaration.SyntaxTree);
+                        if (document is null) continue;
+                        SemanticModel? model = await document.GetSemanticModelAsync(cancellationToken);
+                        if (model is null) continue;
+                        foreach (InvocationExpressionSyntax invocation in declaration
+                                     .DescendantNodes().OfType<InvocationExpressionSyntax>())
+                        {
+                            ISymbol? called = model.GetSymbolInfo(invocation, cancellationToken).Symbol;
+                            if (called is not null)
+                                AddSymbol(items, CodeIntelligenceSemanticRelation.OutgoingCall,
+                                    called, session.RootPath);
+                        }
+                    }
+                }
+                else if (kind is SemanticKind.Types)
+                {
+                    INamedTypeSymbol? type = symbol as INamedTypeSymbol ?? symbol.ContainingType;
+                    if (type is null)
+                        return SemanticFailure(query, "type_unavailable",
+                            "The selected symbol has no containing type.");
+                    if (type.BaseType is not null)
+                        AddSymbol(items, CodeIntelligenceSemanticRelation.BaseType, type.BaseType,
+                            session.RootPath);
+                    foreach (INamedTypeSymbol contract in type.Interfaces)
+                        AddSymbol(items, CodeIntelligenceSemanticRelation.BaseType, contract,
+                            session.RootPath);
+                    IEnumerable<INamedTypeSymbol> derived = type.TypeKind is TypeKind.Interface
+                        ? await SymbolFinder.FindDerivedInterfacesAsync(type, solution,
+                            cancellationToken: cancellationToken)
+                        : await SymbolFinder.FindDerivedClassesAsync(type, solution,
+                            cancellationToken: cancellationToken);
+                    foreach (INamedTypeSymbol child in derived)
+                        AddSymbol(items, CodeIntelligenceSemanticRelation.DerivedType, child,
+                            session.RootPath);
+                    IEnumerable<ISymbol> overrides = symbol is IMethodSymbol or IPropertySymbol or IEventSymbol
+                        ? await SymbolFinder.FindOverridesAsync(symbol, solution,
+                            cancellationToken: cancellationToken) : [];
+                    foreach (ISymbol item in overrides)
+                        AddSymbol(items, CodeIntelligenceSemanticRelation.Override, item,
+                            session.RootPath);
+                }
+                else
+                {
+                    IEnumerable<ReferencedSymbol> references = await SymbolFinder.FindReferencesAsync(
+                        symbol, solution, cancellationToken);
+                    foreach (ReferenceLocation reference in references.SelectMany(item => item.Locations))
+                    {
+                        Document? document = solution.GetDocument(reference.Location.SourceTree);
+                        if (document is null || !IsTestDocument(document, reference.Location, cancellationToken))
+                            continue;
+                        items.Add(new(CodeIntelligenceSemanticRelation.AssociatedTest,
+                            new(document.Name), MapDestination(reference.Location, document.Name,
+                                session.RootPath)));
+                    }
+                }
+            }
+
+            CodeIntelligenceSemanticItem[] distinct = items
+                .DistinctBy(item => $"{item.Relation}:{item.Display.Value}:{item.Destination.Path?.Value}:{item.Destination.Range}")
+                .ToArray();
+            CodeIntelligenceSemanticItem[] page = distinct.Skip(query.Offset)
+                .Take(query.MaximumResults).ToArray();
+            bool truncated = distinct.Length > query.Offset + page.Length;
+            return new(query.Snapshot.ContextId, query.Snapshot.SessionId, query.Snapshot.Path,
+                query.Snapshot.BufferVersion, SessionState(session), page,
+                truncated ? query.Offset + page.Length : null, truncated, session.Issues.ToArray());
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
+        {
+            return SemanticFailure(query, "semantic_query_failed", exception.Message);
+        }
+        finally { session.OperationGate.Release(); }
+    }
+
+    private static void AddSymbol(
+        ICollection<CodeIntelligenceSemanticItem> items,
+        CodeIntelligenceSemanticRelation relation,
+        ISymbol symbol,
+        string root)
+    {
+        string display = Bound(symbol.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+            MaximumIssueLength);
+        Location? location = symbol.Locations.FirstOrDefault(item => item.IsInSource);
+        CodeIntelligenceSymbolDestination destination = location is null
+            ? new(CodeIntelligenceDestinationKind.Metadata, new(display), null, null)
+            : MapDestination(location, display, root);
+        items.Add(new(relation, new(display), destination));
+    }
+
+    private static bool IsTestDocument(
+        Document document, Location location, CancellationToken cancellationToken)
+    {
+        if (document.Project.Name.Contains("Test", StringComparison.OrdinalIgnoreCase) ||
+            document.FilePath?.Contains("/test", StringComparison.OrdinalIgnoreCase) == true)
+            return true;
+        SyntaxNode? root = location.SourceTree?.GetRoot(cancellationToken);
+        MethodDeclarationSyntax? method = root?.FindNode(location.SourceSpan)
+            .AncestorsAndSelf().OfType<MethodDeclarationSyntax>().FirstOrDefault();
+        return method?.AttributeLists.SelectMany(list => list.Attributes).Any(attribute =>
+            attribute.Name.ToString() is "Fact" or "Theory" or "Test" or "TestCase" or
+                "FactAttribute" or "TheoryAttribute" or "TestAttribute" or "TestCaseAttribute") == true;
+    }
+
+    private static CodeIntelligenceSemanticResult SemanticFailure(
+        CodeIntelligenceSemanticQuery query, string code, string error,
+        CodeIntelligenceResultState state = CodeIntelligenceResultState.Failed) => new(
+        query.Snapshot.ContextId, query.Snapshot.SessionId, query.Snapshot.Path,
+        query.Snapshot.BufferVersion, state, [], null, false,
+        [new(new(code), new(Bound(error, MaximumIssueLength)))]);
+
+    private enum SemanticKind { Symbols, Calls, Types, Tests }
+
     private async ValueTask<CodeIntelligenceNavigationResult> NavigateAsync(
         CodeIntelligenceInteractiveSnapshot snapshot,
         NavigationKind kind,

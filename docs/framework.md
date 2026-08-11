@@ -133,6 +133,16 @@ New goals default to `Unlimited` remote spend. Users may select `Capped` or
 - Do not expose a generic MCP invocation function.
 - Stdio, OAuth, resources, prompts, Apps, tasks, subscriptions, and mutating tools need
   separate feature decisions.
+- Inbound control uses the same official stateless Streamable HTTP SDK boundary. It is
+  disabled by default, loopback-only, bearer-authenticated, client/tool allowlisted,
+  bounded, and audited.
+- Inbound MCP adapts existing typed Business Logic commands. It does not grant trust,
+  mutation, execution, spend, capture, disclosure, or desktop authority.
+- Mutating inbound calls bind the current application-instance identity. Isolated
+  evaluation uses temporary paths, volatile secrets, and a disposable fixture.
+- Every configurable feature must ship its typed Settings contract, validation,
+  persistence, runtime status, and lifecycle actions in its first implementation
+  slice. A later Settings retrofit is not an accepted delivery state.
 
 ## IDE capability catalog
 

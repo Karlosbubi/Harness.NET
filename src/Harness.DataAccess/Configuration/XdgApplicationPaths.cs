@@ -11,6 +11,13 @@ internal sealed class XdgApplicationPaths : IApplicationPaths
     {
     }
 
+    internal XdgApplicationPaths(ApplicationPaths paths)
+    {
+        getEnvironmentVariable = _ => null;
+        getHomeDirectory = () => paths.ConfigDirectory;
+        Current = paths;
+    }
+
     internal XdgApplicationPaths(
         Func<string, string?> getEnvironmentVariable,
         Func<string> getHomeDirectory)

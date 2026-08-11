@@ -1,9 +1,9 @@
-using Harness.BusinessLogic.Approvals;
 using Harness.BusinessLogic.Acceptance;
-using Harness.BusinessLogic.Appearance;
 using Harness.BusinessLogic.Agents;
-using Harness.BusinessLogic.Costs;
+using Harness.BusinessLogic.Appearance;
+using Harness.BusinessLogic.Approvals;
 using Harness.BusinessLogic.CodeIntelligence;
+using Harness.BusinessLogic.Costs;
 using Harness.BusinessLogic.Dashboard;
 using Harness.BusinessLogic.Documents;
 using Harness.BusinessLogic.Evidence;
@@ -11,20 +11,20 @@ using Harness.BusinessLogic.Framework;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Layouts;
-using Harness.BusinessLogic.Mutations;
 using Harness.BusinessLogic.Mcp;
+using Harness.BusinessLogic.Mutations;
 using Harness.BusinessLogic.Operations;
-using Harness.BusinessLogic.Retrieval;
 using Harness.BusinessLogic.Research;
-using Harness.BusinessLogic.Workspaces;
-using Harness.BusinessLogic.Workflows;
+using Harness.BusinessLogic.Retrieval;
 using Harness.BusinessLogic.VisualCapture;
+using Harness.BusinessLogic.Workflows;
+using Harness.BusinessLogic.Workspaces;
 using Harness.DataAccess.Agents;
-using Harness.DataAccess.Approvals;
 using Harness.DataAccess.Appearance;
-using Harness.DataAccess.Configuration;
-using Harness.DataAccess.Commits;
+using Harness.DataAccess.Approvals;
 using Harness.DataAccess.CodeIntelligence;
+using Harness.DataAccess.Commits;
+using Harness.DataAccess.Configuration;
 using Harness.DataAccess.Conversations;
 using Harness.DataAccess.Evidence;
 using Harness.DataAccess.Execution;
@@ -32,34 +32,37 @@ using Harness.DataAccess.Framework;
 using Harness.DataAccess.Goals;
 using Harness.DataAccess.Inspection;
 using Harness.DataAccess.Layouts;
+using Harness.DataAccess.Mcp;
 using Harness.DataAccess.Models;
 using Harness.DataAccess.Models.Configuration;
 using Harness.DataAccess.Models.Ollama;
 using Harness.DataAccess.Models.OpenRouter;
-using Harness.DataAccess.Mcp;
 using Harness.DataAccess.Mutations;
 using Harness.DataAccess.Observability;
 using Harness.DataAccess.Persistence;
+using Harness.DataAccess.Research;
 using Harness.DataAccess.Secrets;
 using Harness.DataAccess.SemanticIndex;
-using Harness.DataAccess.Research;
+using Harness.DataAccess.VisualCapture;
+using Harness.DataAccess.Workflows;
 using Harness.DataAccess.Workspaces;
 using Harness.DataAccess.Worktrees;
-using Harness.DataAccess.Workflows;
-using Harness.DataAccess.VisualCapture;
 using Harness.Host;
 using Harness.Host.Configuration;
-using Harness.Presentation.Terminal;
 using Harness.Presentation.Avalonia;
+using Harness.Presentation.Terminal;
 using Harness.UI.Avalonia;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using OperationsBackupResult = Harness.BusinessLogic.Operations.ApplicationBackupResult;
 using BusinessThemeBaseVariant = Harness.BusinessLogic.Appearance.ThemeBaseVariant;
+using OperationsBackupResult = Harness.BusinessLogic.Operations.ApplicationBackupResult;
 
 HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
-XdgApplicationPaths applicationPaths = new();
+string? evaluationRoot = ArgumentValue(args, "--mcp-evaluation-root");
+XdgApplicationPaths applicationPaths = evaluationRoot is null
+    ? new()
+    : new(CreateEvaluationPaths(evaluationRoot));
 HarnessConfiguration configuration = HarnessConfigurationLoader.Load(
     args,
     applicationPaths.Current,
@@ -77,7 +80,10 @@ builder.Services.AddSingleton<IApplicationOperationsService, ApplicationOperatio
 builder.Services.AddSingleton<IAppearancePreferenceStore, SqliteAppearancePreferenceStore>();
 builder.Services.AddSingleton<IRemoteSpendPreferenceStore, SqliteRemoteSpendPreferenceStore>();
 builder.Services.AddSingleton<IUserThemeSource, XdgUserThemeSource>();
-builder.Services.AddSingleton<ISecretStore, SecretServiceSecretStore>();
+if (evaluationRoot is null)
+    builder.Services.AddSingleton<ISecretStore, SecretServiceSecretStore>();
+else
+    builder.Services.AddSingleton<ISecretStore, VolatileSecretStore>();
 builder.Services.AddSingleton(new ModelProviderConfigurationOptions(
     configuration.Providers.Values.Select(provider => new StoredModelProviderConfiguration(
         new(provider.Name),
@@ -105,10 +111,22 @@ builder.Services.AddSingleton<IMcpConnectionConfigurationStore, XdgMcpConnection
 builder.Services.AddSingleton<IMcpToolClient, StatelessHttpMcpToolClient>();
 builder.Services.AddSingleton<IMcpSettingsService, McpSettingsService>();
 builder.Services.AddSingleton<IMcpToolService, McpToolService>();
+builder.Services.AddSingleton<IInboundMcpSettingsStore, XdgInboundMcpSettingsStore>();
+builder.Services.AddSingleton<IInboundMcpAuditStore, FileInboundMcpAuditStore>();
+builder.Services.AddSingleton<IInboundMcpEvaluationFixture, InboundMcpEvaluationFixture>();
+builder.Services.AddSingleton(new InboundMcpApplicationEnvironment(evaluationRoot is not null));
+builder.Services.AddSingleton<AvaloniaInboundMcpUiBridge>();
+builder.Services.AddSingleton<IInboundMcpUiBridge>(services =>
+    services.GetRequiredService<AvaloniaInboundMcpUiBridge>());
+builder.Services.AddSingleton<IInboundMcpApplication, InboundMcpApplicationService>();
+builder.Services.AddSingleton<InboundMcpServer>();
+builder.Services.AddSingleton<IInboundMcpRuntime>(services =>
+    services.GetRequiredService<InboundMcpServer>());
+builder.Services.AddSingleton<IInboundMcpSettingsService, InboundMcpSettingsService>();
 builder.Services.AddSingleton(new HttpClient
 {
-  Timeout = TimeSpan.FromSeconds(60),
-  DefaultRequestHeaders =
+    Timeout = TimeSpan.FromSeconds(60),
+    DefaultRequestHeaders =
     {
         { "User-Agent", "Harness.NET/1.0 documentation-dependency-research" },
     },
@@ -135,12 +153,15 @@ builder.Services.AddSingleton<IWorkspaceService, WorkspaceService>();
 builder.Services.AddSingleton<IGoalStore, SqliteGoalStore>();
 builder.Services.AddSingleton<IGoalModelSelectionStore, SqliteGoalModelSelectionStore>();
 builder.Services.AddSingleton<IAgentRoleDefaultStore, SqliteAgentRoleDefaultStore>();
+builder.Services.AddSingleton<IAgentToolExposureConfigurationStore, XdgAgentToolExposureConfigurationStore>();
+builder.Services.AddSingleton<IAgentToolExposureSettingsService, AgentToolExposureSettingsService>();
 builder.Services.AddSingleton<IRemoteCostStore, SqliteRemoteCostStore>();
 builder.Services.AddSingleton<IRemoteCostService, RemoteCostService>();
 builder.Services.AddSingleton<ICapabilityApprovalStore, SqliteCapabilityApprovalStore>();
 builder.Services.AddSingleton<ICapabilityApprovalService, CapabilityApprovalService>();
 builder.Services.AddSingleton<IToolEvidenceStore, SqliteToolEvidenceStore>();
 builder.Services.AddSingleton<IToolEvidenceService, ToolEvidenceService>();
+builder.Services.AddSingleton<IAgentToolActivationService, AgentToolActivationService>();
 builder.Services.AddSingleton<IVisualCapturePreferenceStore, SqliteVisualCapturePreferenceStore>();
 builder.Services.AddSingleton<IVisualCapturePortal, XdgDesktopPortalVisualCapture>();
 builder.Services.AddSingleton<IVisualCaptureImageSourceReader, PortalFileImageSourceReader>();
@@ -155,6 +176,7 @@ builder.Services.AddSingleton<IWorkspaceMutationService, WorkspaceMutationServic
 builder.Services.AddSingleton<IWorkspaceFileReader, WorkspaceFileReader>();
 builder.Services.AddSingleton<IWorkspaceFileCatalogReader, GitWorkspaceFileCatalogReader>();
 builder.Services.AddSingleton<IWorkspaceTextSearcher, GitWorkspaceTextSearcher>();
+builder.Services.AddSingleton<IWorkspaceAdvancedInspector, GitWorkspaceAdvancedInspector>();
 builder.Services.AddSingleton<IWorkspaceGitInspector, LibGitWorkspaceGitInspector>();
 builder.Services.AddSingleton<IWorkspaceDotNetInspector, WorkspaceDotNetInspector>();
 builder.Services.AddSingleton<IDotNetProcess, DotNetProcess>();
@@ -171,6 +193,7 @@ builder.Services.AddSingleton<IWorkbenchLayoutStore, FileWorkbenchLayoutStore>()
 builder.Services.AddSingleton<IWorkbenchLayoutService, WorkbenchLayoutService>();
 builder.Services.AddSingleton<IGoalWorkspaceInspectionService, GoalWorkspaceInspectionService>();
 builder.Services.AddSingleton<IGoalCodeIntelligenceService, GoalCodeIntelligenceService>();
+builder.Services.AddSingleton<IChangedSetQualityService, ChangedSetQualityService>();
 builder.Services.AddSingleton<ITrackedTextCatalogReader, GitTrackedTextCatalogReader>();
 builder.Services.AddSingleton<ISemanticIndexStore, SqliteSemanticIndexStore>();
 builder.Services.AddSingleton<IFrameworkResolver, FrameworkResolver>();
@@ -246,7 +269,10 @@ builder.Services.AddSingleton<IAgentRoleRunner>(services => new AgentRoleRunner(
         services.GetRequiredService<IVisualCaptureService>(),
         services.GetRequiredService<TimeProvider>(),
         services.GetRequiredService<IDocumentationResearchService>(),
-        services.GetRequiredService<IDependencyResearchService>()),
+        services.GetRequiredService<IDependencyResearchService>(),
+        services.GetRequiredService<IAgentToolActivationService>(),
+        services.GetRequiredService<IChangedSetQualityService>(),
+        services.GetRequiredService<IInboundMcpUiBridge>()),
     services.GetRequiredService<ILoggerFactory>(),
     services.GetRequiredService<IGoalWorkspaceInspectionService>(),
     services.GetRequiredService<IWorkspaceMutationService>()));
@@ -328,6 +354,19 @@ try
     DatabaseInitializationResult database = await host.Services
         .GetRequiredService<IDatabaseInitializer>()
         .InitializeAsync(shutdown.Token);
+    if (evaluationRoot is not null)
+    {
+        InboundMcpEvaluationSnapshot fixture = await host.Services
+            .GetRequiredService<IInboundMcpEvaluationFixture>()
+            .EnsureAsync(shutdown.Token);
+        IWorkspaceService workspaces = host.Services.GetRequiredService<IWorkspaceService>();
+        WorkspaceResult registered = await workspaces.RegisterAsync(
+            fixture.RootPath, fixture.EntryPoint, shutdown.Token);
+        if (registered.Workspace is null)
+            throw new InvalidOperationException($"Evaluation fixture registration failed: {registered.Error}");
+        await workspaces.SetTrustAsync(registered.Workspace.Id, true, shutdown.Token);
+    }
+    await host.Services.GetRequiredService<IInboundMcpRuntime>().ApplyAsync(shutdown.Token);
     await host.Services.GetRequiredService<IVisualCaptureService>()
         .CleanupAsync(shutdown.Token);
     await host.Services.GetRequiredService<IMcpSettingsService>()
@@ -427,4 +466,30 @@ static IModelProvider CreateModelProvider(
         _ => throw new InvalidOperationException(
             $"Provider '{provider.Name}' has unsupported kind '{provider.Kind}'."),
     };
+}
+
+static string? ArgumentValue(string[] arguments, string option)
+{
+    int index = Array.FindIndex(arguments, value => value.Equals(option, StringComparison.Ordinal));
+    return index >= 0 && index + 1 < arguments.Length ? arguments[index + 1] : null;
+}
+
+static ApplicationPaths CreateEvaluationPaths(string requestedRoot)
+{
+    string root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(requestedRoot));
+    string temporary = Path.TrimEndingDirectorySeparator(Path.GetFullPath(Path.GetTempPath()));
+    if (!root.StartsWith(temporary + Path.DirectorySeparatorChar, StringComparison.Ordinal) ||
+        root.Equals(temporary, StringComparison.Ordinal))
+    {
+        throw new ArgumentException("The MCP evaluation root must be a dedicated directory below the system temporary directory.");
+    }
+
+    return new(
+        Path.Combine(root, "config"),
+        Path.Combine(root, "data"),
+        Path.Combine(root, "state"),
+        Path.Combine(root, "cache"),
+        Path.Combine(root, "data", "harness.db"),
+        Path.Combine(root, "state", "logs"),
+        Path.Combine(root, "state", "worktrees"));
 }

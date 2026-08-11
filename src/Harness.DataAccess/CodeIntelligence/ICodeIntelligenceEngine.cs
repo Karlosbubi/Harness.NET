@@ -52,6 +52,22 @@ public interface ICodeIntelligenceEngine
             [new(new("implementations_not_supported"),
                 new("Implementation lookup is unavailable."))]));
 
+    ValueTask<CodeIntelligenceSemanticResult> SearchSymbolsAsync(
+        CodeIntelligenceSemanticQuery query,
+        CancellationToken cancellationToken = default) => SemanticUnavailable(query, "symbol_search_not_supported");
+
+    ValueTask<CodeIntelligenceSemanticResult> AnalyzeCallsAsync(
+        CodeIntelligenceSemanticQuery query,
+        CancellationToken cancellationToken = default) => SemanticUnavailable(query, "call_analysis_not_supported");
+
+    ValueTask<CodeIntelligenceSemanticResult> GetTypeHierarchyAsync(
+        CodeIntelligenceSemanticQuery query,
+        CancellationToken cancellationToken = default) => SemanticUnavailable(query, "type_hierarchy_not_supported");
+
+    ValueTask<CodeIntelligenceSemanticResult> FindAssociatedTestsAsync(
+        CodeIntelligenceSemanticQuery query,
+        CancellationToken cancellationToken = default) => SemanticUnavailable(query, "test_association_not_supported");
+
     ValueTask<CodeIntelligenceRenamePreviewResult> PreviewRenameAsync(
         CodeIntelligenceRenamePreviewRequest request,
         CancellationToken cancellationToken = default) =>
@@ -73,4 +89,10 @@ public interface ICodeIntelligenceEngine
     ValueTask CloseAsync(
         CodeIntelligenceSessionId sessionId,
         CancellationToken cancellationToken = default);
+
+    private static ValueTask<CodeIntelligenceSemanticResult> SemanticUnavailable(
+        CodeIntelligenceSemanticQuery query, string code) => ValueTask.FromResult<CodeIntelligenceSemanticResult>(new(
+            query.Snapshot.ContextId, query.Snapshot.SessionId, query.Snapshot.Path,
+            query.Snapshot.BufferVersion, CodeIntelligenceResultState.Failed, [], null, false,
+            [new(new(code), new("The requested semantic graph is unavailable."))]));
 }

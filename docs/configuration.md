@@ -121,6 +121,56 @@ Settings → MCP connections can add, edit, enable, disable, remove, refresh, an
 protocol, eligible/rejected counts, and failures. Changes require restart because
 active clients and schemas are fixed for the process lifetime.
 
+## Inbound Harness control
+
+Settings → Harness control writes the private `InboundMcp` section and applies it to
+the running process:
+
+```xml
+<InboundMcp>
+  <Enabled>false</Enabled>
+  <Mode>Normal</Mode>
+  <Endpoint>http://127.0.0.1:57431/mcp</Endpoint>
+  <RequestTimeoutSeconds>30</RequestTimeoutSeconds>
+  <ResultLimit>500</ResultLimit>
+  <AuditRetention>1000</AuditRetention>
+  <AllowedClients>
+    <Client>codex</Client>
+  </AllowedClients>
+  <AllowedTools>
+    <Tool>harness_application</Tool>
+    <Tool>harness_workspace</Tool>
+  </AllowedTools>
+  <ApprovalRequiredTools>
+    <Tool>harness_build</Tool>
+  </ApprovalRequiredTools>
+</InboundMcp>
+```
+
+Only `http`, loopback hosts, ports 1024–65535, known closed tool IDs, client IDs of
+1–128 characters, timeouts of 1–300 seconds, result limits of 1–5000, and audit
+retention of 0–100000 are accepted. An approval-held tool is omitted from discovery.
+The bearer token is never stored in XML. Normal mode uses Secret Service;
+IsolatedEvaluation uses process-local volatile storage.
+
+Mutating calls require the current `instanceId` returned by `harness_application`.
+Stale process identities fail before dispatch. Results include the applicable
+workspace, source, goal, document/baseline, freshness, truncation, and continuation
+identity rather than relying on endpoint continuity.
+
+Start a disposable evaluation instance with a dedicated child of the system temporary
+directory:
+
+```bash
+dotnet run --project src/Harness.Host/Harness.Host.csproj -- \
+  --mcp-evaluation-root /tmp/harness-evaluation-1
+```
+
+Then choose IsolatedEvaluation and enable the server in Settings. That instance has a
+separate database/configuration/cache/state root, no persisted provider credentials,
+and one resettable deterministic fixture. It may use deterministic fakes or an
+explicitly configured Ollama provider. It cannot expose a normal repository.
+
 ## Documentation, dependency, and SBOM research
 
 Settings → Documentation & dependencies writes a `Research` section to the private

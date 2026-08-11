@@ -18,19 +18,19 @@ Status meanings:
 
 | Rider-inspired capability | Harness.NET target | Status | Required boundary |
 |---|---|---|---|
-| `read_file` | Bounded ranged/structural reads with line coordinates, baseline hash and dependency-source support | Partial | Trusted source context; original/worktree role scope |
-| `list_directory_tree`, `search_file` | Bounded tree, glob and filename search respecting Git/exclusion policy | Internal/Planned | No shell; confined normalized paths |
-| `search_text`, `search_regex` | Literal and regex search with coordinates, masks and result limits | Partial | Bounded tracked/project text |
-| `search_symbol`, `skill_search` | Roslyn symbol search plus source-neutral capability search | Internal/Planned | Exact semantic context; external symbols opt-in |
-| `get_all_open_file_paths`, `open_file_in_editor` | Read active/open document context and request developer-visible navigation | Internal/Planned | Presentation performs navigation; no model desktop control |
+| `read_file` | Bounded ranged/structural reads with line coordinates and baseline hash | Delivered | Trusted source context; original/worktree role scope |
+| `list_directory_tree`, `search_file` | Bounded tree, glob and filename search respecting Git/exclusion policy | Delivered | No shell; confined normalized paths |
+| `search_text`, `search_regex` | Literal and regex search with coordinates, masks and result limits | Delivered | Bounded tracked/project text |
+| `search_symbol`, `skill_search` | Roslyn symbol search plus source-neutral capability search | Delivered | Exact semantic context; external symbols remain excluded |
+| `get_all_open_file_paths`, `open_file_in_editor` | Read active/open document context and request developer-visible navigation | Delivered | Presentation performs navigation; no model desktop control |
 | `create_new_file`, `apply_patch` | Exact-baseline create/patch in delegated goal areas with Roslyn preflight | Partial | Approved worktree, atomic mutation, evidence |
-| `get_solution_projects`, `get_project_dependencies` | Evaluated solution/project graph, exact project/package references and resolved versions | Partial | Declared/central/locked/direct/transitive/restored package evidence is delivered; broader evaluated project graph remains |
-| `get_project_problems`, `get_file_problems`, `lint_files` | Versioned file/project/changed-set diagnostics with stable identities and delta | Partial | Models now receive exact-file Roslyn diagnostics; project/changed-set and lint scopes remain |
+| `get_solution_projects`, `get_project_dependencies` | Evaluated solution/project graph, exact project/package references and resolved versions | Delivered | Declared/central/locked/direct/transitive/restored package evidence is separate and delivered |
+| `get_project_problems`, `get_file_problems`, `lint_files` | Versioned file/project/changed-set diagnostics with stable identities and delta | Partial | Exact-file and deterministic changed-set checks are delivered; formatter/lint delta remains Task 049 |
 | `get_symbol_info` | Quick info, declaration, documentation, type and source/metadata destination | Delivered | Role-scoped source is loaded at the current exact file baseline |
 | definition/reference/implementation navigation | Roslyn definition and bounded usage/implementation destinations | Delivered | Original workspace for Lead; approved goal worktree for Implementer/Reviewer |
-| `analyze_calls`, class hierarchy tools | Incoming/outgoing call, type and override hierarchy | Planned | Roslyn semantic identity, paging and depth bounds |
-| `findTests` | Discover tests associated with symbol/project and exact runnable test cases | Planned | Deterministic test adapters; no model guess |
-| `post_edit_quality_check` | One changed-set gate combining diagnostics, formatting, tests/build evidence and unresolved findings | Partial | Reuse evidence; never self-certify model output |
+| `analyze_calls`, class hierarchy tools | Incoming/outgoing call, type and override hierarchy | Delivered | Roslyn semantic identity and paging bounds |
+| `findTests` | Discover tests associated with a symbol | Delivered | Deterministic Roslyn association; runnable test-case lifecycle remains Task 052 |
+| `post_edit_quality_check` | One changed-set gate combining diagnostics, placeholders, tests/build evidence and unresolved findings | Delivered | Reuse evidence; never self-certify model output |
 | `reformat_file` | Preview/apply repository code style and format changed files | Planned | Deterministic formatter, exact baseline, post-check |
 | `rename_refactoring` | Fingerprinted Roslyn rename preview/apply | Delivered | Approved worktree and delegated file areas |
 | signature/extract/move/namespace/safe-delete refactors | Closed preview/fingerprint/apply operations for each transformation | Planned | No arbitrary code-action executor |
@@ -52,7 +52,7 @@ Status meanings:
 | notebook execution | .NET Interactive notebook/cell discovery and bounded execution | Planned | Trusted repository execution; output/artifact limits |
 | inspection-KTS/PSI generator tools | Typed Roslyn analyzer/code-fix authoring examples, syntax trees and validation fixtures | Planned | Local docs plus deterministic compile/test harness |
 | engine/editor screenshots | XDG-portal approved visual evidence | Delivered | Portal consent, privacy, goal binding; no input control |
-| `execute_tool` router | On-demand typed toolset activation for the next bounded role turn | Planned | Catalog/role/policy validation; never dynamic invoke-by-name |
+| `execute_tool` router | On-demand typed toolset activation for the next bounded role turn | Delivered | Catalog/role/policy validation; never dynamic invoke-by-name |
 | `ue_*` and Unreal-specific asset/Blueprint/actor/viewport tools | No Harness.NET equivalent | Excluded | Explicit product exclusion |
 
 ## Always-present bootstrap toolset
@@ -69,7 +69,8 @@ Direct tools remain small and role-specific:
 Every role has direct exact-file diagnostics, symbol information, definition,
 reference, and implementation lookup. Harness.NET loads the file and creates the
 short-lived source session. Models do not supply session IDs, hashes, buffer versions,
-or duplicate source text. Hierarchy and test discovery remain planned.
+or duplicate source text. Hierarchy and associated-test discovery use the on-demand
+semantic-hierarchy module.
 
 Existing mutation tools remain present only for an approved Implementer task. MCP
 tools and future optional modules are on-demand unless the user explicitly chooses a
@@ -96,3 +97,19 @@ permitted direct exposure in Settings.
 Each slice includes catalog entry, role policy, typed implementation, deterministic
 fake, integration tests, run status/evidence, and Settings management. A catalog row
 may be unavailable. A raw adapter or command string is not a delivered capability.
+
+Delivery ownership is intentionally split:
+
+- Task 047 owns catalog activation, bounded exploration, semantic graphs, result
+  identity, and changed-set quality.
+- Task 059 exposes the same typed application capabilities through an authenticated
+  loopback MCP server for dogfooding and isolated evaluation; it grants no new
+  authority.
+- Task 049 owns editor-facing formatting, code actions, refactorings, virtual source,
+  and inspection views.
+- Task 050 owns complete developer Git workflows. Its agent surface remains narrower.
+- Task 052 owns Build/Test/Run/Debug lifecycle, project views, and Test Explorer.
+- Tasks 053–056 own parallel sessions, review, ACP agents, inline assistance,
+  customization, context inspection, and untrusted-content policy.
+- Database, profiler, dump, notebook, and advanced analyzer rows remain future
+  independent slices. Their presence in this map does not place them in Task 047.

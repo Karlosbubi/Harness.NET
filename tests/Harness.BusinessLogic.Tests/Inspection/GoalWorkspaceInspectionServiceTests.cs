@@ -75,7 +75,8 @@ public sealed class GoalWorkspaceInspectionServiceTests
         reader,
         new UnsupportedTextSearcher(),
         new UnsupportedGitInspector(),
-        new UnsupportedDotNetInspector());
+        new UnsupportedDotNetInspector(),
+        new UnsupportedAdvancedInspector());
 
     private static StoredGoal CreateGoal(string state) => new(
         "goal-1",
@@ -202,6 +203,21 @@ public sealed class GoalWorkspaceInspectionServiceTests
         public ValueTask<WorkspaceDotNetInfo> InspectAsync(
             string workspaceRoot,
             string entryPoint,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private sealed class UnsupportedAdvancedInspector : IWorkspaceAdvancedInspector
+    {
+        public ValueTask<WorkspaceTreeResult> ListTreeAsync(
+            string workspaceRoot, WorkspaceTreeQuery query,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public ValueTask<WorkspaceRangeResult> ReadRangeAsync(
+            string workspaceRoot, WorkspaceRangeQuery query,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public ValueTask<WorkspaceRegexResult> SearchRegexAsync(
+            string workspaceRoot, WorkspaceRegexQuery query,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 }

@@ -1,20 +1,20 @@
 using System.Reactive.Subjects;
 using Harness.BusinessLogic.Acceptance;
-using Harness.BusinessLogic.Approvals;
-using Harness.BusinessLogic.Appearance;
 using Harness.BusinessLogic.Agents;
+using Harness.BusinessLogic.Appearance;
+using Harness.BusinessLogic.Approvals;
 using Harness.BusinessLogic.Costs;
 using Harness.BusinessLogic.Dashboard;
 using Harness.BusinessLogic.Framework;
 using Harness.BusinessLogic.Goals;
-using Harness.BusinessLogic.Operations;
 using Harness.BusinessLogic.Mcp;
+using Harness.BusinessLogic.Operations;
+using Harness.BusinessLogic.Research;
 using Harness.BusinessLogic.Retrieval;
 using Harness.BusinessLogic.Tools;
+using Harness.BusinessLogic.VisualCapture;
 using Harness.BusinessLogic.Workflows;
 using Harness.BusinessLogic.Workspaces;
-using Harness.BusinessLogic.VisualCapture;
-using Harness.BusinessLogic.Research;
 using Microsoft.Extensions.Logging;
 
 namespace Harness.Presentation.Avalonia;
@@ -40,7 +40,9 @@ internal sealed class AvaloniaPresentationStore(
     IVisualCaptureService? visualCaptureService = null,
     IResearchSettingsService? researchSettingsService = null,
     IDocumentationResearchService? documentationResearchService = null,
-    IDependencyResearchService? dependencyResearchService = null) : IDisposable
+    IDependencyResearchService? dependencyResearchService = null,
+    IInboundMcpSettingsService? inboundMcpSettingsService = null,
+    IAgentToolExposureSettingsService? agentToolExposureSettingsService = null) : IDisposable
 {
     private readonly BehaviorSubject<AvaloniaShellState> states = new(AvaloniaShellState.Initial);
     private readonly SemaphoreSlim commandGate = new(1, 1);
@@ -66,6 +68,11 @@ internal sealed class AvaloniaPresentationStore(
             McpSettingsSnapshot? mcpSettings = mcpSettingsService is null
                 ? null
                 : await mcpSettingsService.GetAsync(cancellationToken);
+            InboundMcpSettingsView? inboundMcpSettings = inboundMcpSettingsService is null
+                ? null
+                : await inboundMcpSettingsService.GetAsync(cancellationToken);
+            AgentToolExposureSettings? agentToolExposure = agentToolExposureSettingsService is null
+                ? null : await agentToolExposureSettingsService.GetAsync(cancellationToken);
             ResearchSettingsSnapshot? researchSettings = researchSettingsService is null
                 ? null
                 : await researchSettingsService.GetAsync(cancellationToken);
@@ -86,6 +93,8 @@ internal sealed class AvaloniaPresentationStore(
                     AgentDefaults = agentDefaults,
                     ProviderSettings = providerSettings,
                     McpSettings = mcpSettings,
+                    InboundMcpSettings = inboundMcpSettings,
+                    AgentToolExposure = agentToolExposure,
                     ResearchSettings = researchSettings,
                     VisualCaptureSettings = visualCaptureSettings,
                     RemoteSpendPreference = remoteSpendPreference,
@@ -104,57 +113,156 @@ internal sealed class AvaloniaPresentationStore(
         }
     }
 
+    internal async ValueTask SaveAgentToolExposureAsync(
+        IReadOnlyList<AgentToolModuleId> modules, CancellationToken cancellationToken)
+    {
+        if (agentToolExposureSettingsService is null) return;
+        AgentToolExposureSettings saved = await agentToolExposureSettingsService.SaveAsync(
+            new(modules), cancellationToken);
+        Publish(Current with
+        {
+            Settings = Current.Settings with
+            { AgentToolExposure = saved, Status = "Agent tool exposure defaults saved." }
+        });
+    }
+
+    internal async ValueTask SaveInboundMcpAsync(
+        InboundControlSettings settings,
+        CancellationToken cancellationToken)
+    {
+        if (inboundMcpSettingsService is null) return;
+        Publish(Current with
+        {
+            Settings = Current.Settings with
+            { IsBusy = true, Status = "Applying inbound MCP settings…" }
+        });
+        try
+        {
+            InboundMcpSettingsView snapshot = await inboundMcpSettingsService.SaveAsync(
+                settings, cancellationToken);
+            Publish(Current with
+            {
+                Settings = Current.Settings with
+                {
+                    InboundMcpSettings = snapshot,
+                    IsBusy = false,
+                    Status = snapshot.Status.IsRunning ? "Inbound MCP server is active." :
+                    snapshot.Status.Error ?? "Inbound MCP server is disabled."
+                }
+            });
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            Publish(Current with
+            {
+                Settings = Current.Settings with
+                { IsBusy = false, Status = exception.Message }
+            });
+        }
+    }
+
+    internal async ValueTask<string?> RotateInboundMcpTokenAsync(CancellationToken cancellationToken)
+    {
+        if (inboundMcpSettingsService is null) return null;
+        InboundControlTokenRotation rotation = await inboundMcpSettingsService.RotateTokenAsync(cancellationToken);
+        Publish(Current with
+        {
+            Settings = Current.Settings with
+            {
+                InboundMcpSettings = rotation.Settings,
+                Status = "Bearer token rotated and copied once; existing clients were revoked."
+            }
+        });
+        return rotation.OneTimeBearerToken;
+    }
+
+    internal async ValueTask DisconnectInboundMcpClientAsync(
+        InboundControlClientId clientId,
+        CancellationToken cancellationToken)
+    {
+        if (inboundMcpSettingsService is null) return;
+        InboundMcpSettingsView snapshot = await inboundMcpSettingsService.DisconnectAsync(
+            clientId, cancellationToken);
+        Publish(Current with
+        {
+            Settings = Current.Settings with
+            { InboundMcpSettings = snapshot, Status = $"Disconnected {clientId.Value}." }
+        });
+    }
+
+    internal async ValueTask ResetInboundMcpEvaluationAsync(CancellationToken cancellationToken)
+    {
+        if (inboundMcpSettingsService is null) return;
+        try
+        {
+            InboundControlEvaluationReset reset = await inboundMcpSettingsService
+                .ResetEvaluationAsync(cancellationToken);
+            Publish(Current with
+            {
+                Settings = Current.Settings with
+                {
+                    InboundMcpSettings = reset.Settings,
+                    Status = $"Evaluation fixture reset to {reset.Head[..Math.Min(12, reset.Head.Length)]}; {reset.ChangedFiles} changes remain."
+                }
+            });
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            Publish(Current with { Settings = Current.Settings with { Status = exception.Message } });
+        }
+    }
+
     internal async ValueTask SaveResearchSettingsAsync(
         ResearchSettingsUpdate update,
         CancellationToken cancellationToken)
     {
-      if (researchSettingsService is null)
-      {
+        if (researchSettingsService is null)
+        {
+            Publish(Current with
+            {
+                Settings = Current.Settings with
+                { Status = "Documentation and dependency settings are unavailable." }
+            });
+            return;
+        }
         Publish(Current with
         {
-          Settings = Current.Settings with
-          { Status = "Documentation and dependency settings are unavailable." }
+            Settings = Current.Settings with
+            { IsBusy = true, Status = "Saving documentation and dependency settings…" }
         });
-        return;
-      }
-      Publish(Current with
-      {
-        Settings = Current.Settings with
-        { IsBusy = true, Status = "Saving documentation and dependency settings…" }
-      });
-      ResearchSettingsResult result = await researchSettingsService.SaveAsync(update, cancellationToken);
-      Publish(Current with
-      {
-        Settings = Current.Settings with
+        ResearchSettingsResult result = await researchSettingsService.SaveAsync(update, cancellationToken);
+        Publish(Current with
         {
-          ResearchSettings = result.Snapshot ?? Current.Settings.ResearchSettings,
-          IsBusy = false,
-          Status = result.Error ?? "Documentation and dependency settings saved.",
-        }
-      });
+            Settings = Current.Settings with
+            {
+                ResearchSettings = result.Snapshot ?? Current.Settings.ResearchSettings,
+                IsBusy = false,
+                Status = result.Error ?? "Documentation and dependency settings saved.",
+            }
+        });
     }
 
     internal async ValueTask CleanupResearchCacheAsync(CancellationToken cancellationToken)
     {
-      if (researchSettingsService is null)
-      {
-        return;
-      }
-      Publish(Current with
-      {
-        Settings = Current.Settings with
-        { IsBusy = true, Status = "Cleaning documentation cache…" }
-      });
-      ResearchSettingsSnapshot snapshot = await researchSettingsService.CleanupCacheAsync(cancellationToken);
-      Publish(Current with
-      {
-        Settings = Current.Settings with
+        if (researchSettingsService is null)
         {
-          ResearchSettings = snapshot,
-          IsBusy = false,
-          Status = "Documentation cache retention applied.",
+            return;
         }
-      });
+        Publish(Current with
+        {
+            Settings = Current.Settings with
+            { IsBusy = true, Status = "Cleaning documentation cache…" }
+        });
+        ResearchSettingsSnapshot snapshot = await researchSettingsService.CleanupCacheAsync(cancellationToken);
+        Publish(Current with
+        {
+            Settings = Current.Settings with
+            {
+                ResearchSettings = snapshot,
+                IsBusy = false,
+                Status = "Documentation cache retention applied.",
+            }
+        });
     }
 
     internal async ValueTask LookupDocumentationAsync(
@@ -163,53 +271,53 @@ internal sealed class AvaloniaPresentationStore(
         string question,
         CancellationToken cancellationToken)
     {
-      if (documentationResearchService is null)
-      {
-        return;
-      }
-      Publish(Current with
-      {
-        Settings = Current.Settings with
-        { IsBusy = true, Status = "Looking up documentation on demand…" }
-      });
-      DocumentationLookupResult result = await documentationResearchService.LookupAsync(new(
-          GoalId: null,
-          new(library),
-          string.IsNullOrWhiteSpace(version) ? null : new(version),
-          new(question)), cancellationToken);
-      Publish(Current with
-      {
-        Settings = Current.Settings with
+        if (documentationResearchService is null)
         {
-          DocumentationLookup = result,
-          IsBusy = false,
-          Status = result.Error ?? $"Documentation lookup returned {result.Results.Count} result(s).",
+            return;
         }
-      });
+        Publish(Current with
+        {
+            Settings = Current.Settings with
+            { IsBusy = true, Status = "Looking up documentation on demand…" }
+        });
+        DocumentationLookupResult result = await documentationResearchService.LookupAsync(new(
+            GoalId: null,
+            new(library),
+            string.IsNullOrWhiteSpace(version) ? null : new(version),
+            new(question)), cancellationToken);
+        Publish(Current with
+        {
+            Settings = Current.Settings with
+            {
+                DocumentationLookup = result,
+                IsBusy = false,
+                Status = result.Error ?? $"Documentation lookup returned {result.Results.Count} result(s).",
+            }
+        });
     }
 
     internal async ValueTask InspectDependenciesAsync(CancellationToken cancellationToken)
     {
-      if (dependencyResearchService is null)
-      {
-        return;
-      }
-      Publish(Current with
-      {
-        Settings = Current.Settings with
-        { IsBusy = true, Status = "Reading dependency evidence…" }
-      });
-      DependencyInspectionResult result = await dependencyResearchService.InspectAsync(
-          new(GoalId: null), cancellationToken);
-      Publish(Current with
-      {
-        Settings = Current.Settings with
+        if (dependencyResearchService is null)
         {
-          DependencyInspection = result,
-          IsBusy = false,
-          Status = result.Error ?? $"Inspected {result.Projects.Count} project(s) without restoring.",
+            return;
         }
-      });
+        Publish(Current with
+        {
+            Settings = Current.Settings with
+            { IsBusy = true, Status = "Reading dependency evidence…" }
+        });
+        DependencyInspectionResult result = await dependencyResearchService.InspectAsync(
+            new(GoalId: null), cancellationToken);
+        Publish(Current with
+        {
+            Settings = Current.Settings with
+            {
+                DependencyInspection = result,
+                IsBusy = false,
+                Status = result.Error ?? $"Inspected {result.Projects.Count} project(s) without restoring.",
+            }
+        });
     }
 
     internal async ValueTask ValidatePackageCandidateAsync(
@@ -218,51 +326,51 @@ internal sealed class AvaloniaPresentationStore(
         bool allowPrerelease,
         CancellationToken cancellationToken)
     {
-      if (dependencyResearchService is null)
-      {
-        return;
-      }
-      Publish(Current with
-      {
-        Settings = Current.Settings with
-        { IsBusy = true, Status = "Validating exact package evidence…" }
-      });
-      PackageCandidateValidationResult result = await dependencyResearchService
-          .ValidateCandidateAsync(new(null, new(package), new(version), allowPrerelease),
-              cancellationToken);
-      Publish(Current with
-      {
-        Settings = Current.Settings with
+        if (dependencyResearchService is null)
         {
-          PackageCandidateValidation = result,
-          IsBusy = false,
-          Status = result.Error ?? $"Candidate decision: {result.Decision}.",
+            return;
         }
-      });
+        Publish(Current with
+        {
+            Settings = Current.Settings with
+            { IsBusy = true, Status = "Validating exact package evidence…" }
+        });
+        PackageCandidateValidationResult result = await dependencyResearchService
+            .ValidateCandidateAsync(new(null, new(package), new(version), allowPrerelease),
+                cancellationToken);
+        Publish(Current with
+        {
+            Settings = Current.Settings with
+            {
+                PackageCandidateValidation = result,
+                IsBusy = false,
+                Status = result.Error ?? $"Candidate decision: {result.Decision}.",
+            }
+        });
     }
 
     internal async ValueTask PreviewSbomAsync(CancellationToken cancellationToken)
     {
-      if (dependencyResearchService is null)
-      {
-        return;
-      }
-      Publish(Current with
-      {
-        Settings = Current.Settings with
-        { IsBusy = true, Status = "Generating deterministic SBOM preview…" }
-      });
-      SbomPreviewResult result = await dependencyResearchService.PreviewSbomAsync(
-          new(GoalId: null), cancellationToken);
-      Publish(Current with
-      {
-        Settings = Current.Settings with
+        if (dependencyResearchService is null)
         {
-          SbomPreview = result,
-          IsBusy = false,
-          Status = result.Error ?? $"Generated {result.Sbom!.Format} preview.",
+            return;
         }
-      });
+        Publish(Current with
+        {
+            Settings = Current.Settings with
+            { IsBusy = true, Status = "Generating deterministic SBOM preview…" }
+        });
+        SbomPreviewResult result = await dependencyResearchService.PreviewSbomAsync(
+            new(GoalId: null), cancellationToken);
+        Publish(Current with
+        {
+            Settings = Current.Settings with
+            {
+                SbomPreview = result,
+                IsBusy = false,
+                Status = result.Error ?? $"Generated {result.Sbom!.Format} preview.",
+            }
+        });
     }
 
     internal async ValueTask PreviewPackageChangeAsync(
@@ -271,26 +379,26 @@ internal sealed class AvaloniaPresentationStore(
         bool allowPrerelease,
         CancellationToken cancellationToken)
     {
-      if (dependencyResearchService is null)
-      {
-        return;
-      }
-      Publish(Current with
-      {
-        Settings = Current.Settings with
-        { IsBusy = true, Status = "Preparing package and SBOM diff…" }
-      });
-      PackageChangePreviewResult result = await dependencyResearchService.PreviewPackageChangeAsync(
-          new(null, new(package), new(version), allowPrerelease), cancellationToken);
-      Publish(Current with
-      {
-        Settings = Current.Settings with
+        if (dependencyResearchService is null)
         {
-          PackageChangePreview = result,
-          IsBusy = false,
-          Status = result.Error ?? "Package and SBOM diff ready; no project files were changed.",
+            return;
         }
-      });
+        Publish(Current with
+        {
+            Settings = Current.Settings with
+            { IsBusy = true, Status = "Preparing package and SBOM diff…" }
+        });
+        PackageChangePreviewResult result = await dependencyResearchService.PreviewPackageChangeAsync(
+            new(null, new(package), new(version), allowPrerelease), cancellationToken);
+        Publish(Current with
+        {
+            Settings = Current.Settings with
+            {
+                PackageChangePreview = result,
+                IsBusy = false,
+                Status = result.Error ?? "Package and SBOM diff ready; no project files were changed.",
+            }
+        });
     }
 
     internal async ValueTask ExportSbomAsync(
@@ -298,26 +406,26 @@ internal sealed class AvaloniaPresentationStore(
         bool overwrite,
         CancellationToken cancellationToken)
     {
-      if (dependencyResearchService is null)
-      {
-        return;
-      }
-      Publish(Current with
-      {
-        Settings = Current.Settings with
-        { IsBusy = true, Status = "Exporting explicitly requested SBOM…" }
-      });
-      SbomExportResult result = await dependencyResearchService.ExportSbomAsync(
-          new(null, new(path), overwrite), cancellationToken);
-      Publish(Current with
-      {
-        Settings = Current.Settings with
+        if (dependencyResearchService is null)
         {
-          SbomExport = result,
-          IsBusy = false,
-          Status = result.Error ?? $"SBOM exported to {result.Path.Value}.",
+            return;
         }
-      });
+        Publish(Current with
+        {
+            Settings = Current.Settings with
+            { IsBusy = true, Status = "Exporting explicitly requested SBOM…" }
+        });
+        SbomExportResult result = await dependencyResearchService.ExportSbomAsync(
+            new(null, new(path), overwrite), cancellationToken);
+        Publish(Current with
+        {
+            Settings = Current.Settings with
+            {
+                SbomExport = result,
+                IsBusy = false,
+                Status = result.Error ?? $"SBOM exported to {result.Path.Value}.",
+            }
+        });
     }
 
     internal async ValueTask SaveVisualCaptureSettingsAsync(
@@ -326,20 +434,29 @@ internal sealed class AvaloniaPresentationStore(
     {
         if (visualCaptureService is null)
         {
-            Publish(Current with { Settings = Current.Settings with
-                { Status = "Visual capture is unavailable." } });
+            Publish(Current with
+            {
+                Settings = Current.Settings with
+                { Status = "Visual capture is unavailable." }
+            });
             return;
         }
-        Publish(Current with { Settings = Current.Settings with
-            { IsBusy = true, Status = "Saving visual verification settings…" } });
+        Publish(Current with
+        {
+            Settings = Current.Settings with
+            { IsBusy = true, Status = "Saving visual verification settings…" }
+        });
         VisualCaptureSettingsResult result = await visualCaptureService.SaveSettingsAsync(
             preferences, cancellationToken);
-        Publish(Current with { Settings = Current.Settings with
+        Publish(Current with
         {
-            VisualCaptureSettings = result.Snapshot ?? Current.Settings.VisualCaptureSettings,
-            IsBusy = false,
-            Status = result.Error ?? "Visual verification settings saved.",
-        } });
+            Settings = Current.Settings with
+            {
+                VisualCaptureSettings = result.Snapshot ?? Current.Settings.VisualCaptureSettings,
+                IsBusy = false,
+                Status = result.Error ?? "Visual verification settings saved.",
+            }
+        });
     }
 
     internal async ValueTask CaptureVisualAsync(
@@ -351,12 +468,18 @@ internal sealed class AvaloniaPresentationStore(
         GoalId? goalId = Current.Goals.SelectedGoalId;
         if (visualCaptureService is null || goalId is null)
         {
-            Publish(Current with { Settings = Current.Settings with
-                { Status = "Select a goal before capturing visual evidence." } });
+            Publish(Current with
+            {
+                Settings = Current.Settings with
+                { Status = "Select a goal before capturing visual evidence." }
+            });
             return;
         }
-        Publish(Current with { Settings = Current.Settings with
-            { IsBusy = true, Status = "Waiting for portal consent…" } });
+        Publish(Current with
+        {
+            Settings = Current.Settings with
+            { IsBusy = true, Status = "Waiting for portal consent…" }
+        });
         VisualCaptureResult result = await visualCaptureService.CaptureAsync(new(
             goalId,
             new ToolCorrelationId($"developer-capture-{Guid.NewGuid():N}"),
@@ -372,8 +495,11 @@ internal sealed class AvaloniaPresentationStore(
         {
             await InspectVisualCaptureAsync(result.Capture.Id, cancellationToken);
         }
-        Publish(Current with { Settings = Current.Settings with
-            { IsBusy = false, Status = result.Error ?? "Visual evidence captured." } });
+        Publish(Current with
+        {
+            Settings = Current.Settings with
+            { IsBusy = false, Status = result.Error ?? "Visual evidence captured." }
+        });
     }
 
     internal async ValueTask RefreshVisualCapturesAsync(CancellationToken cancellationToken)
@@ -384,8 +510,11 @@ internal sealed class AvaloniaPresentationStore(
             return;
         }
         VisualCaptureListResult result = await visualCaptureService.ListAsync(goalId, cancellationToken);
-        Publish(Current with { Settings = Current.Settings with
-            { VisualCaptures = result.Captures, Status = result.Error ?? Current.Settings.Status } });
+        Publish(Current with
+        {
+            Settings = Current.Settings with
+            { VisualCaptures = result.Captures, Status = result.Error ?? Current.Settings.Status }
+        });
     }
 
     internal async ValueTask InspectVisualCaptureAsync(
@@ -399,11 +528,14 @@ internal sealed class AvaloniaPresentationStore(
         }
         VisualCaptureInspectionResult result = await visualCaptureService.InspectAsync(
             goalId, captureId, VisualCaptureModelAccess.Local, cancellationToken);
-        Publish(Current with { Settings = Current.Settings with
+        Publish(Current with
         {
-            SelectedVisualCapture = result.Content,
-            Status = result.Error ?? "Showing the exact stored frame available to agents.",
-        } });
+            Settings = Current.Settings with
+            {
+                SelectedVisualCapture = result.Content,
+                Status = result.Error ?? "Showing the exact stored frame available to agents.",
+            }
+        });
     }
 
     internal async ValueTask DeleteVisualCaptureAsync(
@@ -1692,36 +1824,48 @@ internal sealed class AvaloniaPresentationStore(
             return;
         }
 
-        Publish(Current with { Operations = Current.Operations with
+        Publish(Current with
         {
-            IsBusy = true,
-            InspectedRestore = null,
-            Status = "Inspecting archive and verifying hashes, SQLite, schema, and layout…",
-        }});
+            Operations = Current.Operations with
+            {
+                IsBusy = true,
+                InspectedRestore = null,
+                Status = "Inspecting archive and verifying hashes, SQLite, schema, and layout…",
+            }
+        });
         try
         {
             ApplicationRestoreInspectionResult result =
                 await applicationOperationsService.InspectRestoreAsync(source, cancellationToken);
-            Publish(Current with { Operations = Current.Operations with
+            Publish(Current with
             {
-                InspectedRestore = result.Restore,
-                Status = result.Error ?? "Archive verified. Review it before staging restore.",
-            }});
+                Operations = Current.Operations with
+                {
+                    InspectedRestore = result.Restore,
+                    Status = result.Error ?? "Archive verified. Review it before staging restore.",
+                }
+            });
         }
         catch (OperationCanceledException)
         {
-            Publish(Current with { Operations = Current.Operations with
-            { Status = "Restore inspection cancelled." }});
+            Publish(Current with
+            {
+                Operations = Current.Operations with
+                { Status = "Restore inspection cancelled." }
+            });
         }
         catch (Exception exception)
         {
             logger.LogError(exception, "Application-state restore inspection failed");
-            Publish(Current with { Operations = Current.Operations with
-            { Status = exception.Message }});
+            Publish(Current with
+            {
+                Operations = Current.Operations with
+                { Status = exception.Message }
+            });
         }
         finally
         {
-            Publish(Current with { Operations = Current.Operations with { IsBusy = false }});
+            Publish(Current with { Operations = Current.Operations with { IsBusy = false } });
         }
     }
 
@@ -1734,35 +1878,47 @@ internal sealed class AvaloniaPresentationStore(
             return;
         }
 
-        Publish(Current with { Operations = Current.Operations with
-        { IsBusy = true, Status = "Revalidating and staging restore…" }});
+        Publish(Current with
+        {
+            Operations = Current.Operations with
+            { IsBusy = true, Status = "Revalidating and staging restore…" }
+        });
         try
         {
             ApplicationRestoreStageResult result =
                 await applicationOperationsService.StageRestoreAsync(
                     new(restore.Archive, restore.ArchiveSha256), cancellationToken);
-            Publish(Current with { Operations = Current.Operations with
+            Publish(Current with
             {
-                PendingRestore = result.Restore,
-                Status = result.Error ?? (result.RestartRequired
+                Operations = Current.Operations with
+                {
+                    PendingRestore = result.Restore,
+                    Status = result.Error ?? (result.RestartRequired
                     ? "Verified restore staged. Restart Harness.NET to apply it."
                     : "Restore was not staged."),
-            }});
+                }
+            });
         }
         catch (OperationCanceledException)
         {
-            Publish(Current with { Operations = Current.Operations with
-            { Status = "Restore staging cancelled." }});
+            Publish(Current with
+            {
+                Operations = Current.Operations with
+                { Status = "Restore staging cancelled." }
+            });
         }
         catch (Exception exception)
         {
             logger.LogError(exception, "Application-state restore staging failed");
-            Publish(Current with { Operations = Current.Operations with
-            { Status = exception.Message }});
+            Publish(Current with
+            {
+                Operations = Current.Operations with
+                { Status = exception.Message }
+            });
         }
         finally
         {
-            Publish(Current with { Operations = Current.Operations with { IsBusy = false }});
+            Publish(Current with { Operations = Current.Operations with { IsBusy = false } });
         }
     }
 

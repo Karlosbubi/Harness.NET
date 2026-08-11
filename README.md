@@ -21,6 +21,9 @@ Delivered:
 - provider discovery, per-role model routing, searchable model selection, and
   monetary controls for remote inference;
 - stateless MCP 2.x connections with Settings management and read-only tool policy;
+- an optional authenticated loopback MCP 2.x server for typed dogfooding and isolated
+  evaluation, with one-time client enrollment, allowlists, audit, revocation,
+  disposable fixtures, accessibility state, and Harness-owned evaluation frames;
 - on-demand versioned documentation lookup through exact local, indexed, configured
   MCP, and web sources with citations and offline cache policy;
 - deterministic declared, central, locked, direct, transitive, and restored NuGet
@@ -40,8 +43,9 @@ Delivered:
   Secret Service credentials, structured logs, and optional OTLP export.
 
 Open work is tracked in [the roadmap](docs/roadmap.md) and
-[task ledger](docs/tasks/README.md). The next task completes the remaining
-model-accessible IDE toolsets.
+[task ledger](docs/tasks/README.md). The semantic tool foundation and inbound MCP
+evaluation surface are delivered. The local-model regression gate is next before the
+editor and daily-use IDE slices expand further.
 
 ## Safety model
 
@@ -63,6 +67,9 @@ model-accessible IDE toolsets.
   external sources. Offline mode uses local and cached evidence.
 - Dependency inspection and SBOM preview never restore packages, execute project
   targets, mutate project files, or export without an explicit developer action.
+- Inbound MCP is disabled by default, loopback-only, bearer-authenticated, individually
+  allowlisted, and audited. It exposes no shell, SQL, arbitrary command, generic
+  click/type, desktop control, credential read, or natural-language authority.
 
 See [architecture](docs/architecture.md), [framework](docs/framework.md), and
 [decision records](docs/decisions/README.md) for the exact rules.
@@ -91,6 +98,11 @@ dotnet run --project src/Harness.Host/Harness.Host.csproj -- --no-ui
 
 `--wait-for-shutdown` initializes the application, reports readiness, and waits for
 SIGINT or SIGTERM. It is intended for lifecycle checks and service supervision.
+
+`--mcp-evaluation-root /tmp/<dedicated-directory>` isolates configuration, database,
+cache, logs, worktrees, credentials, and a deterministic fixture repository. Use it
+only with Settings → Harness control → IsolatedEvaluation. Normal repositories are
+unavailable in that process.
 
 Provider modules, default routes, and optional OTLP export are defined in
 `src/Harness.Host/harness.xml`. Private overrides use XDG configuration. See

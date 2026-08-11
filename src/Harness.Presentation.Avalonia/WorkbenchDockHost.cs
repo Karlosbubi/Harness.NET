@@ -14,19 +14,20 @@ using Dock.Model;
 using Dock.Model.Avalonia;
 using Dock.Model.Controls;
 using Dock.Model.Core;
-using Harness.BusinessLogic.Documents;
 using Harness.BusinessLogic.CodeIntelligence;
+using Harness.BusinessLogic.Documents;
 using Harness.BusinessLogic.Evidence;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Layouts;
+using Harness.BusinessLogic.Mcp;
 using Harness.BusinessLogic.Mutations;
 using Harness.BusinessLogic.Tools;
 using Harness.BusinessLogic.Workspaces;
 using Harness.UI.Avalonia;
+using AvaloniaOrientation = Avalonia.Layout.Orientation;
 using DockAlignment = Dock.Model.Core.Alignment;
 using DockOrientation = Dock.Model.Core.Orientation;
-using AvaloniaOrientation = Avalonia.Layout.Orientation;
 
 namespace Harness.Presentation.Avalonia;
 
@@ -327,6 +328,15 @@ internal sealed class WorkbenchDockHost
     internal bool ActiveSourceDocumentIsDirty => activeDocument?.Id is { } id &&
                                                  sourceDocuments.TryGetValue(id, out SourceDocumentSession? session) &&
                                                  session.IsDirty;
+    internal IReadOnlyList<InboundOpenDocumentView> InboundOpenDocuments =>
+        sourceDocuments.Values.Select(session => new InboundOpenDocumentView(
+            session.View.Path.Value,
+            session.View.GoalId?.Value,
+            session.View.Sha256?.Value,
+            session.CurrentBufferVersion,
+            session.IsDirty,
+            session.View.Access is WorkbenchDocumentAccess.Editable,
+            ReferenceEquals(activeDocument, session.Document))).ToArray();
 
     internal int ActiveCompletionItemCount => activeDocument?.Id is { } completionId &&
                                                sourceDocuments.TryGetValue(
@@ -565,6 +575,19 @@ internal sealed class WorkbenchDockHost
 
     internal ValueTask OpenFileAsync(string relativePath) =>
         OpenFileAsync(relativePath, state().Goals.SelectedGoal?.Id);
+
+    internal async ValueTask<InboundUiActionResult> OpenInboundDocumentAsync(
+        InboundUiDocumentRequest request)
+    {
+        GoalId? goalId = string.IsNullOrWhiteSpace(request.GoalId) ? null : new(request.GoalId);
+        await OpenFileAsync(request.RelativePath, goalId);
+        SourceDocumentSession? opened = sourceDocuments.Values.FirstOrDefault(item =>
+            item.View.Path.Value.Equals(request.RelativePath, StringComparison.Ordinal) &&
+            item.View.GoalId == goalId);
+        return opened is not null
+            ? new(new("document.open"), true, null, null)
+            : new(new("document.open"), false, "document_open_failed", fileStatus.Text);
+    }
 
     /// <summary>
     /// Offers each Git-tracked file as a command that opens it. The catalog is loaded on

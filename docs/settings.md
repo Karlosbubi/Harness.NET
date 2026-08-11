@@ -9,8 +9,9 @@ Settings owns ordinary defaults. Goal-specific authority remains on the goal.
 | Appearance & accessibility | Delivered. | `IAppearanceService`, SQLite preference, XDG theme files. |
 | Model providers | Delivered. | Typed Business Logic service, private XDG XML, Secret Service. |
 | MCP connections | Delivered. | MCP Data Access adapter, Business Logic policy, private XDG XML. |
+| Harness control | Delivered. | Inbound MCP Data Access transport, Business Logic policy, private XDG XML/Secret Service, volatile evaluation secrets. |
 | Documentation & dependencies | Delivered. | Research and dependency Business Logic policy, private XDG XML/cache, package/documentation adapters. |
-| Agent tools | Partial. Catalog status is delivered; optional exposure persistence and activation remain. | Business Logic catalog and policy. |
+| Agent tools | Delivered for Task 047. | Business Logic catalog/policy/evidence and private XDG XML. |
 | Visual verification | Delivered. | Typed Business Logic policy, SQLite preference, XDG portal and private state adapters. |
 | Models & roles | Delivered. | `IAgentDefaultsService`, role-capability policy, SQLite defaults, goal route store. |
 | Privacy & limits | Delivered for default and goal Unlimited/Capped/LocalOnly mode and review cycles. | Business Logic preferences and goal records. |
@@ -60,8 +61,36 @@ The delivered status page shows built-in and external source, module health, eli
 roles, direct/on-demand state, authority class, operations, unavailable reason, and
 configured MCP source count.
 
-Optional module enablement, safe exposure preferences, on-demand activation, and run
-evidence remain Task 047 work. Settings never grants goal authority.
+Safe optional modules can be exposed directly as a saved preference. Otherwise an
+agent discovers and requests an on-demand module for one next bounded role turn. The
+grant is recorded as goal evidence and expires after that turn. Settings changes
+prompt composition only; they grant no repository, execution, spend, or disclosure
+authority.
+
+## Harness control
+
+This page owns the inbound MCP server from its first slice: enablement, Normal or
+IsolatedEvaluation mode, loopback endpoint, client and tool allowlists, explicit
+approval holds, request/result limits, audit retention, health, active clients,
+disconnect, token rotation, and isolated-fixture reset.
+
+The server is disabled by default. “Rotate and copy token once” creates a new random
+token, revokes existing clients, and puts the new value on the clipboard only for that
+explicit action. Existing tokens cannot be displayed. Configure the client with:
+
+- Streamable HTTP endpoint shown on the page;
+- `Authorization: Bearer <copied-token>`;
+- a stable `X-Harness-Client` value permitted by the client allowlist.
+
+Tools listed under “Require explicit approval” are absent from discovery. Removing a
+tool from that hold and applying Settings is the explicit approval. Build, Test,
+capture, plan decisions, UI activation, and evaluation reset continue through their
+normal typed policy and identity checks.
+
+IsolatedEvaluation also requires process startup with
+`--mcp-evaluation-root /tmp/<dedicated-directory>`. The process uses separate XDG-like
+paths, a separate SQLite database, volatile secrets, and a deterministic disposable
+fixture. Harness-owned PNG frames and accessibility actions are available only there.
 
 ## Documentation and dependencies
 

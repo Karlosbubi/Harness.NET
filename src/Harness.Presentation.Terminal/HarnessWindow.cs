@@ -1,6 +1,6 @@
 using System.Collections.ObjectModel;
-using Harness.BusinessLogic.Agents;
 using Harness.BusinessLogic.Acceptance;
+using Harness.BusinessLogic.Agents;
 using Harness.BusinessLogic.Costs;
 using Harness.BusinessLogic.Dashboard;
 using Harness.BusinessLogic.Framework;
@@ -531,13 +531,18 @@ internal sealed class HarnessWindow : Window
             };
             sourceDialog.Add(new Label
             {
-                X = 0, Y = 0, Width = Dim.Fill(),
+                X = 0,
+                Y = 0,
+                Width = Dim.Fill(),
                 Text = "Absolute path to an existing Harness.NET .zip backup",
             });
             TextField source = new() { X = 0, Y = 1, Width = Dim.Fill() };
             sourceDialog.Add(source, new Label
             {
-                X = 0, Y = 3, Width = Dim.Fill(), Height = 4,
+                X = 0,
+                Y = 3,
+                Width = Dim.Fill(),
+                Height = 4,
                 Text = "Restore replaces private prompts, settings, approvals, costs, index " +
                        "state, and layout. It does not restore credentials or repositories.",
             });

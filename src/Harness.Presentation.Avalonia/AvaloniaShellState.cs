@@ -1,18 +1,18 @@
-using Harness.BusinessLogic.Appearance;
-using Harness.BusinessLogic.Agents;
 using Harness.BusinessLogic.Acceptance;
+using Harness.BusinessLogic.Agents;
+using Harness.BusinessLogic.Appearance;
 using Harness.BusinessLogic.Approvals;
 using Harness.BusinessLogic.Costs;
 using Harness.BusinessLogic.Dashboard;
 using Harness.BusinessLogic.Framework;
 using Harness.BusinessLogic.Goals;
-using Harness.BusinessLogic.Operations;
 using Harness.BusinessLogic.Mcp;
+using Harness.BusinessLogic.Operations;
+using Harness.BusinessLogic.Research;
 using Harness.BusinessLogic.Retrieval;
+using Harness.BusinessLogic.VisualCapture;
 using Harness.BusinessLogic.Workflows;
 using Harness.BusinessLogic.Workspaces;
-using Harness.BusinessLogic.VisualCapture;
-using Harness.BusinessLogic.Research;
 
 namespace Harness.Presentation.Avalonia;
 
@@ -47,6 +47,8 @@ internal sealed record ApplicationSettingsState(
     AgentDefaultsSnapshot? AgentDefaults,
     ModelProviderSettingsSnapshot? ProviderSettings,
     McpSettingsSnapshot? McpSettings,
+    InboundMcpSettingsView? InboundMcpSettings,
+    AgentToolExposureSettings? AgentToolExposure,
     ResearchSettingsSnapshot? ResearchSettings,
     DocumentationLookupResult? DocumentationLookup,
     DependencyInspectionResult? DependencyInspection,
@@ -65,6 +67,8 @@ internal sealed record ApplicationSettingsState(
         AgentDefaults: null,
         ProviderSettings: null,
         McpSettings: null,
+        InboundMcpSettings: null,
+        AgentToolExposure: null,
       ResearchSettings: null,
       DocumentationLookup: null,
       DependencyInspection: null,

@@ -3,8 +3,8 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml.Styling;
 using Avalonia.Themes.Fluent;
 using Dock.Avalonia.Themes.Fluent;
-using Harness.BusinessLogic.Documents;
 using Harness.BusinessLogic.CodeIntelligence;
+using Harness.BusinessLogic.Documents;
 using Harness.BusinessLogic.Evidence;
 using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Layouts;
@@ -22,6 +22,7 @@ internal sealed class HarnessApplication(
     IWorkbenchCodeIntelligenceService codeIntelligenceService,
     IWorkspaceMutationService mutationService,
     IWorkbenchLayoutService layoutService,
+    AvaloniaInboundMcpUiBridge inboundMcpUiBridge,
     CancellationToken cancellationToken) : Application
 {
     internal MainWindow? MainWindow { get; private set; }
@@ -55,6 +56,8 @@ internal sealed class HarnessApplication(
                 mutationService,
                 layoutService,
                 cancellationToken);
+            inboundMcpUiBridge.Attach(MainWindow);
+            MainWindow.Closed += (_, _) => inboundMcpUiBridge.Detach(MainWindow);
             desktop.MainWindow = MainWindow;
         }
 

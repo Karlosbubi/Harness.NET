@@ -35,3 +35,4 @@ records in both directions.
 | [016](016-model-accessible-ide-capabilities.md) | Accepted | Model-accessible IDE capabilities |
 | [017](017-portal-visual-verification.md) | Accepted | Portal-mediated visual verification |
 | [018](018-documentation-dependency-evidence-and-sbom.md) | Accepted | Documentation, dependency evidence, and SBOM |
+| [019](019-inbound-mcp-control-and-evaluation.md) | Accepted | Inbound MCP control and evaluation |

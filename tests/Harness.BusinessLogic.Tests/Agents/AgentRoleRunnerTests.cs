@@ -1,11 +1,11 @@
+using System.Runtime.CompilerServices;
 using Harness.BusinessLogic.Agents;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Mutations;
 using Harness.DataAccess.Models;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.AI;
-using System.Runtime.CompilerServices;
+using Microsoft.Extensions.Logging.Abstractions;
 using ProviderChatResponseFormat = Harness.DataAccess.Models.ChatResponseFormat;
 
 namespace Harness.BusinessLogic.Tests.Agents;

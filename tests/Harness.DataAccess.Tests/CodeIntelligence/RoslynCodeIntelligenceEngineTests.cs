@@ -369,6 +369,43 @@ public sealed class RoslynCodeIntelligenceEngineTests(ITestOutputHelper output) 
     }
 
     [Fact]
+    public async Task Semantic_graphs_search_calls_types_and_associated_tests_with_paging()
+    {
+        const string source = """
+            class BaseRunner { public virtual void Run() { } }
+            class Runner : BaseRunner
+            {
+                public override void Run() { Helper(); }
+                void Helper() { }
+                [Fact] void Run_is_callable() { Run(); }
+            }
+            """;
+        await CreateProjectAsync(source);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("semantic-graphs-context");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+        CodeIntelligenceInteractiveSnapshot runner = InteractiveSnapshot(contextId, session.SessionId!,
+            source, source.IndexOf("Runner :", StringComparison.Ordinal) + 2);
+        CodeIntelligenceInteractiveSnapshot run = InteractiveSnapshot(contextId, session.SessionId!,
+            source, source.IndexOf("Run() { Helper", StringComparison.Ordinal) + 2);
+
+        CodeIntelligenceSemanticResult symbols = await engine.SearchSymbolsAsync(
+            new(runner, "Run", 1, 0));
+        CodeIntelligenceSemanticResult calls = await engine.AnalyzeCallsAsync(new(run, null, 20, 0));
+        CodeIntelligenceSemanticResult types = await engine.GetTypeHierarchyAsync(new(runner, null, 20, 0));
+        CodeIntelligenceSemanticResult tests = await engine.FindAssociatedTestsAsync(new(run, null, 20, 0));
+
+        Assert.Single(symbols.Items);
+        Assert.True(symbols.IsTruncated);
+        Assert.NotNull(symbols.Continuation);
+        Assert.Contains(calls.Items, item => item.Relation is CodeIntelligenceSemanticRelation.OutgoingCall &&
+            item.Display.Value.Contains("Helper", StringComparison.Ordinal));
+        Assert.Contains(types.Items, item => item.Relation is CodeIntelligenceSemanticRelation.BaseType &&
+            item.Display.Value.Contains("BaseRunner", StringComparison.Ordinal));
+        Assert.Contains(tests.Items, item => item.Relation is CodeIntelligenceSemanticRelation.AssociatedTest);
+    }
+
+    [Fact]
     public async Task Rename_preview_resolves_a_partial_type_across_files_without_writing()
     {
         const string declaration = "public partial class Widget { public void Run() { } }\n";

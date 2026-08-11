@@ -131,28 +131,68 @@ Delivered behavior:
 Unknown or conflicting facts must remain unknown or conflicting. A model may explain
 the evidence but may not replace it.
 
-### Next: Task 047 — remaining model-accessible IDE tools
+### Delivered: Task 047 — model-accessible semantic IDE foundation
 
 Use the maintained [capability map](agent-ide-capabilities.md). Rider is a breadth
 reference only. Unreal-specific tools are excluded.
 
-Implementation order:
+Delivered scope:
 
 1. Finish on-demand toolset activation and persist optional exposure settings.
 2. Complete workspace tree, file/regex search, open-document context, project graph,
    dependency, diagnostics, and Git scopes.
 3. Add symbol search, call and type hierarchy, associated-test discovery, paging,
    and a deterministic changed-set quality result.
-4. Add closed preview/fingerprint/apply operations for formatting, imports,
-   namespaces, signature changes, extraction, moves, and safe delete.
-5. Add typed asynchronous build, test discovery/run/cancel, launch profiles, process
-   output, and stop.
-6. Add .NET debugging in separate authority-bounded slices.
-7. Add database inspection and query support with Settings and Secret Service.
-8. Add optional profiling, notebook, analyzer, and advanced diagnostic modules.
+4. Make every result identify its workspace, source context, project, target,
+   configuration, document version, truncation, and freshness.
+5. Keep the catalog, role policy, evidence, and adapter boundaries usable by later
+   Git, execution, debugger, database, profiler, and notebook slices without
+   pretending those capabilities are delivered here.
 
 Do not add an unrestricted shell, a generic execute-by-name tool, or an unbounded
 tool catalog in every prompt.
+
+### Delivered: Task 059 — inbound MCP control and evaluation
+
+Expose Harness.NET itself as a local Model Context Protocol server over stateless
+Streamable HTTP. The server adapts existing Business Logic commands and evidence; it
+does not reimplement application behavior or make MCP an authority boundary. Codex
+and other configured clients can inspect and exercise Harness directly while every
+operation retains its source context, trust, approval, baseline, privacy, and audit
+rules.
+
+Provide two explicit modes. Normal dogfooding mode exposes bounded application,
+workspace, document, Roslyn, Git, goal, session, evidence, Build/Test, accessibility,
+and consented visual-verification operations. Isolated evaluation mode starts with a
+temporary database, disposable fixture repository, fake or explicitly selected local
+providers, no stored credentials, and resettable state; it may add Harness-owned UI
+snapshots and accessibility-ID actions that cannot address other applications or the
+normal developer environment.
+
+The server is disabled by default, loopback-only, authenticated, visibly active,
+revocable, and fully audited. Tools declare read, mutation, execution, sensitive, and
+destructive behavior and remain individually allowlisted and approval-controlled.
+Do not expose generic click/type, shell, SQL, arbitrary command dispatch, desktop
+control, silent screenshot capture, or a route around typed Harness authority. Record
+an ADR for inbound MCP ownership, authentication, modes, tool policy, application
+instance identity, test isolation, privacy, and shutdown before implementation.
+
+### Next quality gate: Task 038 — local-model workflow regression
+
+Promote the existing opt-in Tic-Tac-Toe exercise into a versioned local-model
+regression suite before expanding the workflow. Measure planning, tool selection,
+semantic-operation use, edit size, validation, retry behavior, review findings,
+completion, latency, and resource use. Keep live inference opt-in and local-only by
+default; deterministic fakes continue to cover ordinary test runs.
+
+Drive the application through Task 059 where a scenario requires real Harness
+interaction. Store prompts, scenario versions, model and server identity, capability
+discovery, timings, tool traces, diffs, Build/Test evidence, failures, and partial
+results under ignored artifacts. Compare runs without declaring model prose to be
+ground truth.
+Use deterministic validators for repository state, compilation, tests, policy, and
+expected semantic operations. The gate must catch the large-rewrite and invalid-plan
+regressions already observed in hands-on use.
 
 ### Planned: Task 048 — Morgania editor evaluation and conditional migration
 
@@ -263,9 +303,140 @@ cancellation, stale-result rejection, analyzer failures, large solutions, and re
 source-context switches. The complete Linux desktop gate covers keyboard-only use,
 IME, AT-SPI, Orca, scaling, Dock restoration, and the chosen Task 048 editor. NetPad's
 script runner, rich object dumping, spreadsheet export, and web shell are not IDE
-parity requirements; the planned notebook, database, run, test, and debugger modules
-in Task 047 cover the relevant development workflows without changing the product
-into a LINQPad clone.
+parity requirements. Task 052 covers the relevant project, Run, Test, and Debug
+workflows without changing the product into a LINQPad clone. Database, profiler, and
+notebook modules remain later independent slices.
+
+### Planned: Task 050 — complete Git workbench
+
+Turn the current status and diff support into the daily Git workflow. Add staging and
+unstaging by file, line, and hunk; safe discard; commit and amend; branch and worktree
+management; stash; history graph; file timeline; blame; and three-way conflict
+resolution. Fetch, pull, and push are explicit developer actions with exact target,
+credential, network, divergence, and result display. They never become ambient goal
+authority or automatic agent behavior.
+
+Reuse the active source context and exact baselines across Files, editor, diff, Git,
+and review. Every destructive operation shows affected paths and recovery options.
+Record an ADR before adding remote integration or conflict-write contracts. Preserve
+the existing exact goal-commit approval and post-commit handoff.
+
+### Planned: Task 051 — developer terminal and structured tasks
+
+Add a developer-operated PTY terminal and task runner as separate workbench tools.
+Run output remains typed durable evidence; it does not become the terminal. The
+terminal is available only in trusted workspaces, has explicit working directory and
+environment display, supports cancellation and process-tree cleanup, and restores
+no live process after restart. Secrets are redacted from persisted history and
+diagnostic bundles.
+
+Discover declarative tasks from existing repository conventions and private Harness
+settings. A task records an executable, arguments, working directory, environment,
+trust requirement, presentation, and cancellation policy; it never stores a shell
+string as an agent capability. Agents continue to use closed typed operations rather
+than the developer terminal.
+
+### Planned: Task 052 — .NET project, Run, Test, and Debug experience
+
+Add a semantic Solution view for projects, target frameworks, configurations,
+dependencies, SDK/workload health, startup projects, and launch profiles. Add Test
+Explorer discovery, hierarchy, filtering, run/debug, duration and failure history,
+and coverage navigation. Add typed asynchronous Build/Rebuild, Run, Test, Debug, Hot
+Reload, structured output, cancellation, and process lifecycle.
+
+Use the existing trust and Restore boundaries. Selecting a launch profile does not
+authorize execution; debug attach, expression evaluation, mutation, dumps, network
+listeners, and external processes remain separately classified. ASP.NET endpoint
+preview and Avalonia launch/capture may consume the same run identity and portal
+evidence. User and agent surfaces share contracts, while agent authority stays
+narrower.
+
+### Planned: Task 053 — parallel local agent sessions and exact review
+
+Build several independent chat/goal sessions on the existing durable workflow and
+isolated worktrees. Each session has its own source context, model routes, spend
+policy, permissions, history, checkpoints, and attention state. Add running, paused,
+failed, blocked, complete, and needs-direction views; search and archive; explicit
+pause/resume; follow-up; manual takeover; and restart recovery. Do not add unattended
+background authority.
+
+Add exact changed-file review with accept/reject by line, hunk, and file; comments
+bound to diff baselines; checkpoint restore; and alternate-attempt forks. Acceptance
+updates a candidate result or retry guidance, not the original workspace implicitly.
+Concurrent sessions must not share mutable Roslyn, process, budget, approval, or
+worktree state accidentally.
+
+### Planned: Task 054 — ACP external-agent interoperability
+
+Implement Harness.NET as an Agent Client Protocol client so configured external
+agents can run inside Harness chat, context, permissions, worktrees, evidence, and
+review. MCP remains the tool and information integration boundary; ACP is the agent
+integration boundary. External agents cannot impersonate native roles or bypass
+typed authority.
+
+Ship Settings ownership from the first slice: executable or endpoint, transport,
+arguments, environment references, working directory, capabilities, health,
+enablement, trust, timeout, retention, and removal. Validate handshake and capability
+negotiation without inference. Bound messages and attachments, preserve attribution,
+redact secrets, expose degraded states, and stop owned processes cleanly. Consider
+exposing Harness as an ACP agent only in a later decision.
+
+### Planned: Task 055 — inline AI assistance and edit prediction
+
+Add selection-scoped edit, quick question, send-to-chat, and next-edit suggestions
+after the editor foundation is stable. Suggestions may span nearby lines but must
+show their scope, route, source version, and remote-disclosure state. Support accept
+by token, line, suggestion, or exact preview; reject and dismiss remain local actions.
+
+Use separate Settings-managed routes for inline explanation, editing, and prediction,
+with local models preferred and remote spend accounted normally. Cancel stale work,
+avoid inference while typing when disabled or offline, and apply multi-file or model
+edits only through exact-baseline Roslyn validation. Collect opt-in latency and
+acceptance metrics locally without storing source text as telemetry.
+
+### Planned: Task 056 — customization, context inspection, and agent safety
+
+Add reusable skills, prompt procedures, role profiles, and explicit handoffs. Add
+typed lifecycle policies such as format changed C# files, run affected tests, require
+review for selected paths, or block a class of operation. Policies select closed
+Harness operations; they do not execute arbitrary shell hooks.
+
+Before a model call, show a context inspector for files, selections, rules,
+documentation, retrieval results, toolsets, images, provider, estimated disclosure,
+and exclusions. Let the developer remove context, compact with provenance, or fork a
+session. Add private global/workspace exclusions and honor compatible existing ignore
+files without creating Harness metadata in repositories. Mark web, MCP,
+documentation, terminal, and repository content as untrusted data and keep it from
+silently granting authority. Add local profile export, import, validation, diff, and
+rollback; defer cloud sync.
+
+### Planned: Task 057 — release health, diagnostics, and updates
+
+Make the installed application diagnosable and recoverable. Produce signed,
+reproducible Linux artifacts and manifests; verify update provenance and integrity;
+show release notes and migrations; and require an explicit developer action to
+install. Retain a rollback path across executable and schema changes.
+
+Add a redacted diagnostic bundle, crash/session recovery report, and health views for
+Roslyn, indexing, providers, MCP, ACP, worktrees, processes, storage, and portals.
+Define measurable budgets for startup, typing, completion, diagnostics, workspace
+load, memory, cancellation, and shutdown. Telemetry remains optional, local-first,
+documented, and disabled by default.
+
+### Planned: Task 058 — replaceable development-environment adapters
+
+Add local container and SSH-backed development environments only after the local IDE
+workflow is complete. Keep UI and Business Logic contracts platform-neutral while
+Data Access owns transport, filesystem, process, port, credential, and lifecycle
+adapters. A remote environment has explicit host identity, workspace root, SDK/tool
+health, trust, connection state, reconnection, cancellation, and data-disclosure
+status.
+
+Start with developer-invoked open/reopen and typed tasks. Do not add cloud agent
+hosting, automatic repository upload, hidden port forwarding, or unattended remote
+execution. Dev-container or Compose compatibility requires a separate format,
+security, provenance, and execution decision; Harness.NET still adds no private
+metadata directory to user repositories.
 
 ## Ongoing work
 
@@ -277,13 +448,14 @@ into a LINQPad clone.
 
 ## Deferred
 
-- Task 038: opt-in local-model quality regression datasets.
 - Distributed workers and message brokers.
 - Multi-user accounts and shared authorization.
 - Web UI.
 - Plugin marketplace.
 - Unrestricted agent shells.
-- Automatic merge, rebase, push, or pull-request creation.
+- Automatic agent merge, rebase, push, or pull-request creation.
+- Database, profiler, notebook, dump, and advanced analyzer modules until Tasks
+  050–053 complete the daily workflow.
 - Unattended background operation.
 
 Stage 3 ends when the application supports real development across repositories and

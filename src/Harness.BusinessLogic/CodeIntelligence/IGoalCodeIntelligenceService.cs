@@ -38,4 +38,24 @@ internal interface IGoalCodeIntelligenceService
         WorkbenchCodeDocumentPath path,
         WorkbenchCodePosition position,
         CancellationToken cancellationToken = default);
+
+    ValueTask<GoalCodeSemanticView> SearchSymbolsAsync(
+        GoalId goalId, GoalWorkspaceScope scope, WorkbenchCodeDocumentPath path,
+        string query, int maximumResults, int offset,
+        CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    ValueTask<GoalCodeSemanticView> AnalyzeCallsAsync(
+        GoalId goalId, GoalWorkspaceScope scope, WorkbenchCodeDocumentPath path,
+        WorkbenchCodePosition position, int maximumResults, int offset,
+        CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    ValueTask<GoalCodeSemanticView> GetTypeHierarchyAsync(
+        GoalId goalId, GoalWorkspaceScope scope, WorkbenchCodeDocumentPath path,
+        WorkbenchCodePosition position, int maximumResults, int offset,
+        CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    ValueTask<GoalCodeSemanticView> FindAssociatedTestsAsync(
+        GoalId goalId, GoalWorkspaceScope scope, WorkbenchCodeDocumentPath path,
+        WorkbenchCodePosition position, int maximumResults, int offset,
+        CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    ValueTask<GoalProjectProblemsView> InspectProjectProblemsAsync(
+        GoalId goalId, GoalWorkspaceScope scope, int maximumFiles,
+        CancellationToken cancellationToken = default) => throw new NotSupportedException();
 }

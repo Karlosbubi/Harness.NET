@@ -356,7 +356,8 @@ internal static class ConversationWorkflowProjector
         if (shellError is { Length: > 0 })
         {
             cards.Add(Status("workflow.error", ConversationWorkflowCardState.Failed,
-                "Workflow update failed", shellError) with { Order = 1000 });
+                "Workflow update failed", shellError) with
+            { Order = 1000 });
         }
         return cards.OrderBy(card => card.Order).ToArray();
     }

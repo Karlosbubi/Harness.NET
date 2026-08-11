@@ -135,3 +135,29 @@ public sealed record WorkbenchCodeNavigationView(
     WorkbenchCodeResultState State,
     IReadOnlyList<WorkbenchCodeSymbolDestination> Destinations,
     IReadOnlyList<WorkbenchCodeIssue> Issues);
+
+public enum WorkbenchCodeSemanticRelation
+{
+    Symbol, IncomingCall, OutgoingCall, BaseType, DerivedType, Override, AssociatedTest,
+}
+
+public sealed record WorkbenchCodeSemanticQuery(
+    WorkbenchCodeInteractiveSnapshot Snapshot,
+    string? Query,
+    int MaximumResults,
+    int Offset);
+
+public sealed record WorkbenchCodeSemanticItem(
+    WorkbenchCodeSemanticRelation Relation,
+    WorkbenchCodeMessage Display,
+    WorkbenchCodeSymbolDestination Destination);
+
+public sealed record WorkbenchCodeSemanticView(
+    WorkbenchCodeSessionId SessionId,
+    WorkbenchCodeDocumentPath Path,
+    WorkbenchCodeBufferVersion BufferVersion,
+    WorkbenchCodeResultState State,
+    IReadOnlyList<WorkbenchCodeSemanticItem> Items,
+    int? Continuation,
+    bool IsTruncated,
+    IReadOnlyList<WorkbenchCodeIssue> Issues);

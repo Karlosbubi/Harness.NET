@@ -4,6 +4,7 @@ using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
@@ -13,8 +14,8 @@ using Harness.BusinessLogic.Appearance;
 using Harness.BusinessLogic.Costs;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Mcp;
-using Harness.BusinessLogic.VisualCapture;
 using Harness.BusinessLogic.Research;
+using Harness.BusinessLogic.VisualCapture;
 
 namespace Harness.Presentation.Avalonia;
 
@@ -25,7 +26,8 @@ internal enum SettingsCategoryId
     Appearance,
     ModelProviders,
     McpConnections,
-  DocumentationAndDependencies,
+    InboundMcp,
+    DocumentationAndDependencies,
     AgentTools,
     VisualVerification,
     ModelsAndRoles,
@@ -58,6 +60,8 @@ internal static class SettingsCatalog
             ["model", "provider", "ollama", "openrouter", "remote", "local", "pricing"], IsAvailable: true),
         new(SettingsCategoryId.McpConnections, "MCP connections", "Stateless external tools and discovery",
             ["mcp", "model context protocol", "tool", "documentation", "stateless", "streamable http"], IsAvailable: true),
+        new(SettingsCategoryId.InboundMcp, "Harness control", "Authenticated local MCP server and evaluation",
+            ["inbound", "mcp", "control", "evaluation", "dogfood", "token", "client", "loopback"], IsAvailable: true),
         new(SettingsCategoryId.DocumentationAndDependencies, "Documentation & dependencies",
             "Versioned lookup, package evidence, cache, and SBOM",
             ["documentation", "research", "nuget", "package", "dependency", "sbom", "cyclonedx", "cache", "offline", "license", "advisory"], IsAvailable: true),
@@ -240,6 +244,7 @@ internal sealed class SettingsWindow : Window
         if ((categories.SelectedItem as SettingsCategory)?.Id is
             SettingsCategoryId.Appearance or SettingsCategoryId.ModelProviders or
             SettingsCategoryId.McpConnections or SettingsCategoryId.ModelsAndRoles or
+            SettingsCategoryId.InboundMcp or
         SettingsCategoryId.DocumentationAndDependencies or
             SettingsCategoryId.PrivacyAndLimits or SettingsCategoryId.AgentTools or
             SettingsCategoryId.VisualVerification)
@@ -264,7 +269,8 @@ internal sealed class SettingsWindow : Window
             SettingsCategoryId.Appearance => AppearancePage(),
             SettingsCategoryId.ModelProviders => ModelProvidersPage(),
             SettingsCategoryId.McpConnections => McpConnectionsPage(),
-      SettingsCategoryId.DocumentationAndDependencies => DocumentationAndDependenciesPage(),
+            SettingsCategoryId.InboundMcp => InboundMcpPage(),
+            SettingsCategoryId.DocumentationAndDependencies => DocumentationAndDependenciesPage(),
             SettingsCategoryId.AgentTools => AgentToolsPage(),
             SettingsCategoryId.VisualVerification => VisualVerificationPage(),
             SettingsCategoryId.ModelsAndRoles => ModelsAndRolesPage(),
@@ -653,6 +659,200 @@ internal sealed class SettingsWindow : Window
             });
     }
 
+    private Control InboundMcpPage()
+    {
+        InboundMcpSettingsView? snapshot = settingsState.InboundMcpSettings;
+        InboundControlSettings configured = snapshot?.Settings ?? new(
+            false, InboundControlMode.Normal, new Uri("http://127.0.0.1:57431/mcp"), [],
+            [new("harness_application"), new("harness_workspace"), new("harness_tree"),
+                new("harness_read_range"), new("harness_git"), new("harness_project_graph"),
+                new("harness_goals"), new("harness_evidence"), new("harness_ui"),
+                new("harness_open_document"), new("harness_audit"),
+                new("harness_evaluation_snapshot"),
+                new("harness_code_problems"), new("harness_code_symbol"),
+                new("harness_code_definition"), new("harness_code_references"),
+                new("harness_code_implementations")],
+            [], TimeSpan.FromSeconds(30), 500, 1_000, false);
+
+        CheckBox enabled = new()
+        {
+            Content = "Enable authenticated loopback MCP server",
+            IsChecked = configured.IsEnabled
+        };
+        AutomationProperties.SetName(enabled, "Enable inbound MCP server");
+        ComboBox mode = new()
+        {
+            ItemsSource = Enum.GetValues<InboundControlMode>(),
+            SelectedItem = configured.Mode,
+            MinWidth = 260,
+        };
+        AutomationProperties.SetName(mode, "Inbound MCP mode");
+        TextBox endpoint = new() { Text = configured.Endpoint.AbsoluteUri };
+        AutomationProperties.SetName(endpoint, "Inbound MCP loopback endpoint");
+        TextBox clients = new()
+        {
+            Text = string.Join(Environment.NewLine, configured.AllowedClients.Select(item => item.Value)),
+            AcceptsReturn = true,
+            Height = 70,
+            PlaceholderText = "One allowed client ID per line; empty allows any authenticated client",
+        };
+        TextBox tools = new()
+        {
+            Text = string.Join(Environment.NewLine, configured.AllowedTools.Select(item => item.Value)),
+            AcceptsReturn = true,
+            Height = 110,
+        };
+        TextBox approvals = new()
+        {
+            Text = string.Join(Environment.NewLine,
+                configured.ApprovalRequiredTools.Select(item => item.Value)),
+            AcceptsReturn = true,
+            Height = 70,
+            PlaceholderText = "One allowed tool ID per line",
+        };
+        NumericUpDown timeout = new()
+        {
+            Minimum = 1,
+            Maximum = 300,
+            Value = (decimal)configured.RequestTimeout.TotalSeconds
+        };
+        NumericUpDown resultLimit = new()
+        {
+            Minimum = 1,
+            Maximum = 5000,
+            Value = configured.ResultLimit
+        };
+        NumericUpDown retention = new()
+        {
+            Minimum = 0,
+            Maximum = 100000,
+            Value = configured.AuditRetention
+        };
+        string policySummary = snapshot?.ToolPolicies.Count > 0
+            ? string.Join(Environment.NewLine, snapshot.ToolPolicies.Select(policy =>
+                $"{policy.Id.Value} · " +
+                (policy.IsReadOnly ? "read" : "mutation") +
+                (policy.IsExecution ? " · execution" : string.Empty) +
+                (policy.IsSensitive ? " · sensitive" : string.Empty) +
+                (policy.IsDestructive ? " · destructive" : string.Empty) +
+                (policy.IsIdempotent ? " · idempotent" : string.Empty)))
+            : "Tool policy catalog unavailable.";
+
+        Button save = new() { Content = "Apply server settings" };
+        save.Classes.Add("primary");
+        save.IsEnabled = !settingsState.IsBusy;
+        save.Click += async (_, _) =>
+        {
+            if (!Uri.TryCreate(endpoint.Text?.Trim(), UriKind.Absolute, out Uri? parsed)) return;
+            await store.SaveInboundMcpAsync(configured with
+            {
+                IsEnabled = enabled.IsChecked == true,
+                Mode = mode.SelectedItem is InboundControlMode selected ? selected : InboundControlMode.Normal,
+                Endpoint = parsed,
+                AllowedClients = Lines(clients.Text).Select(value => new InboundControlClientId(value)).ToArray(),
+                AllowedTools = Lines(tools.Text).Select(value => new InboundControlToolId(value)).ToArray(),
+                ApprovalRequiredTools = Lines(approvals.Text)
+                    .Select(value => new InboundControlToolId(value)).ToArray(),
+                RequestTimeout = TimeSpan.FromSeconds((double)(timeout.Value ?? 30)),
+                ResultLimit = (int)(resultLimit.Value ?? 500),
+                AuditRetention = (int)(retention.Value ?? 1000),
+            }, cancellationToken);
+        };
+        Button rotate = new() { Content = "Rotate and copy token once" };
+        rotate.Click += async (_, _) =>
+        {
+            string? token = await store.RotateInboundMcpTokenAsync(cancellationToken);
+            if (token is not null && TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard)
+                await clipboard.SetTextAsync(token);
+        };
+        Button resetEvaluation = new()
+        {
+            Content = "Reset isolated fixture",
+            IsEnabled = configured.Mode is InboundControlMode.IsolatedEvaluation &&
+                !settingsState.IsBusy,
+        };
+        resetEvaluation.Click += async (_, _) =>
+            await store.ResetInboundMcpEvaluationAsync(cancellationToken);
+
+        InboundControlStatus? status = snapshot?.Status;
+        StackPanel activeClients = new() { Spacing = 6 };
+        foreach (InboundControlClientStatus client in status?.ActiveClients ?? [])
+        {
+            Button disconnect = new() { Content = $"Disconnect {client.Id.Value}" };
+            disconnect.Click += async (_, _) => await store.DisconnectInboundMcpClientAsync(
+                client.Id, cancellationToken);
+            activeClients.Children.Add(new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 8,
+                Children =
+                {
+                    new TextBlock { Text = $"{client.Id.Value} · {client.RequestCount} request(s) · {client.LastSeenAt:O}",
+                        VerticalAlignment = VerticalAlignment.Center },
+                    disconnect,
+                },
+            });
+        }
+        if (activeClients.Children.Count == 0)
+            activeClients.Children.Add(new TextBlock { Text = "No authenticated clients.", Classes = { "muted" } });
+
+        return Page(
+            "Harness control",
+            "Expose typed Harness.NET inspection to local MCP clients. Authentication never replaces workspace trust, baselines, approvals, capture consent, or execution policy.",
+            new StackPanel
+            {
+                Spacing = 12,
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = status is null ? "Runtime status unavailable." :
+                            $"{(status.IsRunning ? "ACTIVE" : "INACTIVE")} · {status.Mode} · instance {status.InstanceId}\n" +
+                            $"{status.Endpoint} · authentication {(status.IsAuthenticated ? "ready" : "not ready")}" +
+                            (status.Error is null ? string.Empty : $"\n{status.Error}"),
+                        TextWrapping = TextWrapping.Wrap,
+                        Classes = { status?.IsRunning == true ? "status-success" : "muted" },
+                    },
+                    enabled,
+                    Labeled("Mode", mode, "Evaluation mode requires a dedicated temporary root supplied at process startup."),
+                    Labeled("Loopback endpoint", endpoint, "Plain HTTP is accepted only on 127.0.0.1, ::1, or localhost."),
+                    Labeled("Allowed clients", clients, "Clients also need the current bearer token and X-Harness-Client header."),
+                    Labeled("Allowed tools", tools, "Closed typed tool IDs only. Unknown IDs expose nothing."),
+                    Labeled("Require explicit approval", approvals,
+                        "These tools stay out of discovery until the developer removes the approval requirement and applies settings."),
+                    new Border { Classes = { "card" }, Child = new TextBlock
+                    {
+                        Text = "Closed tool catalog\n" + policySummary,
+                        TextWrapping = TextWrapping.Wrap,
+                        Classes = { "muted" },
+                    } },
+                    Labeled("Request timeout (seconds)", timeout),
+                    Labeled("Maximum results", resultLimit),
+                    Labeled("Audit records retained", retention),
+                    new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8,
+                        Children = { save, rotate, resetEvaluation } },
+                    new TextBlock { Text = "Active clients", FontWeight = FontWeight.SemiBold },
+                    activeClients,
+                    new TextBlock
+                    {
+                        Text = "Never exposed: generic shell, SQL, click/type, coordinates, desktop control, silent screenshots, secrets, or arbitrary command dispatch.",
+                        TextWrapping = TextWrapping.Wrap,
+                        Classes = { "muted" },
+                    },
+                },
+            });
+    }
+
+    private static Control Labeled(string label, Control control, string? help = null)
+    {
+        StackPanel field = new() { Spacing = 4 };
+        field.Children.Add(new TextBlock { Text = label, FontWeight = FontWeight.SemiBold });
+        field.Children.Add(control);
+        if (help is not null) field.Children.Add(new TextBlock
+        { Text = help, Classes = { "muted" }, TextWrapping = TextWrapping.Wrap });
+        return field;
+    }
+
     private Control McpConnectionsPage()
     {
         Button refresh = new()
@@ -769,197 +969,197 @@ internal sealed class SettingsWindow : Window
             });
     }
 
-  private Control DocumentationAndDependenciesPage()
-  {
-    ResearchSettingsSnapshot? snapshot = settingsState.ResearchSettings;
-    CheckBox exactLocal = new()
+    private Control DocumentationAndDependenciesPage()
     {
-      Content = "Search exact restored package and SDK documentation",
-      IsChecked = snapshot?.ExactLocalEnabled ?? true,
-    };
-    CheckBox localIndex = new()
-    {
-      Content = "Search configured local documentation indexes",
-      IsChecked = snapshot?.LocalIndexEnabled ?? true,
-    };
-    CheckBox mcp = new()
-    {
-      Content = "Use configured closed read-only MCP documentation tools",
-      IsChecked = snapshot?.McpEnabled ?? true,
-    };
-    CheckBox web = new()
-    {
-      Content = "Use configured web search only when earlier evidence is insufficient",
-      IsChecked = snapshot?.WebEnabled ?? true,
-    };
-    CheckBox offline = new()
-    {
-      Content = "Offline mode — local and cached evidence only",
-      IsChecked = snapshot?.Offline ?? false,
-    };
-    TextBox indexRoots = Multiline(
-        string.Join(Environment.NewLine, snapshot?.IndexRoots ?? []),
-        "Documentation index roots, one absolute path per line", 82);
-    TextBox mcpTools = Multiline(
-        string.Join(Environment.NewLine, snapshot?.McpDocumentationTools ?? []),
-        "MCP documentation tools, one connection/tool per line", 82);
-    TextBox webEndpoints = Multiline(
-        string.Join(Environment.NewLine, snapshot?.WebEndpoints ?? []),
-        "Web documentation endpoints, one HTTPS URI per line", 82);
-    TextBox packageSources = Multiline(
-        string.Join(Environment.NewLine, snapshot?.PackageSources ??
-            ["https://api.nuget.org/v3/index.json"]),
-        "NuGet service indexes, one HTTPS URI per line", 82);
-    ComboBox refresh = new()
-    {
-      ItemsSource = Enum.GetValues<ResearchRefreshMode>(),
-      SelectedItem = snapshot?.RefreshMode ?? ResearchRefreshMode.OnDemand,
-      MinWidth = 180,
-    };
-    AutomationProperties.SetName(refresh, "Documentation refresh policy");
-    NumericUpDown maximumResults = ProviderNumber(
-        snapshot?.MaximumResults ?? 5, 1, 20, "Maximum documentation results");
-    NumericUpDown maximumCharacters = ProviderNumber(
-        snapshot?.MaximumCharacters ?? 12_000, 1_000, 100_000,
-        "Maximum documentation result characters");
-    NumericUpDown cacheAge = ProviderNumber(
-        snapshot?.MaximumCacheAgeHours ?? 168, 0, 8_760,
-        "Maximum documentation cache age hours");
-    NumericUpDown retention = ProviderNumber(
-        snapshot?.RetentionDays ?? 30, 0, 3_650, "Documentation cache retention days");
-    Button save = new() { Content = "Save documentation and dependency settings" };
-    save.Classes.Add("accent");
-    save.Click += async (_, _) => await store.SaveResearchSettingsAsync(new(
-        exactLocal.IsChecked == true,
-        localIndex.IsChecked == true,
-        mcp.IsChecked == true,
-        web.IsChecked == true,
-        offline.IsChecked == true,
-        Lines(indexRoots.Text),
-        Lines(mcpTools.Text),
-        Lines(webEndpoints.Text),
-        Lines(packageSources.Text),
-        refresh.SelectedItem is ResearchRefreshMode selectedRefresh
-            ? selectedRefresh
-            : ResearchRefreshMode.OnDemand,
-        decimal.ToInt32(maximumResults.Value ?? 5),
-        decimal.ToInt32(maximumCharacters.Value ?? 12_000),
-        decimal.ToInt32(cacheAge.Value ?? 168),
-        decimal.ToInt32(retention.Value ?? 30)), cancellationToken);
-    Button cleanup = new() { Content = "Apply cache retention now" };
-    cleanup.Classes.Add("command");
-    cleanup.Click += async (_, _) => await store.CleanupResearchCacheAsync(cancellationToken);
-
-    Grid limits = new()
-    {
-      ColumnDefinitions = new("*,*"),
-      RowDefinitions = new("Auto,Auto,Auto"),
-      ColumnSpacing = 10,
-      RowSpacing = 8,
-    };
-    AddProviderField(limits, 0, 0, "Refresh policy", refresh);
-    AddProviderField(limits, 0, 1, "Maximum results", maximumResults);
-    AddProviderField(limits, 1, 0, "Maximum result characters", maximumCharacters);
-    AddProviderField(limits, 1, 1, "Maximum cache age (hours)", cacheAge);
-    AddProviderField(limits, 2, 0, "Retention (days)", retention);
-
-    TextBox library = ProviderTextBox("Avalonia", "Documentation library");
-    TextBox version = ProviderTextBox(string.Empty, "Documentation library version");
-    version.PlaceholderText = "Exact version (recommended)";
-    TextBox question = Multiline(string.Empty, "Documentation question", 76);
-    question.PlaceholderText = "What API or behavior do you need to verify?";
-    Button lookup = new() { Content = "Look up documentation" };
-    lookup.Classes.Add("accent");
-    lookup.Click += async (_, _) => await store.LookupDocumentationAsync(
-        library.Text ?? string.Empty, version.Text, question.Text ?? string.Empty,
-        cancellationToken);
-    StackPanel lookupEvidence = new() { Spacing = 8 };
-    if (settingsState.DocumentationLookup is { } documentation)
-    {
-      lookupEvidence.Children.Add(new TextBlock
-      {
-        Text = $"Sufficient: {documentation.IsSufficient} · Conflicts: {documentation.HasConflicts} · " +
-                 $"{documentation.Results.Count} result(s)",
-        FontWeight = FontWeight.SemiBold,
-      });
-      foreach (DocumentationEvidenceView result in documentation.Results)
-      {
-        lookupEvidence.Children.Add(new Border
+        ResearchSettingsSnapshot? snapshot = settingsState.ResearchSettings;
+        CheckBox exactLocal = new()
         {
-          Classes = { "card" },
-          Child = new TextBlock
-          {
-            Text = $"#{result.Rank} {result.Title}\n{result.Content}\n" +
-                       $"Source: {result.Source.Value} ({result.SourceKind}) · " +
-                       $"Version: {result.Version?.Value ?? "unknown"} · {result.Freshness} · " +
-                       $"{result.Confidence}\nCitation: {result.Citation.Value}",
-            TextWrapping = TextWrapping.Wrap,
-          },
-        });
-      }
-      if (documentation.Escalation.Count > 0)
-      {
-        lookupEvidence.Children.Add(new TextBlock
+            Content = "Search exact restored package and SDK documentation",
+            IsChecked = snapshot?.ExactLocalEnabled ?? true,
+        };
+        CheckBox localIndex = new()
         {
-          Text = "Lookup path:\n" + string.Join("\n", documentation.Escalation.Select(item =>
-              $"{item.SourceKind}/{item.Source.Value}: {item.Action} — {item.Reason}")),
-          Classes = { "muted" },
-          TextWrapping = TextWrapping.Wrap,
-        });
-      }
-    }
-
-    Button inspect = new() { Content = "Inspect dependency graph" };
-    inspect.Classes.Add("command");
-    inspect.Click += async (_, _) => await store.InspectDependenciesAsync(cancellationToken);
-    Button previewSbom = new() { Content = "Preview deterministic SBOM" };
-    previewSbom.Classes.Add("command");
-    previewSbom.Click += async (_, _) => await store.PreviewSbomAsync(cancellationToken);
-    string dependencySummary = settingsState.DependencyInspection is not { } dependency
-        ? "No dependency inspection has run. Inspection reads existing files and never restores."
-        : dependency.Error ??
-          $"{dependency.Projects.Count} project(s) · " +
-          $"{dependency.Projects.Sum(project => project.Packages.Count)} package graph entries · " +
-          $"{dependency.Conflicts.Count} conflict(s)";
-    TextBox package = ProviderTextBox(string.Empty, "Candidate package ID");
-    TextBox candidateVersion = ProviderTextBox(string.Empty, "Candidate exact package version");
-    CheckBox allowPrerelease = new() { Content = "Allow prerelease candidate" };
-    Button validate = new() { Content = "Validate exact candidate" };
-    validate.Classes.Add("command");
-    validate.Click += async (_, _) => await store.ValidatePackageCandidateAsync(
-        package.Text ?? string.Empty, candidateVersion.Text ?? string.Empty,
-        allowPrerelease.IsChecked == true, cancellationToken);
-    Button previewChange = new() { Content = "Preview package + SBOM diff" };
-    previewChange.Classes.Add("accent");
-    previewChange.Click += async (_, _) => await store.PreviewPackageChangeAsync(
-        package.Text ?? string.Empty, candidateVersion.Text ?? string.Empty,
-        allowPrerelease.IsChecked == true, cancellationToken);
-    string candidateSummary = settingsState.PackageCandidateValidation is not { } candidate
-        ? "No package candidate has been validated."
-        : $"{candidate.Decision}: {string.Join(" ", candidate.Findings)}";
-    string changeDiff = settingsState.PackageChangePreview is not { } change
-        ? string.Empty
-        : change.Error ?? change.DependencyDiff + "\n" + change.SbomDiff;
-
-    TextBox exportPath = ProviderTextBox(string.Empty, "SBOM export destination");
-    exportPath.PlaceholderText = "/absolute/path/bom.json";
-    CheckBox overwrite = new() { Content = "Overwrite existing destination" };
-    Button export = new() { Content = "Export current SBOM…" };
-    export.Classes.Add("command");
-    export.Click += async (_, _) => await store.ExportSbomAsync(
-        exportPath.Text ?? string.Empty, overwrite.IsChecked == true, cancellationToken);
-    string sbomSummary = settingsState.SbomPreview?.Sbom is not { } sbom
-        ? settingsState.SbomPreview?.Error ?? "No SBOM preview generated."
-        : $"{sbom.Format} · SHA-256 {sbom.Sha256}\n{sbom.Json}";
-
-    return Page(
-        "Documentation & dependencies",
-        "Use version-matched documentation only when needed. Inspect package and supply-chain evidence without a model, restore, or repository mutation. Unknown facts remain unknown.",
-        new StackPanel
+            Content = "Search configured local documentation indexes",
+            IsChecked = snapshot?.LocalIndexEnabled ?? true,
+        };
+        CheckBox mcp = new()
         {
-          Spacing = 14,
-          Children =
+            Content = "Use configured closed read-only MCP documentation tools",
+            IsChecked = snapshot?.McpEnabled ?? true,
+        };
+        CheckBox web = new()
+        {
+            Content = "Use configured web search only when earlier evidence is insufficient",
+            IsChecked = snapshot?.WebEnabled ?? true,
+        };
+        CheckBox offline = new()
+        {
+            Content = "Offline mode — local and cached evidence only",
+            IsChecked = snapshot?.Offline ?? false,
+        };
+        TextBox indexRoots = Multiline(
+            string.Join(Environment.NewLine, snapshot?.IndexRoots ?? []),
+            "Documentation index roots, one absolute path per line", 82);
+        TextBox mcpTools = Multiline(
+            string.Join(Environment.NewLine, snapshot?.McpDocumentationTools ?? []),
+            "MCP documentation tools, one connection/tool per line", 82);
+        TextBox webEndpoints = Multiline(
+            string.Join(Environment.NewLine, snapshot?.WebEndpoints ?? []),
+            "Web documentation endpoints, one HTTPS URI per line", 82);
+        TextBox packageSources = Multiline(
+            string.Join(Environment.NewLine, snapshot?.PackageSources ??
+                ["https://api.nuget.org/v3/index.json"]),
+            "NuGet service indexes, one HTTPS URI per line", 82);
+        ComboBox refresh = new()
+        {
+            ItemsSource = Enum.GetValues<ResearchRefreshMode>(),
+            SelectedItem = snapshot?.RefreshMode ?? ResearchRefreshMode.OnDemand,
+            MinWidth = 180,
+        };
+        AutomationProperties.SetName(refresh, "Documentation refresh policy");
+        NumericUpDown maximumResults = ProviderNumber(
+            snapshot?.MaximumResults ?? 5, 1, 20, "Maximum documentation results");
+        NumericUpDown maximumCharacters = ProviderNumber(
+            snapshot?.MaximumCharacters ?? 12_000, 1_000, 100_000,
+            "Maximum documentation result characters");
+        NumericUpDown cacheAge = ProviderNumber(
+            snapshot?.MaximumCacheAgeHours ?? 168, 0, 8_760,
+            "Maximum documentation cache age hours");
+        NumericUpDown retention = ProviderNumber(
+            snapshot?.RetentionDays ?? 30, 0, 3_650, "Documentation cache retention days");
+        Button save = new() { Content = "Save documentation and dependency settings" };
+        save.Classes.Add("accent");
+        save.Click += async (_, _) => await store.SaveResearchSettingsAsync(new(
+            exactLocal.IsChecked == true,
+            localIndex.IsChecked == true,
+            mcp.IsChecked == true,
+            web.IsChecked == true,
+            offline.IsChecked == true,
+            Lines(indexRoots.Text),
+            Lines(mcpTools.Text),
+            Lines(webEndpoints.Text),
+            Lines(packageSources.Text),
+            refresh.SelectedItem is ResearchRefreshMode selectedRefresh
+                ? selectedRefresh
+                : ResearchRefreshMode.OnDemand,
+            decimal.ToInt32(maximumResults.Value ?? 5),
+            decimal.ToInt32(maximumCharacters.Value ?? 12_000),
+            decimal.ToInt32(cacheAge.Value ?? 168),
+            decimal.ToInt32(retention.Value ?? 30)), cancellationToken);
+        Button cleanup = new() { Content = "Apply cache retention now" };
+        cleanup.Classes.Add("command");
+        cleanup.Click += async (_, _) => await store.CleanupResearchCacheAsync(cancellationToken);
+
+        Grid limits = new()
+        {
+            ColumnDefinitions = new("*,*"),
+            RowDefinitions = new("Auto,Auto,Auto"),
+            ColumnSpacing = 10,
+            RowSpacing = 8,
+        };
+        AddProviderField(limits, 0, 0, "Refresh policy", refresh);
+        AddProviderField(limits, 0, 1, "Maximum results", maximumResults);
+        AddProviderField(limits, 1, 0, "Maximum result characters", maximumCharacters);
+        AddProviderField(limits, 1, 1, "Maximum cache age (hours)", cacheAge);
+        AddProviderField(limits, 2, 0, "Retention (days)", retention);
+
+        TextBox library = ProviderTextBox("Avalonia", "Documentation library");
+        TextBox version = ProviderTextBox(string.Empty, "Documentation library version");
+        version.PlaceholderText = "Exact version (recommended)";
+        TextBox question = Multiline(string.Empty, "Documentation question", 76);
+        question.PlaceholderText = "What API or behavior do you need to verify?";
+        Button lookup = new() { Content = "Look up documentation" };
+        lookup.Classes.Add("accent");
+        lookup.Click += async (_, _) => await store.LookupDocumentationAsync(
+            library.Text ?? string.Empty, version.Text, question.Text ?? string.Empty,
+            cancellationToken);
+        StackPanel lookupEvidence = new() { Spacing = 8 };
+        if (settingsState.DocumentationLookup is { } documentation)
+        {
+            lookupEvidence.Children.Add(new TextBlock
             {
+                Text = $"Sufficient: {documentation.IsSufficient} · Conflicts: {documentation.HasConflicts} · " +
+                       $"{documentation.Results.Count} result(s)",
+                FontWeight = FontWeight.SemiBold,
+            });
+            foreach (DocumentationEvidenceView result in documentation.Results)
+            {
+                lookupEvidence.Children.Add(new Border
+                {
+                    Classes = { "card" },
+                    Child = new TextBlock
+                    {
+                        Text = $"#{result.Rank} {result.Title}\n{result.Content}\n" +
+                               $"Source: {result.Source.Value} ({result.SourceKind}) · " +
+                               $"Version: {result.Version?.Value ?? "unknown"} · {result.Freshness} · " +
+                               $"{result.Confidence}\nCitation: {result.Citation.Value}",
+                        TextWrapping = TextWrapping.Wrap,
+                    },
+                });
+            }
+            if (documentation.Escalation.Count > 0)
+            {
+                lookupEvidence.Children.Add(new TextBlock
+                {
+                    Text = "Lookup path:\n" + string.Join("\n", documentation.Escalation.Select(item =>
+                        $"{item.SourceKind}/{item.Source.Value}: {item.Action} — {item.Reason}")),
+                    Classes = { "muted" },
+                    TextWrapping = TextWrapping.Wrap,
+                });
+            }
+        }
+
+        Button inspect = new() { Content = "Inspect dependency graph" };
+        inspect.Classes.Add("command");
+        inspect.Click += async (_, _) => await store.InspectDependenciesAsync(cancellationToken);
+        Button previewSbom = new() { Content = "Preview deterministic SBOM" };
+        previewSbom.Classes.Add("command");
+        previewSbom.Click += async (_, _) => await store.PreviewSbomAsync(cancellationToken);
+        string dependencySummary = settingsState.DependencyInspection is not { } dependency
+            ? "No dependency inspection has run. Inspection reads existing files and never restores."
+            : dependency.Error ??
+              $"{dependency.Projects.Count} project(s) · " +
+              $"{dependency.Projects.Sum(project => project.Packages.Count)} package graph entries · " +
+              $"{dependency.Conflicts.Count} conflict(s)";
+        TextBox package = ProviderTextBox(string.Empty, "Candidate package ID");
+        TextBox candidateVersion = ProviderTextBox(string.Empty, "Candidate exact package version");
+        CheckBox allowPrerelease = new() { Content = "Allow prerelease candidate" };
+        Button validate = new() { Content = "Validate exact candidate" };
+        validate.Classes.Add("command");
+        validate.Click += async (_, _) => await store.ValidatePackageCandidateAsync(
+            package.Text ?? string.Empty, candidateVersion.Text ?? string.Empty,
+            allowPrerelease.IsChecked == true, cancellationToken);
+        Button previewChange = new() { Content = "Preview package + SBOM diff" };
+        previewChange.Classes.Add("accent");
+        previewChange.Click += async (_, _) => await store.PreviewPackageChangeAsync(
+            package.Text ?? string.Empty, candidateVersion.Text ?? string.Empty,
+            allowPrerelease.IsChecked == true, cancellationToken);
+        string candidateSummary = settingsState.PackageCandidateValidation is not { } candidate
+            ? "No package candidate has been validated."
+            : $"{candidate.Decision}: {string.Join(" ", candidate.Findings)}";
+        string changeDiff = settingsState.PackageChangePreview is not { } change
+            ? string.Empty
+            : change.Error ?? change.DependencyDiff + "\n" + change.SbomDiff;
+
+        TextBox exportPath = ProviderTextBox(string.Empty, "SBOM export destination");
+        exportPath.PlaceholderText = "/absolute/path/bom.json";
+        CheckBox overwrite = new() { Content = "Overwrite existing destination" };
+        Button export = new() { Content = "Export current SBOM…" };
+        export.Classes.Add("command");
+        export.Click += async (_, _) => await store.ExportSbomAsync(
+            exportPath.Text ?? string.Empty, overwrite.IsChecked == true, cancellationToken);
+        string sbomSummary = settingsState.SbomPreview?.Sbom is not { } sbom
+            ? settingsState.SbomPreview?.Error ?? "No SBOM preview generated."
+            : $"{sbom.Format} · SHA-256 {sbom.Sha256}\n{sbom.Json}";
+
+        return Page(
+            "Documentation & dependencies",
+            "Use version-matched documentation only when needed. Inspect package and supply-chain evidence without a model, restore, or repository mutation. Unknown facts remain unknown.",
+            new StackPanel
+            {
+                Spacing = 14,
+                Children =
+                {
                     new Border
                     {
                         Classes = { "card", "attention" },
@@ -1041,13 +1241,16 @@ internal sealed class SettingsWindow : Window
                         },
                     },
                     new TextBlock { Text = settingsState.Status ?? string.Empty, Classes = { "muted" }, TextWrapping = TextWrapping.Wrap },
-            },
-        });
-  }
+                },
+            });
+    }
 
     private Control AgentToolsPage()
     {
         StackPanel modules = new() { Spacing = 12 };
+        Dictionary<string, CheckBox> exposure = new(StringComparer.Ordinal);
+        HashSet<string> direct = settingsState.AgentToolExposure?.DirectModules
+            .Select(item => item.Value).ToHashSet(StringComparer.Ordinal) ?? [];
         foreach (AgentToolModule module in AgentToolCatalog.Default.Modules)
         {
             string roles = string.Join(", ", module.Roles.Select(role => role.ToString()));
@@ -1057,38 +1260,58 @@ internal sealed class SettingsWindow : Window
             string status = module.Availability is AgentToolModuleAvailability.Available
                 ? "Available"
                 : $"Planned · {module.UnavailableReason}";
+            StackPanel card = new()
+            {
+                Spacing = 6,
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = module.DisplayName,
+                        FontSize = 16,
+                        FontWeight = FontWeight.SemiBold,
+                    },
+                    new TextBlock
+                    {
+                        Text = module.Summary,
+                        TextWrapping = TextWrapping.Wrap,
+                    },
+                    new TextBlock
+                    {
+                        Text = $"{status}\nSource: {module.Source.Value} · Roles: {roles}\n" +
+                               $"Exposure: {module.Exposure} · Authority: {module.Authority}\n" +
+                               $"Mode: {(module.IsOptional ? "Optional" : "Required core")}\n" +
+                               $"Operations: {operations}",
+                        Classes = { "muted" },
+                        TextWrapping = TextWrapping.Wrap,
+                    },
+                },
+            };
+            if (module.IsOptional && module.Availability is AgentToolModuleAvailability.Available &&
+                module.Exposure is AgentToolExposure.OnDemand)
+            {
+                CheckBox expose = new()
+                {
+                    Content = "Expose directly on every eligible role turn",
+                    IsChecked = direct.Contains(module.Id.Value),
+                };
+                AutomationProperties.SetName(expose, $"Expose {module.DisplayName} directly");
+                exposure[module.Id.Value] = expose;
+                card.Children.Add(expose);
+            }
             modules.Children.Add(new Border
             {
                 Classes = { "card", "row" },
-                Child = new StackPanel
-                {
-                    Spacing = 6,
-                    Children =
-                    {
-                        new TextBlock
-                        {
-                            Text = module.DisplayName,
-                            FontSize = 16,
-                            FontWeight = FontWeight.SemiBold,
-                        },
-                        new TextBlock
-                        {
-                            Text = module.Summary,
-                            TextWrapping = TextWrapping.Wrap,
-                        },
-                        new TextBlock
-                        {
-                            Text = $"{status}\nSource: {module.Source.Value} · Roles: {roles}\n" +
-                                   $"Exposure: {module.Exposure} · Authority: {module.Authority}\n" +
-                                   $"Mode: {(module.IsOptional ? "Optional" : "Required core")}\n" +
-                                   $"Operations: {operations}",
-                            Classes = { "muted" },
-                            TextWrapping = TextWrapping.Wrap,
-                        },
-                    },
-                },
+                Child = card,
             });
         }
+
+        Button saveExposure = new() { Content = "Save optional exposure defaults" };
+        saveExposure.Classes.Add("primary");
+        saveExposure.Click += async (_, _) => await store.SaveAgentToolExposureAsync(
+            exposure.Where(item => item.Value.IsChecked == true)
+                .Select(item => new AgentToolModuleId(item.Key)).ToArray(), cancellationToken);
+        modules.Children.Add(saveExposure);
 
         int externalConnections = settingsState.McpSettings?.Connections.Count ?? 0;
         modules.Children.Add(new Border
@@ -1105,7 +1328,7 @@ internal sealed class SettingsWindow : Window
 
         return Page(
             "Agent tools",
-            "See what models can use, where each capability comes from, and which authority boundary applies. Required core tools are policy-managed; optional on-demand modules become configurable when their implementation ships.",
+            "See what models can use, where each capability comes from, and which authority boundary applies. On-demand requests grant schemas for one next role turn; saved direct exposure never bypasses operation approval.",
             modules);
     }
 
@@ -1531,22 +1754,22 @@ internal sealed class SettingsWindow : Window
         return field;
     }
 
-  private static TextBox Multiline(string value, string accessibleName, double height)
-  {
-    TextBox field = new()
+    private static TextBox Multiline(string value, string accessibleName, double height)
     {
-      Text = value,
-      AcceptsReturn = true,
-      Height = height,
-      TextWrapping = TextWrapping.NoWrap,
-    };
-    AutomationProperties.SetName(field, accessibleName);
-    return field;
-  }
+        TextBox field = new()
+        {
+            Text = value,
+            AcceptsReturn = true,
+            Height = height,
+            TextWrapping = TextWrapping.NoWrap,
+        };
+        AutomationProperties.SetName(field, accessibleName);
+        return field;
+    }
 
-  private static IReadOnlyList<string> Lines(string? value) =>
-      (value ?? string.Empty).Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries |
-          StringSplitOptions.TrimEntries);
+    private static IReadOnlyList<string> Lines(string? value) =>
+        (value ?? string.Empty).Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries |
+            StringSplitOptions.TrimEntries);
 
     private NumericUpDown ProviderNumber(
         int value,

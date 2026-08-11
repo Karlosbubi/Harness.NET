@@ -8,20 +8,21 @@ using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
-using Harness.BusinessLogic.Appearance;
-using Harness.BusinessLogic.Agents;
 using Harness.BusinessLogic.Acceptance;
+using Harness.BusinessLogic.Agents;
+using Harness.BusinessLogic.Appearance;
 using Harness.BusinessLogic.Approvals;
+using Harness.BusinessLogic.CodeIntelligence;
 using Harness.BusinessLogic.Dashboard;
 using Harness.BusinessLogic.Documents;
-using Harness.BusinessLogic.CodeIntelligence;
 using Harness.BusinessLogic.Evidence;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Layouts;
+using Harness.BusinessLogic.Mcp;
 using Harness.BusinessLogic.Mutations;
-using Harness.BusinessLogic.Workspaces;
 using Harness.BusinessLogic.Workflows;
+using Harness.BusinessLogic.Workspaces;
 using Harness.UI.Avalonia;
 
 namespace Harness.Presentation.Avalonia;
@@ -80,6 +81,7 @@ internal sealed class MainWindow : Window
         AccessibleName = "Open Settings",
     };
     private readonly Button showConversation = new() { Content = "Chat" };
+    private readonly Button inboundMcpIndicator = new() { Content = "MCP ACTIVE", IsVisible = false };
     private readonly Border header = new();
     private readonly Border navigation = new();
     private readonly Border primary = new();
@@ -241,6 +243,7 @@ internal sealed class MainWindow : Window
             VerticalAlignment = VerticalAlignment.Center,
             Children =
             {
+                inboundMcpIndicator,
                 Cluster(showConversation, modelPicker, refreshProvider),
                 Cluster(openSettings),
             },
@@ -264,6 +267,9 @@ internal sealed class MainWindow : Window
         openSettings.Classes.Add("icon");
         showConversation.Classes.Add("command");
         AutomationProperties.SetName(showConversation, "Show Conversation panel");
+        inboundMcpIndicator.Classes.Add("command");
+        AutomationProperties.SetName(inboundMcpIndicator, "Inbound MCP server active; open control settings");
+        inboundMcpIndicator.Click += async (_, _) => await ShowSettingsAsync();
         return grid;
     }
 
@@ -612,6 +618,44 @@ internal sealed class MainWindow : Window
     private async Task ShowSettingsAsync() =>
         await new SettingsWindow(store, cancellationToken).ShowDialog(this);
 
+    internal async ValueTask<InboundUiActionResult> ActivateInboundUiAsync(InboundUiActionId action)
+    {
+        bool applied = action.Value switch
+        {
+            "chat.show" => ShowConversationForInbound(),
+            "panel.files" => workbench?.ShowFiles() == true,
+            "panel.git" => workbench?.ShowGit() == true,
+            "panel.problems" => workbench?.ShowProblems() == true,
+            "panel.output" => workbench?.ShowRunOutput() == true,
+            "settings.open" => await OpenSettingsForInboundAsync(),
+            _ => false,
+        };
+        return applied
+            ? new(action, true, null, null)
+            : new(action, false, "ui_action_unavailable", "The allowlisted Harness action is unavailable.");
+    }
+
+    internal ValueTask<InboundUiActionResult> OpenInboundDocumentAsync(
+        InboundUiDocumentRequest request) => workbench is null
+        ? ValueTask.FromResult(new InboundUiActionResult(new("document.open"), false,
+            "workbench_unavailable", "The workbench is unavailable."))
+        : workbench.OpenInboundDocumentAsync(request);
+
+    internal IReadOnlyList<InboundOpenDocumentView> InboundOpenDocuments =>
+        workbench?.InboundOpenDocuments ?? [];
+
+    private bool ShowConversationForInbound()
+    {
+        ShowConversation();
+        return true;
+    }
+
+    private async ValueTask<bool> OpenSettingsForInboundAsync()
+    {
+        await ShowSettingsAsync();
+        return true;
+    }
+
     private async Task ShowSemanticContextAsync()
     {
         if (store.Current.Goals.SelectedGoal is not { } goal)
@@ -694,6 +738,13 @@ internal sealed class MainWindow : Window
             send.IsEnabled = !state.IsLoading && !state.IsStreaming &&
                              !string.IsNullOrWhiteSpace(state.ComposerText);
             cancel.IsVisible = state.IsStreaming;
+            inboundMcpIndicator.IsVisible = state.Settings.InboundMcpSettings?.Status.IsRunning == true;
+            if (state.Settings.InboundMcpSettings?.Status is { IsRunning: true } inbound)
+            {
+                inboundMcpIndicator.Content = $"MCP · {inbound.ActiveClients.Count}";
+                ToolTip.SetTip(inboundMcpIndicator,
+                    $"Authenticated local control active\n{inbound.Endpoint}\nInstance {inbound.InstanceId}");
+            }
             manageFramework.IsEnabled = !state.IsLoading &&
                                         state.Workspaces.Registered.Any(item => item.IsActive);
             inspectGoalContext.IsEnabled = !state.IsLoading && state.Goals.SelectedGoal is not null;

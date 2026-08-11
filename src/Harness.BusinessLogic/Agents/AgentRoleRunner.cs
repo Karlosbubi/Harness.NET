@@ -1,8 +1,8 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.CodeIntelligence;
+using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Mutations;
 using Harness.BusinessLogic.Tools;
@@ -272,7 +272,7 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
             request.FileAreas is not { Count: 1 } ||
             !Path.HasExtension(request.FileAreas[0].Value) ||
             tools.OfType<AIFunction>().SingleOrDefault(tool => tool.Name == "read_file") is not
-                { } readFile)
+            { } readFile)
         {
             return null;
         }
@@ -438,7 +438,7 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
         }
         if (string.IsNullOrWhiteSpace(content) ||
             tools.OfType<AIFunction>().SingleOrDefault(tool => tool.Name == "apply_file_edit") is not
-                { } applyFileEdit)
+            { } applyFileEdit)
         {
             return new(role, Output: null, new("invalid_structured_file_edit"),
                 new("The local model returned an empty file proposal or no typed edit tool is available."));

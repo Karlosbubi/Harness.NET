@@ -141,3 +141,36 @@ public sealed record CodeIntelligenceNavigationResult(
     CodeIntelligenceResultState State,
     IReadOnlyList<CodeIntelligenceSymbolDestination> Destinations,
     IReadOnlyList<CodeIntelligenceIssue> Issues);
+
+public enum CodeIntelligenceSemanticRelation
+{
+    Symbol,
+    IncomingCall,
+    OutgoingCall,
+    BaseType,
+    DerivedType,
+    Override,
+    AssociatedTest,
+}
+
+public sealed record CodeIntelligenceSemanticQuery(
+    CodeIntelligenceInteractiveSnapshot Snapshot,
+    string? Query,
+    int MaximumResults,
+    int Offset);
+
+public sealed record CodeIntelligenceSemanticItem(
+    CodeIntelligenceSemanticRelation Relation,
+    CodeIntelligenceMessage Display,
+    CodeIntelligenceSymbolDestination Destination);
+
+public sealed record CodeIntelligenceSemanticResult(
+    CodeIntelligenceContextId ContextId,
+    CodeIntelligenceSessionId SessionId,
+    CodeIntelligenceDocumentPath Path,
+    CodeIntelligenceBufferVersion BufferVersion,
+    CodeIntelligenceResultState State,
+    IReadOnlyList<CodeIntelligenceSemanticItem> Items,
+    int? Continuation,
+    bool IsTruncated,
+    IReadOnlyList<CodeIntelligenceIssue> Issues);

@@ -25,4 +25,36 @@ internal interface IGoalWorkspaceInspectionService
         GoalId goalId,
         GoalWorkspaceScope scope,
         CancellationToken cancellationToken = default);
+
+    ValueTask<GoalTreeView> ListTreeAsync(
+        GoalId goalId,
+        GoalWorkspaceScope scope,
+        string relativeRoot,
+        string? glob,
+        int maximumDepth,
+        int maximumResults,
+        string? continuation,
+        CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+    ValueTask<GoalFileRangeView> ReadRangeAsync(
+        GoalId goalId,
+        GoalWorkspaceScope scope,
+        string relativePath,
+        int startLine,
+        int lineCount,
+        CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+    ValueTask<GoalRegexSearchView> SearchRegexAsync(
+        GoalId goalId,
+        GoalWorkspaceScope scope,
+        string pattern,
+        string? fileGlob,
+        int maximumResults,
+        string? continuation,
+        CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+    ValueTask<GoalProjectGraphView> InspectProjectGraphAsync(
+        GoalId goalId,
+        GoalWorkspaceScope scope,
+        CancellationToken cancellationToken = default) => throw new NotSupportedException();
 }

@@ -70,11 +70,13 @@ internal sealed class OperationsDialog : Window
     {
         Button close = new() { Content = "Close" };
         close.Click += (_, _) => Close();
-        return new ScrollViewer { Content = new StackPanel
+        return new ScrollViewer
         {
-            Margin = new Thickness(20),
-            Spacing = 12,
-            Children =
+            Content = new StackPanel
+            {
+                Margin = new Thickness(20),
+                Spacing = 12,
+                Children =
             {
                 new TextBlock
                 {
@@ -131,7 +133,8 @@ internal sealed class OperationsDialog : Window
                     Children = { close },
                 },
             },
-        }};
+            }
+        };
     }
 
     private Control RestoreSourceRow()

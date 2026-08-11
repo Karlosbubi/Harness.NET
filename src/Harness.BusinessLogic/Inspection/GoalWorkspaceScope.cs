@@ -1,6 +1,6 @@
 namespace Harness.BusinessLogic.Inspection;
 
-internal enum GoalWorkspaceScope
+public enum GoalWorkspaceScope
 {
     Original,
     ApprovedWorktree,

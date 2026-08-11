@@ -3,10 +3,10 @@ using Harness.BusinessLogic.CodeIntelligence;
 using Harness.BusinessLogic.Evidence;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Inspection;
-using Harness.BusinessLogic.Mutations;
 using Harness.BusinessLogic.Mcp;
-using Harness.BusinessLogic.Retrieval;
+using Harness.BusinessLogic.Mutations;
 using Harness.BusinessLogic.Research;
+using Harness.BusinessLogic.Retrieval;
 using Harness.DataAccess.Mcp;
 using Microsoft.Extensions.AI;
 
@@ -26,11 +26,11 @@ public sealed class AgentToolPolicyTests
         Assert.Contains(AgentToolKind.FindDefinition, tools);
         Assert.Contains(AgentToolKind.RequestVisualCapture, tools);
         Assert.Contains(AgentToolKind.InspectVisualCapture, tools);
-    Assert.Contains(AgentToolKind.LookupDocumentation, tools);
-    Assert.Contains(AgentToolKind.InspectDependencies, tools);
-    Assert.Contains(AgentToolKind.ValidatePackageCandidate, tools);
-    Assert.Contains(AgentToolKind.PreviewSbom, tools);
-    Assert.Contains(AgentToolKind.PreviewPackageChange, tools);
+        Assert.Contains(AgentToolKind.LookupDocumentation, tools);
+        Assert.Contains(AgentToolKind.InspectDependencies, tools);
+        Assert.Contains(AgentToolKind.ValidatePackageCandidate, tools);
+        Assert.Contains(AgentToolKind.PreviewSbom, tools);
+        Assert.Contains(AgentToolKind.PreviewPackageChange, tools);
         Assert.DoesNotContain(AgentToolKind.ApplyFileEdit, tools);
         Assert.DoesNotContain(AgentToolKind.Build, tools);
         Assert.DoesNotContain(AgentToolKind.ListEvidence, tools);
@@ -52,8 +52,8 @@ public sealed class AgentToolPolicyTests
         Assert.Contains(AgentToolKind.FindImplementations, tools);
         Assert.Contains(AgentToolKind.RequestVisualCapture, tools);
         Assert.Contains(AgentToolKind.InspectVisualCapture, tools);
-    Assert.Contains(AgentToolKind.LookupDocumentation, tools);
-    Assert.Contains(AgentToolKind.InspectDependencies, tools);
+        Assert.Contains(AgentToolKind.LookupDocumentation, tools);
+        Assert.Contains(AgentToolKind.InspectDependencies, tools);
         Assert.DoesNotContain(AgentToolKind.ListEvidence, tools);
     }
 
@@ -69,8 +69,8 @@ public sealed class AgentToolPolicyTests
         Assert.Contains(AgentToolKind.FindReferences, tools);
         Assert.Contains(AgentToolKind.RequestVisualCapture, tools);
         Assert.Contains(AgentToolKind.InspectVisualCapture, tools);
-    Assert.Contains(AgentToolKind.LookupDocumentation, tools);
-    Assert.Contains(AgentToolKind.PreviewSbom, tools);
+        Assert.Contains(AgentToolKind.LookupDocumentation, tools);
+        Assert.Contains(AgentToolKind.PreviewSbom, tools);
         Assert.DoesNotContain(AgentToolKind.ApplyFileEdit, tools);
         Assert.DoesNotContain(AgentToolKind.Build, tools);
         Assert.DoesNotContain(AgentToolKind.Test, tools);
@@ -78,11 +78,11 @@ public sealed class AgentToolPolicyTests
 
     [Theory]
     [InlineData(AgentRole.Lead,
-        "read_file,search_text,inspect_git,inspect_dotnet,search_semantic_context,inspect_code_problems,get_symbol_info,find_symbol_definition,find_symbol_references,find_symbol_implementations")]
+        "read_file,read_file_range,list_workspace_tree,search_text,search_regex,inspect_git,inspect_dotnet,inspect_project_graph,search_semantic_context,inspect_code_problems,inspect_project_problems,get_symbol_info,find_symbol_definition,find_symbol_references,find_symbol_implementations,search_symbols,analyze_calls,get_type_hierarchy,find_associated_tests,discover_toolsets,request_toolset")]
     [InlineData(AgentRole.Implementer,
-        "read_file,search_text,inspect_git,inspect_dotnet,search_semantic_context,inspect_code_problems,get_symbol_info,find_symbol_definition,find_symbol_references,find_symbol_implementations,apply_file_edit,preview_symbol_rename,apply_symbol_rename,dotnet_build,dotnet_test")]
+        "read_file,read_file_range,list_workspace_tree,search_text,search_regex,inspect_git,inspect_dotnet,inspect_project_graph,search_semantic_context,inspect_code_problems,inspect_project_problems,get_symbol_info,find_symbol_definition,find_symbol_references,find_symbol_implementations,search_symbols,analyze_calls,get_type_hierarchy,find_associated_tests,apply_file_edit,preview_symbol_rename,apply_symbol_rename,dotnet_build,dotnet_test,discover_toolsets,request_toolset")]
     [InlineData(AgentRole.Reviewer,
-        "read_file,search_text,inspect_git,inspect_dotnet,search_semantic_context,inspect_code_problems,get_symbol_info,find_symbol_definition,find_symbol_references,find_symbol_implementations,list_tool_evidence")]
+        "read_file,read_file_range,list_workspace_tree,search_text,search_regex,inspect_git,inspect_dotnet,inspect_project_graph,search_semantic_context,inspect_code_problems,inspect_project_problems,get_symbol_info,find_symbol_definition,find_symbol_references,find_symbol_implementations,search_symbols,analyze_calls,get_type_hierarchy,find_associated_tests,list_tool_evidence,discover_toolsets,request_toolset")]
     public void Factory_exposes_only_the_closed_role_scope(
         AgentRole role,
         string expectedNames)
@@ -168,30 +168,30 @@ public sealed class AgentToolPolicyTests
         Assert.Equal(new WorkbenchCodePosition(4, 7), code.Position);
     }
 
-  [Fact]
-  public void Factory_exposes_named_research_tools_without_export_or_generic_network_operations()
-  {
-    AgentToolFactory factory = new(
-        new UnsupportedInspectionService(),
-        new UnsupportedMutationService(),
-        new UnsupportedEvidenceService(),
-        new UnsupportedContextService(),
-        new UnsupportedCodeIntelligenceService(),
-        documentationResearchService: new UnsupportedDocumentationResearchService(),
-        dependencyResearchService: new UnsupportedDependencyResearchService());
+    [Fact]
+    public void Factory_exposes_named_research_tools_without_export_or_generic_network_operations()
+    {
+        AgentToolFactory factory = new(
+            new UnsupportedInspectionService(),
+            new UnsupportedMutationService(),
+            new UnsupportedEvidenceService(),
+            new UnsupportedContextService(),
+            new UnsupportedCodeIntelligenceService(),
+            documentationResearchService: new UnsupportedDocumentationResearchService(),
+            dependencyResearchService: new UnsupportedDependencyResearchService());
 
-    string[] names = factory.Create(AgentRole.Lead, new("goal-1"), [])
-        .Select(tool => tool.Name).ToArray();
+        string[] names = factory.Create(AgentRole.Lead, new("goal-1"), [])
+            .Select(tool => tool.Name).ToArray();
 
-    Assert.Contains("lookup_documentation", names);
-    Assert.Contains("inspect_dependencies", names);
-    Assert.Contains("validate_package_candidate", names);
-    Assert.Contains("preview_sbom", names);
-    Assert.Contains("preview_package_change", names);
-    Assert.DoesNotContain("export_sbom", names);
-    Assert.DoesNotContain("web_request", names);
-    Assert.DoesNotContain("invoke_mcp", names);
-  }
+        Assert.Contains("lookup_documentation", names);
+        Assert.Contains("inspect_dependencies", names);
+        Assert.Contains("validate_package_candidate", names);
+        Assert.Contains("preview_sbom", names);
+        Assert.Contains("preview_package_change", names);
+        Assert.DoesNotContain("export_sbom", names);
+        Assert.DoesNotContain("web_request", names);
+        Assert.DoesNotContain("invoke_mcp", names);
+    }
 
     [Theory]
     [InlineData("src/Feature/File.cs", true)]
@@ -296,28 +296,28 @@ public sealed class AgentToolPolicyTests
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
-  private sealed class UnsupportedDocumentationResearchService : IDocumentationResearchService
-  {
-    public ValueTask<DocumentationLookupResult> LookupAsync(
-        DocumentationLookupRequest request,
-        CancellationToken cancellationToken = default) => throw new NotSupportedException();
-  }
+    private sealed class UnsupportedDocumentationResearchService : IDocumentationResearchService
+    {
+        public ValueTask<DocumentationLookupResult> LookupAsync(
+            DocumentationLookupRequest request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
 
-  private sealed class UnsupportedDependencyResearchService : IDependencyResearchService
-  {
-    public ValueTask<DependencyInspectionResult> InspectAsync(DependencyInspectionRequest request,
-        CancellationToken cancellationToken = default) => throw new NotSupportedException();
-    public ValueTask<PackageCandidateValidationResult> ValidateCandidateAsync(
-        PackageCandidateValidationRequest request,
-        CancellationToken cancellationToken = default) => throw new NotSupportedException();
-    public ValueTask<SbomPreviewResult> PreviewSbomAsync(SbomPreviewRequest request,
-        CancellationToken cancellationToken = default) => throw new NotSupportedException();
-    public ValueTask<PackageChangePreviewResult> PreviewPackageChangeAsync(
-        PackageChangePreviewRequest request,
-        CancellationToken cancellationToken = default) => throw new NotSupportedException();
-    public ValueTask<SbomExportResult> ExportSbomAsync(SbomExportRequest request,
-        CancellationToken cancellationToken = default) => throw new NotSupportedException();
-  }
+    private sealed class UnsupportedDependencyResearchService : IDependencyResearchService
+    {
+        public ValueTask<DependencyInspectionResult> InspectAsync(DependencyInspectionRequest request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<PackageCandidateValidationResult> ValidateCandidateAsync(
+            PackageCandidateValidationRequest request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<SbomPreviewResult> PreviewSbomAsync(SbomPreviewRequest request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<PackageChangePreviewResult> PreviewPackageChangeAsync(
+            PackageChangePreviewRequest request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<SbomExportResult> ExportSbomAsync(SbomExportRequest request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
 
     private sealed class CapturingCodeIntelligenceService : IGoalCodeIntelligenceService
     {
