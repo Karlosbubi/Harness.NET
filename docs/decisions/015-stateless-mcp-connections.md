@@ -40,6 +40,28 @@ Mutating, desktop, repository, credential, prompt, resource, task, Apps, OAuth, 
 or subscription support requires a separate end-to-end decision. Endpoint enablement
 is not approval for those capabilities.
 
+One narrow exception supports Harness-to-Harness delegation. A connection explicitly
+configured as `HarnessControl` may expose selected tools that are not read-only when:
+
+- the endpoint is loopback;
+- the initialized server identifies itself as `Harness.NET`;
+- a stable client ID and write-only bearer token are configured in Settings, with the
+  token stored through Secret Service rather than XML;
+- every exposed tool is in that connection's exact allowlist and starts with
+  `harness_`;
+- destructive and mutating annotations remain visible to the model-facing adapter;
+- control tools are available only to the Lead role, while ordinary read-only MCP
+  tools retain their existing role behavior; and
+- the remote Harness server still enforces application/source/goal/plan/run/operation,
+  spending, trust, worktree, and approval identities for every action.
+
+This exception does not add a generic invocation function or treat the bearer token as
+repository, spending, plan, or commit approval. Cyclic delegation topologies are not a
+supported execution strategy; operators configure a directed controller-to-worker
+connection. A worker with no outbound control connection cannot recurse. Durable
+delegation-depth metadata and automatic cycle detection remain prerequisites for
+enabling arbitrary mutual/self-control.
+
 Settings ships with the transport. It can add, edit, enable, disable, remove, and
 refresh named endpoints; show protocol, eligible/rejected counts, failures, and
 restart state; and persist private XDG XML. Active connections do not change during a
@@ -54,6 +76,8 @@ persistence, runtime status, and documentation with the adapter.
 - SDK changes remain in Data Access.
 - Incomplete safety metadata does not expand agent authority.
 - Configuration does not require hand-editing XML.
+- A Harness instance can use a separately configured Harness instance as a typed Lead
+  sub-agent without relaxing normal MCP connections.
 
 ## Alternatives considered
 

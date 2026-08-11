@@ -20,7 +20,8 @@ Delivered:
 - Ollama and OpenRouter chat and embedding providers;
 - provider discovery, per-role model routing, searchable model selection, and
   monetary controls for remote inference;
-- stateless MCP 2.x connections with Settings management and read-only tool policy;
+- stateless MCP 2.x connections with Settings management, read-only tool policy, and
+  an explicit loopback Harness-to-Harness Lead delegation mode;
 - an optional authenticated loopback MCP 2.x server for typed dogfooding and isolated
   evaluation, with one-time client enrollment, allowlists, audit, revocation,
   disposable fixtures, accessibility state, and Harness-owned evaluation frames;
@@ -70,6 +71,9 @@ editor and daily-use IDE slices expand further.
 - Inbound MCP is disabled by default, loopback-only, bearer-authenticated, individually
   allowlisted, and audited. It exposes no shell, SQL, arbitrary command, generic
   click/type, desktop control, credential read, or natural-language authority.
+- Outbound Harness control is a separate directed controller→worker mode. It requires
+  exact tool allowlisting and a write-only Secret Service token, and is never exposed
+  to Implementer or Reviewer. Arbitrary cyclic delegation is unsupported.
 
 See [architecture](docs/architecture.md), [framework](docs/framework.md), and
 [decision records](docs/decisions/README.md) for the exact rules.

@@ -60,6 +60,12 @@ internal sealed class XdgMcpConnectionConfigurationStore : IMcpConnectionConfigu
                 .ToString(System.Globalization.CultureInfo.InvariantCulture));
             Set(connection, "Enabled", configuration.IsEnabled.ToString(
                 System.Globalization.CultureInfo.InvariantCulture));
+            Set(connection, "Access", configuration.Access.ToString());
+            Set(connection, "ClientId", configuration.ClientId?.Value ?? string.Empty);
+            Set(connection, "BearerTokenReference",
+                configuration.BearerTokenReference?.Value ?? string.Empty);
+            Set(connection, "AllowedTools", string.Join(Environment.NewLine,
+                (configuration.AllowedTools ?? []).Select(tool => tool.Value)));
             await SaveAsync(document, cancellationToken);
 
             McpConnectionConfiguration saved = configuration with { RequiresRestart = true };

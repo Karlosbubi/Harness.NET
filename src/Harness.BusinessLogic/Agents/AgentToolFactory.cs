@@ -49,7 +49,7 @@ internal sealed class AgentToolFactory(
             .ToList();
         if (mcpToolService is not null)
         {
-            tools.AddRange(mcpToolService.EligibleTools.Select(tool =>
+            tools.AddRange(mcpToolService.EligibleToolsFor(role).Select(tool =>
                 (AITool)new McpAgentFunction(tool, mcpToolService)));
         }
         return tools;

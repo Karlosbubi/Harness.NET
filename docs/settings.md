@@ -55,6 +55,16 @@ Only tools that explicitly declare read-only and non-destructive behavior reach 
 schemas. The page does not provide arbitrary tool invocation. Catalog, description,
 schema, and result limits prevent an endpoint from adding unbounded model context.
 
+`HarnessControl` is a separate loopback-only connection kind for a directed
+controller→worker Harness.NET topology. The page owns its stable client ID, write-only
+bearer token, Secret Service status, and exact `harness_` tool allowlist. Discovery
+requires the worker to identify itself as `Harness.NET`. Only Lead receives eligible
+control tools; Implementer and Reviewer retain ordinary read-only MCP tools. The
+connection grants no plan, repository, spending, or commit approval, and cyclic
+delegation is unsupported until durable depth and cycle tracking exist. Selecting the
+kind for a new connection prefills the current inspection and goal-lifecycle tool set;
+remove anything the controller should not receive before saving.
+
 ## Agent tools
 
 The delivered status page shows built-in and external source, module health, eligible

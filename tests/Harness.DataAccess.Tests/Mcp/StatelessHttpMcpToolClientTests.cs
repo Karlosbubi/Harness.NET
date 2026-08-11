@@ -44,6 +44,30 @@ public sealed class StatelessHttpMcpToolClientTests
         Assert.Contains("first 32", result.RejectionReason);
     }
 
+    [Theory]
+    [InlineData("harness_application", true)]
+    [InlineData("harness_create_goal", true)]
+    [InlineData("harness_abort_goal", false)]
+    [InlineData("shell", false)]
+    public void Harness_control_requires_exact_prefixed_allowlist(
+        string toolName,
+        bool expected)
+    {
+        McpConnectionConfiguration configuration = new(
+            new("worker"),
+            new(new Uri("http://127.0.0.1:57431/mcp")),
+            new(TimeSpan.FromSeconds(30)),
+            IsEnabled: true,
+            RequiresRestart: false,
+            McpConnectionAccess.HarnessControl,
+            new("controller"),
+            new("worker-token"),
+            [new("harness_application"), new("harness_create_goal")]);
+
+        Assert.Equal(expected,
+            StatelessHttpMcpToolClient.IsHarnessControlEligible(configuration, toolName));
+    }
+
     private static McpToolDefinition Tool(string name)
     {
         using System.Text.Json.JsonDocument schema = System.Text.Json.JsonDocument.Parse(

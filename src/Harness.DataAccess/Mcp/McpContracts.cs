@@ -8,12 +8,26 @@ public sealed record McpConnectionEndpoint(Uri Value);
 
 public sealed record McpRequestTimeout(TimeSpan Value);
 
+public enum McpConnectionAccess
+{
+    ReadOnly,
+    HarnessControl,
+}
+
+public sealed record McpClientIdentifier(string Value);
+
+public sealed record McpBearerTokenReference(string Value);
+
 public sealed record McpConnectionConfiguration(
     McpConnectionName Name,
     McpConnectionEndpoint Endpoint,
     McpRequestTimeout RequestTimeout,
     bool IsEnabled,
-    bool RequiresRestart);
+    bool RequiresRestart,
+    McpConnectionAccess Access = McpConnectionAccess.ReadOnly,
+    McpClientIdentifier? ClientId = null,
+    McpBearerTokenReference? BearerTokenReference = null,
+    IReadOnlyList<McpToolName>? AllowedTools = null);
 
 public sealed record McpConnectionConfigurationOptions(
     IReadOnlyList<McpConnectionConfiguration> Connections);
@@ -31,7 +45,8 @@ public sealed record McpToolDefinition(
     bool IsDestructive,
     bool IsOpenWorld,
     bool IsAgentEligible,
-    string? RejectionReason);
+    string? RejectionReason,
+    McpConnectionAccess Access = McpConnectionAccess.ReadOnly);
 
 public sealed record McpConnectionDiscovery(
     McpConnectionConfiguration Configuration,

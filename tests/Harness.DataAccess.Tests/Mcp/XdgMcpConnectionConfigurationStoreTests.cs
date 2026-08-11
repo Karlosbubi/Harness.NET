@@ -35,12 +35,44 @@ public sealed class XdgMcpConnectionConfigurationStoreTests : IDisposable
         Assert.Equal("https://docs.example.test/mcp", connection.Element("Endpoint")?.Value);
         Assert.Equal("45", connection.Element("RequestTimeoutSeconds")?.Value);
         Assert.Equal("True", connection.Element("Enabled")?.Value);
+        Assert.Equal("ReadOnly", connection.Element("Access")?.Value);
         Assert.True(saved.RequiresRestart);
 
         Assert.True(await store.DeleteAsync(new("docs")));
         document = XDocument.Load(path);
         Assert.Null(document.Root?.Element("McpConnections")?.Element("docs"));
         Assert.Equal("Ollama", document.Root?.Element("Routing")?.Element("MainLlm")?.Value);
+    }
+
+    [Fact]
+    public async Task Persists_harness_control_policy_without_a_bearer_value()
+    {
+        StubApplicationPaths paths = new(Paths());
+        XdgMcpConnectionConfigurationStore store = new(paths, new([]));
+
+        await store.SaveAsync(new(
+            new("worker"),
+            new(new Uri("http://127.0.0.1:57431/mcp")),
+            new(TimeSpan.FromSeconds(60)),
+            IsEnabled: true,
+            RequiresRestart: false,
+            McpConnectionAccess.HarnessControl,
+            new("controller"),
+            new("harness-mcp-connection-worker-bearer"),
+            [new("harness_application"), new("harness_create_goal")]));
+
+        XElement connection = Assert.IsType<XElement>(XDocument.Load(
+            Path.Combine(paths.Current.ConfigDirectory, "harness.xml")).Root?
+            .Element("McpConnections")?.Element("worker"));
+        Assert.Equal("HarnessControl", connection.Element("Access")?.Value);
+        Assert.Equal("controller", connection.Element("ClientId")?.Value);
+        Assert.Equal("harness-mcp-connection-worker-bearer",
+            connection.Element("BearerTokenReference")?.Value);
+        XElement allowedTools = Assert.IsType<XElement>(connection.Element("AllowedTools"));
+        Assert.Equal(
+            ["harness_application", "harness_create_goal"],
+            allowedTools.Value.Split('\n'));
+        Assert.DoesNotContain("secret", connection.Value, StringComparison.OrdinalIgnoreCase);
     }
 
     public void Dispose()

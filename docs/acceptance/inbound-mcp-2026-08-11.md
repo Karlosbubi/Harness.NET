@@ -135,6 +135,18 @@ response fix was deployed, exact-goal polling completed without evidence duplica
 and provider/role-filtered model discovery returned three of eight matching Ollama
 Lead models with continuation `3`.
 
+## Harness-to-Harness delegation
+
+Outbound MCP settings now distinguish ordinary `ReadOnly` tools from explicit
+`HarnessControl`. The latter is loopback-only, requires an initialized server named
+`Harness.NET`, sends a stable allowlisted client ID and Secret Service bearer token,
+and exposes only exact configured `harness_` tools to Lead. Implementer and Reviewer do
+not receive control tools. A real stateless client/server integration test verifies
+authentication, server identity, exact allowlisting, rejection of an unlisted
+destructive goal tool, and successful application inspection. This supports a directed
+controller→worker arrangement. Cyclic/self-recursive configurations are unsupported
+and must not be enabled until durable delegation depth and cycle detection are designed.
+
 Verification after the fixes:
 
 - `dotnet build Harness.slnx --no-restore -m:1 -p:UseSharedCompilation=false`

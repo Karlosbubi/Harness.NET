@@ -8,16 +8,32 @@ public enum McpConnectionState
     RestartRequired,
 }
 
+public enum McpConnectionKind
+{
+    ReadOnly,
+    HarnessControl,
+}
+
 public sealed record McpConnectionName(string Value);
 
 public sealed record McpConnectionEndpoint(string Value);
 
 public sealed record McpTimeoutSeconds(int Value);
 
+public sealed record McpConnectionClientId(string Value);
+
+public sealed record McpConnectionBearerToken(string Value);
+
+public sealed record McpAllowedToolName(string Value);
+
 public sealed record McpConnectionSettingsView(
     McpConnectionName Name,
     McpConnectionEndpoint Endpoint,
     McpTimeoutSeconds RequestTimeout,
+    McpConnectionKind Kind,
+    McpConnectionClientId? ClientId,
+    bool HasBearerToken,
+    IReadOnlyList<McpAllowedToolName> AllowedTools,
     bool IsEnabled,
     McpConnectionState State,
     string? NegotiatedProtocolVersion,
@@ -34,6 +50,10 @@ public sealed record McpConnectionSettingsUpdate(
     McpConnectionName Name,
     McpConnectionEndpoint Endpoint,
     McpTimeoutSeconds RequestTimeout,
+    McpConnectionKind Kind,
+    McpConnectionClientId? ClientId,
+    McpConnectionBearerToken? BearerToken,
+    IReadOnlyList<McpAllowedToolName> AllowedTools,
     bool IsEnabled);
 
 public sealed record McpSettingsResult(

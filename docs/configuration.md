@@ -117,9 +117,37 @@ Rules:
 - descriptions and schemas also have size limits;
 - there is no generic call-by-name MCP function.
 
+The default `ReadOnly` access mode keeps those rules unchanged. A controller instance
+may use a separate local Harness.NET worker by selecting `HarnessControl` in Settings.
+Its persisted shape is:
+
+```xml
+<worker>
+  <Endpoint>http://127.0.0.1:57431/mcp</Endpoint>
+  <RequestTimeoutSeconds>60</RequestTimeoutSeconds>
+  <Enabled>true</Enabled>
+  <Access>HarnessControl</Access>
+  <ClientId>controller</ClientId>
+  <BearerTokenReference>harness-mcp-connection-worker-bearer</BearerTokenReference>
+  <AllowedTools>harness_application
+harness_create_goal
+harness_goals
+harness_start_planning</AllowedTools>
+</worker>
+```
+
+The bearer value is never stored in XML. Paste the worker token in Settings; it is
+written to Secret Service under the reference. Control requires a loopback endpoint,
+an initialized server whose name is exactly `Harness.NET`, a valid client ID, and
+1–32 distinct exact `harness_` tool IDs. Only Lead receives those tools. The worker
+still applies every normal instance, workspace, goal, plan, spending, worktree, and
+approval check. Configure a directed controller→worker topology; automatic cycle
+detection and arbitrary mutual/self-control are not implemented.
+
 Settings → MCP connections can add, edit, enable, disable, remove, refresh, and show
-protocol, eligible/rejected counts, and failures. Changes require restart because
-active clients and schemas are fixed for the process lifetime.
+access mode, credential presence, exact allowlist, protocol, eligible/rejected counts,
+and failures. Changes require restart because active clients and schemas are fixed for
+the process lifetime.
 
 ## Inbound Harness control
 

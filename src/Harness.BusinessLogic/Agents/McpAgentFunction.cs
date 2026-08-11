@@ -16,7 +16,11 @@ internal sealed class McpAgentFunction(
     public override string Name => name;
 
     public override string Description =>
-        $"Read-only MCP tool from {tool.Connection.Value}: {tool.Description}";
+        tool.Access is McpConnectionAccess.HarnessControl
+            ? $"Explicitly allowlisted Harness control tool from {tool.Connection.Value} " +
+              $"({(tool.IsDestructive ? "destructive" : tool.IsReadOnly ? "read-only" : "mutating")}): " +
+              tool.Description
+            : $"Read-only MCP tool from {tool.Connection.Value}: {tool.Description}";
 
     public override JsonElement JsonSchema => tool.InputSchema;
 

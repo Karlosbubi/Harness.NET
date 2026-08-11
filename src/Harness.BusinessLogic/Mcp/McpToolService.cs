@@ -1,10 +1,11 @@
+using Harness.BusinessLogic.Agents;
 using Harness.DataAccess.Mcp;
 
 namespace Harness.BusinessLogic.Mcp;
 
 internal interface IMcpToolService
 {
-    IReadOnlyList<McpToolDefinition> EligibleTools { get; }
+    IReadOnlyList<McpToolDefinition> EligibleToolsFor(AgentRole role);
 
     ValueTask<McpToolInvocationResult> InvokeAsync(
         McpToolInvocation invocation,
@@ -13,9 +14,10 @@ internal interface IMcpToolService
 
 internal sealed class McpToolService(IMcpToolClient client) : IMcpToolService
 {
-    public IReadOnlyList<McpToolDefinition> EligibleTools => client.Current.Connections
+    public IReadOnlyList<McpToolDefinition> EligibleToolsFor(AgentRole role) => client.Current.Connections
         .SelectMany(connection => connection.Tools)
-        .Where(tool => tool.IsAgentEligible)
+        .Where(tool => tool.IsAgentEligible &&
+            (tool.Access is McpConnectionAccess.ReadOnly || role is AgentRole.Lead))
         .ToArray();
 
     public ValueTask<McpToolInvocationResult> InvokeAsync(

@@ -358,7 +358,7 @@ public sealed class AgentToolPolicyTests
 
     private sealed class CapturingMcpToolService(McpToolDefinition tool) : IMcpToolService
     {
-        public IReadOnlyList<McpToolDefinition> EligibleTools { get; } = [tool];
+        public IReadOnlyList<McpToolDefinition> EligibleToolsFor(AgentRole role) => [tool];
 
         internal McpToolInvocation? Invocation { get; private set; }
 

@@ -56,6 +56,43 @@ public sealed class HarnessConfigurationLoaderTests : IDisposable
         Assert.Equal(new Uri("https://docs.example.test/mcp"), connection.Endpoint);
         Assert.Equal(TimeSpan.FromSeconds(45), connection.RequestTimeout);
         Assert.True(connection.IsEnabled);
+        Assert.Equal(McpConnectionAccessKind.ReadOnly, connection.Access);
+        Assert.Null(connection.ClientId);
+        Assert.Empty(connection.AllowedTools);
+    }
+
+    [Fact]
+    public void Loads_harness_control_connection_without_loading_the_secret_value()
+    {
+        Directory.CreateDirectory(ConfigDirectory);
+        File.WriteAllText(
+            Path.Combine(ConfigDirectory, "harness.xml"),
+            """
+            <?xml version="1.0" encoding="utf-8" ?>
+            <Harness>
+              <McpConnections>
+                <worker>
+                  <Endpoint>http://127.0.0.1:57431/mcp</Endpoint>
+                  <RequestTimeoutSeconds>60</RequestTimeoutSeconds>
+                  <Enabled>true</Enabled>
+                  <Access>HarnessControl</Access>
+                  <ClientId>controller</ClientId>
+                  <BearerTokenReference>harness-mcp-connection-worker-bearer</BearerTokenReference>
+                  <AllowedTools>harness_application
+                  harness_create_goal</AllowedTools>
+                </worker>
+              </McpConnections>
+            </Harness>
+            """);
+
+        McpConnectionConfiguration connection = Assert.Single(Load().McpConnections);
+
+        Assert.Equal(McpConnectionAccessKind.HarnessControl, connection.Access);
+        Assert.Equal("controller", connection.ClientId);
+        Assert.Equal("harness-mcp-connection-worker-bearer",
+            connection.BearerTokenReference?.Name);
+        Assert.Equal(["harness_application", "harness_create_goal"],
+            connection.AllowedTools);
     }
 
     [Fact]

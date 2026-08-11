@@ -14,7 +14,17 @@ internal readonly record struct McpConnectionConfiguration(
     string Name,
     Uri Endpoint,
     TimeSpan RequestTimeout,
-    bool IsEnabled);
+    bool IsEnabled,
+    McpConnectionAccessKind Access,
+    string? ClientId,
+    SecretReference? BearerTokenReference,
+    IReadOnlyList<string> AllowedTools);
+
+internal enum McpConnectionAccessKind
+{
+    ReadOnly,
+    HarnessControl,
+}
 
 internal readonly record struct ModelProviderConfiguration(
     string Name,

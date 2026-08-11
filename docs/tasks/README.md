@@ -164,6 +164,10 @@ Acceptance criteria:
     authentication, rotation, allowlists, approvals, stale identities, concurrency,
     cancellation, reconnect, malformed input, oversized output, reset, isolation,
     portal denial, accessibility, shutdown, restart, and Linux x64 publish.
+13. A distinct loopback-only outbound `HarnessControl` connection can authenticate to
+    a worker Harness instance and expose an exact allowlist of lifecycle tools to Lead.
+    Ordinary MCP connections, Implementer, and Reviewer remain read-only. Settings
+    owns the write-only token, client ID, allowlist, validation, status, and persistence.
 
 Delivered in the Task 047/059 integration slice: accepted ADR 019; official SDK 2.x
 stateless Streamable HTTP; loopback bearer authentication and one-time enrollment;
@@ -173,7 +177,8 @@ Build/Test, full asynchronous goal lifecycle, accepted-change/commit decision,
 capture, and evaluation operations; exact instance/source
 identities; volatile evaluation secrets; deterministic fixture snapshot/reset;
 Harness-owned evaluation frames and closed accessibility actions; Settings ownership;
-deterministic client/isolation tests; and Linux publish verification.
+directed Harness-to-Harness Lead delegation; deterministic client/isolation tests; and
+Linux publish verification.
 
 ### 045 — controlled visual verification
 

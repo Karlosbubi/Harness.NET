@@ -106,7 +106,16 @@ builder.Services.AddSingleton(new McpConnectionConfigurationOptions(
         new(connection.Endpoint),
         new(connection.RequestTimeout),
         connection.IsEnabled,
-        RequiresRestart: false)).ToArray()));
+        RequiresRestart: false,
+        Access: connection.Access is McpConnectionAccessKind.HarnessControl
+            ? Harness.DataAccess.Mcp.McpConnectionAccess.HarnessControl
+            : Harness.DataAccess.Mcp.McpConnectionAccess.ReadOnly,
+        ClientId: connection.ClientId is null ? null : new(connection.ClientId),
+        BearerTokenReference: connection.BearerTokenReference is null
+            ? null
+            : new(connection.BearerTokenReference.Name),
+        AllowedTools: connection.AllowedTools.Select(tool =>
+            new Harness.DataAccess.Mcp.McpToolName(tool)).ToArray())).ToArray()));
 builder.Services.AddSingleton<IMcpConnectionConfigurationStore, XdgMcpConnectionConfigurationStore>();
 builder.Services.AddSingleton<IMcpToolClient, StatelessHttpMcpToolClient>();
 builder.Services.AddSingleton<IMcpSettingsService, McpSettingsService>();

@@ -155,6 +155,50 @@ public sealed class InboundMcpServerTests
             (await SendAsync(endpoint, replacement.Value, "fresh-client")).StatusCode);
     }
 
+    [Fact]
+    public async Task Harness_control_connection_authenticates_and_exposes_only_exact_allowlist()
+    {
+        int port = FreePort();
+        Uri endpoint = new($"http://127.0.0.1:{port}/mcp");
+        MemorySecrets secrets = new("worker-token");
+        await using InboundMcpServer server = new(
+            new StaticSettings(Settings(endpoint)),
+            secrets,
+            new RecordingApplication(),
+            new MemoryAuditStore(),
+            NullLoggerFactory.Instance,
+            TimeProvider.System);
+        await server.ApplyAsync();
+        McpConnectionConfiguration connection = new(
+            new("worker"),
+            new(endpoint),
+            new(TimeSpan.FromSeconds(10)),
+            IsEnabled: true,
+            RequiresRestart: false,
+            McpConnectionAccess.HarnessControl,
+            new("controller"),
+            new("worker-token-reference"),
+            [new("harness_application"), new("harness_create_goal")]);
+        await using StatelessHttpMcpToolClient client = new(
+            new([connection]), secrets, NullLoggerFactory.Instance);
+
+        McpConnectionDiscovery discovered = Assert.Single(
+            (await client.DiscoverAsync()).Connections);
+
+        Assert.Null(discovered.Error);
+        Assert.Equal(
+            ["harness_application", "harness_create_goal"],
+            discovered.Tools.Where(tool => tool.IsAgentEligible)
+                .Select(tool => tool.Name.Value));
+        Assert.Contains(discovered.Tools, tool =>
+            tool.Name.Value == "harness_abort_goal" && !tool.IsAgentEligible);
+        McpToolInvocationResult invoked = await client.InvokeAsync(new(
+            connection.Name, new("harness_application"),
+            new Dictionary<string, object?>()));
+        Assert.False(invoked.IsError);
+        Assert.Contains("instance", invoked.Json, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static InboundMcpServerSettings Settings(Uri endpoint) => new(
         true, InboundMcpMode.Normal, endpoint, new("token"), [],
         [new("harness_application"), new("harness_workspace"), new("harness_tree"),

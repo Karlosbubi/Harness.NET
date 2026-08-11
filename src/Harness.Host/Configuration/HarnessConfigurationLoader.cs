@@ -55,11 +55,23 @@ internal static class HarnessConfigurationLoader
         IConfiguration configuration) => configuration
         .GetSection("McpConnections")
         .GetChildren()
-        .Select(section => new McpConnectionConfiguration(
-            section.Key,
-            RequiredUri(section, "Endpoint"),
-            TimeSpan.FromSeconds(RequiredPositiveInt(section, "RequestTimeoutSeconds")),
-            ParseBoolean(section, "Enabled")))
+        .Select(section =>
+        {
+            string accessValue = Optional(section, "Access") ?? "ReadOnly";
+            if (!Enum.TryParse(accessValue, true, out McpConnectionAccessKind access))
+                throw new InvalidOperationException(
+                    $"MCP connection '{section.Key}' has unsupported access '{accessValue}'.");
+            string? bearerReference = Optional(section, "BearerTokenReference");
+            return new McpConnectionConfiguration(
+                section.Key,
+                RequiredUri(section, "Endpoint"),
+                TimeSpan.FromSeconds(RequiredPositiveInt(section, "RequestTimeoutSeconds")),
+                ParseBoolean(section, "Enabled"),
+                access,
+                Optional(section, "ClientId"),
+                bearerReference is null ? null : new(bearerReference),
+                Lines(Optional(section, "AllowedTools")));
+        })
         .ToArray();
 
     private static FrameworkConfiguration ParseFramework(IConfiguration configuration)
@@ -112,6 +124,10 @@ internal static class HarnessConfigurationLoader
 
     private static string? Optional(IConfiguration configuration, string key) =>
         string.IsNullOrWhiteSpace(configuration[key]) ? null : configuration[key];
+
+    private static IReadOnlyList<string> Lines(string? value) =>
+        (value ?? string.Empty).Split(['\r', '\n'],
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
     private static Uri RequiredUri(IConfiguration configuration, string key)
     {

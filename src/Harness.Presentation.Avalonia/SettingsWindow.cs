@@ -102,6 +102,21 @@ internal static class SettingsCatalog
 /// </summary>
 internal sealed class SettingsWindow : Window
 {
+    private static readonly string[] DefaultHarnessControlTools =
+    [
+        "harness_application", "harness_workspace", "harness_tree",
+        "harness_read_range", "harness_git", "harness_project_graph",
+        "harness_goals", "harness_evidence", "harness_goal_models",
+        "harness_commit_preview", "harness_code_problems", "harness_code_symbol",
+        "harness_code_definition", "harness_code_references",
+        "harness_code_implementations", "harness_create_goal",
+        "harness_configure_goal", "harness_extend_goal_budget",
+        "harness_select_goal_model", "harness_start_planning", "harness_resume_goal",
+        "harness_retry_goal", "harness_cancel_goal_operation", "harness_abort_goal",
+        "harness_decide_plan", "harness_request_commit", "harness_decide_commit",
+        "harness_build", "harness_test",
+    ];
+
     private readonly AvaloniaPresentationStore store;
     private readonly CancellationToken cancellationToken;
     private readonly IDisposable subscription;
@@ -877,6 +892,37 @@ internal sealed class SettingsWindow : Window
         TextBox endpoint = ProviderTextBox(string.Empty, "New MCP endpoint");
         endpoint.PlaceholderText = "https://example.test/mcp";
         NumericUpDown timeout = ProviderNumber(30, 1, 3_600, "New MCP request timeout seconds");
+        ComboBox kind = new()
+        {
+            ItemsSource = Enum.GetValues<McpConnectionKind>(),
+            SelectedItem = McpConnectionKind.ReadOnly,
+            MinWidth = 220,
+        };
+        AutomationProperties.SetName(kind, "New MCP connection kind");
+        TextBox clientId = ProviderTextBox("harness-controller", "New Harness control client ID");
+        TextBox bearerToken = new()
+        {
+            PasswordChar = '●',
+            PlaceholderText = "Paste worker bearer token (write-only)",
+        };
+        AutomationProperties.SetName(bearerToken, "New Harness control bearer token");
+        TextBox allowedTools = new()
+        {
+            Text = string.Empty,
+            AcceptsReturn = true,
+            Height = 100,
+            PlaceholderText = "One exact harness_ tool ID per line",
+        };
+        AutomationProperties.SetName(allowedTools, "New Harness control allowed tool IDs");
+        kind.SelectionChanged += (_, _) =>
+        {
+            if (kind.SelectedItem is McpConnectionKind.HarnessControl &&
+                string.IsNullOrWhiteSpace(allowedTools.Text))
+            {
+                allowedTools.Text = string.Join(
+                    Environment.NewLine, DefaultHarnessControlTools);
+            }
+        };
         CheckBox enabled = new() { Content = "Enable after restart", IsChecked = true };
         AutomationProperties.SetName(enabled, "Enable new MCP connection after restart");
         Button add = new() { Content = "Add connection", IsEnabled = !settingsState.IsBusy };
@@ -888,29 +934,47 @@ internal sealed class SettingsWindow : Window
                 new(name.Text ?? string.Empty),
                 new(endpoint.Text ?? string.Empty),
                 new(decimal.ToInt32(timeout.Value ?? 30)),
+                (McpConnectionKind)(kind.SelectedItem ?? McpConnectionKind.ReadOnly),
+                kind.SelectedItem is McpConnectionKind.HarnessControl
+                    ? new(clientId.Text ?? string.Empty)
+                    : null,
+                kind.SelectedItem is McpConnectionKind.HarnessControl &&
+                    !string.IsNullOrWhiteSpace(bearerToken.Text)
+                    ? new(bearerToken.Text)
+                    : null,
+                kind.SelectedItem is McpConnectionKind.HarnessControl
+                    ? Lines(allowedTools.Text).Select(tool =>
+                        new McpAllowedToolName(tool)).ToArray()
+                    : [],
                 enabled.IsChecked == true), cancellationToken);
             if (store.Current.Settings.Status?.StartsWith(
                     "MCP connection saved", StringComparison.Ordinal) == true)
             {
                 name.Text = string.Empty;
                 endpoint.Text = string.Empty;
+                bearerToken.Text = string.Empty;
+                allowedTools.Text = string.Empty;
             }
         };
 
         Grid newFields = new()
         {
             ColumnDefinitions = new("*,*"),
-            RowDefinitions = new("Auto,Auto,Auto"),
+            RowDefinitions = new("Auto,Auto,Auto,Auto,Auto"),
             ColumnSpacing = 10,
             RowSpacing = 8,
         };
         AddProviderField(newFields, 0, 0, "Connection name", name);
         AddProviderField(newFields, 0, 1, "Streamable HTTP endpoint", endpoint);
         AddProviderField(newFields, 1, 0, "Request timeout (seconds)", timeout);
-        Grid.SetRow(enabled, 1);
+        AddProviderField(newFields, 1, 1, "Connection kind", kind);
+        AddProviderField(newFields, 2, 0, "Harness control client ID", clientId);
+        AddProviderField(newFields, 2, 1, "Harness control bearer token", bearerToken);
+        AddProviderField(newFields, 3, 0, "Harness control allowed tools", allowedTools);
+        Grid.SetRow(enabled, 3);
         Grid.SetColumn(enabled, 1);
         newFields.Children.Add(enabled);
-        Grid.SetRow(add, 2);
+        Grid.SetRow(add, 4);
         newFields.Children.Add(add);
 
         StackPanel connections = new() { Spacing = 12 };
@@ -932,7 +996,7 @@ internal sealed class SettingsWindow : Window
 
         return Page(
             "MCP connections",
-            "Manage first-class Model Context Protocol endpoints. Harness.NET uses the stateless 2026-07-28 discovery flow and exposes only explicitly read-only, non-destructive tools to agents.",
+            "Manage first-class Model Context Protocol endpoints. Ordinary connections expose only explicitly read-only, non-destructive tools. Harness control is a separate loopback-only, exactly allowlisted Lead delegation mode.",
             new StackPanel
             {
                 Spacing = 14,
@@ -943,7 +1007,7 @@ internal sealed class SettingsWindow : Window
                         Classes = { "card", "attention" },
                         Child = new TextBlock
                         {
-                            Text = "Enabling a connection permits startup discovery and read-only tool calls to that endpoint. Tool annotations that are missing or unsafe fail closed. Saved changes live in private XDG configuration and require restart.",
+                            Text = "Read-only connections fail closed on missing or unsafe annotations. Harness control additionally requires a Harness.NET server identity, stable client ID, write-only Secret Service bearer token, and exact harness_ tool allowlist. It is exposed only to Lead. Saved changes require restart.",
                             TextWrapping = TextWrapping.Wrap,
                         },
                     },
@@ -1499,6 +1563,33 @@ internal sealed class SettingsWindow : Window
         NumericUpDown timeout = ProviderNumber(
             connection.RequestTimeout.Value, 1, 3_600,
             $"{connection.Name.Value} MCP request timeout seconds");
+        ComboBox kind = new()
+        {
+            ItemsSource = Enum.GetValues<McpConnectionKind>(),
+            SelectedItem = connection.Kind,
+            MinWidth = 220,
+        };
+        AutomationProperties.SetName(kind, $"{connection.Name.Value} MCP connection kind");
+        TextBox clientId = ProviderTextBox(connection.ClientId?.Value ?? string.Empty,
+            $"{connection.Name.Value} Harness control client ID");
+        TextBox bearerToken = new()
+        {
+            PasswordChar = '●',
+            PlaceholderText = connection.HasBearerToken
+                ? "Stored in Secret Service; paste to replace"
+                : "Paste worker bearer token",
+        };
+        AutomationProperties.SetName(bearerToken,
+            $"{connection.Name.Value} Harness control bearer token");
+        TextBox allowedTools = new()
+        {
+            Text = string.Join(Environment.NewLine,
+                connection.AllowedTools.Select(tool => tool.Value)),
+            AcceptsReturn = true,
+            Height = 100,
+        };
+        AutomationProperties.SetName(allowedTools,
+            $"{connection.Name.Value} Harness control allowed tool IDs");
         CheckBox enabled = new()
         {
             Content = "Enabled",
@@ -1512,6 +1603,18 @@ internal sealed class SettingsWindow : Window
             connection.Name,
             new(endpoint.Text ?? string.Empty),
             new(decimal.ToInt32(timeout.Value ?? 0)),
+            (McpConnectionKind)(kind.SelectedItem ?? McpConnectionKind.ReadOnly),
+            kind.SelectedItem is McpConnectionKind.HarnessControl
+                ? new(clientId.Text ?? string.Empty)
+                : null,
+            kind.SelectedItem is McpConnectionKind.HarnessControl &&
+                !string.IsNullOrWhiteSpace(bearerToken.Text)
+                ? new(bearerToken.Text)
+                : null,
+            kind.SelectedItem is McpConnectionKind.HarnessControl
+                ? Lines(allowedTools.Text).Select(tool =>
+                    new McpAllowedToolName(tool)).ToArray()
+                : [],
             enabled.IsChecked == true), cancellationToken);
         Button remove = new() { Content = "Remove", IsEnabled = !settingsState.IsBusy };
         remove.Classes.Add("danger");
@@ -1522,11 +1625,23 @@ internal sealed class SettingsWindow : Window
         Grid fields = new()
         {
             ColumnDefinitions = new("*,Auto"),
+            RowDefinitions = new("Auto,Auto,Auto"),
+            RowSpacing = 8,
             ColumnSpacing = 10,
             Children = { endpoint },
         };
         Grid.SetColumn(timeout, 1);
         fields.Children.Add(timeout);
+        Grid.SetRow(kind, 1);
+        fields.Children.Add(kind);
+        Grid.SetRow(clientId, 1);
+        Grid.SetColumn(clientId, 1);
+        fields.Children.Add(clientId);
+        Grid.SetRow(bearerToken, 2);
+        fields.Children.Add(bearerToken);
+        Grid.SetRow(allowedTools, 2);
+        Grid.SetColumn(allowedTools, 1);
+        fields.Children.Add(allowedTools);
         StackPanel actions = new()
         {
             Orientation = Orientation.Horizontal,
@@ -1552,7 +1667,12 @@ internal sealed class SettingsWindow : Window
                     },
                     new TextBlock
                     {
-                        Text = $"{connection.State} · {protocol} · {connection.DiscoveredTools} tool(s), {connection.AgentEligibleTools} eligible, {connection.RejectedTools} rejected",
+                        Text = $"{connection.State} · {connection.Kind} · {protocol} · {connection.DiscoveredTools} tool(s), {connection.AgentEligibleTools} eligible, {connection.RejectedTools} rejected" +
+                            (connection.Kind is McpConnectionKind.HarnessControl
+                                ? connection.HasBearerToken
+                                    ? " · bearer token stored"
+                                    : " · bearer token missing"
+                                : string.Empty),
                         Classes = { "muted" },
                         TextWrapping = TextWrapping.Wrap,
                     },

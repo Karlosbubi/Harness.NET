@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Harness.DataAccess.Secrets;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
 using ModelContextProtocol.Client;
@@ -8,6 +9,7 @@ namespace Harness.DataAccess.Mcp;
 
 internal sealed class StatelessHttpMcpToolClient(
     McpConnectionConfigurationOptions options,
+    ISecretStore secretStore,
     ILoggerFactory loggerFactory) : IMcpToolClient, IAsyncDisposable
 {
     internal const int MaximumCatalogTools = 256;
@@ -116,6 +118,12 @@ internal sealed class StatelessHttpMcpToolClient(
             return new(configuration, null, [], "mcp_endpoint_unsafe",
                 "Remote MCP endpoints must use HTTPS; plain HTTP is allowed only for loopback development servers.");
         }
+        if (configuration.Access is McpConnectionAccess.HarnessControl &&
+            !configuration.Endpoint.Value.IsLoopback)
+        {
+            return new(configuration, null, [], "mcp_control_endpoint_unsafe",
+                "Harness control connections are limited to loopback endpoints.");
+        }
 
         using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken);
@@ -124,6 +132,28 @@ internal sealed class StatelessHttpMcpToolClient(
         bool retained = false;
         try
         {
+            Dictionary<string, string>? headers = null;
+            if (configuration.Access is McpConnectionAccess.HarnessControl)
+            {
+                if (configuration.ClientId is null ||
+                    configuration.BearerTokenReference is null)
+                {
+                    return new(configuration, null, [], "mcp_control_authentication_missing",
+                        "Harness control requires a client ID and bearer-token reference.");
+                }
+                string? bearer = await secretStore.GetAsync(
+                    new(configuration.BearerTokenReference.Value), timeout.Token);
+                if (string.IsNullOrWhiteSpace(bearer))
+                {
+                    return new(configuration, null, [], "mcp_control_authentication_missing",
+                        "Harness control bearer token is missing from Secret Service.");
+                }
+                headers = new(StringComparer.Ordinal)
+                {
+                    ["Authorization"] = $"Bearer {bearer}",
+                    ["X-Harness-Client"] = configuration.ClientId.Value,
+                };
+            }
             HttpClientTransport transport = new(new HttpClientTransportOptions
             {
                 Name = configuration.Name.Value,
@@ -131,6 +161,7 @@ internal sealed class StatelessHttpMcpToolClient(
                 TransportMode = HttpTransportMode.StreamableHttp,
                 ConnectionTimeout = configuration.RequestTimeout.Value,
                 EnableStandaloneGetStream = false,
+                AdditionalHeaders = headers,
             }, loggerFactory);
             client = await McpClient.CreateAsync(
                 transport,
@@ -140,6 +171,13 @@ internal sealed class StatelessHttpMcpToolClient(
                 },
                 loggerFactory,
                 timeout.Token);
+            if (configuration.Access is McpConnectionAccess.HarnessControl &&
+                !client.ServerInfo.Name.Equals("Harness.NET", StringComparison.Ordinal))
+            {
+                return new(configuration, client.NegotiatedProtocolVersion, [],
+                    "mcp_control_server_mismatch",
+                    "Harness control connections require a server identifying as Harness.NET.");
+            }
             IList<McpClientTool> listed = await client.ListToolsAsync(
                 cancellationToken: timeout.Token);
             if (listed.Count > MaximumCatalogTools)
@@ -154,7 +192,7 @@ internal sealed class StatelessHttpMcpToolClient(
                 .Select(group => group.Key)
                 .ToHashSet(StringComparer.Ordinal);
             int eligibleCount = 0;
-            McpToolDefinition[] definitions = listed.Select(tool => Map(configuration.Name, tool))
+            McpToolDefinition[] definitions = listed.Select(tool => Map(configuration, tool))
                 .OrderBy(tool => tool.Name.Value, StringComparer.Ordinal)
                 .Select(definition => ApplyCatalogPolicy(definition, duplicateNames, ref eligibleCount))
                 .ToArray();
@@ -198,19 +236,26 @@ internal sealed class StatelessHttpMcpToolClient(
         active.Clear();
     }
 
-    private static McpToolDefinition Map(McpConnectionName connection, McpClientTool tool)
+    private static McpToolDefinition Map(
+        McpConnectionConfiguration configuration,
+        McpClientTool tool)
     {
         Tool protocol = tool.ProtocolTool;
         bool readOnly = protocol.Annotations?.ReadOnlyHint == true;
         bool destructive = protocol.Annotations?.DestructiveHint == true;
-        bool eligible = IsAgentEligible(
-            protocol.Annotations?.ReadOnlyHint,
-            protocol.Annotations?.DestructiveHint);
-        string? rejection = eligible ? ValidateContextBounds(tool) :
-            "Tool must explicitly declare readOnlyHint=true and must not declare destructiveHint=true.";
+        bool eligible = configuration.Access is McpConnectionAccess.HarnessControl
+            ? IsHarnessControlEligible(configuration, tool.Name)
+            : IsAgentEligible(
+                protocol.Annotations?.ReadOnlyHint,
+                protocol.Annotations?.DestructiveHint);
+        string? rejection = eligible
+            ? ValidateContextBounds(tool)
+            : configuration.Access is McpConnectionAccess.HarnessControl
+                ? "Harness control tools must start with harness_ and appear in the connection's exact allowlist."
+                : "Tool must explicitly declare readOnlyHint=true and must not declare destructiveHint=true.";
         eligible &= rejection is null;
         return new(
-            connection,
+            configuration.Name,
             new(tool.Name),
             tool.Title,
             tool.Description,
@@ -220,7 +265,8 @@ internal sealed class StatelessHttpMcpToolClient(
             destructive,
             protocol.Annotations?.OpenWorldHint != false,
             eligible,
-            rejection);
+            rejection,
+            configuration.Access);
     }
 
     internal static McpToolDefinition ApplyCatalogPolicy(
@@ -267,6 +313,14 @@ internal sealed class StatelessHttpMcpToolClient(
 
     internal static bool IsAgentEligible(bool? readOnlyHint, bool? destructiveHint) =>
         readOnlyHint == true && destructiveHint != true;
+
+    internal static bool IsHarnessControlEligible(
+        McpConnectionConfiguration configuration,
+        string toolName) =>
+        configuration.Access is McpConnectionAccess.HarnessControl &&
+        toolName.StartsWith("harness_", StringComparison.Ordinal) &&
+        (configuration.AllowedTools ?? []).Any(tool =>
+            tool.Value.Equals(toolName, StringComparison.Ordinal));
 
     private static string? ErrorText(CallToolResult result) =>
         result.IsError == true

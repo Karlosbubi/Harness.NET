@@ -345,6 +345,24 @@ public sealed class PresentationControlTests
                 Equals(button.Content, "Add connection"));
             Assert.Contains(window.GetLogicalDescendants().OfType<Button>(), button =>
                 Equals(button.Content, "Refresh active connections"));
+            Assert.Contains(window.GetLogicalDescendants().OfType<Control>(), control =>
+                AutomationProperties.GetName(control) == "New MCP connection kind");
+            Assert.Contains(window.GetLogicalDescendants().OfType<Control>(), control =>
+                AutomationProperties.GetName(control) == "New Harness control bearer token");
+            Assert.Contains(window.GetLogicalDescendants().OfType<Control>(), control =>
+                AutomationProperties.GetName(control) == "New Harness control allowed tool IDs");
+            ComboBox kind = Assert.Single(window.GetLogicalDescendants().OfType<ComboBox>(),
+                control => AutomationProperties.GetName(control) == "New MCP connection kind");
+            kind.SelectedItem = McpConnectionKind.HarnessControl;
+            Dispatcher.UIThread.RunJobs();
+            TextBox allowedTools = Assert.Single(
+                window.GetLogicalDescendants().OfType<TextBox>(),
+                control => AutomationProperties.GetName(control) ==
+                    "New Harness control allowed tool IDs");
+            Assert.Contains("harness_create_goal", allowedTools.Text,
+                StringComparison.Ordinal);
+            Assert.Contains("harness_decide_commit", allowedTools.Text,
+                StringComparison.Ordinal);
             string text = string.Join('\n', window.GetLogicalDescendants()
                 .OfType<TextBlock>().Select(block => block.Text));
             Assert.Contains("2026-07-28", text, StringComparison.Ordinal);
@@ -2940,9 +2958,13 @@ public sealed class PresentationControlTests
                 new("docs"),
                 new("https://docs.example.test/mcp"),
                 new(30),
+                McpConnectionKind.ReadOnly,
+                ClientId: null,
+                HasBearerToken: false,
+                AllowedTools: [],
                 IsEnabled: true,
-                McpConnectionState.Ready,
-                "2026-07-28",
+                State: McpConnectionState.Ready,
+                NegotiatedProtocolVersion: "2026-07-28",
                 DiscoveredTools: 2,
                 AgentEligibleTools: 1,
                 RejectedTools: 1,
