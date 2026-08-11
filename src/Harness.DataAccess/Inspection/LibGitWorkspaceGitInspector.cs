@@ -45,11 +45,21 @@ internal sealed class LibGitWorkspaceGitInspector : IWorkspaceGitInspector
             string diff = string.Empty;
             if (repository.Head.Tip is not null)
             {
-                using Patch patch = repository.Diff.Compare<Patch>(
-                    repository.Head.Tip.Tree,
-                    DiffTargets.Index | DiffTargets.WorkingDirectory);
-                diff = BoundUtf8(patch.Content, out bool diffTruncated);
-                isTruncated |= diffTruncated;
+                string[] trackedChangePaths = statusEntries
+                    .Where(entry =>
+                        (entry.State & FileStatus.NewInWorkdir) == 0 &&
+                        (entry.State & FileStatus.Ignored) == 0)
+                    .Select(entry => entry.FilePath)
+                    .ToArray();
+                if (trackedChangePaths.Length > 0)
+                {
+                    using Patch patch = repository.Diff.Compare<Patch>(
+                        repository.Head.Tip.Tree,
+                        DiffTargets.Index | DiffTargets.WorkingDirectory,
+                        trackedChangePaths);
+                    diff = BoundUtf8(patch.Content, out bool diffTruncated);
+                    isTruncated |= diffTruncated;
+                }
             }
 
             return ValueTask.FromResult(new WorkspaceGitState(

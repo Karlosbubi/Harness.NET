@@ -4,6 +4,19 @@ namespace Harness.BusinessLogic.Tests.Workflows;
 
 public sealed class GoalDelegationParserTests
 {
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Reports_empty_lead_output_with_recovery_guidance(string value)
+    {
+        GoalDelegation result = GoalDelegationParser.Parse(value);
+
+        Assert.Equal(
+            "The Lead returned no plan. Retry with another Lead model or add guidance.",
+            result.Error);
+        Assert.Empty(result.Tasks);
+    }
+
     [Fact]
     public void Parses_exact_bounded_delegation()
     {
@@ -54,6 +67,18 @@ public sealed class GoalDelegationParserTests
 
         Assert.NotNull(result.Error);
         Assert.Empty(result.Tasks);
+    }
+
+    [Fact]
+    public void Identifies_the_invalid_task_and_field()
+    {
+        GoalDelegation result = GoalDelegationParser.Parse("""
+            {"plan":"Plan","tasks":[{"title":"First","objective":"Implement first","fileAreas":["src/A"],"acceptanceCriteria":["Pass"]},{"title":"Second","objective":"Implement second","fileAreas":[],"acceptanceCriteria":["Pass"]}]}
+            """);
+
+        Assert.Equal(
+            "Lead task 2 fileAreas must contain 1-32 valid repository-relative paths.",
+            result.Error);
     }
 
     [Fact]

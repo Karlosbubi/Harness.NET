@@ -1015,9 +1015,11 @@ internal sealed class GoalWorkflowService(
         completed prefix is coherent, useful, and verifiable if a monetary cost limit stops later
         work: establish the smallest end-to-end foundation first, then add value in independently
         shippable increments. Each task must be bounded and define objective acceptance criteria.
-        Do not create standalone discovery, inspection, planning, or status-report tasks. Fold
-        necessary inspection into the first implementation slice. Every delegated task must end
-        with durable successful mutation or build/test evidence from the typed tools.
+        Do not create standalone discovery, inspection, planning, validation, build/test, or
+        status-report tasks. Fold inspection and validation into an implementation slice. Every
+        delegated task must produce durable successful mutation evidence, then build/test evidence
+        where relevant. A goal that explicitly forbids source changes cannot enter this
+        mutation-oriented workflow; report that conflict instead of inventing validation-only work.
         File areas are mutation grants: name only exact existing repository-relative files or
         directories that you observed, unless the goal explicitly authorizes creating a path.
         Prefer the smallest observed directory that contains all files for a slice. If the goal says

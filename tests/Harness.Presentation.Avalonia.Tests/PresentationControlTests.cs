@@ -791,10 +791,10 @@ public sealed class PresentationControlTests
                 new(),
                 manageWorkspace: browse =>
                 {
-                      requested = true;
-                      browseImmediately = browse;
-                      return Task.CompletedTask;
-                  });
+                    requested = true;
+                    browseImmediately = browse;
+                    return Task.CompletedTask;
+                });
             Window window = new() { Width = 1280, Height = 800, Content = workbench.Control };
             window.Show();
             workbench.Update(AvaloniaShellState.Initial with { IsLoading = false });
@@ -2015,9 +2015,9 @@ public sealed class PresentationControlTests
                 .Where(item => string.IsNullOrWhiteSpace(AutomationProperties.GetName(item)))
                 .Where(item =>
                 {
-                      AutomationPeer peer = ControlAutomationPeer.CreatePeerForElement(item);
-                      return !peer.IsControlElement() && !peer.IsContentElement();
-                  })
+                    AutomationPeer peer = ControlAutomationPeer.CreatePeerForElement(item);
+                    return !peer.IsControlElement() && !peer.IsContentElement();
+                })
                 .ToArray();
             Assert.NotEmpty(implementationContainers);
             Button semanticButton = Assert.Single(
@@ -2028,11 +2028,11 @@ public sealed class PresentationControlTests
 
             Assert.All(implementationContainers, item =>
             {
-                  Assert.Equal(string.Empty, AutomationProperties.GetClassNameOverride(item));
-                  Assert.Equal(
-                      AutomationControlType.Custom,
-                      AutomationProperties.GetControlTypeOverride(item));
-              });
+                Assert.Equal(string.Empty, AutomationProperties.GetClassNameOverride(item));
+                Assert.Equal(
+                    AutomationControlType.Custom,
+                    AutomationProperties.GetControlTypeOverride(item));
+            });
             Assert.Equal("Save current panel layout", AutomationProperties.GetName(semanticButton));
             Assert.Null(AutomationProperties.GetClassNameOverride(semanticButton));
             Assert.Null(AutomationProperties.GetControlTypeOverride(semanticButton));

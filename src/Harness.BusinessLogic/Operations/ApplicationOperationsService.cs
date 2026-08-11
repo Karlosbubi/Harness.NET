@@ -98,39 +98,39 @@ internal sealed class ApplicationOperationsService(
 
     private static ApplicationBackupFailure? Map(
         Harness.DataAccess.Persistence.ApplicationBackupFailure? failure) => failure switch
-    {
-        null => null,
-        Harness.DataAccess.Persistence.ApplicationBackupFailure.InvalidDestination =>
-            ApplicationBackupFailure.InvalidDestination,
-        Harness.DataAccess.Persistence.ApplicationBackupFailure.DatabaseMissing =>
-            ApplicationBackupFailure.DatabaseMissing,
-        Harness.DataAccess.Persistence.ApplicationBackupFailure.IntegrityCheckFailed =>
-            ApplicationBackupFailure.IntegrityCheckFailed,
-        Harness.DataAccess.Persistence.ApplicationBackupFailure.ArchiveCreationFailed =>
-            ApplicationBackupFailure.ArchiveCreationFailed,
-        _ => throw new ArgumentOutOfRangeException(nameof(failure)),
-    };
+        {
+            null => null,
+            Harness.DataAccess.Persistence.ApplicationBackupFailure.InvalidDestination =>
+                ApplicationBackupFailure.InvalidDestination,
+            Harness.DataAccess.Persistence.ApplicationBackupFailure.DatabaseMissing =>
+                ApplicationBackupFailure.DatabaseMissing,
+            Harness.DataAccess.Persistence.ApplicationBackupFailure.IntegrityCheckFailed =>
+                ApplicationBackupFailure.IntegrityCheckFailed,
+            Harness.DataAccess.Persistence.ApplicationBackupFailure.ArchiveCreationFailed =>
+                ApplicationBackupFailure.ArchiveCreationFailed,
+            _ => throw new ArgumentOutOfRangeException(nameof(failure)),
+        };
 
     private static ApplicationRestoreFailure? Map(
         Harness.DataAccess.Persistence.ApplicationRestoreFailure? failure) => failure switch
-    {
-        null => null,
-        Harness.DataAccess.Persistence.ApplicationRestoreFailure.InvalidSource =>
-            ApplicationRestoreFailure.InvalidSource,
-        Harness.DataAccess.Persistence.ApplicationRestoreFailure.UnsupportedArchive =>
-            ApplicationRestoreFailure.UnsupportedArchive,
-        Harness.DataAccess.Persistence.ApplicationRestoreFailure.IntegrityMismatch =>
-            ApplicationRestoreFailure.IntegrityMismatch,
-        Harness.DataAccess.Persistence.ApplicationRestoreFailure.DatabaseInvalid =>
-            ApplicationRestoreFailure.DatabaseInvalid,
-        Harness.DataAccess.Persistence.ApplicationRestoreFailure.SchemaTooNew =>
-            ApplicationRestoreFailure.SchemaTooNew,
-        Harness.DataAccess.Persistence.ApplicationRestoreFailure.PendingRestoreExists =>
-            ApplicationRestoreFailure.PendingRestoreExists,
-        Harness.DataAccess.Persistence.ApplicationRestoreFailure.StagingFailed =>
-            ApplicationRestoreFailure.StagingFailed,
-        Harness.DataAccess.Persistence.ApplicationRestoreFailure.ApplyFailed =>
-            ApplicationRestoreFailure.ApplyFailed,
-        _ => throw new ArgumentOutOfRangeException(nameof(failure)),
-    };
+        {
+            null => null,
+            Harness.DataAccess.Persistence.ApplicationRestoreFailure.InvalidSource =>
+                ApplicationRestoreFailure.InvalidSource,
+            Harness.DataAccess.Persistence.ApplicationRestoreFailure.UnsupportedArchive =>
+                ApplicationRestoreFailure.UnsupportedArchive,
+            Harness.DataAccess.Persistence.ApplicationRestoreFailure.IntegrityMismatch =>
+                ApplicationRestoreFailure.IntegrityMismatch,
+            Harness.DataAccess.Persistence.ApplicationRestoreFailure.DatabaseInvalid =>
+                ApplicationRestoreFailure.DatabaseInvalid,
+            Harness.DataAccess.Persistence.ApplicationRestoreFailure.SchemaTooNew =>
+                ApplicationRestoreFailure.SchemaTooNew,
+            Harness.DataAccess.Persistence.ApplicationRestoreFailure.PendingRestoreExists =>
+                ApplicationRestoreFailure.PendingRestoreExists,
+            Harness.DataAccess.Persistence.ApplicationRestoreFailure.StagingFailed =>
+                ApplicationRestoreFailure.StagingFailed,
+            Harness.DataAccess.Persistence.ApplicationRestoreFailure.ApplyFailed =>
+                ApplicationRestoreFailure.ApplyFailed,
+            _ => throw new ArgumentOutOfRangeException(nameof(failure)),
+        };
 }

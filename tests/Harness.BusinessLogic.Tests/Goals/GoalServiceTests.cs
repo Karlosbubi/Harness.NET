@@ -1,5 +1,5 @@
-using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Costs;
+using Harness.BusinessLogic.Goals;
 using Harness.DataAccess.Goals;
 using Harness.DataAccess.Workspaces;
 using Harness.DataAccess.Worktrees;

@@ -89,15 +89,15 @@ internal sealed partial class WorkbenchCodeIntelligenceService
 
     private static WorkbenchCodeTransformationDisposition Map(
         CodeIntelligenceTransformationDisposition disposition) => disposition switch
-    {
-        CodeIntelligenceTransformationDisposition.Ready =>
-            WorkbenchCodeTransformationDisposition.Ready,
-        CodeIntelligenceTransformationDisposition.Conflicted =>
-            WorkbenchCodeTransformationDisposition.Conflicted,
-        CodeIntelligenceTransformationDisposition.Rejected =>
-            WorkbenchCodeTransformationDisposition.Rejected,
-        _ => throw new ArgumentOutOfRangeException(nameof(disposition)),
-    };
+        {
+            CodeIntelligenceTransformationDisposition.Ready =>
+                WorkbenchCodeTransformationDisposition.Ready,
+            CodeIntelligenceTransformationDisposition.Conflicted =>
+                WorkbenchCodeTransformationDisposition.Conflicted,
+            CodeIntelligenceTransformationDisposition.Rejected =>
+                WorkbenchCodeTransformationDisposition.Rejected,
+            _ => throw new ArgumentOutOfRangeException(nameof(disposition)),
+        };
 
     private static WorkbenchCodeRenameConflictKind Map(CodeIntelligenceRenameConflictKind kind) =>
         kind switch

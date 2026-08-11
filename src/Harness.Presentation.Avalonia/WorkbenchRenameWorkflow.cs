@@ -1,5 +1,5 @@
-using Avalonia.Controls;
 using Avalonia.Automation;
+using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Harness.BusinessLogic.CodeIntelligence;

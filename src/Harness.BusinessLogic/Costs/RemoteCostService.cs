@@ -1,5 +1,5 @@
-using Harness.DataAccess.Models;
 using Harness.BusinessLogic.Goals;
+using Harness.DataAccess.Models;
 
 namespace Harness.BusinessLogic.Costs;
 

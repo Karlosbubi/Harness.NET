@@ -393,9 +393,9 @@ public sealed class OllamaModelProviderTests
     private static HttpResponseMessage JsonResponse(
         string json,
         string mediaType = "application/json") => new(HttpStatusCode.OK)
-    {
-        Content = new StringContent(json, Encoding.UTF8, mediaType),
-    };
+        {
+            Content = new StringContent(json, Encoding.UTF8, mediaType),
+        };
 
     private static async Task<List<T>> CollectAsync<T>(IAsyncEnumerable<T> source)
     {

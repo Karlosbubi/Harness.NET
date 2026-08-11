@@ -6,8 +6,8 @@ using Harness.DataAccess.Models;
 using Microsoft.Extensions.AI;
 using AIChatRole = Microsoft.Extensions.AI.ChatRole;
 using ProviderChatMessage = Harness.DataAccess.Models.ChatMessage;
-using ProviderChatRole = Harness.DataAccess.Models.ChatRole;
 using ProviderChatResponseFormat = Harness.DataAccess.Models.ChatResponseFormat;
+using ProviderChatRole = Harness.DataAccess.Models.ChatRole;
 
 namespace Harness.BusinessLogic.Agents;
 

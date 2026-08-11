@@ -10,6 +10,12 @@ internal static class GoalDelegationParser
 
     internal static GoalDelegation Parse(string value)
     {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return Failure(
+                "The Lead returned no plan. Retry with another Lead model or add guidance.");
+        }
+
         try
         {
             using JsonDocument document = JsonDocument.Parse(
@@ -34,20 +40,43 @@ internal static class GoalDelegationParser
 
             List<GoalDelegatedTask> tasks = [];
             int ignoredDiscoveryTasks = 0;
+            int taskIndex = 0;
             foreach (JsonElement task in tasksElement.EnumerateArray())
             {
-                if (task.ValueKind is not JsonValueKind.Object ||
-                    !ExactProperties(task, "title", "objective", "fileAreas",
-                        "acceptanceCriteria") ||
-                    !Text(task, "title", 256, out string title) ||
-                    !Text(task, "objective", 8_192, out string objective) ||
-                    !StringList(task, "fileAreas", 32, 512, out string fileAreas) ||
-                    !StringList(task, "acceptanceCriteria", 32, 512,
+                taskIndex++;
+                if (task.ValueKind is not JsonValueKind.Object)
+                {
+                    return InvalidTask(taskIndex, "must be a JSON object");
+                }
+
+                if (!ExactProperties(task, "title", "objective", "fileAreas",
+                        "acceptanceCriteria"))
+                {
+                    return InvalidTask(taskIndex,
+                        "must contain exactly title, objective, fileAreas, and acceptanceCriteria");
+                }
+
+                if (!Text(task, "title", 256, out string title))
+                {
+                    return InvalidTask(taskIndex, "title must contain 1-256 characters");
+                }
+
+                if (!Text(task, "objective", 8_192, out string objective))
+                {
+                    return InvalidTask(taskIndex, "objective must contain 1-8192 characters");
+                }
+
+                if (!StringList(task, "fileAreas", 32, 512, out string fileAreas))
+                {
+                    return InvalidTask(taskIndex,
+                        "fileAreas must contain 1-32 valid repository-relative paths");
+                }
+
+                if (!StringList(task, "acceptanceCriteria", 32, 512,
                         out string acceptanceCriteria))
                 {
-                    return Failure(
-                        "Every task requires bounded title, objective, fileAreas, and " +
-                        "acceptanceCriteria values.");
+                    return InvalidTask(taskIndex,
+                        "acceptanceCriteria must contain 1-32 non-empty values");
                 }
 
                 if (IsStandaloneDiscoveryTask(title, objective))
@@ -164,4 +193,7 @@ internal static class GoalDelegationParser
     }
 
     private static GoalDelegation Failure(string error) => new(null, [], error);
+
+    private static GoalDelegation InvalidTask(int index, string error) =>
+        Failure($"Lead task {index} {error}.");
 }

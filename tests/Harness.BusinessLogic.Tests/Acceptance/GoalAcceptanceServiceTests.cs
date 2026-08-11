@@ -8,10 +8,10 @@ using Harness.DataAccess.Workspaces;
 using Harness.DataAccess.Worktrees;
 using StoredApprovalId = Harness.DataAccess.Commits.GoalCommitApprovalId;
 using StoredApprovalState = Harness.DataAccess.Commits.GoalCommitApprovalState;
-using ViewApprovalState = Harness.BusinessLogic.Acceptance.GoalCommitApprovalState;
 using StoredKind = Harness.DataAccess.Workflows.GoalWorkflowCheckpointKind;
 using StoredRunId = Harness.DataAccess.Workflows.GoalWorkflowRunId;
 using StoredState = Harness.DataAccess.Workflows.GoalWorkflowRunState;
+using ViewApprovalState = Harness.BusinessLogic.Acceptance.GoalCommitApprovalState;
 
 namespace Harness.BusinessLogic.Tests.Acceptance;
 

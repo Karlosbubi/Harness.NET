@@ -1,6 +1,6 @@
+using Harness.BusinessLogic.Agents;
 using Harness.BusinessLogic.Costs;
 using Harness.BusinessLogic.Goals;
-using Harness.BusinessLogic.Agents;
 
 namespace Harness.Presentation.Terminal.Tests;
 

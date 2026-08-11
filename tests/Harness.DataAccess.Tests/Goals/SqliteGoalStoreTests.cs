@@ -1,9 +1,9 @@
 using Harness.DataAccess.Configuration;
 using Harness.DataAccess.Goals;
 using Harness.DataAccess.Persistence;
+using Harness.DataAccess.Workflows;
 using Harness.DataAccess.Workspaces;
 using Harness.DataAccess.Worktrees;
-using Harness.DataAccess.Workflows;
 using Microsoft.Data.Sqlite;
 
 namespace Harness.DataAccess.Tests.Goals;

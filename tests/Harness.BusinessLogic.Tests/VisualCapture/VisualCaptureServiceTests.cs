@@ -38,7 +38,7 @@ public sealed class VisualCaptureServiceTests
         VisualCaptureService service = CreateService(portal, new Artifacts());
 
         VisualCaptureResult result = await service.CaptureAsync(Request() with
-            { RequestedAt = Now.AddMinutes(-3) });
+        { RequestedAt = Now.AddMinutes(-3) });
 
         Assert.Equal(VisualCaptureOutcome.StaleRequest, result.Outcome);
         Assert.Equal(0, portal.CaptureCalls);
@@ -55,7 +55,7 @@ public sealed class VisualCaptureServiceTests
             new Portal(PortalCaptureState.Succeeded), artifacts);
 
         VisualCaptureResult captured = await service.CaptureAsync(Request() with
-            { UiScale = new(uiScale) });
+        { UiScale = new(uiScale) });
         VisualCaptureInspectionResult remote = await service.InspectAsync(
             new("goal-a"), captured.Capture!.Id, VisualCaptureModelAccess.Remote);
         VisualCaptureInspectionResult local = await service.InspectAsync(

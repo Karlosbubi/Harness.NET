@@ -67,6 +67,33 @@ public sealed class LibGitWorkspaceGitInspectorTests : IDisposable
     }
 
     [Fact]
+    public async Task Excludes_untracked_file_content_from_diff()
+    {
+        Directory.CreateDirectory(root);
+        Repository.Init(root);
+        string tracked = Path.Combine(root, "tracked.txt");
+        await File.WriteAllTextAsync(tracked, "before\n");
+        using (Repository repository = new(root))
+        {
+            Commands.Stage(repository, "tracked.txt");
+            Signature signature = new("Harness Tests", "tests@harness.local", DateTimeOffset.UtcNow);
+            repository.Commit("initial", signature, signature);
+        }
+        await File.WriteAllTextAsync(tracked, "after\n");
+        await File.WriteAllTextAsync(
+            Path.Combine(root, "local-secret.txt"),
+            "credential-that-must-not-enter-a-diff");
+
+        WorkspaceGitState result = await new LibGitWorkspaceGitInspector()
+            .InspectAsync(root);
+
+        Assert.Contains(result.Changes, change => change.Path == "local-secret.txt");
+        Assert.Contains("+after", result.Diff, StringComparison.Ordinal);
+        Assert.DoesNotContain("local-secret.txt", result.Diff, StringComparison.Ordinal);
+        Assert.DoesNotContain("credential-that-must-not-enter-a-diff", result.Diff, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Rejects_a_nested_path_as_the_workspace_root()
     {
         Directory.CreateDirectory(root);

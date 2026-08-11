@@ -1,6 +1,6 @@
 using System.Collections.ObjectModel;
-using Harness.BusinessLogic.Agents;
 using Harness.BusinessLogic.Acceptance;
+using Harness.BusinessLogic.Agents;
 using Harness.BusinessLogic.Costs;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Retrieval;

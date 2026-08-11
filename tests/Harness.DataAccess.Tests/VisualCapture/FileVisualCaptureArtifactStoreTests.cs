@@ -35,11 +35,11 @@ public sealed class FileVisualCaptureArtifactStoreTests : IDisposable
         byte[] content = [1, 2, 3];
         string hash = Convert.ToHexStringLower(SHA256.HashData(content));
         await store.StoreAsync(new(Capture("goal-a", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", 3, hash) with
-            { CreatedAt = now.AddDays(-10) }, content));
+        { CreatedAt = now.AddDays(-10) }, content));
         await store.StoreAsync(new(Capture("goal-a", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", 3, hash) with
-            { CreatedAt = now.AddMinutes(-2) }, content));
+        { CreatedAt = now.AddMinutes(-2) }, content));
         await store.StoreAsync(new(Capture("goal-a", "cccccccccccccccccccccccccccccccc", 3, hash) with
-            { CreatedAt = now.AddMinutes(-1) }, content));
+        { CreatedAt = now.AddMinutes(-1) }, content));
         string interrupted = Path.Combine(root, "state", "visual-captures", "goal-a", ".interrupted.tmp");
         await File.WriteAllTextAsync(interrupted, "partial");
 

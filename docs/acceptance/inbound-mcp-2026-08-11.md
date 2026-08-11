@@ -71,3 +71,47 @@ It produced and validated the self-contained Linux x64 application successfully.
 
 The token cannot be read again. Rotate it to enroll a replacement client or revoke
 all existing clients.
+
+## Normal-mode dogfood follow-up
+
+A second Harness.NET checkout was run normally and connected as a stateless MCP
+server while this checkout was the active workspace. The client used the exposed
+workspace, Git, project-graph, goal, evidence, Roslyn diagnostics, document-read, and
+UI-inspection tools. It did not receive shell or unrestricted process authority.
+
+The run found and fixed these defects:
+
+- The Git inspection adapter included the contents of untracked files in its bounded
+  diff. An untracked client configuration therefore exposed its bearer token through
+  `harness_git`. Git status still reports untracked paths, but the diff now contains
+  tracked and staged changes only. A regression test proves that untracked content is
+  absent while tracked edits remain visible. The exposed token must be rotated.
+- Roslyn workspace diagnostics reported `AnalyzerReleases.Unshipped.md` twice because
+  the analyzer project explicitly included a file already supplied by the analyzer
+  SDK. The duplicate item was removed. A repeated `harness_code_problems` call returned
+  no workspace issue or file diagnostics.
+- An Ollama Lead returned no content, and another returned a task with an invalid
+  field. Recovery previously exposed raw JSON parser text or one generic task error.
+  Empty output now gives a direct model/guidance recovery action. Invalid tasks name
+  the task index and invalid field.
+- The Lead prompt said build/test evidence could replace mutation evidence, although
+  the approved goal workflow requires each Implementer slice to mutate its isolated
+  worktree. The prompt now states that validation belongs inside an implementation
+  slice and rejects goals that explicitly prohibit source changes. The build boundary
+  correctly refused an old goal without an active approved worktree grant; this safety
+  check was retained.
+- `.editorconfig` applied two-space indentation to C# even though the repository uses
+  four spaces. A format verification therefore reported nearly every C# line as an
+  error. C# now explicitly uses four spaces; MSBuild and data/document formats remain
+  at two. The remaining real whitespace and import-order findings were formatted.
+
+Verification after the fixes:
+
+- `dotnet build Harness.slnx --no-restore -m:1 -p:UseSharedCompilation=false`
+  completed with zero warnings and errors.
+- `dotnet test Harness.slnx --no-build --no-restore -m:1
+  -p:UseSharedCompilation=false` passed all 598 deterministic tests.
+- Focused Git-inspector tests passed 4/4. Focused Lead-delegation parser tests passed
+  15/15.
+- `dotnet format Harness.slnx --no-restore --verify-no-changes` completed without a
+  finding.

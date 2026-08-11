@@ -448,22 +448,22 @@ internal sealed partial class WorkbenchCodeIntelligenceService(
 
     private static WorkbenchCodeValidationDisposition Map(
         CodeIntelligenceValidationDisposition disposition) => disposition switch
-    {
-        CodeIntelligenceValidationDisposition.Validated => WorkbenchCodeValidationDisposition.Validated,
-        CodeIntelligenceValidationDisposition.Rejected => WorkbenchCodeValidationDisposition.Rejected,
-        CodeIntelligenceValidationDisposition.NotApplicable =>
-            WorkbenchCodeValidationDisposition.NotApplicable,
-        _ => throw new ArgumentOutOfRangeException(nameof(disposition)),
-    };
+        {
+            CodeIntelligenceValidationDisposition.Validated => WorkbenchCodeValidationDisposition.Validated,
+            CodeIntelligenceValidationDisposition.Rejected => WorkbenchCodeValidationDisposition.Rejected,
+            CodeIntelligenceValidationDisposition.NotApplicable =>
+                WorkbenchCodeValidationDisposition.NotApplicable,
+            _ => throw new ArgumentOutOfRangeException(nameof(disposition)),
+        };
 
     private static WorkbenchCodeDiagnosticDeltaKind Map(
         CodeIntelligenceDiagnosticDeltaKind kind) => kind switch
-    {
-        CodeIntelligenceDiagnosticDeltaKind.Retained => WorkbenchCodeDiagnosticDeltaKind.Retained,
-        CodeIntelligenceDiagnosticDeltaKind.Resolved => WorkbenchCodeDiagnosticDeltaKind.Resolved,
-        CodeIntelligenceDiagnosticDeltaKind.Introduced => WorkbenchCodeDiagnosticDeltaKind.Introduced,
-        _ => throw new ArgumentOutOfRangeException(nameof(kind)),
-    };
+        {
+            CodeIntelligenceDiagnosticDeltaKind.Retained => WorkbenchCodeDiagnosticDeltaKind.Retained,
+            CodeIntelligenceDiagnosticDeltaKind.Resolved => WorkbenchCodeDiagnosticDeltaKind.Resolved,
+            CodeIntelligenceDiagnosticDeltaKind.Introduced => WorkbenchCodeDiagnosticDeltaKind.Introduced,
+            _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+        };
 
     private sealed class ActiveSession(
         CodeIntelligenceContextId contextId,

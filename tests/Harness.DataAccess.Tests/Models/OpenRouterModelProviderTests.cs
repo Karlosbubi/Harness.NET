@@ -360,9 +360,9 @@ public sealed class OpenRouterModelProviderTests
     private static HttpResponseMessage JsonResponse(
         string json,
         string mediaType = "application/json") => new(HttpStatusCode.OK)
-    {
-        Content = new StringContent(json, Encoding.UTF8, mediaType),
-    };
+        {
+            Content = new StringContent(json, Encoding.UTF8, mediaType),
+        };
 
     private sealed class StubHttpMessageHandler(
         Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> handler)

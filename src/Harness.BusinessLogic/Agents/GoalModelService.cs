@@ -489,8 +489,8 @@ internal sealed class GoalModelService :
                 candidate.Provider == provider.Name);
             AgentModelProviderAvailability availability = (models.Length, issue) switch
             {
-                (> 0, not null) => AgentModelProviderAvailability.Degraded,
-                (> 0, null) => AgentModelProviderAvailability.Available,
+                ( > 0, not null) => AgentModelProviderAvailability.Degraded,
+                ( > 0, null) => AgentModelProviderAvailability.Available,
                 (0, not null) => AgentModelProviderAvailability.Unavailable,
                 _ => AgentModelProviderAvailability.Empty,
             };
