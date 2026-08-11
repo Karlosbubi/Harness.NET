@@ -154,6 +154,56 @@ Implementation order:
 Do not add an unrestricted shell, a generic execute-by-name tool, or an unbounded
 tool catalog in every prompt.
 
+### Planned: Task 048 — Morgania editor evaluation and conditional migration
+
+Evaluate Morgania as the Avalonia editor platform before adding more
+Presentation-specific behavior to the current AvaloniaEdit integration. Morgania is
+the editor used by current RoslynPad and combines an Avalonia rendering and input
+layer with Visual Studio editor APIs and Roslyn editor services. This is a gated
+evaluation, not approval to replace AvaloniaEdit.
+
+The evaluation must:
+
+1. Pin the inspected Morgania and RoslynPad revisions. Verify license, public package
+   availability, release and support policy, transitive dependencies, integrity,
+   provenance, and SBOM changes. Do not depend on an unversioned branch.
+2. Document Morgania's vendored Visual Studio editor code, recompiled or internal
+   Roslyn dependencies, MEF composition, nullable settings, warning suppressions,
+   and any private-access mechanism. Measure the work required for a Roslyn or
+   Avalonia upgrade instead of treating upstream compatibility as stable.
+3. Keep Morgania, Avalonia, Visual Studio editor, MEF, and Roslyn implementation
+   types inside their existing adapter boundaries. Preserve the Business Logic code
+   intelligence contracts, typed model tools, validation policy, and shared semantic
+   source state. Record an ADR amendment before adopting the new editor platform.
+4. Introduce an editor adapter seam and a representative vertical slice without
+   deleting the AvaloniaEdit path. The slice must cover open, edit, dirty state,
+   save, exact-baseline conflict handling, diagnostics, completion, signature help,
+   quick info, definition, usages, implementations, rename, code actions, and
+   restoration inside Dock.
+5. Prove that the user editor and model tools observe the same current buffer,
+   source-context identity, baseline, and version. Stale semantic results must still
+   be rejected, manual edits must remain permissive, and model writes must retain
+   their existing validation and authority checks.
+6. Run Linux acceptance on Wayland and X11 for keyboard commands, IME and dead keys,
+   clipboard, pointer selection, multi-caret behavior, focus, popups, AT-SPI, Orca,
+   100% and 200% scaling, multiple displays, Dock movement, layout restoration, and
+   Linux x64 self-contained publish. Upstream cross-platform builds do not satisfy
+   this gate.
+7. Measure cold startup, first and warm completion, typing and diagnostic latency,
+   large-solution load, cancellation, memory, disposal, and repeated workspace or
+   goal switches. Compare the results with the current editor and the targets in
+   ADR 012.
+8. Compare total maintenance cost. Adoption should remove or substantially simplify
+   the custom completion, signature, popup, diagnostic-rendering, navigation, and
+   editor-session code rather than leave two permanent editor stacks.
+
+Adopt Morgania only if the slice passes the Linux, accessibility, performance,
+dependency, lifecycle, and architecture gates. Keep AvaloniaEdit if Morgania leaks
+implementation types across layers, cannot meet accessibility or input requirements,
+adds unacceptable startup or memory cost, or requires routine large private Roslyn
+patches. Retain a working rollback path until the migrated editor passes the complete
+desktop release gate; remove the old stack only in a separate, reviewed cutover.
+
 ## Ongoing work
 
 - Repeat hands-on Avalonia usability checks after changes to workspace, editor, goals,

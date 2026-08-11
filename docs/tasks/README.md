@@ -197,3 +197,38 @@ Remaining acceptance criteria:
 10. Exclude Unreal-specific behavior.
 
 The detailed status matrix is [agent-ide-capabilities.md](../agent-ide-capabilities.md).
+
+### 048 — Morgania editor evaluation and conditional migration
+
+Status: `Planned`
+
+Dependencies: 010, 012, 032, 043, 044.
+
+Problem: the current AvaloniaEdit adapter requires custom code for editor sessions,
+completion, signatures, diagnostics, navigation, and popups. Morgania may provide a
+more coherent Avalonia and Roslyn editor foundation, but it also vendors Visual
+Studio editor code and uses tightly coupled Roslyn editor components. Its
+cross-platform claim does not prove Harness.NET's Linux, accessibility, lifecycle,
+or publication requirements.
+
+Acceptance criteria:
+
+1. An evaluation records pinned upstream revisions, license, package and support
+   status, dependency provenance, integrity, and SBOM impact.
+2. An ADR amendment documents the choice before production adoption, including
+   vendored code, MEF, Roslyn internals, version coupling, ownership, and rollback.
+3. A Presentation-owned adapter slice retains the current Business Logic contracts,
+   model tools, source identity, buffer versioning, and model-write validation.
+4. The slice covers editing, dirty/save/conflict behavior, diagnostics, completion,
+   signatures, quick info, navigation, rename, code actions, Dock integration, and
+   restoration. AvaloniaEdit remains available during evaluation.
+5. User and model operations use the same live buffer and reject stale results.
+6. Wayland and X11 checks cover input, IME, clipboard, focus, popups, multi-caret,
+   AT-SPI, Orca, scaling, displays, layout, and Linux x64 publish.
+7. Measurements cover startup, load, typing, completion, diagnostics, cancellation,
+   memory, disposal, and repeated source-context changes against the current editor.
+8. Adoption requires a clear maintenance benefit and a passing complete desktop
+   gate. Reject the migration for boundary leakage, failed accessibility or input,
+   unacceptable resource cost, or recurring private Roslyn patch burden.
+9. Removal of AvaloniaEdit is a separate reviewed cutover after the migrated editor
+   passes acceptance and the rollback evidence is recorded.
