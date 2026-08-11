@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Harness.BusinessLogic.Acceptance;
 using Harness.BusinessLogic.Agents;
@@ -51,16 +52,16 @@ internal sealed class InboundMcpApplicationService(
         Read("harness_inspect_capture", sensitive: true),
         Read("harness_evaluation_snapshot", sensitive: true),
         Action("harness_create_goal", idempotent: false),
-        Action("harness_configure_goal", idempotent: true),
+        Action("harness_configure_goal"),
         Action("harness_extend_goal_budget"),
-        Action("harness_select_goal_model", idempotent: true),
+        Action("harness_select_goal_model"),
         Action("harness_start_planning", execution: true),
         Action("harness_resume_goal", execution: true),
         Action("harness_retry_goal", execution: true),
         Action("harness_cancel_goal_operation", idempotent: true),
         Action("harness_abort_goal", destructive: true, idempotent: true),
         Action("harness_decide_plan", idempotent: true),
-        Action("harness_request_commit", idempotent: true),
+        Action("harness_request_commit"),
         Action("harness_decide_commit", idempotent: true),
         Action("harness_open_document", idempotent: true),
         Action("harness_ui_activate", sensitive: true, idempotent: true),
@@ -219,21 +220,60 @@ internal sealed class InboundMcpApplicationService(
     }
 
     public async ValueTask<InboundMcpApplicationResult> ListGoalsAsync(
-        InboundMcpCallContext context, CancellationToken cancellationToken = default)
+        InboundMcpCallContext context,
+        InboundMcpGoalListRequest request,
+        CancellationToken cancellationToken = default)
     {
         WorkspaceView? workspace = await TrustedWorkspaceAsync(context, cancellationToken);
         if (workspace is null) return WorkspaceFailure(context);
-        IReadOnlyList<GoalView> goals = await goalService.ListAsync(workspace.Id, cancellationToken);
+        if (!TryPage(request.MaximumResults, request.Continuation, out int offset,
+                out InboundMcpApplicationResult? pageFailure))
+            return pageFailure!;
+        IReadOnlyList<GoalView> allGoals = await goalService.ListAsync(
+            workspace.Id, cancellationToken);
+        GoalView[] matchingGoals = allGoals
+            .Where(goal => request.GoalId is null ||
+                goal.Id.Value.Equals(request.GoalId, StringComparison.Ordinal))
+            .OrderByDescending(goal => goal.UpdatedAt)
+            .ThenBy(goal => goal.Id.Value, StringComparer.Ordinal)
+            .ToArray();
+        GoalView[] goals = matchingGoals
+            .Skip(offset)
+            .Take(request.MaximumResults)
+            .ToArray();
         List<object> details = [];
         foreach (GoalView goal in goals)
         {
+            GoalWorkflowSnapshot? workflow = await workflowService.GetLatestAsync(
+                goal.Id, cancellationToken);
+            InboundGoalOperationView? operation = goalOperations.Get(goal.Id);
             details.Add(new
             {
                 goal,
                 plan = await goalService.GetCurrentPlanAsync(goal.Id, cancellationToken),
-                workflow = await workflowService.GetLatestAsync(goal.Id, cancellationToken),
+                workflow = workflow is null ? null : new
+                {
+                    workflow.Id,
+                    workflow.GoalId,
+                    workflow.State,
+                    workflow.ReviewCycle,
+                    workflow.Tasks,
+                    workflow.Activities,
+                    workflow.CanResume,
+                    workflow.RequiresUserDirection,
+                    workflow.RetryRole,
+                },
                 cost = await remoteCostService.GetAsync(goal.Id, cancellationToken),
-                inboundOperation = goalOperations.Get(goal.Id),
+                inboundOperation = operation is null ? null : new
+                {
+                    operation.Id,
+                    operation.GoalId,
+                    operation.Kind,
+                    operation.State,
+                    operation.StartedAt,
+                    operation.CompletedAt,
+                    operation.Error,
+                },
             });
         }
         return Success(new
@@ -242,16 +282,21 @@ internal sealed class InboundMcpApplicationService(
             sourceContextId = SourceId(workspace),
             workspace.Id,
             goals = details,
+            totalMatches = matchingGoals.Length,
+            continuation = NextContinuation(offset, goals.Length, matchingGoals.Length),
             freshness = context.RequestedAt
         });
     }
 
     public async ValueTask<InboundMcpApplicationResult> ListEvidenceAsync(
-        InboundMcpCallContext context, InboundMcpGoalRequest request,
+        InboundMcpCallContext context, InboundMcpEvidenceRequest request,
         CancellationToken cancellationToken = default)
     {
         WorkspaceView? workspace = await TrustedWorkspaceAsync(context, cancellationToken);
         if (workspace is null) return WorkspaceFailure(context);
+        if (!TryPage(request.MaximumResults, request.Continuation, out int offset,
+                out InboundMcpApplicationResult? pageFailure))
+            return pageFailure!;
         GoalView? goal = await goalService.GetAsync(new(request.GoalId), cancellationToken);
         if (goal is null || !goal.WorkspaceId.Equals(workspace.Id, StringComparison.Ordinal))
             return Failure("goal_unavailable", "The goal is not part of the active workspace.");
@@ -261,7 +306,15 @@ internal sealed class InboundMcpApplicationService(
             instanceId = context.InstanceId.Value,
             sourceContextId = SourceId(workspace),
             goal.Id,
-            evidence,
+            evidence = evidence with
+            {
+                Items = evidence.Items.Skip(offset).Take(request.MaximumResults).ToArray(),
+            },
+            totalMatches = evidence.Items.Count,
+            continuation = NextContinuation(
+                offset,
+                Math.Min(request.MaximumResults, Math.Max(0, evidence.Items.Count - offset)),
+                evidence.Items.Count),
             freshness = context.RequestedAt
         });
     }
@@ -349,20 +402,53 @@ internal sealed class InboundMcpApplicationService(
 
     public async ValueTask<InboundMcpApplicationResult> DiscoverGoalModelsAsync(
         InboundMcpCallContext context,
-        InboundMcpGoalRequest request,
+        InboundMcpGoalCatalogRequest request,
         CancellationToken cancellationToken = default)
     {
         (WorkspaceView? workspace, GoalView? goal, InboundMcpApplicationResult? failure) =
             await GoalAsync(context, request.GoalId, cancellationToken);
         if (failure is not null) return failure;
+        if (!TryPage(request.MaximumResults, request.Continuation, out int offset,
+                out InboundMcpApplicationResult? pageFailure))
+            return pageFailure!;
+        AgentRole? role = null;
+        if (request.Role is not null)
+        {
+            if (!Enum.TryParse(request.Role, true, out AgentRole parsedRole))
+                return Failure("invalid_goal_role", "Role must be Lead, Implementer, or Reviewer.");
+            role = parsedRole;
+        }
         GoalModelCatalog result = await goalModelService.DiscoverAsync(
             goal!.Id, cancellationToken);
+        string search = request.Search?.Trim() ?? string.Empty;
+        GoalModelCandidate[] matchingModels = result.Models
+            .Where(model => request.Provider is null ||
+                model.Provider.Value.Equals(request.Provider, StringComparison.OrdinalIgnoreCase))
+            .Where(model => role is null || model.SupportedRoles.Contains(role.Value))
+            .Where(model => search.Length == 0 ||
+                model.Provider.Value.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                model.Model.Value.Contains(search, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(model => model.Provider.Value, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(model => model.Model.Value, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        GoalModelCandidate[] models = matchingModels
+            .Skip(offset)
+            .Take(request.MaximumResults)
+            .ToArray();
         return result.Error is null
             ? Success(new
             {
                 instanceId = context.InstanceId.Value,
                 sourceContextId = SourceId(workspace!),
-                result,
+                result = new
+                {
+                    result.GoalId,
+                    Models = models,
+                    result.Issues,
+                    totalMatches = matchingModels.Length,
+                    continuation = NextContinuation(
+                        offset, models.Length, matchingModels.Length),
+                },
                 selections = await goalModelService.GetSelectionsAsync(
                     goal.Id, cancellationToken),
                 freshness = context.RequestedAt,
@@ -809,6 +895,36 @@ internal sealed class InboundMcpApplicationService(
 
     private static string SourceId(WorkspaceView workspace) =>
         $"{workspace.Id}:original:{workspace.Branch}:{workspace.EntryPoint}";
+
+    private static bool TryPage(
+        int maximumResults,
+        string? continuation,
+        out int offset,
+        out InboundMcpApplicationResult? failure)
+    {
+        offset = 0;
+        failure = null;
+        if (maximumResults is < 1 or > 100)
+        {
+            failure = Failure("invalid_result_limit",
+                "Maximum results must be between 1 and 100.");
+            return false;
+        }
+        if (continuation is not null &&
+            (!int.TryParse(continuation, NumberStyles.None, CultureInfo.InvariantCulture,
+                out offset) || offset < 0))
+        {
+            failure = Failure("invalid_continuation",
+                "The continuation token is invalid for this bounded result set.");
+            return false;
+        }
+        return true;
+    }
+
+    private static string? NextContinuation(int offset, int returned, int total) =>
+        offset + returned < total
+            ? (offset + returned).ToString(CultureInfo.InvariantCulture)
+            : null;
 
     private static InboundMcpApplicationResult Success(object value) =>
         new(JsonSerializer.Serialize(value, JsonOptions), false, null, null);

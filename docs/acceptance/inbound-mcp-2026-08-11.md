@@ -104,6 +104,26 @@ The run found and fixed these defects:
   four spaces. A format verification therefore reported nearly every C# line as an
   error. C# now explicitly uses four spaces; MSBuild and data/document formats remain
   at two. The remaining real whitespace and import-order findings were formatted.
+- Harness control policy, timeout, result-limit, and audit-retention fields exposed no
+  accessible names. Exact automation names and a headless regression test now make
+  those settings identifiable to both assistive technology and dogfood agents.
+- `harness_goal_models` serialized all 412 discovered models in one response (about
+  134,000 tokens), while `harness_goals` serialized every historical workflow and
+  duplicated its prompt/evidence inside the active-operation view. That blocked later
+  stateless requests while the oversized response was written. Goal, evidence, and
+  model collection tools are now bounded and continuation-paged. Goals can be selected
+  by exact ID; model filtering happens by provider, role, and search text on the server;
+  goal summaries omit prompt/evidence duplication.
+- Three mutating lifecycle policies disagreed with their protocol annotations and were
+  displayed as idempotent in Settings. Configuration, model selection, and commit
+  request are now consistently non-idempotent, so a caller will not replay them after
+  an ambiguous timeout.
+
+The lifecycle dogfood run created a local-only goal over MCP, observed the expected
+failure when its configured Lead route was remote, selected local `ornith:9b`, and
+used the explicit retry operation first without and then with corrective guidance.
+Planning returned an operation identity instead of holding the HTTP request. Durable
+failure and retry checkpoints remained inspectable throughout.
 
 Verification after the fixes:
 

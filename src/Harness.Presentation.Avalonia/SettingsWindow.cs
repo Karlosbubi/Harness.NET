@@ -697,12 +697,14 @@ internal sealed class SettingsWindow : Window
             Height = 70,
             PlaceholderText = "One allowed client ID per line; empty allows any authenticated client",
         };
+        AutomationProperties.SetName(clients, "Allowed inbound MCP client IDs");
         TextBox tools = new()
         {
             Text = string.Join(Environment.NewLine, configured.AllowedTools.Select(item => item.Value)),
             AcceptsReturn = true,
             Height = 110,
         };
+        AutomationProperties.SetName(tools, "Allowed inbound MCP tool IDs");
         TextBox approvals = new()
         {
             Text = string.Join(Environment.NewLine,
@@ -711,24 +713,29 @@ internal sealed class SettingsWindow : Window
             Height = 70,
             PlaceholderText = "One allowed tool ID per line",
         };
+        AutomationProperties.SetName(approvals,
+            "Inbound MCP tool IDs requiring explicit approval");
         NumericUpDown timeout = new()
         {
             Minimum = 1,
             Maximum = 300,
             Value = (decimal)configured.RequestTimeout.TotalSeconds
         };
+        AutomationProperties.SetName(timeout, "Inbound MCP request timeout in seconds");
         NumericUpDown resultLimit = new()
         {
             Minimum = 1,
             Maximum = 5000,
             Value = configured.ResultLimit
         };
+        AutomationProperties.SetName(resultLimit, "Inbound MCP result limit");
         NumericUpDown retention = new()
         {
             Minimum = 0,
             Maximum = 100000,
             Value = configured.AuditRetention
         };
+        AutomationProperties.SetName(retention, "Inbound MCP audit retention");
         string policySummary = snapshot?.ToolPolicies.Count > 0
             ? string.Join(Environment.NewLine, snapshot.ToolPolicies.Select(policy =>
                 $"{policy.Id.Value} · " +

@@ -363,16 +363,21 @@ internal sealed class InboundMcpTools(
 
     [McpServerTool(Name = "harness_goals", ReadOnly = true, Destructive = false,
         Idempotent = true, OpenWorld = false)]
-    [Description("List goals for the active workspace with their durable state; this does not start or change a goal.")]
-    public ValueTask<string> GoalsAsync(CancellationToken cancellationToken) =>
-        InvokeAsync(new("harness_goals"), context => application.ListGoalsAsync(context, cancellationToken));
+    [Description("List a bounded page of goals for the active workspace, or inspect one exact goal. Workflow prompts and evidence are available separately and are not duplicated here.")]
+    public ValueTask<string> GoalsAsync(
+        string? goalId, int maximumResults, string? continuation,
+        CancellationToken cancellationToken) =>
+        InvokeAsync(new("harness_goals"), context => application.ListGoalsAsync(context,
+            new(goalId, maximumResults, continuation), cancellationToken));
 
     [McpServerTool(Name = "harness_evidence", ReadOnly = true, Destructive = false,
         Idempotent = true, OpenWorld = false)]
-    [Description("List bounded durable tool and verification evidence for one exact Harness.NET goal.")]
-    public ValueTask<string> EvidenceAsync(string goalId, CancellationToken cancellationToken) =>
+    [Description("List a bounded page of durable tool and verification evidence for one exact Harness.NET goal.")]
+    public ValueTask<string> EvidenceAsync(
+        string goalId, int maximumResults, string? continuation,
+        CancellationToken cancellationToken) =>
         InvokeAsync(new("harness_evidence"), context => application.ListEvidenceAsync(
-            context, new(goalId), cancellationToken));
+            context, new(goalId, maximumResults, continuation), cancellationToken));
 
     [McpServerTool(Name = "harness_create_goal", ReadOnly = false, Destructive = false,
         Idempotent = false, OpenWorld = false)]
@@ -410,11 +415,14 @@ internal sealed class InboundMcpTools(
 
     [McpServerTool(Name = "harness_goal_models", ReadOnly = true, Destructive = false,
         Idempotent = true, OpenWorld = true)]
-    [Description("Discover role-compatible models from configured providers for one exact draft goal and return its current per-role selections. Catalog discovery performs no inference.")]
+    [Description("Discover one bounded, filterable page of models from configured providers for an exact draft goal and return its current per-role selections. Catalog discovery performs no inference.")]
     public ValueTask<string> GoalModelsAsync(
-        string goalId, CancellationToken cancellationToken) =>
+        string goalId, string? provider, string? role, string? search,
+        int maximumResults, string? continuation, CancellationToken cancellationToken) =>
         InvokeAsync(new("harness_goal_models"), context =>
-            application.DiscoverGoalModelsAsync(context, new(goalId), cancellationToken));
+            application.DiscoverGoalModelsAsync(context,
+                new(goalId, provider, role, search, maximumResults, continuation),
+                cancellationToken));
 
     [McpServerTool(Name = "harness_select_goal_model", ReadOnly = false,
         Destructive = false, Idempotent = false, OpenWorld = false)]

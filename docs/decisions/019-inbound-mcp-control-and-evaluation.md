@@ -76,6 +76,12 @@ the active call; shutdown cancels active operations and the workflow records its
 uncertain boundary. This coordinator is not a general job runner and accepts no
 delegate, tool name, prompt, executable, or command string.
 
+Collection tools are server-filtered and continuation-paged. Goal inspection accepts
+an exact goal identity and does not duplicate workflow prompts or durable evidence;
+those remain available through the separately paged evidence tool. Model discovery
+accepts provider, role, and text filters before paging. A large provider catalog or
+goal history must not become one model-context-sized response.
+
 Harness.NET never exposes generic shell, SQL, click/type, coordinates, global input,
 desktop control, arbitrary command names, silent screen capture, secret reads or raw
 dependency-injection service dispatch.

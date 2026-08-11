@@ -41,7 +41,7 @@ public sealed class InboundMcpServerTests
             transport, loggerFactory: NullLoggerFactory.Instance);
         IList<McpClientTool> tools = await client.ListToolsAsync();
 
-        Assert.Equal(12, tools.Count);
+        Assert.Equal(14, tools.Count);
         Assert.Contains("no shell", client.ServerInstructions, StringComparison.OrdinalIgnoreCase);
         Assert.All(tools, tool => Assert.StartsWith("harness_", tool.Name, StringComparison.Ordinal));
         Assert.All(tools.Where(tool => tool.Name is not "harness_open_document" and
@@ -70,6 +70,37 @@ public sealed class InboundMcpServerTests
             });
         Assert.NotEqual(true, created.IsError);
         Assert.Equal("Dogfood lifecycle", application.LastCreate?.Title);
+        var goals = await tools.Single(tool => tool.Name == "harness_goals").CallAsync(
+            new Dictionary<string, object?>
+            {
+                ["goalId"] = "goal-a",
+                ["maximumResults"] = 5,
+                ["continuation"] = "10",
+            });
+        Assert.NotEqual(true, goals.IsError);
+        Assert.Equal(new("goal-a", 5, "10"), application.LastGoalList);
+        var models = await tools.Single(tool => tool.Name == "harness_goal_models").CallAsync(
+            new Dictionary<string, object?>
+            {
+                ["goalId"] = "goal-a",
+                ["provider"] = "Ollama",
+                ["role"] = "Lead",
+                ["search"] = "ornith",
+                ["maximumResults"] = 25,
+                ["continuation"] = null,
+            });
+        Assert.NotEqual(true, models.IsError);
+        Assert.Equal(new("goal-a", "Ollama", "Lead", "ornith", 25, null),
+            application.LastCatalog);
+        var evidence = await tools.Single(tool => tool.Name == "harness_evidence").CallAsync(
+            new Dictionary<string, object?>
+            {
+                ["goalId"] = "goal-a",
+                ["maximumResults"] = 10,
+                ["continuation"] = null,
+            });
+        Assert.NotEqual(true, evidence.IsError);
+        Assert.Equal(new("goal-a", 10, null), application.LastEvidence);
         var stale = await tools.Single(tool => tool.Name == "harness_open_document").CallAsync(
             new Dictionary<string, object?>
             {
@@ -128,6 +159,7 @@ public sealed class InboundMcpServerTests
         true, InboundMcpMode.Normal, endpoint, new("token"), [],
         [new("harness_application"), new("harness_workspace"), new("harness_tree"),
             new("harness_read_range"), new("harness_git"), new("harness_project_graph"),
+            new("harness_goals"), new("harness_evidence"),
             new("harness_build"), new("harness_open_document"), new("harness_create_goal"),
             new("harness_goal_models"), new("harness_select_goal_model"),
             new("harness_start_planning"), new("harness_abort_goal"),
@@ -197,6 +229,9 @@ public sealed class InboundMcpServerTests
     {
         public InboundMcpCallContext? LastContext { get; private set; }
         public InboundMcpGoalCreateRequest? LastCreate { get; private set; }
+        public InboundMcpGoalListRequest? LastGoalList { get; private set; }
+        public InboundMcpGoalCatalogRequest? LastCatalog { get; private set; }
+        public InboundMcpEvidenceRequest? LastEvidence { get; private set; }
         public ValueTask<InboundMcpApplicationResult> GetApplicationAsync(
             InboundMcpCallContext context, CancellationToken cancellationToken = default)
         {
@@ -218,9 +253,20 @@ public sealed class InboundMcpServerTests
         public ValueTask<InboundMcpApplicationResult> GetProjectGraphAsync(InboundMcpCallContext context,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public ValueTask<InboundMcpApplicationResult> ListGoalsAsync(InboundMcpCallContext context,
-            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+            InboundMcpGoalListRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            LastGoalList = request;
+            return ValueTask.FromResult(new InboundMcpApplicationResult(
+                "{\"goals\":[]}", false, null, null));
+        }
         public ValueTask<InboundMcpApplicationResult> ListEvidenceAsync(InboundMcpCallContext context,
-            InboundMcpGoalRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+            InboundMcpEvidenceRequest request, CancellationToken cancellationToken = default)
+        {
+            LastEvidence = request;
+            return ValueTask.FromResult(new InboundMcpApplicationResult(
+                "{\"evidence\":[]}", false, null, null));
+        }
         public ValueTask<InboundMcpApplicationResult> CreateGoalAsync(InboundMcpCallContext context,
             InboundMcpGoalCreateRequest request, CancellationToken cancellationToken = default)
         {
@@ -233,7 +279,12 @@ public sealed class InboundMcpServerTests
         public ValueTask<InboundMcpApplicationResult> ExtendGoalBudgetAsync(InboundMcpCallContext context,
             InboundMcpGoalBudgetRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public ValueTask<InboundMcpApplicationResult> DiscoverGoalModelsAsync(InboundMcpCallContext context,
-            InboundMcpGoalRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+            InboundMcpGoalCatalogRequest request, CancellationToken cancellationToken = default)
+        {
+            LastCatalog = request;
+            return ValueTask.FromResult(new InboundMcpApplicationResult(
+                "{\"models\":[]}", false, null, null));
+        }
         public ValueTask<InboundMcpApplicationResult> SelectGoalModelAsync(InboundMcpCallContext context,
             InboundMcpGoalModelRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public ValueTask<InboundMcpApplicationResult> StartGoalPlanningAsync(InboundMcpCallContext context,

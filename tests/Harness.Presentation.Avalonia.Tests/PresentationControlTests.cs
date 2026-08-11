@@ -355,6 +355,44 @@ public sealed class PresentationControlTests
     }
 
     [Fact]
+    public async Task Inbound_mcp_settings_expose_accessible_names_for_policy_and_limit_fields()
+    {
+        using AvaloniaPresentationStore store = AvaloniaPresentationStoreTests.CreateStore();
+        await store.LoadAsync(CancellationToken.None);
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            SettingsWindow window = new(store, CancellationToken.None);
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            ListBox categories = Assert.Single(window.GetLogicalDescendants().OfType<ListBox>());
+            categories.SelectedItem = SettingsCatalog.All.Single(category =>
+                category.Id is SettingsCategoryId.InboundMcp);
+            Dispatcher.UIThread.RunJobs();
+
+            string[] expectedNames =
+            [
+                "Allowed inbound MCP client IDs",
+                "Allowed inbound MCP tool IDs",
+                "Inbound MCP tool IDs requiring explicit approval",
+                "Inbound MCP request timeout in seconds",
+                "Inbound MCP result limit",
+                "Inbound MCP audit retention",
+            ];
+            string[] actualNames = window.GetLogicalDescendants()
+                .OfType<Control>()
+                .Select(AutomationProperties.GetName)
+                .Where(name => name is not null)
+                .Cast<string>()
+                .ToArray();
+
+            Assert.All(expectedNames, name => Assert.Contains(name, actualNames));
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
     public async Task Research_settings_expose_sources_offline_cache_dependency_and_explicit_export_controls()
     {
         using AvaloniaPresentationStore store = AvaloniaPresentationStoreTests.CreateStore(

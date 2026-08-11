@@ -78,6 +78,21 @@ public sealed record InboundMcpTreeRequest(
 
 public sealed record InboundMcpRangeRequest(string RelativePath, int StartLine, int LineCount);
 public sealed record InboundMcpGoalRequest(string GoalId);
+public sealed record InboundMcpGoalListRequest(
+    string? GoalId,
+    int MaximumResults,
+    string? Continuation);
+public sealed record InboundMcpGoalCatalogRequest(
+    string GoalId,
+    string? Provider,
+    string? Role,
+    string? Search,
+    int MaximumResults,
+    string? Continuation);
+public sealed record InboundMcpEvidenceRequest(
+    string GoalId,
+    int MaximumResults,
+    string? Continuation);
 public sealed record InboundMcpGoalCreateRequest(
     string WorkspaceId,
     string Title,
@@ -170,10 +185,11 @@ public interface IInboundMcpApplication
         InboundMcpCallContext context, CancellationToken cancellationToken = default);
 
     ValueTask<InboundMcpApplicationResult> ListGoalsAsync(
-        InboundMcpCallContext context, CancellationToken cancellationToken = default);
+        InboundMcpCallContext context, InboundMcpGoalListRequest request,
+        CancellationToken cancellationToken = default);
 
     ValueTask<InboundMcpApplicationResult> ListEvidenceAsync(
-        InboundMcpCallContext context, InboundMcpGoalRequest request,
+        InboundMcpCallContext context, InboundMcpEvidenceRequest request,
         CancellationToken cancellationToken = default);
 
     ValueTask<InboundMcpApplicationResult> CreateGoalAsync(
@@ -189,7 +205,7 @@ public interface IInboundMcpApplication
         CancellationToken cancellationToken = default);
 
     ValueTask<InboundMcpApplicationResult> DiscoverGoalModelsAsync(
-        InboundMcpCallContext context, InboundMcpGoalRequest request,
+        InboundMcpCallContext context, InboundMcpGoalCatalogRequest request,
         CancellationToken cancellationToken = default);
 
     ValueTask<InboundMcpApplicationResult> SelectGoalModelAsync(
