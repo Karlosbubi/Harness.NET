@@ -125,16 +125,26 @@ internal static class GoalDelegationParser
         [
             "inspect", "analyze", "analyse", "discover", "explore", "inventory", "assess",
             "plan", "planning", "build", "test", "verify", "validate", "review", "document",
+            "run", "execute", "check",
         ];
         string[] strongMutationWords =
             ["implement", "update", "change", "fix", "replace", "remove", "refactor", "integrate"];
         string[] weakMutationWords = ["create", "add", "write"];
         bool hasNonMutationWord = nonMutationWords.Any(word => ContainsWord(combined, word));
         bool hasStrongMutation = strongMutationWords.Any(word => ContainsWord(combined, word));
+        bool titleHasStrongMutation = strongMutationWords.Any(word => ContainsWord(title, word));
+        bool titleStartsWithNonMutation = nonMutationWords.Any(word =>
+            StartsWithWord(title, word));
         bool hasWeakMutation = weakMutationWords.Any(word => ContainsWord(combined, word));
         bool isPlanning = ContainsWord(combined, "plan") || ContainsWord(combined, "planning");
-        return hasNonMutationWord && !hasStrongMutation && (!hasWeakMutation || isPlanning);
+        return titleStartsWithNonMutation && !titleHasStrongMutation ||
+            hasNonMutationWord && !hasStrongMutation && (!hasWeakMutation || isPlanning);
     }
+
+    private static bool StartsWithWord(string value, string word) =>
+        value.TrimStart().StartsWith(word, StringComparison.OrdinalIgnoreCase) &&
+        (value.TrimStart().Length == word.Length ||
+            !char.IsLetterOrDigit(value.TrimStart()[word.Length]));
 
     private static bool ContainsWord(string value, string word) =>
         value.Split([' ', '\t', '\r', '\n', ',', '.', ':', ';', '-', '_', '/', '(', ')'],

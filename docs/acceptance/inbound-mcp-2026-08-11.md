@@ -118,12 +118,22 @@ The run found and fixed these defects:
   displayed as idempotent in Settings. Configuration, model selection, and commit
   request are now consistently non-idempotent, so a caller will not replay them after
   an ambiguous timeout.
+- After ornith failed plan validation and then returned no plan, the goal was rerouted
+  to local Gemma 4. Gemma produced a valid plan but ignored corrective guidance by
+  adding a standalone “Verify implementation” task. The deterministic normalizer let
+  it through because the objective later used “change” as a noun. Validation-first
+  titles such as Verify, Run, Execute, and Check are now discarded unless the title
+  itself also names a mutation. The observed plan is covered by a regression test and
+  was not approved.
 
 The lifecycle dogfood run created a local-only goal over MCP, observed the expected
 failure when its configured Lead route was remote, selected local `ornith:9b`, and
 used the explicit retry operation first without and then with corrective guidance.
 Planning returned an operation identity instead of holding the HTTP request. Durable
-failure and retry checkpoints remained inspectable throughout.
+failure and retry checkpoints remained inspectable throughout. After the bounded
+response fix was deployed, exact-goal polling completed without evidence duplication,
+and provider/role-filtered model discovery returned three of eight matching Ollama
+Lead models with continuation `3`.
 
 Verification after the fixes:
 

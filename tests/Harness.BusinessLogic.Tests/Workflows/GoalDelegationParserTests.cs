@@ -128,4 +128,16 @@ public sealed class GoalDelegationParserTests
             result.Tasks.Select(task => task.Title.Value));
         Assert.Contains("ignored 2 standalone", result.Plan, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Ignores_validation_task_even_when_its_objective_mentions_the_change_as_a_noun()
+    {
+        GoalDelegation result = GoalDelegationParser.Parse("""
+            {"plan":"Plan","tasks":[{"title":"Implement accessible names","objective":"Modify the settings fields.","fileAreas":["src/A"],"acceptanceCriteria":["Fields have names."]},{"title":"Verify implementation with narrow tests and build","objective":"Execute a clean build and run the narrow test suite. The change must remain limited to the approved files.","fileAreas":["src/A","tests/A"],"acceptanceCriteria":["Build and tests pass."]}]}
+            """);
+
+        Assert.Null(result.Error);
+        Assert.Equal("Implement accessible names", Assert.Single(result.Tasks).Title.Value);
+        Assert.Contains("ignored 1 standalone", result.Plan, StringComparison.Ordinal);
+    }
 }
