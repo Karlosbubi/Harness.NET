@@ -77,7 +77,7 @@ public interface ICodeIntelligenceEngine
                 request.Snapshot.Path,
                 request.Snapshot.BufferVersion,
                 CodeIntelligenceResultState.Failed,
-                [], [], [], [], false,
+                [], [], [], [], [], [], false,
                 [new(new("document_presentation_not_supported"),
                     new("Semantic document presentation is unavailable."))]));
 

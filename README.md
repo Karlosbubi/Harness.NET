@@ -34,8 +34,9 @@ Delivered:
   isolated goal worktrees;
 - an editable Avalonia source editor with diagnostics, completion, quick info,
   signature help, semantic classification, occurrence highlighting, folding,
-  outline, breadcrumbs, workspace-symbol search, definitions, usages,
-  implementations, and semantic rename;
+  outline, breadcrumbs, workspace-symbol search, parameter and inferred-type inlay
+  hints, lazy CodeLens navigation, definitions, usages, implementations, and semantic
+  rename;
 - Roslyn validation before model-authored source writes;
 - typed, role-scoped agent tools for files, Git, .NET metadata, Build/Test, semantic
   retrieval, diagnostics, symbols, navigation, edits, and rename;

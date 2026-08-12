@@ -416,10 +416,15 @@ public sealed class RoslynCodeIntelligenceEngineTests(ITestOutputHelper output) 
             {
                 private int count;
 
-                public int Added()
+                public int Added(int amount)
                 {
-                    count++;
+                    count += amount;
                     return count;
+                }
+
+                public void Use()
+                {
+                    var total = Added(2);
                 }
             }
             """;
@@ -432,10 +437,19 @@ public sealed class RoslynCodeIntelligenceEngineTests(ITestOutputHelper output) 
             contextId, session.SessionId!, persisted, live, offset);
 
         CodeIntelligenceDocumentPresentationResult presentation =
-            await engine.GetDocumentPresentationAsync(new(snapshot, VisibleRange: null));
+            await engine.GetDocumentPresentationAsync(new(
+                snapshot,
+                VisibleRange: null,
+                InlayHints: new(true, true),
+                CodeLens: new(true, true, true)));
         CodeIntelligenceDocumentPresentationResult visible =
             await engine.GetDocumentPresentationAsync(new(snapshot,
                 new(new(6, 0), new(10, 1))));
+        CodeIntelligenceDocumentPresentationResult classificationOnly =
+            await engine.GetDocumentPresentationAsync(new(
+                snapshot,
+                new(new(6, 0), new(10, 1)),
+                CodeIntelligenceDocumentPresentationScope.VisibleClassification));
         CodeIntelligenceOccurrenceResult occurrences =
             await engine.FindOccurrencesAsync(snapshot);
 
@@ -453,6 +467,9 @@ public sealed class RoslynCodeIntelligenceEngineTests(ITestOutputHelper output) 
         Assert.All(visible.Classifications, item =>
             Assert.InRange(item.Range.Start.Line, 6, 10));
         Assert.Contains(visible.Outline, item => item.Display.Value == "Sample");
+        Assert.NotEmpty(classificationOnly.Classifications);
+        Assert.Empty(classificationOnly.Outline);
+        Assert.Empty(classificationOnly.FoldingRanges);
         Assert.Collection(
             presentation.Breadcrumbs,
             item => Assert.Equal("Demo", item.Display.Value),
@@ -465,6 +482,16 @@ public sealed class RoslynCodeIntelligenceEngineTests(ITestOutputHelper output) 
         Assert.Contains(occurrences.Occurrences, item =>
             item.Kind is CodeIntelligenceOccurrenceKind.Read);
         Assert.Contains("count", occurrences.Symbol!.Value, StringComparison.Ordinal);
+        Assert.Contains(presentation.InlayHints, item =>
+            item.Kind is CodeIntelligenceInlayHintKind.ParameterName &&
+            item.Label.Value == "amount:");
+        Assert.Contains(presentation.InlayHints, item =>
+            item.Kind is CodeIntelligenceInlayHintKind.InferredType &&
+            item.Label.Value.Contains("int", StringComparison.Ordinal));
+        Assert.Contains(presentation.CodeLenses, item =>
+            item.Kind is CodeIntelligenceCodeLensKind.References && !item.IsResolved);
+        Assert.Contains(presentation.CodeLenses, item =>
+            item.Kind is CodeIntelligenceCodeLensKind.Tests && !item.IsResolved);
     }
 
     [Fact]

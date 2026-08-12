@@ -243,9 +243,56 @@ public sealed record CodeIntelligenceBreadcrumb(
     CodeIntelligenceMessage Display,
     CodeIntelligenceRange Range);
 
+public enum CodeIntelligenceDocumentPresentationScope
+{
+    VisibleClassification,
+    ClassificationAndStructure,
+}
+
+public enum CodeIntelligenceInlayHintKind
+{
+    ParameterName,
+    InferredType,
+}
+
+public enum CodeIntelligenceCodeLensKind
+{
+    References,
+    Implementations,
+    Tests,
+    Run,
+    Debug,
+}
+
+public sealed record CodeIntelligenceInlayHintOptions(
+    bool ShowParameterNames,
+    bool ShowInferredTypes);
+
+public sealed record CodeIntelligenceCodeLensOptions(
+    bool ShowReferences,
+    bool ShowImplementations,
+    bool ShowTests);
+
+public sealed record CodeIntelligenceInlayHint(
+    CodeIntelligencePosition Position,
+    CodeIntelligenceInlayHintKind Kind,
+    CodeIntelligenceMessage Label,
+    CodeIntelligenceMessage Tooltip);
+
+public sealed record CodeIntelligenceCodeLens(
+    CodeIntelligencePosition Position,
+    CodeIntelligencePosition Target,
+    CodeIntelligenceCodeLensKind Kind,
+    CodeIntelligenceMessage Display,
+    bool IsResolved);
+
 public sealed record CodeIntelligenceDocumentPresentationRequest(
     CodeIntelligenceInteractiveSnapshot Snapshot,
-    CodeIntelligenceRange? VisibleRange);
+    CodeIntelligenceRange? VisibleRange,
+    CodeIntelligenceDocumentPresentationScope Scope =
+        CodeIntelligenceDocumentPresentationScope.ClassificationAndStructure,
+    CodeIntelligenceInlayHintOptions? InlayHints = null,
+    CodeIntelligenceCodeLensOptions? CodeLens = null);
 
 public sealed record CodeIntelligenceDocumentPresentationResult(
     CodeIntelligenceContextId ContextId,
@@ -257,6 +304,8 @@ public sealed record CodeIntelligenceDocumentPresentationResult(
     IReadOnlyList<CodeIntelligenceFoldingRange> FoldingRanges,
     IReadOnlyList<CodeIntelligenceOutlineItem> Outline,
     IReadOnlyList<CodeIntelligenceBreadcrumb> Breadcrumbs,
+    IReadOnlyList<CodeIntelligenceInlayHint> InlayHints,
+    IReadOnlyList<CodeIntelligenceCodeLens> CodeLenses,
     bool IsTruncated,
     IReadOnlyList<CodeIntelligenceIssue> Issues);
 

@@ -263,7 +263,7 @@ public sealed class WorkbenchCodeIntelligenceServiceTests
                     CodeIntelligenceResultState.Ready,
                     [new(new(new(0, 0), new(0, 5)),
                         CodeIntelligenceClassificationKind.Keyword)],
-                    [], [], [], false, []);
+                    [], [], [], [], [], false, []);
             },
         };
         WorkbenchCodeIntelligenceService service = new(

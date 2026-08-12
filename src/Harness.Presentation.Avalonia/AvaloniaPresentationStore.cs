@@ -5,6 +5,7 @@ using Harness.BusinessLogic.Appearance;
 using Harness.BusinessLogic.Approvals;
 using Harness.BusinessLogic.Costs;
 using Harness.BusinessLogic.Dashboard;
+using Harness.BusinessLogic.Editor;
 using Harness.BusinessLogic.Framework;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Mcp;
@@ -42,7 +43,8 @@ internal sealed class AvaloniaPresentationStore(
     IDocumentationResearchService? documentationResearchService = null,
     IDependencyResearchService? dependencyResearchService = null,
     IInboundMcpSettingsService? inboundMcpSettingsService = null,
-    IAgentToolExposureSettingsService? agentToolExposureSettingsService = null) : IDisposable
+    IAgentToolExposureSettingsService? agentToolExposureSettingsService = null,
+    IEditorIntelligenceSettingsService? editorIntelligenceSettingsService = null) : IDisposable
 {
     private readonly BehaviorSubject<AvaloniaShellState> states = new(AvaloniaShellState.Initial);
     private readonly SemaphoreSlim commandGate = new(1, 1);
@@ -82,6 +84,10 @@ internal sealed class AvaloniaPresentationStore(
             VisualCaptureSettingsSnapshot? visualCaptureSettings = visualCaptureService is null
                 ? null
                 : await visualCaptureService.GetSettingsAsync(cancellationToken);
+            EditorIntelligenceSettingsSnapshot? editorIntelligenceSettings =
+                editorIntelligenceSettingsService is null
+                    ? null
+                    : await editorIntelligenceSettingsService.GetAsync(cancellationToken);
             IReadOnlyList<WorkspaceView> workspaces = await workspaceService.ListAsync(cancellationToken);
             IReadOnlyList<GoalView> goals = await LoadGoalsAsync(workspaces, cancellationToken);
             Publish(Current with
@@ -97,6 +103,7 @@ internal sealed class AvaloniaPresentationStore(
                     AgentToolExposure = agentToolExposure,
                     ResearchSettings = researchSettings,
                     VisualCaptureSettings = visualCaptureSettings,
+                    EditorIntelligenceSettings = editorIntelligenceSettings,
                     RemoteSpendPreference = remoteSpendPreference,
                 },
                 Workspaces = Current.Workspaces with { Registered = workspaces },
@@ -110,6 +117,49 @@ internal sealed class AvaloniaPresentationStore(
         {
             logger.LogError(exception, "Avalonia presentation initialization failed");
             Publish(Current with { IsLoading = false, Error = exception.Message });
+        }
+    }
+
+    internal async ValueTask SaveEditorIntelligenceSettingsAsync(
+        EditorIntelligencePreferences preferences,
+        CancellationToken cancellationToken)
+    {
+        if (editorIntelligenceSettingsService is null)
+        {
+            return;
+        }
+        Publish(Current with
+        {
+            Settings = Current.Settings with
+            {
+                IsBusy = true,
+                Status = "Saving editor intelligence settings…",
+            },
+        });
+        try
+        {
+            EditorIntelligenceSettingsSnapshot saved =
+                await editorIntelligenceSettingsService.SaveAsync(preferences, cancellationToken);
+            Publish(Current with
+            {
+                Settings = Current.Settings with
+                {
+                    EditorIntelligenceSettings = saved,
+                    IsBusy = false,
+                    Status = "Editor intelligence settings saved.",
+                },
+            });
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            Publish(Current with
+            {
+                Settings = Current.Settings with
+                {
+                    IsBusy = false,
+                    Status = $"Editor settings were not saved: {exception.Message}",
+                },
+            });
         }
     }
 

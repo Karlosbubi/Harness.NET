@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Classification;
 using Microsoft.CodeAnalysis.CSharp;
@@ -12,6 +13,8 @@ internal sealed partial class RoslynCodeIntelligenceEngine
     private const int MaximumClassifiedSpans = 20_000;
     private const int MaximumStructureItems = 5_000;
     private const int MaximumOccurrences = 2_000;
+    private const int MaximumInlayHints = 500;
+    private const int MaximumCodeLenses = 300;
 
     public async ValueTask<CodeIntelligenceDocumentPresentationResult>
         GetDocumentPresentationAsync(
@@ -63,8 +66,12 @@ internal sealed partial class RoslynCodeIntelligenceEngine
                     Range(text, item.TextSpan), MapClassification(item.ClassificationType)))
                 .ToArray();
 
-            List<OutlineEntry> outlineEntries = BuildOutline(root);
-            List<CodeIntelligenceFoldingRange> folding = BuildFolding(root, text);
+            bool includeStructure = request.Scope is
+                CodeIntelligenceDocumentPresentationScope.ClassificationAndStructure;
+            List<OutlineEntry> outlineEntries = includeStructure ? BuildOutline(root) : [];
+            List<CodeIntelligenceFoldingRange> folding = includeStructure
+                ? BuildFolding(root, text)
+                : [];
             truncated |= outlineEntries.Count > MaximumStructureItems ||
                          folding.Count > MaximumStructureItems;
             CodeIntelligenceOutlineItem[] outline = outlineEntries
@@ -87,6 +94,22 @@ internal sealed partial class RoslynCodeIntelligenceEngine
                     Range(text, item.SelectionSpan)))
                 .ToArray();
 
+            SemanticModel? semanticModel = request.InlayHints is null && request.CodeLens is null
+                ? null
+                : await document.GetSemanticModelAsync(cancellationToken);
+            List<CodeIntelligenceInlayHint> inlayHints = semanticModel is null ||
+                request.InlayHints is null
+                ? []
+                : BuildInlayHints(root, text, visibleSpan, semanticModel,
+                    request.InlayHints, cancellationToken);
+            List<CodeIntelligenceCodeLens> codeLenses = semanticModel is null ||
+                request.CodeLens is null
+                ? []
+                : BuildCodeLenses(root, text, visibleSpan, semanticModel,
+                    request.CodeLens, cancellationToken);
+            truncated |= inlayHints.Count > MaximumInlayHints ||
+                         codeLenses.Count > MaximumCodeLenses;
+
             return new(
                 request.Snapshot.ContextId,
                 request.Snapshot.SessionId,
@@ -97,6 +120,8 @@ internal sealed partial class RoslynCodeIntelligenceEngine
                 folding.Take(MaximumStructureItems).ToArray(),
                 outline,
                 breadcrumbs,
+                inlayHints.Take(MaximumInlayHints).ToArray(),
+                codeLenses.Take(MaximumCodeLenses).ToArray(),
                 truncated,
                 session.Issues.ToArray());
         }
@@ -169,7 +194,10 @@ internal sealed partial class RoslynCodeIntelligenceEngine
             }
 
             IEnumerable<ReferencedSymbol> references = await SymbolFinder.FindReferencesAsync(
-                symbol, document.Project.Solution, cancellationToken);
+                symbol,
+                document.Project.Solution,
+                ImmutableHashSet.Create(document),
+                cancellationToken);
             foreach (ReferenceLocation reference in references.SelectMany(item => item.Locations))
             {
                 if (reference.Document.Id != document.Id)
@@ -476,6 +504,224 @@ internal sealed partial class RoslynCodeIntelligenceEngine
         }
     }
 
+    private static List<CodeIntelligenceInlayHint> BuildInlayHints(
+        SyntaxNode root,
+        SourceText text,
+        TextSpan visibleSpan,
+        SemanticModel semanticModel,
+        CodeIntelligenceInlayHintOptions options,
+        CancellationToken cancellationToken)
+    {
+        List<CodeIntelligenceInlayHint> result = [];
+        if (options.ShowParameterNames)
+        {
+            foreach (ArgumentSyntax argument in root.DescendantNodes(visibleSpan)
+                         .OfType<ArgumentSyntax>())
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (argument.NameColon is not null || argument.Expression.IsMissing ||
+                    !visibleSpan.IntersectsWith(argument.Expression.Span))
+                {
+                    continue;
+                }
+
+                SeparatedSyntaxList<ArgumentSyntax> arguments = argument.Parent switch
+                {
+                    ArgumentListSyntax list => list.Arguments,
+                    BracketedArgumentListSyntax list => list.Arguments,
+                    _ => default,
+                };
+                int ordinal = arguments.IndexOf(argument);
+                if (ordinal < 0)
+                {
+                    continue;
+                }
+
+                SymbolInfo owner = semanticModel.GetSymbolInfo(
+                    argument.Parent?.Parent ?? argument, cancellationToken);
+                ImmutableArray<IParameterSymbol> parameters = owner.Symbol switch
+                {
+                    IMethodSymbol method => method.Parameters,
+                    IPropertySymbol property => property.Parameters,
+                    _ => owner.CandidateSymbols.OfType<IMethodSymbol>()
+                        .FirstOrDefault()?.Parameters ?? [],
+                };
+                if (parameters.Length == 0)
+                {
+                    continue;
+                }
+
+                IParameterSymbol parameter = parameters[Math.Min(ordinal, parameters.Length - 1)];
+                if (ordinal >= parameters.Length && !parameter.IsParams ||
+                    IsObviousArgument(argument.Expression, parameter.Name))
+                {
+                    continue;
+                }
+
+                string type = parameter.Type.ToDisplayString(
+                    SymbolDisplayFormat.MinimallyQualifiedFormat);
+                result.Add(new(
+                    Position(text, argument.Expression.SpanStart),
+                    CodeIntelligenceInlayHintKind.ParameterName,
+                    new(Bound(parameter.Name + ":", 128)),
+                    new(Bound($"Parameter {parameter.Name}: {type}", 512))));
+            }
+        }
+
+        if (options.ShowInferredTypes)
+        {
+            foreach (VariableDeclarationSyntax declaration in root.DescendantNodes(visibleSpan)
+                         .OfType<VariableDeclarationSyntax>()
+                         .Where(item => item.Type.IsVar))
+            {
+                foreach (VariableDeclaratorSyntax variable in declaration.Variables)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (variable.Initializer?.Value is not { } initializer ||
+                        !visibleSpan.IntersectsWith(variable.Identifier.Span))
+                    {
+                        continue;
+                    }
+                    AddTypeHint(variable.Identifier.Span.End,
+                        semanticModel.GetTypeInfo(initializer, cancellationToken).Type);
+                }
+            }
+
+            foreach (ForEachStatementSyntax statement in root.DescendantNodes(visibleSpan)
+                         .OfType<ForEachStatementSyntax>()
+                         .Where(item => item.Type.IsVar &&
+                                        visibleSpan.IntersectsWith(item.Identifier.Span)))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                ILocalSymbol? local = semanticModel.GetDeclaredSymbol(statement, cancellationToken);
+                AddTypeHint(statement.Identifier.Span.End, local?.Type);
+            }
+
+            foreach (ParameterSyntax parameter in root.DescendantNodes(visibleSpan)
+                         .OfType<ParameterSyntax>()
+                         .Where(item => item.Type is null &&
+                                        item.Parent?.Parent is AnonymousFunctionExpressionSyntax &&
+                                        visibleSpan.IntersectsWith(item.Identifier.Span)))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                IParameterSymbol? symbol = semanticModel.GetDeclaredSymbol(
+                    parameter, cancellationToken);
+                AddTypeHint(parameter.Identifier.Span.End, symbol?.Type);
+            }
+        }
+
+        return result
+            .DistinctBy(item => (item.Position, item.Kind, item.Label.Value))
+            .OrderBy(item => item.Position.Line)
+            .ThenBy(item => item.Position.Character)
+            .ToList();
+
+        void AddTypeHint(int offset, ITypeSymbol? type)
+        {
+            if (type is null || type.TypeKind is TypeKind.Error || type.IsAnonymousType)
+            {
+                return;
+            }
+            string display = type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
+            result.Add(new(
+                Position(text, offset),
+                CodeIntelligenceInlayHintKind.InferredType,
+                new(Bound($": {display}", 256)),
+                new(Bound($"Inferred type: {type.ToDisplayString()}", 512))));
+        }
+    }
+
+    private static List<CodeIntelligenceCodeLens> BuildCodeLenses(
+        SyntaxNode root,
+        SourceText text,
+        TextSpan visibleSpan,
+        SemanticModel semanticModel,
+        CodeIntelligenceCodeLensOptions options,
+        CancellationToken cancellationToken)
+    {
+        List<CodeIntelligenceCodeLens> result = [];
+        IEnumerable<SyntaxNode> declarations = root.DescendantNodes(visibleSpan).Where(node =>
+            node is BaseTypeDeclarationSyntax or DelegateDeclarationSyntax or
+                BaseMethodDeclarationSyntax or PropertyDeclarationSyntax or
+                IndexerDeclarationSyntax or EventDeclarationSyntax);
+        foreach (SyntaxNode declaration in declarations)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ISymbol? symbol = semanticModel.GetDeclaredSymbol(declaration, cancellationToken);
+            if (symbol is null || symbol.Kind is SymbolKind.Local or SymbolKind.Parameter)
+            {
+                continue;
+            }
+
+            FileLinePositionSpan line = declaration.GetLocation().GetLineSpan();
+            CodeIntelligencePosition position = new(line.StartLinePosition.Line, 0);
+            CodeIntelligencePosition target = Position(text, DeclarationIdentifier(declaration));
+            if (options.ShowReferences)
+            {
+                result.Add(new(position, target, CodeIntelligenceCodeLensKind.References,
+                    new("Find references"), IsResolved: false));
+            }
+            if (options.ShowImplementations && CanHaveImplementations(symbol))
+            {
+                result.Add(new(position, target, CodeIntelligenceCodeLensKind.Implementations,
+                    new("Find implementations"), IsResolved: false));
+            }
+            if (options.ShowTests && symbol is INamedTypeSymbol or IMethodSymbol)
+            {
+                result.Add(new(position, target, CodeIntelligenceCodeLensKind.Tests,
+                    new("Find tests"), IsResolved: false));
+            }
+        }
+
+        return result
+            .DistinctBy(item => (item.Position, item.Target, item.Kind))
+            .OrderBy(item => item.Position.Line)
+            .ThenBy(item => item.Kind)
+            .ToList();
+    }
+
+    private static bool IsObviousArgument(ExpressionSyntax expression, string parameterName)
+    {
+        string? expressionName = expression switch
+        {
+            IdentifierNameSyntax identifier => identifier.Identifier.ValueText,
+            MemberAccessExpressionSyntax member => member.Name.Identifier.ValueText,
+            _ => null,
+        };
+        return expressionName is not null && NormalizeName(expressionName).Equals(
+            NormalizeName(parameterName), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeName(string value) => value.TrimStart('_');
+
+    private static bool CanHaveImplementations(ISymbol symbol) => symbol switch
+    {
+        INamedTypeSymbol => true,
+        IMethodSymbol method => method.IsAbstract || method.IsVirtual || method.IsOverride ||
+                                method.ContainingType.TypeKind is TypeKind.Interface,
+        IPropertySymbol property => property.IsAbstract || property.IsVirtual ||
+                                    property.IsOverride ||
+                                    property.ContainingType.TypeKind is TypeKind.Interface,
+        IEventSymbol @event => @event.IsAbstract || @event.IsVirtual || @event.IsOverride ||
+                               @event.ContainingType.TypeKind is TypeKind.Interface,
+        _ => false,
+    };
+
+    private static int DeclarationIdentifier(SyntaxNode declaration) => declaration switch
+    {
+        BaseTypeDeclarationSyntax value => value.Identifier.SpanStart,
+        DelegateDeclarationSyntax value => value.Identifier.SpanStart,
+        MethodDeclarationSyntax value => value.Identifier.SpanStart,
+        ConstructorDeclarationSyntax value => value.Identifier.SpanStart,
+        DestructorDeclarationSyntax value => value.Identifier.SpanStart,
+        OperatorDeclarationSyntax value => value.OperatorToken.SpanStart,
+        ConversionOperatorDeclarationSyntax value => value.Type.SpanStart,
+        PropertyDeclarationSyntax value => value.Identifier.SpanStart,
+        IndexerDeclarationSyntax value => value.ThisKeyword.SpanStart,
+        EventDeclarationSyntax value => value.Identifier.SpanStart,
+        _ => declaration.SpanStart,
+    };
+
     private static bool IsWriteReference(
         ReferenceLocation reference,
         SyntaxNode? root)
@@ -511,7 +757,7 @@ internal sealed partial class RoslynCodeIntelligenceEngine
         request.Snapshot.Path,
         request.Snapshot.BufferVersion,
         state,
-        [], [], [], [], false,
+        [], [], [], [], [], [], false,
         [Issue(code, Bound(message, MaximumIssueLength))]);
 
     private static CodeIntelligenceOccurrenceResult OccurrenceFailure(

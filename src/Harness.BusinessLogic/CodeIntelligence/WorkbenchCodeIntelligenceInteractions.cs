@@ -166,7 +166,17 @@ internal sealed partial class WorkbenchCodeIntelligenceService
                 ToDataSnapshot(request.Snapshot, session!),
                 request.VisibleRange is null ? null : new(
                     new(request.VisibleRange.Start.Line, request.VisibleRange.Start.Character),
-                    new(request.VisibleRange.End.Line, request.VisibleRange.End.Character))),
+                    new(request.VisibleRange.End.Line, request.VisibleRange.End.Character)),
+                request.Scope is WorkbenchCodeDocumentPresentationScope.VisibleClassification
+                    ? CodeIntelligenceDocumentPresentationScope.VisibleClassification
+                    : CodeIntelligenceDocumentPresentationScope.ClassificationAndStructure,
+                request.InlayHints is null ? null : new(
+                    request.InlayHints.ShowParameterNames,
+                    request.InlayHints.ShowInferredTypes),
+                request.CodeLens is null ? null : new(
+                    request.CodeLens.ShowReferences,
+                    request.CodeLens.ShowImplementations,
+                    request.CodeLens.ShowTests)),
                 cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -200,6 +210,13 @@ internal sealed partial class WorkbenchCodeIntelligenceService
                 Map(item.SelectionRange), item.Depth)).ToArray(),
             result.Breadcrumbs.Select(item => new WorkbenchCodeBreadcrumb(
                 Map(item.Kind), new(item.Display.Value), Map(item.Range))).ToArray(),
+            result.InlayHints.Select(item => new WorkbenchCodeInlayHint(
+                new(item.Position.Line, item.Position.Character),
+                Map(item.Kind), new(item.Label.Value), new(item.Tooltip.Value))).ToArray(),
+            result.CodeLenses.Select(item => new WorkbenchCodeLens(
+                new(item.Position.Line, item.Position.Character),
+                new(item.Target.Line, item.Target.Character),
+                Map(item.Kind), new(item.Display.Value), item.IsResolved)).ToArray(),
             result.IsTruncated,
             MapIssues(result.Issues));
     }
@@ -296,7 +313,7 @@ internal sealed partial class WorkbenchCodeIntelligenceService
         request.Snapshot.Path,
         request.Snapshot.BufferVersion,
         state,
-        [], [], [], [], false,
+        [], [], [], [], [], [], false,
         [issue]);
 
     private static WorkbenchCodeOccurrenceView OccurrenceFailure(
@@ -650,6 +667,26 @@ internal sealed partial class WorkbenchCodeIntelligenceService
         CodeIntelligenceFoldingKind.Block => WorkbenchCodeFoldingKind.Block,
         CodeIntelligenceFoldingKind.Region => WorkbenchCodeFoldingKind.Region,
         CodeIntelligenceFoldingKind.Comment => WorkbenchCodeFoldingKind.Comment,
+        _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+    };
+
+    private static WorkbenchCodeInlayHintKind Map(CodeIntelligenceInlayHintKind kind) =>
+        kind switch
+        {
+            CodeIntelligenceInlayHintKind.ParameterName =>
+                WorkbenchCodeInlayHintKind.ParameterName,
+            CodeIntelligenceInlayHintKind.InferredType =>
+                WorkbenchCodeInlayHintKind.InferredType,
+            _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+        };
+
+    private static WorkbenchCodeLensKind Map(CodeIntelligenceCodeLensKind kind) => kind switch
+    {
+        CodeIntelligenceCodeLensKind.References => WorkbenchCodeLensKind.References,
+        CodeIntelligenceCodeLensKind.Implementations => WorkbenchCodeLensKind.Implementations,
+        CodeIntelligenceCodeLensKind.Tests => WorkbenchCodeLensKind.Tests,
+        CodeIntelligenceCodeLensKind.Run => WorkbenchCodeLensKind.Run,
+        CodeIntelligenceCodeLensKind.Debug => WorkbenchCodeLensKind.Debug,
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 

@@ -15,6 +15,7 @@ using Avalonia.VisualTree;
 using AvaloniaEdit;
 using AvaloniaEdit.CodeCompletion;
 using AvaloniaEdit.Document;
+using AvaloniaEdit.Rendering;
 using Dock.Avalonia.Controls;
 using Dock.Model.Controls;
 using Dock.Model.Core;
@@ -262,8 +263,47 @@ public sealed class PresentationControlTests
         Assert.Equal(
             SettingsCategoryId.StorageAndRecovery,
             Assert.Single(SettingsCatalog.Filter("backup")).Id);
+        Assert.Equal(
+            SettingsCategoryId.Editor,
+            Assert.Single(SettingsCatalog.Filter("inlay")).Id);
         Assert.Empty(SettingsCatalog.Filter("not-a-real-setting"));
-        Assert.Equal(9, SettingsCatalog.All.Count(category => category.IsAvailable));
+        Assert.Equal(10, SettingsCatalog.All.Count(category => category.IsAvailable));
+    }
+
+    [Fact]
+    public async Task Editor_settings_expose_inlay_and_lazy_code_lens_controls()
+    {
+        using AvaloniaPresentationStore store = AvaloniaPresentationStoreTests.CreateStore();
+        await store.LoadAsync(CancellationToken.None);
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            SettingsWindow window = new(store, CancellationToken.None);
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            ListBox categories = Assert.Single(window.GetLogicalDescendants().OfType<ListBox>());
+            categories.SelectedItem = SettingsCatalog.All.Single(category =>
+                category.Id is SettingsCategoryId.Editor);
+            Dispatcher.UIThread.RunJobs();
+
+            string[] expectedNames =
+            [
+                "Show Roslyn parameter name inlay hints",
+                "Show Roslyn inferred type inlay hints",
+                "Show reference CodeLens actions",
+                "Show implementation CodeLens actions",
+                "Show associated test CodeLens actions",
+                "Save editor intelligence settings",
+            ];
+            string?[] actual = window.GetLogicalDescendants().OfType<Control>()
+                .Select(AutomationProperties.GetName).ToArray();
+            Assert.All(expectedNames, name => Assert.Contains(name, actual));
+            Assert.Contains("resolve only when selected", string.Join('\n', window
+                .GetLogicalDescendants().OfType<TextBlock>().Select(block => block.Text)),
+                StringComparison.Ordinal);
+            window.Close();
+        }, CancellationToken.None);
     }
 
     [Fact]
@@ -829,6 +869,8 @@ public sealed class PresentationControlTests
             Window window = new() { Content = editor };
             window.Show();
             using CodeSemanticRenderer renderer = new(editor);
+            WorkbenchCodeLens? invoked = null;
+            renderer.CodeLensInvoked += (_, args) => invoked = args.Lens;
             renderer.SetPresentation(new(
                 new("session"), new("Sample.cs"), new(1), WorkbenchCodeResultState.Ready,
                 [new(new(new(0, 0), new(0, 5)), WorkbenchCodeClassificationKind.Keyword),
@@ -839,6 +881,10 @@ public sealed class PresentationControlTests
                     new(new(0, 0), new(3, 1)), new(new(0, 6), new(0, 12)), 0)],
                 [new(WorkbenchCodeSymbolKind.Class, new("Sample"),
                     new(new(0, 6), new(0, 12)))],
+                [new(new(2, 13), WorkbenchCodeInlayHintKind.InferredType,
+                    new(": int"), new("Inferred type: int"))],
+                [new(new(0, 0), new(0, 6), WorkbenchCodeLensKind.References,
+                    new("Find references"), false)],
                 false, []));
             renderer.SetOccurrences(
                 [new(new(new(2, 8), new(2, 13)), WorkbenchCodeOccurrenceKind.Definition)]);
@@ -846,6 +892,17 @@ public sealed class PresentationControlTests
             Assert.Equal(2, renderer.ClassificationCount);
             Assert.Equal(1, renderer.FoldingCount);
             Assert.Equal(1, renderer.OccurrenceCount);
+            Assert.Equal(1, renderer.InlayHintCount);
+            Assert.Equal(1, renderer.CodeLensCount);
+            VisualLineElementGenerator generator = editor.TextArea.TextView.ElementGenerators[^1];
+            Assert.Equal(0, generator.GetFirstInterestedOffset(0));
+            InlineObjectElement inline = Assert.IsType<InlineObjectElement>(
+                generator.ConstructElement(0));
+            Button lens = Assert.Single(
+                Assert.IsType<StackPanel>(inline.Element).Children.OfType<Button>());
+            lens.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.Equal(WorkbenchCodeLensKind.References, invoked?.Kind);
+            Assert.Equal(new WorkbenchCodePosition(0, 6), invoked?.Target);
             window.Close();
         }, CancellationToken.None);
     }
@@ -1622,6 +1679,8 @@ public sealed class PresentationControlTests
                         new(new(0, 10), new(0, 17)), 0)],
                     [new(WorkbenchCodeSymbolKind.Namespace, new("Example"),
                         new(new(0, 10), new(0, 17)))],
+                    [],
+                    [],
                     false,
                     []),
             };
@@ -2965,7 +3024,7 @@ public sealed class PresentationControlTests
                     request.Snapshot.Path,
                     request.Snapshot.BufferVersion,
                     WorkbenchCodeResultState.Ready,
-                    [], [], [], [], false, []));
+                    [], [], [], [], [], [], false, []));
 
         public ValueTask<WorkbenchCodeOccurrenceView> FindOccurrencesAsync(
             WorkbenchCodeInteractiveSnapshot snapshot,

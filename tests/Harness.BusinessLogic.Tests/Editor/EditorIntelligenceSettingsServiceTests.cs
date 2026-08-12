@@ -1,0 +1,40 @@
+using Harness.BusinessLogic.Editor;
+using Harness.DataAccess.Editor;
+
+namespace Harness.BusinessLogic.Tests.Editor;
+
+public sealed class EditorIntelligenceSettingsServiceTests
+{
+    [Fact]
+    public async Task Maps_private_preferences_and_saves_each_independent_switch()
+    {
+        PreferenceStore store = new(new(true, false, true, false, true));
+        EditorIntelligenceSettingsService service = new(store);
+
+        EditorIntelligenceSettingsSnapshot initial = await service.GetAsync();
+        EditorIntelligenceSettingsSnapshot saved = await service.SaveAsync(new(
+            false, true, false, true, false));
+
+        Assert.Equal(new(true, false, true, false, true), initial.Preferences);
+        Assert.Equal(new(false, true, false, true, false), saved.Preferences);
+        Assert.Equal(new(false, true, false, true, false), store.Current);
+        Assert.Contains("trusted C#", saved.Status, StringComparison.Ordinal);
+    }
+
+    private sealed class PreferenceStore(
+        StoredEditorIntelligencePreferences current) : IEditorIntelligencePreferenceStore
+    {
+        internal StoredEditorIntelligencePreferences Current { get; private set; } = current;
+
+        public ValueTask<StoredEditorIntelligencePreferences> GetAsync(
+            CancellationToken cancellationToken = default) => ValueTask.FromResult(Current);
+
+        public ValueTask<StoredEditorIntelligencePreferences> SaveAsync(
+            StoredEditorIntelligencePreferences preferences,
+            CancellationToken cancellationToken = default)
+        {
+            Current = preferences;
+            return ValueTask.FromResult(Current);
+        }
+    }
+}

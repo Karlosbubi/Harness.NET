@@ -6,6 +6,7 @@ using Harness.BusinessLogic.CodeIntelligence;
 using Harness.BusinessLogic.Costs;
 using Harness.BusinessLogic.Dashboard;
 using Harness.BusinessLogic.Documents;
+using Harness.BusinessLogic.Editor;
 using Harness.BusinessLogic.Evidence;
 using Harness.BusinessLogic.Framework;
 using Harness.BusinessLogic.Goals;
@@ -26,6 +27,7 @@ using Harness.DataAccess.CodeIntelligence;
 using Harness.DataAccess.Commits;
 using Harness.DataAccess.Configuration;
 using Harness.DataAccess.Conversations;
+using Harness.DataAccess.Editor;
 using Harness.DataAccess.Evidence;
 using Harness.DataAccess.Execution;
 using Harness.DataAccess.Framework;
@@ -84,6 +86,8 @@ builder.Services.AddSingleton<IApplicationBackup, SqliteApplicationBackup>();
 builder.Services.AddSingleton<IApplicationRestore, SqliteApplicationRestore>();
 builder.Services.AddSingleton<IApplicationOperationsService, ApplicationOperationsService>();
 builder.Services.AddSingleton<IAppearancePreferenceStore, SqliteAppearancePreferenceStore>();
+builder.Services.AddSingleton<IEditorIntelligencePreferenceStore,
+    SqliteEditorIntelligencePreferenceStore>();
 builder.Services.AddSingleton<IRemoteSpendPreferenceStore, SqliteRemoteSpendPreferenceStore>();
 builder.Services.AddSingleton<IUserThemeSource, XdgUserThemeSource>();
 if (evaluationRoot is null)
@@ -342,6 +346,8 @@ builder.Services.AddSingleton(new AppearanceOptions(HarnessThemeCatalog.BuiltIns
         }))
     .ToArray()));
 builder.Services.AddSingleton<IAppearanceService, AppearanceService>();
+builder.Services.AddSingleton<IEditorIntelligenceSettingsService,
+    EditorIntelligenceSettingsService>();
 builder.Services.AddSingleton<IRemoteSpendPreferenceService, RemoteSpendPreferenceService>();
 builder.Services.AddSingleton<AvaloniaPresentationStore>();
 builder.Services.AddSingleton<HarnessThemeController>();

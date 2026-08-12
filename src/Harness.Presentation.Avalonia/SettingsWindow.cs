@@ -12,6 +12,7 @@ using Avalonia.Threading;
 using Harness.BusinessLogic.Agents;
 using Harness.BusinessLogic.Appearance;
 using Harness.BusinessLogic.Costs;
+using Harness.BusinessLogic.Editor;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Mcp;
 using Harness.BusinessLogic.Research;
@@ -53,7 +54,7 @@ internal static class SettingsCatalog
         new(SettingsCategoryId.General, "General", "Workspace and application behavior",
             ["workspace", "startup", "application"], IsAvailable: false),
         new(SettingsCategoryId.Editor, "Editor", "Editing and code intelligence",
-            ["font", "code", "roslyn", "completion", "diagnostics"], IsAvailable: false),
+            ["font", "code", "roslyn", "completion", "diagnostics", "inlay", "codelens", "references", "tests"], IsAvailable: true),
         new(SettingsCategoryId.Appearance, "Appearance & accessibility", "Theme and visual preferences",
             ["color", "theme", "contrast", "accessibility"], IsAvailable: true),
         new(SettingsCategoryId.ModelProviders, "Model providers", "Ollama and OpenRouter availability",
@@ -259,6 +260,7 @@ internal sealed class SettingsWindow : Window
         settingsState = applicationSettings;
         if ((categories.SelectedItem as SettingsCategory)?.Id is
             SettingsCategoryId.Appearance or SettingsCategoryId.ModelProviders or
+            SettingsCategoryId.Editor or
             SettingsCategoryId.McpConnections or SettingsCategoryId.ModelsAndRoles or
             SettingsCategoryId.InboundMcp or
         SettingsCategoryId.DocumentationAndDependencies or
@@ -283,6 +285,7 @@ internal sealed class SettingsWindow : Window
         page.Content = category.Id switch
         {
             SettingsCategoryId.Appearance => AppearancePage(),
+            SettingsCategoryId.Editor => EditorPage(),
             SettingsCategoryId.ModelProviders => ModelProvidersPage(),
             SettingsCategoryId.McpConnections => McpConnectionsPage(),
             SettingsCategoryId.InboundMcp => InboundMcpPage(),
@@ -293,6 +296,104 @@ internal sealed class SettingsWindow : Window
             SettingsCategoryId.PrivacyAndLimits => PrivacyAndLimitsPage(),
             _ => PlannedPage(category),
         };
+    }
+
+    private Control EditorPage()
+    {
+        EditorIntelligencePreferences current = settingsState.EditorIntelligenceSettings?
+            .Preferences ?? EditorIntelligencePreferences.Default;
+        CheckBox parameterNames = new()
+        {
+            Content = "Show parameter-name hints",
+            IsChecked = current.ShowParameterNameHints,
+            IsEnabled = !settingsState.IsBusy,
+        };
+        AutomationProperties.SetName(parameterNames, "Show Roslyn parameter name inlay hints");
+        CheckBox inferredTypes = new()
+        {
+            Content = "Show inferred types for var and implicit parameters",
+            IsChecked = current.ShowInferredTypeHints,
+            IsEnabled = !settingsState.IsBusy,
+        };
+        AutomationProperties.SetName(inferredTypes, "Show Roslyn inferred type inlay hints");
+        CheckBox references = new()
+        {
+            Content = "Show Find references CodeLens",
+            IsChecked = current.ShowReferenceCodeLens,
+            IsEnabled = !settingsState.IsBusy,
+        };
+        AutomationProperties.SetName(references, "Show reference CodeLens actions");
+        CheckBox implementations = new()
+        {
+            Content = "Show Find implementations CodeLens when applicable",
+            IsChecked = current.ShowImplementationCodeLens,
+            IsEnabled = !settingsState.IsBusy,
+        };
+        AutomationProperties.SetName(implementations, "Show implementation CodeLens actions");
+        CheckBox tests = new()
+        {
+            Content = "Show Find tests CodeLens for types and methods",
+            IsChecked = current.ShowTestCodeLens,
+            IsEnabled = !settingsState.IsBusy,
+        };
+        AutomationProperties.SetName(tests, "Show associated test CodeLens actions");
+        Button save = new()
+        {
+            Content = "Save editor settings",
+            IsEnabled = !settingsState.IsBusy,
+        };
+        save.Classes.Add("primary");
+        AutomationProperties.SetName(save, "Save editor intelligence settings");
+        save.Click += async (_, _) => await store.SaveEditorIntelligenceSettingsAsync(new(
+            parameterNames.IsChecked is true,
+            inferredTypes.IsChecked is true,
+            references.IsChecked is true,
+            implementations.IsChecked is true,
+            tests.IsChecked is true), cancellationToken);
+
+        return Page(
+            "Editor",
+            "Choose which exact-buffer Roslyn hints and lazy navigation actions appear in trusted C# editors.",
+            new StackPanel
+            {
+                Spacing = 14,
+                Children =
+                {
+                    new TextBlock { Text = "Inlay hints", FontWeight = FontWeight.SemiBold },
+                    parameterNames,
+                    inferredTypes,
+                    new TextBlock
+                    {
+                        Text = "Hints are computed only for the visible live buffer and never change source text.",
+                        Classes = { "muted" },
+                        TextWrapping = TextWrapping.Wrap,
+                    },
+                    new TextBlock { Text = "CodeLens", FontWeight = FontWeight.SemiBold },
+                    references,
+                    implementations,
+                    tests,
+                    new TextBlock
+                    {
+                        Text = "CodeLens actions resolve only when selected. Run and Debug appear only after a valid typed execution target is available.",
+                        Classes = { "muted" },
+                        TextWrapping = TextWrapping.Wrap,
+                    },
+                    save,
+                    new TextBlock
+                    {
+                        Text = settingsState.EditorIntelligenceSettings?.Status ??
+                               "Editor settings are loading.",
+                        Classes = { "muted" },
+                        TextWrapping = TextWrapping.Wrap,
+                    },
+                    new TextBlock
+                    {
+                        Text = settingsState.Status ?? string.Empty,
+                        Classes = { "muted" },
+                        TextWrapping = TextWrapping.Wrap,
+                    },
+                },
+            });
     }
 
     private Control AppearancePage()

@@ -5,7 +5,7 @@ Settings owns ordinary defaults. Goal-specific authority remains on the goal.
 | Page | State | Owner |
 |---|---|---|
 | General | Planned; workspace switching remains in Workspace UI. | `IWorkspaceService` and SQLite. |
-| Editor | Planned; transient editor behavior remains in Presentation. | Presentation and code-intelligence services. |
+| Editor | Delivered for inlay hints and CodeLens visibility; more editor defaults remain planned. | Typed Business Logic service, SQLite preference, Roslyn and Presentation adapters. |
 | Appearance & accessibility | Delivered. | `IAppearanceService`, SQLite preference, XDG theme files. |
 | Model providers | Delivered. | Typed Business Logic service, private XDG XML, Secret Service. |
 | MCP connections | Delivered. | MCP Data Access adapter, Business Logic policy, private XDG XML. |
@@ -31,6 +31,19 @@ window. Search matches page names, summaries, and related terms.
 The page lists built-in and valid user themes, reports theme-file failures, and
 updates the persisted semantic theme through `IAppearanceService`. Changes apply
 immediately.
+
+## Editor
+
+The page persists separate switches for parameter-name hints, inferred-type hints,
+and reference, implementation, and associated-test CodeLens actions. Defaults are on.
+Changes apply to open trusted C# editors without restarting Harness.NET.
+
+Roslyn computes hints only for the exact visible live buffer. Results carry the
+session, path, baseline, and buffer version and are discarded when stale. CodeLens
+discovery is bounded to visible declarations. Reference, implementation, and test
+queries run only when the developer selects the corresponding lens. Run and Debug
+lenses remain absent unless a typed execution service reports a valid target; Settings
+cannot create execution authority.
 
 ## Model providers
 

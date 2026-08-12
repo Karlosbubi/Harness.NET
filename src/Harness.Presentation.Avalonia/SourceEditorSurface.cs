@@ -187,6 +187,10 @@ internal sealed class SourceEditorSurface : IDisposable
     internal void UpdateDocumentPresentation(WorkbenchCodeDocumentPresentationView presentation)
     {
         Editor.SetDocumentPresentation(presentation);
+        if (presentation.FoldingRanges.Count == 0 && presentation.Outline.Count == 0)
+        {
+            return;
+        }
         outline = presentation.Outline;
         outlineItems.ItemsSource = outline.Select(item => new OutlineChoice(item)).ToArray();
         Outline.IsEnabled = outline.Count > 0;

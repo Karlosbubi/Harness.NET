@@ -299,10 +299,15 @@ Add the missing capabilities in this order:
    must exceed NetPad: the user and models share one live semantic state, while model
    authority remains narrower than user editing authority.
 
-Progress on 2026-08-12: item 1 is delivered through the shared exact-buffer Roslyn
-session, visible-range classification, occurrence highlighting, folding, outline,
-breadcrumbs, and debounced workspace-symbol search. See the maintained
-[NetPad and OmniSharp parity matrix](netpad-omnisharp-parity.md). Items 2–8 remain.
+Progress on 2026-08-12: items 1 and 2 are delivered through the shared exact-buffer
+Roslyn session. Viewport-only refresh no longer rebuilds document structure, and
+occurrence lookup is confined to the active document. Typed SQLite-backed Editor
+settings control visible-buffer parameter and inferred-type hints plus bounded lazy
+reference, implementation, and associated-test CodeLens actions. Run and Debug lenses
+remain hidden until Task 052 provides a valid typed per-declaration target. See the
+maintained [NetPad and OmniSharp parity matrix](netpad-omnisharp-parity.md). Items 3–8
+remain. Deterministic and visual evidence is recorded in
+[editor-inlays-codelens-2026-08-12.md](acceptance/editor-inlays-codelens-2026-08-12.md).
 
 Keep direct in-process Roslyn as the default implementation. Source may be adapted
 from NetPad or OmniSharp only after license, attribution, version, provenance, tests,

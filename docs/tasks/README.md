@@ -342,7 +342,7 @@ Acceptance criteria:
 
 ### 049 — NetPad-level .NET editing and inspection
 
-Status: `In progress — semantic presentation slice delivered`
+Status: `In progress — semantic presentation, inlay hints, and CodeLens delivered`
 
 Dependencies: 012, 043, 044, 047, 048.
 
@@ -351,15 +351,18 @@ References:
 - NetPad `0c74746daf6f5402ad4d9a2cf3958131bdfc8011`;
 - OmniSharp Roslyn `83fd615eafff33e297a9f59280d929cf09ec0d3c`.
 
-Progress: semantic classification, occurrences, folding, outline, breadcrumbs, and
-workspace-symbol search now share the exact live-buffer Roslyn session and discard
-stale results. The maintained comparison is
-[netpad-omnisharp-parity.md](../netpad-omnisharp-parity.md).
+Progress: semantic classification, occurrences, folding, outline, breadcrumbs,
+workspace-symbol search, visible-buffer inlay hints, and lazy reference,
+implementation, and associated-test CodeLens actions now share the exact live-buffer
+Roslyn session and discard stale results. Viewport refresh avoids rebuilding structure,
+and document occurrences avoid a solution-wide search. The maintained comparison is
+[netpad-omnisharp-parity.md](../netpad-omnisharp-parity.md), with evidence in
+[editor-inlays-codelens-2026-08-12.md](../acceptance/editor-inlays-codelens-2026-08-12.md).
 
 Problem: Harness.NET now has the core interactive Roslyn operations and semantic
-presentation slice. It still lacks inlay hints, CodeLens, formatting, code actions,
-generated and metadata source, syntax/IL views, configurable keybindings, optional
-Vim behavior, and project User Secrets management.
+presentation and adornment slices. It still lacks formatting, code actions, generated
+and metadata source, syntax/IL views, configurable keybindings, optional Vim behavior,
+project User Secrets management, and typed execution targets for Run/Debug CodeLens.
 OmniSharp implements many of the underlying Roslyn services, but adopting its server
 would duplicate the current workspace and add process, download, version, recovery,
 and transport costs.

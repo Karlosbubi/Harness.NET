@@ -166,7 +166,8 @@ class AtSpiApplication:
             raise AssertionError(
                 f"AT-SPI did not expose editable control {name!r}; available: {available}"
             )
-        node = matches[-1]
+        node = next((item for item in reversed(matches)
+                     if EDITABLE_TEXT in item.interfaces), matches[-1])
         if EDITABLE_TEXT not in node.interfaces:
             raise AssertionError(
                 f"{node.role} {name!r} is not editable through AT-SPI"

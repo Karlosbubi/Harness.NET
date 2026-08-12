@@ -7,6 +7,7 @@ using Harness.BusinessLogic.Appearance;
 using Harness.BusinessLogic.Approvals;
 using Harness.BusinessLogic.Costs;
 using Harness.BusinessLogic.Dashboard;
+using Harness.BusinessLogic.Editor;
 using Harness.BusinessLogic.Framework;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Mcp;
@@ -29,9 +30,10 @@ public sealed class AvaloniaPresentationStoreTests
         IModelProviderSettingsService? providerSettingsService = null,
         IMcpSettingsService? mcpSettingsService = null,
       IVisualCaptureService? visualCaptureService = null,
-      IResearchSettingsService? researchSettingsService = null,
-      IDocumentationResearchService? documentationResearchService = null,
-      IDependencyResearchService? dependencyResearchService = null) => new(
+        IResearchSettingsService? researchSettingsService = null,
+        IDocumentationResearchService? documentationResearchService = null,
+        IDependencyResearchService? dependencyResearchService = null,
+        IEditorIntelligenceSettingsService? editorIntelligenceSettingsService = null) => new(
         new DashboardService(),
         new AppearanceService(),
         new WorkspaceService(),
@@ -52,7 +54,8 @@ public sealed class AvaloniaPresentationStoreTests
       visualCaptureService,
       researchSettingsService,
       documentationResearchService,
-      dependencyResearchService);
+      dependencyResearchService,
+      editorIntelligenceSettingsService: editorIntelligenceSettingsService);
 
     [Theory]
     [InlineData("I am **Gemma 4** 😊</blockquote>", "I am Gemma 4 😊")]
@@ -93,6 +96,23 @@ public sealed class AvaloniaPresentationStoreTests
         Assert.Equal(string.Empty, store.Current.ComposerText);
         Assert.Equal("Ready after stream", store.Current.Dashboard?.Status);
         Assert.Equal("hello", dashboard.LastInstruction);
+    }
+
+    [Fact]
+    public async Task Loads_and_saves_editor_intelligence_preferences()
+    {
+        EditorIntelligenceSettingsService editor = new();
+        using AvaloniaPresentationStore store = CreateStore(
+            editorIntelligenceSettingsService: editor);
+
+        await store.LoadAsync(CancellationToken.None);
+        await store.SaveEditorIntelligenceSettingsAsync(new(
+            false, true, false, true, false), CancellationToken.None);
+
+        Assert.Equal(new(true, true, true, true, true), editor.Initial);
+        Assert.Equal(new(false, true, false, true, false),
+            store.Current.Settings.EditorIntelligenceSettings?.Preferences);
+        Assert.Equal(1, editor.SaveCalls);
     }
 
     [Fact]
@@ -855,6 +875,30 @@ public sealed class AvaloniaPresentationStoreTests
                     ThemeOrigin.BuiltIn, new Dictionary<ThemeColorToken, ThemeColorValue>()),
             ],
             []);
+    }
+
+    private sealed class EditorIntelligenceSettingsService :
+        IEditorIntelligenceSettingsService
+    {
+        internal EditorIntelligencePreferences Initial { get; } = new(
+            true, true, true, true, true);
+        internal int SaveCalls { get; private set; }
+
+        public ValueTask<EditorIntelligenceSettingsSnapshot> GetAsync(
+            CancellationToken cancellationToken = default) => ValueTask.FromResult(
+            new EditorIntelligenceSettingsSnapshot(
+            Initial,
+            "Roslyn editor adornments are available for trusted C# source buffers."));
+
+        public ValueTask<EditorIntelligenceSettingsSnapshot> SaveAsync(
+            EditorIntelligencePreferences preferences,
+            CancellationToken cancellationToken = default)
+        {
+            SaveCalls++;
+            return ValueTask.FromResult(new EditorIntelligenceSettingsSnapshot(
+                preferences,
+                "Roslyn editor adornments are available for trusted C# source buffers."));
+        }
     }
 
     private sealed class WorkspaceService : IWorkspaceService

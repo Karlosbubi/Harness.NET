@@ -4,6 +4,7 @@ using Harness.BusinessLogic.Appearance;
 using Harness.BusinessLogic.Approvals;
 using Harness.BusinessLogic.Costs;
 using Harness.BusinessLogic.Dashboard;
+using Harness.BusinessLogic.Editor;
 using Harness.BusinessLogic.Framework;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Mcp;
@@ -57,6 +58,7 @@ internal sealed record ApplicationSettingsState(
     PackageChangePreviewResult? PackageChangePreview,
     SbomExportResult? SbomExport,
     VisualCaptureSettingsSnapshot? VisualCaptureSettings,
+    EditorIntelligenceSettingsSnapshot? EditorIntelligenceSettings,
     IReadOnlyList<VisualCaptureView> VisualCaptures,
     VisualCaptureContentView? SelectedVisualCapture,
     RemoteSpendPreference RemoteSpendPreference,
@@ -77,6 +79,7 @@ internal sealed record ApplicationSettingsState(
       PackageChangePreview: null,
       SbomExport: null,
         VisualCaptureSettings: null,
+        EditorIntelligenceSettings: null,
         VisualCaptures: [],
         SelectedVisualCapture: null,
         RemoteSpendPreference: RemoteSpendPreference.Default,

@@ -35,6 +35,7 @@ internal interface IWorkbenchEditorAdapter : IDisposable
     event EventHandler<TextInputEventArgs>? TextEntered;
     event EventHandler<WorkbenchEditorPointerEventArgs>? PointerPositionChanged;
     event EventHandler? PointerExited;
+    event EventHandler<WorkbenchCodeLensInvokedEventArgs>? CodeLensInvoked;
 
     int GetOffset(WorkbenchCodePosition position);
     char GetCharAt(int offset);
@@ -66,6 +67,7 @@ internal sealed class AvaloniaEditWorkbenchEditorAdapter : IWorkbenchEditorAdapt
             path: view.Path.Value);
         diagnostics = new(NativeEditor);
         semantics = new(NativeEditor);
+        semantics.CodeLensInvoked += (_, args) => CodeLensInvoked?.Invoke(this, args);
         NativeEditor.TextChanged += (_, _) => TextChanged?.Invoke(this, EventArgs.Empty);
         NativeEditor.TextArea.Caret.PositionChanged += (_, _) =>
             CaretChanged?.Invoke(this, EventArgs.Empty);
@@ -113,6 +115,7 @@ internal sealed class AvaloniaEditWorkbenchEditorAdapter : IWorkbenchEditorAdapt
     public event EventHandler<TextInputEventArgs>? TextEntered;
     public event EventHandler<WorkbenchEditorPointerEventArgs>? PointerPositionChanged;
     public event EventHandler? PointerExited;
+    public event EventHandler<WorkbenchCodeLensInvokedEventArgs>? CodeLensInvoked;
 
     public int GetOffset(WorkbenchCodePosition position)
     {

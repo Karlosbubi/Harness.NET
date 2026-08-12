@@ -186,6 +186,7 @@ def main() -> int:
             application.wait_for_name("Program.cs", "push button")
             application.invoke("Program.cs")
             application.wait_for_name("Editable source editor for Program.cs", "panel")
+            time.sleep(4.0)
 
             resize(1600, 1000)
             screenshot(arguments.output / "source-editor-wide-2026-07-29.png")

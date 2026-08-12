@@ -217,9 +217,45 @@ public sealed record WorkbenchCodeBreadcrumb(
     WorkbenchCodeMessage Display,
     WorkbenchCodeRange Range);
 
+public enum WorkbenchCodeDocumentPresentationScope
+{
+    VisibleClassification,
+    ClassificationAndStructure,
+}
+
+public enum WorkbenchCodeInlayHintKind { ParameterName, InferredType }
+
+public enum WorkbenchCodeLensKind { References, Implementations, Tests, Run, Debug }
+
+public sealed record WorkbenchCodeInlayHintOptions(
+    bool ShowParameterNames,
+    bool ShowInferredTypes);
+
+public sealed record WorkbenchCodeLensOptions(
+    bool ShowReferences,
+    bool ShowImplementations,
+    bool ShowTests);
+
+public sealed record WorkbenchCodeInlayHint(
+    WorkbenchCodePosition Position,
+    WorkbenchCodeInlayHintKind Kind,
+    WorkbenchCodeMessage Label,
+    WorkbenchCodeMessage Tooltip);
+
+public sealed record WorkbenchCodeLens(
+    WorkbenchCodePosition Position,
+    WorkbenchCodePosition Target,
+    WorkbenchCodeLensKind Kind,
+    WorkbenchCodeMessage Display,
+    bool IsResolved);
+
 public sealed record WorkbenchCodeDocumentPresentationRequest(
     WorkbenchCodeInteractiveSnapshot Snapshot,
-    WorkbenchCodeRange? VisibleRange);
+    WorkbenchCodeRange? VisibleRange,
+    WorkbenchCodeDocumentPresentationScope Scope =
+        WorkbenchCodeDocumentPresentationScope.ClassificationAndStructure,
+    WorkbenchCodeInlayHintOptions? InlayHints = null,
+    WorkbenchCodeLensOptions? CodeLens = null);
 
 public sealed record WorkbenchCodeDocumentPresentationView(
     WorkbenchCodeSessionId SessionId,
@@ -230,6 +266,8 @@ public sealed record WorkbenchCodeDocumentPresentationView(
     IReadOnlyList<WorkbenchCodeFoldingRange> FoldingRanges,
     IReadOnlyList<WorkbenchCodeOutlineItem> Outline,
     IReadOnlyList<WorkbenchCodeBreadcrumb> Breadcrumbs,
+    IReadOnlyList<WorkbenchCodeInlayHint> InlayHints,
+    IReadOnlyList<WorkbenchCodeLens> CodeLenses,
     bool IsTruncated,
     IReadOnlyList<WorkbenchCodeIssue> Issues);
 

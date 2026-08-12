@@ -85,6 +85,22 @@ def main() -> int:
     ))
     durations.append(run(
         root,
+        "editor-settings-policy",
+        test_command(
+            "tests/Harness.BusinessLogic.Tests/Harness.BusinessLogic.Tests.csproj",
+            "FullyQualifiedName~EditorIntelligenceSettingsServiceTests",
+        ),
+    ))
+    durations.append(run(
+        root,
+        "editor-settings-storage",
+        test_command(
+            "tests/Harness.DataAccess.Tests/Harness.DataAccess.Tests.csproj",
+            "FullyQualifiedName~SqliteEditorIntelligencePreferenceStoreTests",
+        ),
+    ))
+    durations.append(run(
+        root,
         "editor-controls",
         test_command(
             "tests/Harness.Presentation.Avalonia.Tests/Harness.Presentation.Avalonia.Tests.csproj",
@@ -109,7 +125,8 @@ def main() -> int:
     print(
         "Editor intelligence verification passed: completion, quick info, signatures, "
         "diagnostics, semantic classification, occurrences, folding, outline, breadcrumbs, "
-        "workspace symbols, definitions, usages, implementations, stale-result handling, "
+        "workspace symbols, inlay hints, lazy CodeLens, definitions, usages, implementations, "
+        "settings persistence, stale-result handling, "
         f"accessible production controls, and theme contracts ({sum(durations):.1f}s)."
     )
     return 0

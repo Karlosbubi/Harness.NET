@@ -1,5 +1,7 @@
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
+using Avalonia.Layout;
 using Avalonia.Media;
 using AvaloniaEdit;
 using AvaloniaEdit.Document;
@@ -16,6 +18,7 @@ internal sealed class CodeSemanticRenderer : IDisposable
     private readonly SemanticColorizer colorizer;
     private readonly OccurrenceRenderer occurrences;
     private readonly FoldingManager foldingManager;
+    private readonly CodeAdornmentGenerator adornments;
 
     internal CodeSemanticRenderer(TextEditor editor)
     {
@@ -23,17 +26,28 @@ internal sealed class CodeSemanticRenderer : IDisposable
         colorizer = new(editor);
         occurrences = new(editor);
         foldingManager = FoldingManager.Install(editor.TextArea);
+        adornments = new(editor);
+        adornments.CodeLensInvoked += (_, args) => CodeLensInvoked?.Invoke(this, args);
         editor.TextArea.TextView.LineTransformers.Add(colorizer);
         editor.TextArea.TextView.BackgroundRenderers.Add(occurrences);
+        editor.TextArea.TextView.ElementGenerators.Add(adornments);
     }
 
     internal int ClassificationCount => colorizer.SegmentCount;
     internal int OccurrenceCount => occurrences.SegmentCount;
     internal int FoldingCount => foldingManager.AllFoldings.Count();
+    internal int InlayHintCount => adornments.InlayHintCount;
+    internal int CodeLensCount => adornments.CodeLensCount;
+    internal event EventHandler<WorkbenchCodeLensInvokedEventArgs>? CodeLensInvoked;
 
     internal void SetPresentation(WorkbenchCodeDocumentPresentationView presentation)
     {
         colorizer.SetClassifications(presentation.Classifications);
+        adornments.SetAdornments(presentation.InlayHints, presentation.CodeLenses);
+        if (presentation.FoldingRanges.Count == 0 && presentation.Outline.Count == 0)
+        {
+            return;
+        }
         List<NewFolding> foldings = presentation.FoldingRanges
             .Select(ToFolding)
             .Where(value => value is not null)
@@ -57,6 +71,7 @@ internal sealed class CodeSemanticRenderer : IDisposable
     {
         editor.TextArea.TextView.LineTransformers.Remove(colorizer);
         editor.TextArea.TextView.BackgroundRenderers.Remove(occurrences);
+        editor.TextArea.TextView.ElementGenerators.Remove(adornments);
         FoldingManager.Uninstall(foldingManager);
     }
 
@@ -212,8 +227,125 @@ internal sealed class CodeSemanticRenderer : IDisposable
                 is true ? value as IBrush : null;
     }
 
+    private sealed class CodeAdornmentGenerator(TextEditor editor) : VisualLineElementGenerator
+    {
+        private IReadOnlyList<AdornmentGroup> groups = [];
+        internal int InlayHintCount { get; private set; }
+        internal int CodeLensCount { get; private set; }
+        internal event EventHandler<WorkbenchCodeLensInvokedEventArgs>? CodeLensInvoked;
+
+        internal void SetAdornments(
+            IReadOnlyList<WorkbenchCodeInlayHint> hints,
+            IReadOnlyList<WorkbenchCodeLens> lenses)
+        {
+            InlayHintCount = hints.Count;
+            CodeLensCount = lenses.Count;
+            groups = hints.Select(hint => new AdornmentItem(
+                    Offset(hint.Position), hint.Label.Value, hint.Tooltip.Value,
+                    hint, Lens: null))
+                .Concat(lenses.Select(lens => new AdornmentItem(
+                    Offset(lens.Position), lens.Display.Value, lens.Display.Value,
+                    Hint: null, lens)))
+                .Where(item => item.Offset >= 0 && item.Offset <= editor.Document.TextLength)
+                .GroupBy(item => item.Offset)
+                .OrderBy(group => group.Key)
+                .Select(group => new AdornmentGroup(group.Key, group.ToArray()))
+                .ToArray();
+            editor.TextArea.TextView.Redraw();
+        }
+
+        public override int GetFirstInterestedOffset(int startOffset) =>
+            groups.FirstOrDefault(group => group.Offset >= startOffset)?.Offset ?? -1;
+
+        public override VisualLineElement? ConstructElement(int offset)
+        {
+            AdornmentGroup? group = groups.FirstOrDefault(item => item.Offset == offset);
+            if (group is null)
+            {
+                return null;
+            }
+
+            StackPanel content = new()
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 4,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            foreach (AdornmentItem item in group.Items)
+            {
+                if (item.Lens is { } lens)
+                {
+                    Button action = new()
+                    {
+                        Content = item.Label,
+                        FontSize = 10,
+                        Padding = new Thickness(3, 0),
+                        MinHeight = 0,
+                        Background = Brushes.Transparent,
+                        BorderThickness = new Thickness(0),
+                    };
+                    AutomationProperties.SetName(action,
+                        $"{item.Label} at line {lens.Target.Line + 1}");
+                    action.Click += (_, _) => CodeLensInvoked?.Invoke(this,
+                        new WorkbenchCodeLensInvokedEventArgs(lens));
+                    content.Children.Add(action);
+                }
+                else
+                {
+                    Border hint = new()
+                    {
+                        Background = Resource(UiThemeColorToken.Hover),
+                        CornerRadius = new CornerRadius(3),
+                        Padding = new Thickness(3, 0),
+                        IsHitTestVisible = false,
+                        Child = new TextBlock
+                        {
+                            Text = item.Label,
+                            FontSize = 10,
+                            Foreground = Resource(UiThemeColorToken.TextDim),
+                        },
+                    };
+                    AutomationProperties.SetName(hint, item.Tooltip);
+                    ToolTip.SetTip(hint, item.Tooltip);
+                    content.Children.Add(hint);
+                }
+            }
+            return new InlineObjectElement(0, content);
+        }
+
+        private int Offset(WorkbenchCodePosition position)
+        {
+            if (position.Line < 0 || position.Line >= editor.Document.LineCount)
+            {
+                return -1;
+            }
+            DocumentLine line = editor.Document.GetLineByNumber(position.Line + 1);
+            return position.Character < 0 || position.Character > line.Length
+                ? -1
+                : line.Offset + position.Character;
+        }
+
+        private sealed record AdornmentItem(
+            int Offset,
+            string Label,
+            string Tooltip,
+            WorkbenchCodeInlayHint? Hint,
+            WorkbenchCodeLens? Lens);
+        private sealed record AdornmentGroup(int Offset, IReadOnlyList<AdornmentItem> Items);
+    }
+
+    private static IBrush? Resource(UiThemeColorToken token) =>
+        Application.Current?.TryFindResource(HarnessThemeResources.Key(token), out object? value)
+            is true ? value as IBrush : null;
+
     private sealed record SemanticSegment(
         int Offset, int Length, WorkbenchCodeClassificationKind Kind);
     private sealed record OccurrenceSegment(
         int Offset, int Length, WorkbenchCodeOccurrenceKind Kind);
+}
+
+internal sealed class WorkbenchCodeLensInvokedEventArgs(
+    WorkbenchCodeLens lens) : EventArgs
+{
+    internal WorkbenchCodeLens Lens { get; } = lens;
 }

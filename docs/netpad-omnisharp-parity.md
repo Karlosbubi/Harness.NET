@@ -31,8 +31,8 @@ Status meanings:
 | Document outline and breadcrumbs | Code-structure provider | Structure/navigation services | Delivered | Accessible outline flyout and clickable live-buffer breadcrumbs |
 | Workspace symbol search | Monaco/OmniSharp navigation | Navigation/types services | Delivered | Debounced bounded Roslyn search dialog with cancellation |
 | Model semantic search, calls, hierarchy, tests | No equivalent complete typed agent surface | Underlying Roslyn services | Task 047 | Bounded paged typed toolsets and shared source identity |
-| Parameter and type inlay hints | Inlay-hint provider and settings | Inlay-hint service and cache | Planned | Add typed settings, visible-range production, lazy resolve, renderer, and tests |
-| CodeLens | No complete equivalent found | No complete equivalent found | Planned | Lazy references, implementations, tests, and valid run/debug lenses |
+| Parameter and type inlay hints | Inlay-hint provider and settings | Inlay-hint service and cache | Delivered | Typed SQLite-backed settings, exact visible-buffer Roslyn production, inline renderer, stale rejection, and tests |
+| CodeLens | No complete equivalent found | No complete equivalent found | Delivered for available actions | Visible declarations expose bounded reference, implementation, and associated-test actions; queries resolve only on selection. Run/Debug stay hidden because no typed per-declaration execution target exists yet |
 | Document/range/on-type formatting | Range and on-type providers | Formatting services | Planned | Closed typed preview/apply operations and editor actions |
 | Organize/fix usings | Code actions | Refactoring services | Planned | Separate deterministic operation, preview, fingerprint, and post-check |
 | Quick fixes, refactorings, fix-all | Code-action provider | V1/V2 refactoring services | Planned | Closed operation catalog; never expose a raw action executor |

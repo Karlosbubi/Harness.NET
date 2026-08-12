@@ -16,6 +16,7 @@ using Dock.Model.Controls;
 using Dock.Model.Core;
 using Harness.BusinessLogic.CodeIntelligence;
 using Harness.BusinessLogic.Documents;
+using Harness.BusinessLogic.Editor;
 using Harness.BusinessLogic.Evidence;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Inspection;
@@ -123,6 +124,8 @@ internal sealed class WorkbenchDockHost
     private IDockable? activeDocument;
     private WorkbenchCodeSessionId? codeSessionId;
     private string? codeSessionKey;
+    private EditorIntelligencePreferences editorIntelligencePreferences =
+        EditorIntelligencePreferences.Default;
 
     internal WorkbenchDockHost(
         IRunOutputService runOutputService,
@@ -482,9 +485,17 @@ internal sealed class WorkbenchDockHost
 
     internal void Update(AvaloniaShellState snapshot)
     {
+        EditorIntelligencePreferences nextEditorPreferences = snapshot.Settings
+            .EditorIntelligenceSettings?.Preferences ?? EditorIntelligencePreferences.Default;
+        bool editorPreferencesChanged = nextEditorPreferences != editorIntelligencePreferences;
+        editorIntelligencePreferences = nextEditorPreferences;
         foreach (SourceDocumentSession session in sourceDocuments.Values)
         {
             session.Editor.ApplyTheme();
+            if (editorPreferencesChanged)
+            {
+                SchedulePresentation(session, immediate: true, includeStructure: false);
+            }
         }
 
         WorkspaceView? active = snapshot.Workspaces.Registered.FirstOrDefault(item => item.IsActive);
@@ -1492,7 +1503,10 @@ internal sealed class WorkbenchDockHost
         }
     }
 
-    private void SchedulePresentation(SourceDocumentSession session, bool immediate = false)
+    private void SchedulePresentation(
+        SourceDocumentSession session,
+        bool immediate = false,
+        bool includeStructure = true)
     {
         if (!CanUseSemanticAssistance(session))
         {
@@ -1500,13 +1514,14 @@ internal sealed class WorkbenchDockHost
         }
 
         CancellationToken token = session.BeginPresentation(cancellationToken);
-        _ = SynchronizePresentationAsync(session, token, immediate);
+        _ = SynchronizePresentationAsync(session, token, immediate, includeStructure);
     }
 
     private async Task SynchronizePresentationAsync(
         SourceDocumentSession session,
         CancellationToken requestCancellation,
-        bool immediate)
+        bool immediate,
+        bool includeStructure)
     {
         try
         {
@@ -1527,7 +1542,17 @@ internal sealed class WorkbenchDockHost
                 await codeIntelligenceService.GetDocumentPresentationAsync(
                     new(
                         InteractiveSnapshot(session, sessionId, version),
-                        session.Editor.GetVisibleRange()),
+                        session.Editor.GetVisibleRange(),
+                        includeStructure
+                            ? WorkbenchCodeDocumentPresentationScope.ClassificationAndStructure
+                            : WorkbenchCodeDocumentPresentationScope.VisibleClassification,
+                        new(
+                            editorIntelligencePreferences.ShowParameterNameHints,
+                            editorIntelligencePreferences.ShowInferredTypeHints),
+                        new(
+                            editorIntelligencePreferences.ShowReferenceCodeLens,
+                            editorIntelligencePreferences.ShowImplementationCodeLens,
+                            editorIntelligencePreferences.ShowTestCodeLens)),
                     requestCancellation);
             if (!session.IsCurrentPresentation(requestCancellation) ||
                 result.State is WorkbenchCodeResultState.Stale or
@@ -1977,7 +2002,12 @@ internal sealed class WorkbenchDockHost
             SchedulePresentation(session);
         };
         editor.CaretChanged += (_, _) => ScheduleOccurrences(session);
-        editor.ViewportChanged += (_, _) => SchedulePresentation(session, immediate: true);
+        editor.CodeLensInvoked += async (_, args) =>
+            await InvokeCodeLensAsync(session, args.Lens);
+        editor.ViewportChanged += (_, _) => SchedulePresentation(
+            session,
+            immediate: true,
+            includeStructure: false);
         editor.KeyDown += async (_, args) =>
         {
             if (args.Key is Key.Space && args.KeyModifiers == KeyModifiers.Control)
@@ -2628,6 +2658,110 @@ internal sealed class WorkbenchDockHost
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
+        }
+    }
+
+    private async ValueTask InvokeCodeLensAsync(
+        SourceDocumentSession session,
+        WorkbenchCodeLens lens)
+    {
+        session.Editor.SetCaretPosition(lens.Target);
+        switch (lens.Kind)
+        {
+            case WorkbenchCodeLensKind.References:
+                await NavigateSymbolAsync(session, SemanticNavigationKind.References);
+                break;
+            case WorkbenchCodeLensKind.Implementations:
+                await NavigateSymbolAsync(session, SemanticNavigationKind.Implementations);
+                break;
+            case WorkbenchCodeLensKind.Tests:
+                await ShowAssociatedTestsAsync(session);
+                break;
+            case WorkbenchCodeLensKind.Run:
+            case WorkbenchCodeLensKind.Debug:
+                session.SetStatus("No typed execution target is available for this declaration.");
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(lens));
+        }
+    }
+
+    private async ValueTask ShowAssociatedTestsAsync(SourceDocumentSession session)
+    {
+        if (!CanUseSemanticAssistance(session))
+        {
+            return;
+        }
+
+        session.CloseInteractiveWindows();
+        (WorkbenchCodeBufferVersion version, CancellationToken token) =
+            session.BeginInteraction(cancellationToken);
+        try
+        {
+            WorkbenchCodeSessionId? codeSession = await EnsureCodeSessionAsync(session, token);
+            if (codeSession is null)
+            {
+                return;
+            }
+
+            session.SetStatus("Finding associated tests with Roslyn…");
+            WorkbenchCodeSemanticView result = await codeIntelligenceService
+                .FindAssociatedTestsAsync(new(
+                    InteractiveSnapshot(session, codeSession, version),
+                    Query: null,
+                    MaximumResults: 100,
+                    Offset: 0), token);
+            if (!session.IsCurrentInteraction(version))
+            {
+                return;
+            }
+
+            WorkbenchCodeSymbolDestination[] source = result.Items
+                .Select(item => item.Destination)
+                .Where(destination => destination.Kind is WorkbenchCodeDestinationKind.Source &&
+                    destination.Path is not null && destination.Range is not null)
+                .ToArray();
+            if (source.Length == 0)
+            {
+                session.SetStatus("No associated source tests were found for this declaration.");
+                return;
+            }
+
+            session.SetStatus($"Found {source.Length:N0} associated test" +
+                              (source.Length == 1 ? "." : "s."));
+            ListBox list = new()
+            {
+                ItemsSource = source.Select(destination => new SymbolDestinationChoice(destination))
+                    .ToArray(),
+                MaxHeight = 320,
+                MinWidth = 420,
+            };
+            AutomationProperties.SetName(list,
+                $"{source.Length} associated tests for {session.View.Path.Value}");
+            InsightWindow window = new(session.NativeEditor.TextArea)
+            {
+                Child = list,
+                StartOffset = session.Editor.CaretOffset,
+                EndOffset = session.Editor.CaretOffset,
+            };
+            list.SelectionChanged += async (_, _) =>
+            {
+                if (list.SelectedItem is SymbolDestinationChoice choice)
+                {
+                    window.Hide();
+                    await NavigateToSymbolAsync(choice.Destination, session.View.GoalId);
+                }
+            };
+            session.QuickInfoWindow = window;
+            window.Show();
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or IOException or ArgumentException)
+        {
+            session.SetStatus($"Associated-test lookup failed · {exception.Message}");
         }
     }
 
