@@ -64,6 +64,32 @@ public interface IWorkbenchCodeIntelligenceService
         WorkbenchCodeSemanticQuery query, CancellationToken cancellationToken = default) =>
         SemanticUnavailable(query, "test_association_not_supported");
 
+    ValueTask<WorkbenchCodeDocumentPresentationView> GetDocumentPresentationAsync(
+        WorkbenchCodeDocumentPresentationRequest request,
+        CancellationToken cancellationToken = default) => ValueTask.FromResult(
+            new WorkbenchCodeDocumentPresentationView(
+                request.Snapshot.SessionId,
+                request.Snapshot.Path,
+                request.Snapshot.BufferVersion,
+                WorkbenchCodeResultState.Failed,
+                [], [], [], [], false,
+                [new(new("document_presentation_not_supported"),
+                    new("Semantic document presentation is unavailable."))]));
+
+    ValueTask<WorkbenchCodeOccurrenceView> FindOccurrencesAsync(
+        WorkbenchCodeInteractiveSnapshot snapshot,
+        CancellationToken cancellationToken = default) => ValueTask.FromResult(
+            new WorkbenchCodeOccurrenceView(
+                snapshot.SessionId,
+                snapshot.Path,
+                snapshot.BufferVersion,
+                WorkbenchCodeResultState.Failed,
+                null,
+                [],
+                false,
+                [new(new("occurrences_not_supported"),
+                    new("Semantic occurrence lookup is unavailable."))]));
+
     ValueTask<WorkbenchCodeRenamePreviewView> PreviewRenameAsync(
         WorkbenchCodeRenamePreviewRequest request,
         CancellationToken cancellationToken = default) =>

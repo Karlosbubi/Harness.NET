@@ -30,6 +30,7 @@ internal interface IWorkbenchEditorAdapter : IDisposable
 
     event EventHandler? TextChanged;
     event EventHandler? CaretChanged;
+    event EventHandler? ViewportChanged;
     event EventHandler<KeyEventArgs>? KeyDown;
     event EventHandler<TextInputEventArgs>? TextEntered;
     event EventHandler<WorkbenchEditorPointerEventArgs>? PointerPositionChanged;
@@ -44,11 +45,16 @@ internal interface IWorkbenchEditorAdapter : IDisposable
     void Focus();
     void ApplyTheme();
     void SetDiagnostics(IReadOnlyList<WorkbenchCodeDiagnostic> diagnostics);
+    void SetDocumentPresentation(WorkbenchCodeDocumentPresentationView presentation);
+    void SetOccurrences(IReadOnlyList<WorkbenchCodeOccurrence> occurrences);
+    WorkbenchCodeRange? GetVisibleRange();
 }
 
 internal sealed class AvaloniaEditWorkbenchEditorAdapter : IWorkbenchEditorAdapter
 {
     private readonly CodeDiagnosticRenderer diagnostics;
+    private readonly CodeSemanticRenderer semantics;
+    private WorkbenchCodeRange? lastVisibleRange;
 
     internal AvaloniaEditWorkbenchEditorAdapter(WorkbenchDocumentView view)
     {
@@ -59,9 +65,18 @@ internal sealed class AvaloniaEditWorkbenchEditorAdapter : IWorkbenchEditorAdapt
             showLineNumbers: true,
             path: view.Path.Value);
         diagnostics = new(NativeEditor);
+        semantics = new(NativeEditor);
         NativeEditor.TextChanged += (_, _) => TextChanged?.Invoke(this, EventArgs.Empty);
         NativeEditor.TextArea.Caret.PositionChanged += (_, _) =>
             CaretChanged?.Invoke(this, EventArgs.Empty);
+        NativeEditor.TextArea.TextView.VisualLinesChanged += (_, _) =>
+        {
+            WorkbenchCodeRange? current = GetVisibleRange();
+            if (current == lastVisibleRange)
+                return;
+            lastVisibleRange = current;
+            ViewportChanged?.Invoke(this, EventArgs.Empty);
+        };
         NativeEditor.KeyDown += (_, args) => KeyDown?.Invoke(this, args);
         NativeEditor.TextArea.TextEntered += (_, args) => TextEntered?.Invoke(this, args);
         NativeEditor.PointerMoved += (_, args) =>
@@ -93,6 +108,7 @@ internal sealed class AvaloniaEditWorkbenchEditorAdapter : IWorkbenchEditorAdapt
 
     public event EventHandler? TextChanged;
     public event EventHandler? CaretChanged;
+    public event EventHandler? ViewportChanged;
     public event EventHandler<KeyEventArgs>? KeyDown;
     public event EventHandler<TextInputEventArgs>? TextEntered;
     public event EventHandler<WorkbenchEditorPointerEventArgs>? PointerPositionChanged;
@@ -122,8 +138,30 @@ internal sealed class AvaloniaEditWorkbenchEditorAdapter : IWorkbenchEditorAdapt
         NativeEditor.ScrollTo(location.Line, location.Column);
     }
     public void Focus() => _ = NativeEditor.Focus();
-    public void ApplyTheme() => CodeEditorView.ApplyTheme(NativeEditor);
+    public void ApplyTheme()
+    {
+        CodeEditorView.ApplyTheme(NativeEditor);
+        semantics.ApplyTheme();
+    }
     public void SetDiagnostics(IReadOnlyList<WorkbenchCodeDiagnostic> values) =>
         diagnostics.SetDiagnostics(values);
-    public void Dispose() => diagnostics.Dispose();
+    public void SetDocumentPresentation(WorkbenchCodeDocumentPresentationView presentation) =>
+        semantics.SetPresentation(presentation);
+    public void SetOccurrences(IReadOnlyList<WorkbenchCodeOccurrence> values) =>
+        semantics.SetOccurrences(values);
+    public WorkbenchCodeRange? GetVisibleRange()
+    {
+        var lines = NativeEditor.TextArea.TextView.VisualLines;
+        if (!NativeEditor.TextArea.TextView.VisualLinesValid || lines.Count == 0)
+            return null;
+        int startLine = lines[0].FirstDocumentLine.LineNumber - 1;
+        int endLine = lines[^1].LastDocumentLine.LineNumber - 1;
+        var endDocumentLine = NativeEditor.Document.GetLineByNumber(endLine + 1);
+        return new(new(startLine, 0), new(endLine, endDocumentLine.Length));
+    }
+    public void Dispose()
+    {
+        semantics.Dispose();
+        diagnostics.Dispose();
+    }
 }

@@ -147,6 +147,105 @@ internal sealed partial class WorkbenchCodeIntelligenceService
         WorkbenchCodeSemanticQuery query, CancellationToken cancellationToken = default) =>
         SemanticAsync(query, SemanticKind.Tests, cancellationToken);
 
+    public async ValueTask<WorkbenchCodeDocumentPresentationView>
+        GetDocumentPresentationAsync(
+            WorkbenchCodeDocumentPresentationRequest request,
+            CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (!TryInteractive(request.Snapshot, out ActiveSession? session,
+                out WorkbenchCodeIssue? issue))
+        {
+            return PresentationFailure(request, issue!);
+        }
+
+        CodeIntelligenceDocumentPresentationResult result;
+        try
+        {
+            result = await engine.GetDocumentPresentationAsync(new(
+                ToDataSnapshot(request.Snapshot, session!),
+                request.VisibleRange is null ? null : new(
+                    new(request.VisibleRange.Start.Line, request.VisibleRange.Start.Character),
+                    new(request.VisibleRange.End.Line, request.VisibleRange.End.Character))),
+                cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return PresentationFailure(request,
+                Issue("cancelled", "Semantic document presentation was cancelled."),
+                WorkbenchCodeResultState.Cancelled);
+        }
+
+        if (!IsFresh(session!, request.Snapshot) ||
+            !Matches(result, session!, request.Snapshot))
+        {
+            return PresentationFailure(request,
+                Issue("stale_buffer",
+                    "A newer document buffer superseded this semantic presentation."),
+                WorkbenchCodeResultState.Stale);
+        }
+
+        return new(
+            request.Snapshot.SessionId,
+            request.Snapshot.Path,
+            request.Snapshot.BufferVersion,
+            Map(result.State),
+            result.Classifications.Select(item => new WorkbenchCodeClassifiedSpan(
+                Map(item.Range), Map(item.Kind))).ToArray(),
+            result.FoldingRanges.Select(item => new WorkbenchCodeFoldingRange(
+                Map(item.Range), Map(item.Kind), new(item.Display.Value),
+                item.IsDefaultCollapsed)).ToArray(),
+            result.Outline.Select(item => new WorkbenchCodeOutlineItem(
+                Map(item.Kind), new(item.Display.Value), Map(item.Range),
+                Map(item.SelectionRange), item.Depth)).ToArray(),
+            result.Breadcrumbs.Select(item => new WorkbenchCodeBreadcrumb(
+                Map(item.Kind), new(item.Display.Value), Map(item.Range))).ToArray(),
+            result.IsTruncated,
+            MapIssues(result.Issues));
+    }
+
+    public async ValueTask<WorkbenchCodeOccurrenceView> FindOccurrencesAsync(
+        WorkbenchCodeInteractiveSnapshot snapshot,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryInteractive(snapshot, out ActiveSession? session, out WorkbenchCodeIssue? issue))
+        {
+            return OccurrenceFailure(snapshot, issue!);
+        }
+
+        CodeIntelligenceOccurrenceResult result;
+        try
+        {
+            result = await engine.FindOccurrencesAsync(
+                ToDataSnapshot(snapshot, session!), cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return OccurrenceFailure(snapshot,
+                Issue("cancelled", "Semantic occurrence lookup was cancelled."),
+                WorkbenchCodeResultState.Cancelled);
+        }
+
+        if (!IsFresh(session!, snapshot) || !Matches(result, session!, snapshot))
+        {
+            return OccurrenceFailure(snapshot,
+                Issue("stale_buffer",
+                    "A newer document buffer superseded this occurrence result."),
+                WorkbenchCodeResultState.Stale);
+        }
+
+        return new(
+            snapshot.SessionId,
+            snapshot.Path,
+            snapshot.BufferVersion,
+            Map(result.State),
+            result.Symbol is null ? null : new(result.Symbol.Value),
+            result.Occurrences.Select(item => new WorkbenchCodeOccurrence(
+                Map(item.Range), Map(item.Kind))).ToArray(),
+            result.IsTruncated,
+            MapIssues(result.Issues));
+    }
+
     private async ValueTask<WorkbenchCodeSemanticView> SemanticAsync(
         WorkbenchCodeSemanticQuery query, SemanticKind kind, CancellationToken cancellationToken)
     {
@@ -188,6 +287,30 @@ internal sealed partial class WorkbenchCodeIntelligenceService
         query?.Snapshot.BufferVersion ?? new(0), state, [], null, false, [issue]);
 
     private enum SemanticKind { Symbols, Calls, Types, Tests }
+
+    private static WorkbenchCodeDocumentPresentationView PresentationFailure(
+        WorkbenchCodeDocumentPresentationRequest request,
+        WorkbenchCodeIssue issue,
+        WorkbenchCodeResultState state = WorkbenchCodeResultState.Failed) => new(
+        request.Snapshot.SessionId,
+        request.Snapshot.Path,
+        request.Snapshot.BufferVersion,
+        state,
+        [], [], [], [], false,
+        [issue]);
+
+    private static WorkbenchCodeOccurrenceView OccurrenceFailure(
+        WorkbenchCodeInteractiveSnapshot snapshot,
+        WorkbenchCodeIssue issue,
+        WorkbenchCodeResultState state = WorkbenchCodeResultState.Failed) => new(
+        snapshot.SessionId,
+        snapshot.Path,
+        snapshot.BufferVersion,
+        state,
+        null,
+        [],
+        false,
+        [issue]);
 
     private async ValueTask<WorkbenchCodeQuickInfoView> QuickInfoAsync(
         WorkbenchCodeInteractiveSnapshot snapshot,
@@ -421,6 +544,20 @@ internal sealed partial class WorkbenchCodeIntelligenceService
             session, snapshot);
 
     private static bool Matches(
+        CodeIntelligenceDocumentPresentationResult result,
+        ActiveSession session,
+        WorkbenchCodeInteractiveSnapshot snapshot) =>
+        Matches(result.ContextId, result.SessionId, result.Path, result.BufferVersion,
+            session, snapshot);
+
+    private static bool Matches(
+        CodeIntelligenceOccurrenceResult result,
+        ActiveSession session,
+        WorkbenchCodeInteractiveSnapshot snapshot) =>
+        Matches(result.ContextId, result.SessionId, result.Path, result.BufferVersion,
+            session, snapshot);
+
+    private static bool Matches(
         CodeIntelligenceContextId contextId,
         CodeIntelligenceSessionId sessionId,
         CodeIntelligenceDocumentPath path,
@@ -457,6 +594,62 @@ internal sealed partial class WorkbenchCodeIntelligenceService
         CodeIntelligenceSymbolKind.TypeParameter => WorkbenchCodeSymbolKind.TypeParameter,
         CodeIntelligenceSymbolKind.Snippet => WorkbenchCodeSymbolKind.Snippet,
         CodeIntelligenceSymbolKind.Other => WorkbenchCodeSymbolKind.Other,
+        _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+    };
+
+    private static WorkbenchCodeClassificationKind Map(
+        CodeIntelligenceClassificationKind kind) => kind switch
+        {
+            CodeIntelligenceClassificationKind.Text => WorkbenchCodeClassificationKind.Text,
+            CodeIntelligenceClassificationKind.Keyword => WorkbenchCodeClassificationKind.Keyword,
+            CodeIntelligenceClassificationKind.ControlKeyword =>
+                WorkbenchCodeClassificationKind.ControlKeyword,
+            CodeIntelligenceClassificationKind.Comment => WorkbenchCodeClassificationKind.Comment,
+            CodeIntelligenceClassificationKind.DocumentationComment =>
+                WorkbenchCodeClassificationKind.DocumentationComment,
+            CodeIntelligenceClassificationKind.String => WorkbenchCodeClassificationKind.String,
+            CodeIntelligenceClassificationKind.Number => WorkbenchCodeClassificationKind.Number,
+            CodeIntelligenceClassificationKind.Preprocessor =>
+                WorkbenchCodeClassificationKind.Preprocessor,
+            CodeIntelligenceClassificationKind.Namespace =>
+                WorkbenchCodeClassificationKind.Namespace,
+            CodeIntelligenceClassificationKind.Type => WorkbenchCodeClassificationKind.Type,
+            CodeIntelligenceClassificationKind.Method => WorkbenchCodeClassificationKind.Method,
+            CodeIntelligenceClassificationKind.Property => WorkbenchCodeClassificationKind.Property,
+            CodeIntelligenceClassificationKind.Field => WorkbenchCodeClassificationKind.Field,
+            CodeIntelligenceClassificationKind.Event => WorkbenchCodeClassificationKind.Event,
+            CodeIntelligenceClassificationKind.Parameter =>
+                WorkbenchCodeClassificationKind.Parameter,
+            CodeIntelligenceClassificationKind.Local => WorkbenchCodeClassificationKind.Local,
+            CodeIntelligenceClassificationKind.TypeParameter =>
+                WorkbenchCodeClassificationKind.TypeParameter,
+            CodeIntelligenceClassificationKind.Operator => WorkbenchCodeClassificationKind.Operator,
+            CodeIntelligenceClassificationKind.Punctuation =>
+                WorkbenchCodeClassificationKind.Punctuation,
+            CodeIntelligenceClassificationKind.Identifier =>
+                WorkbenchCodeClassificationKind.Identifier,
+            CodeIntelligenceClassificationKind.ExcludedCode =>
+                WorkbenchCodeClassificationKind.ExcludedCode,
+            _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+        };
+
+    private static WorkbenchCodeOccurrenceKind Map(CodeIntelligenceOccurrenceKind kind) =>
+        kind switch
+        {
+            CodeIntelligenceOccurrenceKind.Definition => WorkbenchCodeOccurrenceKind.Definition,
+            CodeIntelligenceOccurrenceKind.Read => WorkbenchCodeOccurrenceKind.Read,
+            CodeIntelligenceOccurrenceKind.Write => WorkbenchCodeOccurrenceKind.Write,
+            _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+        };
+
+    private static WorkbenchCodeFoldingKind Map(CodeIntelligenceFoldingKind kind) => kind switch
+    {
+        CodeIntelligenceFoldingKind.Namespace => WorkbenchCodeFoldingKind.Namespace,
+        CodeIntelligenceFoldingKind.Type => WorkbenchCodeFoldingKind.Type,
+        CodeIntelligenceFoldingKind.Member => WorkbenchCodeFoldingKind.Member,
+        CodeIntelligenceFoldingKind.Block => WorkbenchCodeFoldingKind.Block,
+        CodeIntelligenceFoldingKind.Region => WorkbenchCodeFoldingKind.Region,
+        CodeIntelligenceFoldingKind.Comment => WorkbenchCodeFoldingKind.Comment,
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 

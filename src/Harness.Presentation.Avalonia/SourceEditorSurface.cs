@@ -30,6 +30,13 @@ internal sealed class SourceEditorSurface : IDisposable
         VerticalAlignment = VerticalAlignment.Center,
         TextAlignment = TextAlignment.Right,
     };
+    private readonly WrapPanel breadcrumbs = new()
+    {
+        Orientation = Orientation.Horizontal,
+        VerticalAlignment = VerticalAlignment.Center,
+    };
+    private readonly ListBox outlineItems = new() { MaxHeight = 420, MinWidth = 360 };
+    private IReadOnlyList<WorkbenchCodeOutlineItem> outline = [];
 
     private SourceEditorSurface(
         Control control,
@@ -38,6 +45,8 @@ internal sealed class SourceEditorSurface : IDisposable
         Button save,
         Button reload,
         Button close,
+        Button outline,
+        Button workspaceSymbols,
         Button completion,
         Button symbolInfo,
         Button definition,
@@ -50,6 +59,8 @@ internal sealed class SourceEditorSurface : IDisposable
         Save = save;
         Reload = reload;
         Close = close;
+        Outline = outline;
+        WorkspaceSymbols = workspaceSymbols;
         Completion = completion;
         SymbolInfo = symbolInfo;
         Definition = definition;
@@ -63,11 +74,14 @@ internal sealed class SourceEditorSurface : IDisposable
     internal Button Save { get; }
     internal Button Reload { get; }
     internal Button Close { get; }
+    internal Button Outline { get; }
+    internal Button WorkspaceSymbols { get; }
     internal Button Completion { get; }
     internal Button SymbolInfo { get; }
     internal Button Definition { get; }
     internal Button References { get; }
     internal Button Implementations { get; }
+    internal event Action<WorkbenchCodePosition>? NavigationRequested;
 
     internal static SourceEditorSurface Create(WorkbenchDocumentView view)
     {
@@ -83,6 +97,10 @@ internal sealed class SourceEditorSurface : IDisposable
         save.IsEnabled = false;
         Button reload = Action("Reload", $"Reload {view.Path.Value}", "Reload from worktree");
         Button close = Action("Close", $"Close {view.Path.Value}", "Close · Ctrl+W");
+        Button outline = Action("Outline", $"Show document outline for {view.Path.Value}",
+            "Document outline");
+        Button workspaceSymbols = Action("Symbols", "Search workspace symbols",
+            "Search types and members across the workspace");
         Button completion = Action("IntelliSense", $"Show IntelliSense for {view.Path.Value}",
             "Code completion · Ctrl+Space");
         Button symbolInfo = Action("Symbol info", $"Show symbol information for {view.Path.Value}",
@@ -102,6 +120,8 @@ internal sealed class SourceEditorSurface : IDisposable
             save,
             reload,
             close,
+            outline,
+            workspaceSymbols,
             completion,
             symbolInfo,
             definition,
@@ -110,7 +130,9 @@ internal sealed class SourceEditorSurface : IDisposable
         surface.accessBadge.Child = surface.access;
         surface.accessBadge.Classes.Add("editor-access");
         surface.BuildHeader(save, reload, close);
-        surface.BuildAssistanceBar(completion, symbolInfo, definition, references, implementations);
+        surface.BuildAssistanceBar(outline, workspaceSymbols, completion, symbolInfo, definition,
+            references, implementations);
+        surface.ConfigureOutline(outline);
         surface.UpdateView(view);
         surface.UpdateMetrics();
         editor.CaretChanged += (_, _) => surface.UpdateMetrics();
@@ -134,6 +156,7 @@ internal sealed class SourceEditorSurface : IDisposable
         bool semanticAssistance = !view.IsTruncated && Path.GetExtension(view.Path.Value)
             .Equals(".cs", StringComparison.OrdinalIgnoreCase);
         Completion.IsEnabled = semanticAssistance;
+        WorkspaceSymbols.IsEnabled = semanticAssistance;
         SymbolInfo.IsEnabled = semanticAssistance;
         Definition.IsEnabled = semanticAssistance;
         References.IsEnabled = semanticAssistance;
@@ -158,6 +181,16 @@ internal sealed class SourceEditorSurface : IDisposable
         WorkbenchCodePosition caret = Editor.CaretPosition;
         metrics.Text = $"Ln {caret.Line + 1:N0}, Col {caret.Character + 1:N0}" +
                        selection + $" · UTF-8 · {LineEndings(Editor.Text)} · {codeHealth}";
+        UpdateBreadcrumbs(caret);
+    }
+
+    internal void UpdateDocumentPresentation(WorkbenchCodeDocumentPresentationView presentation)
+    {
+        Editor.SetDocumentPresentation(presentation);
+        outline = presentation.Outline;
+        outlineItems.ItemsSource = outline.Select(item => new OutlineChoice(item)).ToArray();
+        Outline.IsEnabled = outline.Count > 0;
+        UpdateBreadcrumbs(Editor.CaretPosition);
     }
 
     internal void UpdateCodeHealth(WorkbenchCodeDiagnosticView result)
@@ -237,11 +270,76 @@ internal sealed class SourceEditorSurface : IDisposable
             commands.Children.Add(action);
         }
 
-        Border surface = new() { Child = commands };
+        Grid content = new()
+        {
+            ColumnDefinitions = new("*,Auto"),
+            ColumnSpacing = 8,
+            Children = { breadcrumbs },
+        };
+        Grid.SetColumn(commands, 1);
+        content.Children.Add(commands);
+        Border surface = new() { Child = content };
         surface.Classes.Add("editor-assistance-toolbar");
         Grid.SetRow(surface, 1);
         ((Grid)Control).Children.Add(surface);
     }
+
+    private void ConfigureOutline(Button button)
+    {
+        AutomationProperties.SetName(outlineItems, "Document outline symbols");
+        Flyout flyout = new()
+        {
+            Content = new Border
+            {
+                Padding = new Thickness(8),
+                Child = outlineItems,
+            },
+        };
+        button.Flyout = flyout;
+        outlineItems.SelectionChanged += (_, _) =>
+        {
+            if (outlineItems.SelectedItem is not OutlineChoice choice)
+                return;
+            NavigationRequested?.Invoke(choice.Item.SelectionRange.Start);
+            flyout.Hide();
+            outlineItems.SelectedItem = null;
+        };
+    }
+
+    private void UpdateBreadcrumbs(WorkbenchCodePosition caret)
+    {
+        breadcrumbs.Children.Clear();
+        WorkbenchCodeOutlineItem[] path = outline
+            .Where(item => Contains(item.Range, caret))
+            .OrderBy(item => item.Depth)
+            .ThenByDescending(item => SpanSize(item.Range))
+            .ToArray();
+        foreach (WorkbenchCodeOutlineItem item in path)
+        {
+            Button button = new()
+            {
+                Content = item.Display.Value,
+                Padding = new Thickness(5, 2),
+                MinHeight = 0,
+            };
+            button.Classes.Add("editor-breadcrumb");
+            AutomationProperties.SetName(button, $"Go to {item.Display.Value}");
+            button.Click += (_, _) => NavigationRequested?.Invoke(item.SelectionRange.Start);
+            breadcrumbs.Children.Add(button);
+        }
+    }
+
+    private static bool Contains(WorkbenchCodeRange range, WorkbenchCodePosition position) =>
+        Compare(position, range.Start) >= 0 && Compare(position, range.End) <= 0;
+
+    private static int Compare(WorkbenchCodePosition left, WorkbenchCodePosition right) =>
+        left.Line != right.Line
+            ? left.Line.CompareTo(right.Line)
+            : left.Character.CompareTo(right.Character);
+
+    private static long SpanSize(WorkbenchCodeRange range) =>
+        ((long)range.End.Line - range.Start.Line) * 1_000_000L +
+        range.End.Character - range.Start.Character;
 
     private void BuildHeader(Button save, Button reload, Button close)
     {
@@ -288,5 +386,11 @@ internal sealed class SourceEditorSurface : IDisposable
         }
 
         return lf ? "LF" : "No line break";
+    }
+
+    private sealed record OutlineChoice(WorkbenchCodeOutlineItem Item)
+    {
+        public override string ToString() =>
+            $"{new string(' ', Math.Max(0, Item.Depth) * 2)}{Item.Display.Value}";
     }
 }

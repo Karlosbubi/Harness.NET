@@ -1492,6 +1492,124 @@ internal sealed class WorkbenchDockHost
         }
     }
 
+    private void SchedulePresentation(SourceDocumentSession session, bool immediate = false)
+    {
+        if (!CanUseSemanticAssistance(session))
+        {
+            return;
+        }
+
+        CancellationToken token = session.BeginPresentation(cancellationToken);
+        _ = SynchronizePresentationAsync(session, token, immediate);
+    }
+
+    private async Task SynchronizePresentationAsync(
+        SourceDocumentSession session,
+        CancellationToken requestCancellation,
+        bool immediate)
+    {
+        try
+        {
+            if (!immediate)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(90), requestCancellation);
+            }
+
+            WorkbenchCodeSessionId? sessionId = await EnsureCodeSessionAsync(
+                session, requestCancellation);
+            if (sessionId is null || !session.IsCurrentPresentation(requestCancellation))
+            {
+                return;
+            }
+
+            WorkbenchCodeBufferVersion version = new(Math.Max(1, session.CurrentBufferVersion));
+            WorkbenchCodeDocumentPresentationView result =
+                await codeIntelligenceService.GetDocumentPresentationAsync(
+                    new(
+                        InteractiveSnapshot(session, sessionId, version),
+                        session.Editor.GetVisibleRange()),
+                    requestCancellation);
+            if (!session.IsCurrentPresentation(requestCancellation) ||
+                result.State is WorkbenchCodeResultState.Stale or
+                    WorkbenchCodeResultState.Cancelled or WorkbenchCodeResultState.Failed)
+            {
+                return;
+            }
+
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (session.IsCurrentPresentation(requestCancellation))
+                {
+                    session.Surface.UpdateDocumentPresentation(result);
+                }
+            });
+        }
+        catch (OperationCanceledException) when (requestCancellation.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or IOException or ArgumentException)
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+                session.SetStatus($"Semantic presentation failed · {exception.Message}"));
+        }
+    }
+
+    private void ScheduleOccurrences(SourceDocumentSession session)
+    {
+        if (!CanUseSemanticAssistance(session))
+        {
+            session.Editor.SetOccurrences([]);
+            return;
+        }
+
+        CancellationToken token = session.BeginOccurrences(cancellationToken);
+        _ = SynchronizeOccurrencesAsync(session, token);
+    }
+
+    private async Task SynchronizeOccurrencesAsync(
+        SourceDocumentSession session,
+        CancellationToken requestCancellation)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(140), requestCancellation);
+            WorkbenchCodeSessionId? sessionId = await EnsureCodeSessionAsync(
+                session, requestCancellation);
+            if (sessionId is null || !session.IsCurrentOccurrence(requestCancellation))
+            {
+                return;
+            }
+
+            WorkbenchCodeBufferVersion version = new(Math.Max(1, session.CurrentBufferVersion));
+            WorkbenchCodeOccurrenceView result = await codeIntelligenceService.FindOccurrencesAsync(
+                InteractiveSnapshot(session, sessionId, version), requestCancellation);
+            if (!session.IsCurrentOccurrence(requestCancellation) ||
+                result.State is WorkbenchCodeResultState.Stale or
+                    WorkbenchCodeResultState.Cancelled or WorkbenchCodeResultState.Failed)
+            {
+                return;
+            }
+
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (session.IsCurrentOccurrence(requestCancellation))
+                {
+                    session.Editor.SetOccurrences(result.Occurrences);
+                }
+            });
+        }
+        catch (OperationCanceledException) when (requestCancellation.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or IOException or ArgumentException)
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+                session.SetStatus($"Occurrence lookup failed · {exception.Message}"));
+        }
+    }
+
     private async ValueTask<WorkbenchCodeSessionId?> EnsureCodeSessionAsync(
         SourceDocumentSession document,
         CancellationToken requestCancellation)
@@ -1853,9 +1971,13 @@ internal sealed class WorkbenchDockHost
         editor.TextChanged += (_, _) =>
         {
             session.CancelHover();
+            editor.SetOccurrences([]);
             session.SynchronizeDirtyState();
             ScheduleDiagnostics(session);
+            SchedulePresentation(session);
         };
+        editor.CaretChanged += (_, _) => ScheduleOccurrences(session);
+        editor.ViewportChanged += (_, _) => SchedulePresentation(session, immediate: true);
         editor.KeyDown += async (_, args) =>
         {
             if (args.Key is Key.Space && args.KeyModifiers == KeyModifiers.Control)
@@ -1955,6 +2077,7 @@ internal sealed class WorkbenchDockHost
         surface.Close.Click += async (_, _) => await RequestSourceDocumentCloseAsync(session);
         surface.Completion.Click += async (_, _) => await ShowCompletionAsync(
             session, WorkbenchCodeCompletionTriggerKind.Invoke, triggerCharacter: null);
+        surface.WorkspaceSymbols.Click += async (_, _) => await ShowWorkspaceSymbolsAsync(session);
         surface.SymbolInfo.Click += async (_, _) => await ShowQuickInfoAsync(session);
         surface.Definition.Click += async (_, _) => await NavigateSymbolAsync(
             session, SemanticNavigationKind.Definition);
@@ -1962,10 +2085,52 @@ internal sealed class WorkbenchDockHost
             session, SemanticNavigationKind.References);
         surface.Implementations.Click += async (_, _) => await NavigateSymbolAsync(
             session, SemanticNavigationKind.Implementations);
+        surface.NavigationRequested += position =>
+        {
+            editor.SetCaretPosition(position);
+            editor.ScrollTo(position);
+            editor.Focus();
+        };
         sourceDocuments.Add(id, session);
         session.SynchronizeDirtyState();
         ScheduleDiagnostics(session, immediate: true);
+        SchedulePresentation(session, immediate: true);
         return session;
+    }
+
+    private async ValueTask ShowWorkspaceSymbolsAsync(SourceDocumentSession session)
+    {
+        if (!CanUseSemanticAssistance(session) || OwnerWindow() is not { } owner)
+        {
+            return;
+        }
+
+        (WorkbenchCodeBufferVersion version, CancellationToken token) =
+            session.BeginInteraction(cancellationToken);
+        try
+        {
+            WorkbenchCodeSessionId? codeSession = await EnsureCodeSessionAsync(session, token);
+            if (codeSession is null || !session.IsCurrentInteraction(version))
+            {
+                return;
+            }
+
+            WorkbenchCodeInteractiveSnapshot snapshot = InteractiveSnapshot(
+                session, codeSession, version);
+            WorkspaceSymbolSearchDialog dialog = new(
+                async (value, searchCancellation) =>
+                {
+                    using CancellationTokenSource linked =
+                        CancellationTokenSource.CreateLinkedTokenSource(token, searchCancellation);
+                    return await codeIntelligenceService.SearchSymbolsAsync(
+                        new(snapshot, value, MaximumResults: 200, Offset: 0), linked.Token);
+                },
+                destination => NavigateToSymbolAsync(destination, session.View.GoalId));
+            await dialog.ShowDialog(owner);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+        }
     }
 
     private async ValueTask ShowCompletionAsync(

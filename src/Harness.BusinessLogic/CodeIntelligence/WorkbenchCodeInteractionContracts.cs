@@ -161,3 +161,84 @@ public sealed record WorkbenchCodeSemanticView(
     int? Continuation,
     bool IsTruncated,
     IReadOnlyList<WorkbenchCodeIssue> Issues);
+
+public enum WorkbenchCodeClassificationKind
+{
+    Text,
+    Keyword,
+    ControlKeyword,
+    Comment,
+    DocumentationComment,
+    String,
+    Number,
+    Preprocessor,
+    Namespace,
+    Type,
+    Method,
+    Property,
+    Field,
+    Event,
+    Parameter,
+    Local,
+    TypeParameter,
+    Operator,
+    Punctuation,
+    Identifier,
+    ExcludedCode,
+}
+
+public enum WorkbenchCodeOccurrenceKind { Definition, Read, Write }
+
+public enum WorkbenchCodeFoldingKind { Namespace, Type, Member, Block, Region, Comment }
+
+public sealed record WorkbenchCodeClassifiedSpan(
+    WorkbenchCodeRange Range,
+    WorkbenchCodeClassificationKind Kind);
+
+public sealed record WorkbenchCodeOccurrence(
+    WorkbenchCodeRange Range,
+    WorkbenchCodeOccurrenceKind Kind);
+
+public sealed record WorkbenchCodeFoldingRange(
+    WorkbenchCodeRange Range,
+    WorkbenchCodeFoldingKind Kind,
+    WorkbenchCodeMessage Display,
+    bool IsDefaultCollapsed);
+
+public sealed record WorkbenchCodeOutlineItem(
+    WorkbenchCodeSymbolKind Kind,
+    WorkbenchCodeMessage Display,
+    WorkbenchCodeRange Range,
+    WorkbenchCodeRange SelectionRange,
+    int Depth);
+
+public sealed record WorkbenchCodeBreadcrumb(
+    WorkbenchCodeSymbolKind Kind,
+    WorkbenchCodeMessage Display,
+    WorkbenchCodeRange Range);
+
+public sealed record WorkbenchCodeDocumentPresentationRequest(
+    WorkbenchCodeInteractiveSnapshot Snapshot,
+    WorkbenchCodeRange? VisibleRange);
+
+public sealed record WorkbenchCodeDocumentPresentationView(
+    WorkbenchCodeSessionId SessionId,
+    WorkbenchCodeDocumentPath Path,
+    WorkbenchCodeBufferVersion BufferVersion,
+    WorkbenchCodeResultState State,
+    IReadOnlyList<WorkbenchCodeClassifiedSpan> Classifications,
+    IReadOnlyList<WorkbenchCodeFoldingRange> FoldingRanges,
+    IReadOnlyList<WorkbenchCodeOutlineItem> Outline,
+    IReadOnlyList<WorkbenchCodeBreadcrumb> Breadcrumbs,
+    bool IsTruncated,
+    IReadOnlyList<WorkbenchCodeIssue> Issues);
+
+public sealed record WorkbenchCodeOccurrenceView(
+    WorkbenchCodeSessionId SessionId,
+    WorkbenchCodeDocumentPath Path,
+    WorkbenchCodeBufferVersion BufferVersion,
+    WorkbenchCodeResultState State,
+    WorkbenchCodeMessage? Symbol,
+    IReadOnlyList<WorkbenchCodeOccurrence> Occurrences,
+    bool IsTruncated,
+    IReadOnlyList<WorkbenchCodeIssue> Issues);

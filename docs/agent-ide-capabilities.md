@@ -28,6 +28,7 @@ Status meanings:
 | `get_project_problems`, `get_file_problems`, `lint_files` | Versioned file/project/changed-set diagnostics with stable identities and delta | Partial | Exact-file and deterministic changed-set checks are delivered; formatter/lint delta remains Task 049 |
 | `get_symbol_info` | Quick info, declaration, documentation, type and source/metadata destination | Delivered | Role-scoped source is loaded at the current exact file baseline |
 | definition/reference/implementation navigation | Roslyn definition and bounded usage/implementation destinations | Delivered | Original workspace for Lead; approved goal worktree for Implementer/Reviewer |
+| semantic editor presentation | Visible-range classification, occurrences, folding, outline, breadcrumbs, and workspace symbols | Internal | Shared exact live buffer; developer UI delivered, model tools remain deliberately narrower |
 | `analyze_calls`, class hierarchy tools | Incoming/outgoing call, type and override hierarchy | Delivered | Roslyn semantic identity and paging bounds |
 | `findTests` | Discover tests associated with a symbol | Delivered | Deterministic Roslyn association; runnable test-case lifecycle remains Task 052 |
 | `post_edit_quality_check` | One changed-set gate combining diagnostics, placeholders, tests/build evidence and unresolved findings | Delivered | Reuse evidence; never self-certify model output |

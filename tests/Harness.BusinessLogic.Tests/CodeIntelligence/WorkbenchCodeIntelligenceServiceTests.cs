@@ -245,6 +245,50 @@ public sealed class WorkbenchCodeIntelligenceServiceTests
     }
 
     [Fact]
+    public async Task Newer_buffer_discards_in_flight_semantic_presentation()
+    {
+        TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        DeterministicCodeIntelligenceEngine engine = new()
+        {
+            Presentations = async (request, cancellationToken) =>
+            {
+                entered.SetResult();
+                await release.Task.WaitAsync(cancellationToken);
+                return new(
+                    request.Snapshot.ContextId,
+                    request.Snapshot.SessionId,
+                    request.Snapshot.Path,
+                    request.Snapshot.BufferVersion,
+                    CodeIntelligenceResultState.Ready,
+                    [new(new(new(0, 0), new(0, 5)),
+                        CodeIntelligenceClassificationKind.Keyword)],
+                    [], [], [], false, []);
+            },
+        };
+        WorkbenchCodeIntelligenceService service = new(
+            new ContextResolver(ApprovedResolution()), engine);
+        WorkbenchCodeSessionId sessionId = (await service.StartAsync(new(
+            new("workspace-id"), new("goal-id"), new("Harness.slnx")))).SessionId!;
+        _ = await service.SynchronizeAsync(Snapshot(sessionId, version: 1, "class C { }"));
+        WorkbenchCodeInteractiveSnapshot interactive = new(
+            sessionId, new("src/App.cs"), new(Baseline), new(1),
+            new("class C { }"), new(0, 6));
+
+        Task<WorkbenchCodeDocumentPresentationView> pending = service
+            .GetDocumentPresentationAsync(new(interactive, VisibleRange: null)).AsTask();
+        await entered.Task;
+        _ = await service.SynchronizeAsync(Snapshot(
+            sessionId, version: 2, "class C { int X; }"));
+        release.SetResult();
+        WorkbenchCodeDocumentPresentationView result = await pending;
+
+        Assert.Equal(WorkbenchCodeResultState.Stale, result.State);
+        Assert.Empty(result.Classifications);
+        Assert.Equal("stale_buffer", Assert.Single(result.Issues).Code.Value);
+    }
+
+    [Fact]
     public async Task Newer_buffer_discards_an_in_flight_rename_preview()
     {
         TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -379,6 +423,9 @@ public sealed class WorkbenchCodeIntelligenceServiceTests
         internal Func<CodeIntelligenceRenamePreviewRequest, CancellationToken,
             ValueTask<CodeIntelligenceRenamePreviewResult>>? Renames
         { get; init; }
+        internal Func<CodeIntelligenceDocumentPresentationRequest, CancellationToken,
+            ValueTask<CodeIntelligenceDocumentPresentationResult>>? Presentations
+        { get; init; }
         internal CodeIntelligenceOpenRequest? OpenRequest { get; private set; }
         internal CodeIntelligenceSessionId? ClosedSession { get; private set; }
         internal int OpenCallCount { get; private set; }
@@ -440,6 +487,11 @@ public sealed class WorkbenchCodeIntelligenceServiceTests
         public ValueTask<CodeIntelligenceNavigationResult> FindReferencesAsync(
             CodeIntelligenceInteractiveSnapshot snapshot,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<CodeIntelligenceDocumentPresentationResult> GetDocumentPresentationAsync(
+            CodeIntelligenceDocumentPresentationRequest request,
+            CancellationToken cancellationToken = default) => Presentations is null
+            ? throw new NotSupportedException()
+            : Presentations(request, cancellationToken);
         public ValueTask<CodeIntelligenceRenamePreviewResult> PreviewRenameAsync(
             CodeIntelligenceRenamePreviewRequest request,
             CancellationToken cancellationToken = default) => Renames is null

@@ -299,6 +299,11 @@ Add the missing capabilities in this order:
    must exceed NetPad: the user and models share one live semantic state, while model
    authority remains narrower than user editing authority.
 
+Progress on 2026-08-12: item 1 is delivered through the shared exact-buffer Roslyn
+session, visible-range classification, occurrence highlighting, folding, outline,
+breadcrumbs, and debounced workspace-symbol search. See the maintained
+[NetPad and OmniSharp parity matrix](netpad-omnisharp-parity.md). Items 2–8 remain.
+
 Keep direct in-process Roslyn as the default implementation. Source may be adapted
 from NetPad or OmniSharp only after license, attribution, version, provenance, tests,
 and SBOM review. Do not download or execute a language server at runtime, add implicit

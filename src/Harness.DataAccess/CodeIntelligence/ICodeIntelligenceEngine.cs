@@ -68,6 +68,34 @@ public interface ICodeIntelligenceEngine
         CodeIntelligenceSemanticQuery query,
         CancellationToken cancellationToken = default) => SemanticUnavailable(query, "test_association_not_supported");
 
+    ValueTask<CodeIntelligenceDocumentPresentationResult> GetDocumentPresentationAsync(
+        CodeIntelligenceDocumentPresentationRequest request,
+        CancellationToken cancellationToken = default) => ValueTask.FromResult(
+            new CodeIntelligenceDocumentPresentationResult(
+                request.Snapshot.ContextId,
+                request.Snapshot.SessionId,
+                request.Snapshot.Path,
+                request.Snapshot.BufferVersion,
+                CodeIntelligenceResultState.Failed,
+                [], [], [], [], false,
+                [new(new("document_presentation_not_supported"),
+                    new("Semantic document presentation is unavailable."))]));
+
+    ValueTask<CodeIntelligenceOccurrenceResult> FindOccurrencesAsync(
+        CodeIntelligenceInteractiveSnapshot snapshot,
+        CancellationToken cancellationToken = default) => ValueTask.FromResult(
+            new CodeIntelligenceOccurrenceResult(
+                snapshot.ContextId,
+                snapshot.SessionId,
+                snapshot.Path,
+                snapshot.BufferVersion,
+                CodeIntelligenceResultState.Failed,
+                null,
+                [],
+                false,
+                [new(new("occurrences_not_supported"),
+                    new("Semantic occurrence lookup is unavailable."))]));
+
     ValueTask<CodeIntelligenceRenamePreviewResult> PreviewRenameAsync(
         CodeIntelligenceRenamePreviewRequest request,
         CancellationToken cancellationToken = default) =>

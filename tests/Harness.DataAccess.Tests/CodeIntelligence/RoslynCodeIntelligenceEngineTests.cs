@@ -406,6 +406,68 @@ public sealed class RoslynCodeIntelligenceEngineTests(ITestOutputHelper output) 
     }
 
     [Fact]
+    public async Task Document_presentation_and_occurrences_use_the_exact_live_buffer()
+    {
+        const string persisted = "class Sample { }\n";
+        const string live = """
+            namespace Demo;
+
+            class Sample
+            {
+                private int count;
+
+                public int Added()
+                {
+                    count++;
+                    return count;
+                }
+            }
+            """;
+        await CreateProjectAsync(persisted);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("presentation-context");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+        int offset = live.LastIndexOf("count", StringComparison.Ordinal) + 2;
+        CodeIntelligenceInteractiveSnapshot snapshot = InteractiveSnapshot(
+            contextId, session.SessionId!, persisted, live, offset);
+
+        CodeIntelligenceDocumentPresentationResult presentation =
+            await engine.GetDocumentPresentationAsync(new(snapshot, VisibleRange: null));
+        CodeIntelligenceDocumentPresentationResult visible =
+            await engine.GetDocumentPresentationAsync(new(snapshot,
+                new(new(6, 0), new(10, 1))));
+        CodeIntelligenceOccurrenceResult occurrences =
+            await engine.FindOccurrencesAsync(snapshot);
+
+        Assert.Equal(CodeIntelligenceResultState.Ready, presentation.State);
+        Assert.Contains(presentation.Classifications, item =>
+            item.Kind is CodeIntelligenceClassificationKind.Type);
+        Assert.Contains(presentation.Classifications, item =>
+            item.Kind is CodeIntelligenceClassificationKind.Method);
+        Assert.Contains(presentation.Outline, item =>
+            item.Kind is CodeIntelligenceSymbolKind.Method &&
+            item.Display.Value.StartsWith("Added", StringComparison.Ordinal));
+        Assert.Contains(presentation.FoldingRanges, item =>
+            item.Kind is CodeIntelligenceFoldingKind.Type);
+        Assert.NotEmpty(visible.Classifications);
+        Assert.All(visible.Classifications, item =>
+            Assert.InRange(item.Range.Start.Line, 6, 10));
+        Assert.Contains(visible.Outline, item => item.Display.Value == "Sample");
+        Assert.Collection(
+            presentation.Breadcrumbs,
+            item => Assert.Equal("Demo", item.Display.Value),
+            item => Assert.Equal("Sample", item.Display.Value),
+            item => Assert.StartsWith("Added", item.Display.Value, StringComparison.Ordinal));
+        Assert.Contains(occurrences.Occurrences, item =>
+            item.Kind is CodeIntelligenceOccurrenceKind.Definition);
+        Assert.Contains(occurrences.Occurrences, item =>
+            item.Kind is CodeIntelligenceOccurrenceKind.Write);
+        Assert.Contains(occurrences.Occurrences, item =>
+            item.Kind is CodeIntelligenceOccurrenceKind.Read);
+        Assert.Contains("count", occurrences.Symbol!.Value, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Rename_preview_resolves_a_partial_type_across_files_without_writing()
     {
         const string declaration = "public partial class Widget { public void Run() { } }\n";

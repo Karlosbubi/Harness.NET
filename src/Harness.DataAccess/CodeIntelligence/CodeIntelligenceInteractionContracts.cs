@@ -174,3 +174,99 @@ public sealed record CodeIntelligenceSemanticResult(
     int? Continuation,
     bool IsTruncated,
     IReadOnlyList<CodeIntelligenceIssue> Issues);
+
+public enum CodeIntelligenceClassificationKind
+{
+    Text,
+    Keyword,
+    ControlKeyword,
+    Comment,
+    DocumentationComment,
+    String,
+    Number,
+    Preprocessor,
+    Namespace,
+    Type,
+    Method,
+    Property,
+    Field,
+    Event,
+    Parameter,
+    Local,
+    TypeParameter,
+    Operator,
+    Punctuation,
+    Identifier,
+    ExcludedCode,
+}
+
+public enum CodeIntelligenceOccurrenceKind
+{
+    Definition,
+    Read,
+    Write,
+}
+
+public enum CodeIntelligenceFoldingKind
+{
+    Namespace,
+    Type,
+    Member,
+    Block,
+    Region,
+    Comment,
+}
+
+public sealed record CodeIntelligenceClassifiedSpan(
+    CodeIntelligenceRange Range,
+    CodeIntelligenceClassificationKind Kind);
+
+public sealed record CodeIntelligenceOccurrence(
+    CodeIntelligenceRange Range,
+    CodeIntelligenceOccurrenceKind Kind);
+
+public sealed record CodeIntelligenceFoldingRange(
+    CodeIntelligenceRange Range,
+    CodeIntelligenceFoldingKind Kind,
+    CodeIntelligenceMessage Display,
+    bool IsDefaultCollapsed);
+
+public sealed record CodeIntelligenceOutlineItem(
+    CodeIntelligenceSymbolKind Kind,
+    CodeIntelligenceMessage Display,
+    CodeIntelligenceRange Range,
+    CodeIntelligenceRange SelectionRange,
+    int Depth);
+
+public sealed record CodeIntelligenceBreadcrumb(
+    CodeIntelligenceSymbolKind Kind,
+    CodeIntelligenceMessage Display,
+    CodeIntelligenceRange Range);
+
+public sealed record CodeIntelligenceDocumentPresentationRequest(
+    CodeIntelligenceInteractiveSnapshot Snapshot,
+    CodeIntelligenceRange? VisibleRange);
+
+public sealed record CodeIntelligenceDocumentPresentationResult(
+    CodeIntelligenceContextId ContextId,
+    CodeIntelligenceSessionId SessionId,
+    CodeIntelligenceDocumentPath Path,
+    CodeIntelligenceBufferVersion BufferVersion,
+    CodeIntelligenceResultState State,
+    IReadOnlyList<CodeIntelligenceClassifiedSpan> Classifications,
+    IReadOnlyList<CodeIntelligenceFoldingRange> FoldingRanges,
+    IReadOnlyList<CodeIntelligenceOutlineItem> Outline,
+    IReadOnlyList<CodeIntelligenceBreadcrumb> Breadcrumbs,
+    bool IsTruncated,
+    IReadOnlyList<CodeIntelligenceIssue> Issues);
+
+public sealed record CodeIntelligenceOccurrenceResult(
+    CodeIntelligenceContextId ContextId,
+    CodeIntelligenceSessionId SessionId,
+    CodeIntelligenceDocumentPath Path,
+    CodeIntelligenceBufferVersion BufferVersion,
+    CodeIntelligenceResultState State,
+    CodeIntelligenceMessage? Symbol,
+    IReadOnlyList<CodeIntelligenceOccurrence> Occurrences,
+    bool IsTruncated,
+    IReadOnlyList<CodeIntelligenceIssue> Issues);

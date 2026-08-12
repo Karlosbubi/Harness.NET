@@ -108,8 +108,9 @@ def main() -> int:
 
     print(
         "Editor intelligence verification passed: completion, quick info, signatures, "
-        "diagnostics, definitions, usages, implementations, stale-result handling, "
-        f"accessible production controls, and syntax theme contracts ({sum(durations):.1f}s)."
+        "diagnostics, semantic classification, occurrences, folding, outline, breadcrumbs, "
+        "workspace symbols, definitions, usages, implementations, stale-result handling, "
+        f"accessible production controls, and theme contracts ({sum(durations):.1f}s)."
     )
     return 0
 

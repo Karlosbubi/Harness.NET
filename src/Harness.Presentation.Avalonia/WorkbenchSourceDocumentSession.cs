@@ -22,6 +22,8 @@ internal sealed class SourceDocumentSession : IDisposable
     private CancellationTokenSource? diagnosticsCancellation;
     private CancellationTokenSource? interactionCancellation;
     private CancellationTokenSource? hoverCancellation;
+    private CancellationTokenSource? occurrenceCancellation;
+    private CancellationTokenSource? presentationCancellation;
     private long bufferVersion;
 
     internal SourceDocumentSession(
@@ -85,6 +87,28 @@ internal sealed class SourceDocumentSession : IDisposable
     }
 
     internal void CancelHover() => hoverCancellation?.Cancel();
+
+    internal CancellationToken BeginOccurrences(CancellationToken parentCancellation)
+    {
+        occurrenceCancellation?.Cancel();
+        occurrenceCancellation?.Dispose();
+        occurrenceCancellation = CancellationTokenSource.CreateLinkedTokenSource(parentCancellation);
+        return occurrenceCancellation.Token;
+    }
+
+    internal bool IsCurrentOccurrence(CancellationToken token) =>
+        occurrenceCancellation?.Token == token && !token.IsCancellationRequested;
+
+    internal CancellationToken BeginPresentation(CancellationToken parentCancellation)
+    {
+        presentationCancellation?.Cancel();
+        presentationCancellation?.Dispose();
+        presentationCancellation = CancellationTokenSource.CreateLinkedTokenSource(parentCancellation);
+        return presentationCancellation.Token;
+    }
+
+    internal bool IsCurrentPresentation(CancellationToken token) =>
+        presentationCancellation?.Token == token && !token.IsCancellationRequested;
 
     internal void CloseInteractiveWindows()
     {
@@ -204,6 +228,10 @@ internal sealed class SourceDocumentSession : IDisposable
         interactionCancellation?.Dispose();
         hoverCancellation?.Cancel();
         hoverCancellation?.Dispose();
+        occurrenceCancellation?.Cancel();
+        occurrenceCancellation?.Dispose();
+        presentationCancellation?.Cancel();
+        presentationCancellation?.Dispose();
         CloseInteractiveWindows();
         Document.CloseRequested = null;
         Surface.Dispose();

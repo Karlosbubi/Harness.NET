@@ -33,7 +33,9 @@ Delivered:
 - Git-backed workspace registration, trust, status, diff, search, branches, and
   isolated goal worktrees;
 - an editable Avalonia source editor with diagnostics, completion, quick info,
-  signature help, definitions, usages, implementations, and semantic rename;
+  signature help, semantic classification, occurrence highlighting, folding,
+  outline, breadcrumbs, workspace-symbol search, definitions, usages,
+  implementations, and semantic rename;
 - Roslyn validation before model-authored source writes;
 - typed, role-scoped agent tools for files, Git, .NET metadata, Build/Test, semantic
   retrieval, diagnostics, symbols, navigation, edits, and rename;

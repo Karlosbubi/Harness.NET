@@ -817,6 +817,39 @@ public sealed class PresentationControlTests
         }, CancellationToken.None);
     }
 
+    [Fact]
+    public async Task Semantic_editor_renderer_applies_exact_spans_occurrences_and_folding()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            TextEditor editor = CodeEditorView.Create("class Sample\n{\n    int value;\n}\n",
+                isReadOnly: false, path: "Sample.cs");
+            Window window = new() { Content = editor };
+            window.Show();
+            using CodeSemanticRenderer renderer = new(editor);
+            renderer.SetPresentation(new(
+                new("session"), new("Sample.cs"), new(1), WorkbenchCodeResultState.Ready,
+                [new(new(new(0, 0), new(0, 5)), WorkbenchCodeClassificationKind.Keyword),
+                 new(new(new(0, 6), new(0, 12)), WorkbenchCodeClassificationKind.Type)],
+                [new(new(new(0, 0), new(3, 1)), WorkbenchCodeFoldingKind.Type,
+                    new("Sample …"), false)],
+                [new(WorkbenchCodeSymbolKind.Class, new("Sample"),
+                    new(new(0, 0), new(3, 1)), new(new(0, 6), new(0, 12)), 0)],
+                [new(WorkbenchCodeSymbolKind.Class, new("Sample"),
+                    new(new(0, 6), new(0, 12)))],
+                false, []));
+            renderer.SetOccurrences(
+                [new(new(new(2, 8), new(2, 13)), WorkbenchCodeOccurrenceKind.Definition)]);
+
+            Assert.Equal(2, renderer.ClassificationCount);
+            Assert.Equal(1, renderer.FoldingCount);
+            Assert.Equal(1, renderer.OccurrenceCount);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
     [Theory]
     [InlineData("Comment", UiThemeColorToken.CodeComment)]
     [InlineData("StringInterpolation", UiThemeColorToken.CodeString)]
@@ -1035,7 +1068,7 @@ public sealed class PresentationControlTests
                 .OfType<Button>()
                 .ToArray();
             Assert.Equal(
-                ["Save", "Reload", "Close", "IntelliSense", "Symbol info", "Definition",
+                ["Save", "Reload", "Close", "Outline", "Symbols", "IntelliSense", "Symbol info", "Definition",
                     "Usages", "Implementations"],
                 documentActions.Select(item => item.Content?.ToString() ?? string.Empty).ToArray());
             Assert.All(documentActions, item => Assert.False(
@@ -1563,6 +1596,53 @@ public sealed class PresentationControlTests
             Dispatcher.UIThread.RunJobs();
             Assert.Equal(1, workbench.ActiveSourceEditor?.TextArea.Caret.Line);
             Assert.Equal(10, workbench.ActiveSourceEditor?.TextArea.Caret.Column);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Source_editor_exposes_semantic_outline_and_clickable_breadcrumbs()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            CodeIntelligenceService codeIntelligence = new()
+            {
+                Presentation = request => new(
+                    request.Snapshot.SessionId,
+                    request.Snapshot.Path,
+                    request.Snapshot.BufferVersion,
+                    WorkbenchCodeResultState.Ready,
+                    [new(new(new(0, 0), new(0, 9)),
+                        WorkbenchCodeClassificationKind.Keyword)],
+                    [],
+                    [new(WorkbenchCodeSymbolKind.Namespace, new("Example"),
+                        new(new(0, 0), new(0, 18)),
+                        new(new(0, 10), new(0, 17)), 0)],
+                    [new(WorkbenchCodeSymbolKind.Namespace, new("Example"),
+                        new(new(0, 10), new(0, 17)))],
+                    false,
+                    []),
+            };
+            WorkbenchDockHost workbench = CreateWorkbench(
+                TrustedShell(), new(), codeIntelligence: codeIntelligence);
+            Window window = new() { Width = 1280, Height = 800, Content = workbench.Control };
+            window.Show();
+            workbench.OpenFileAsync("src/App.cs").AsTask().GetAwaiter().GetResult();
+            Dispatcher.UIThread.RunJobs();
+
+            Control source = Assert.IsAssignableFrom<Control>(
+                workbench.Documents.ActiveDockable?.Context);
+            Button outline = Assert.Single(source.GetVisualDescendants().OfType<Button>(),
+                button => Equals(button.Content, "Outline"));
+            Button breadcrumb = Assert.Single(source.GetVisualDescendants().OfType<Button>(),
+                button => Equals(button.Content, "Example"));
+            Assert.True(outline.IsEnabled);
+            Assert.Equal("Go to Example", AutomationProperties.GetName(breadcrumb));
+
+            breadcrumb.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.Equal(11, workbench.ActiveSourceEditor?.TextArea.Caret.Column);
             window.Close();
         }, CancellationToken.None);
     }
@@ -2771,6 +2851,18 @@ public sealed class PresentationControlTests
             get;
             init;
         }
+        internal Func<
+            WorkbenchCodeDocumentPresentationRequest,
+            WorkbenchCodeDocumentPresentationView>? Presentation
+        {
+            get;
+            init;
+        }
+        internal Func<WorkbenchCodeInteractiveSnapshot, WorkbenchCodeOccurrenceView>? Occurrences
+        {
+            get;
+            init;
+        }
         internal int ImplementationCallCount { get; private set; }
 
         public ValueTask<WorkbenchCodeSessionView> StartAsync(
@@ -2864,6 +2956,29 @@ public sealed class PresentationControlTests
                     snapshot.SessionId, snapshot.Path, snapshot.BufferVersion,
                     WorkbenchCodeResultState.Ready, [], []));
         }
+
+        public ValueTask<WorkbenchCodeDocumentPresentationView> GetDocumentPresentationAsync(
+            WorkbenchCodeDocumentPresentationRequest request,
+            CancellationToken cancellationToken = default) => ValueTask.FromResult(
+                Presentation?.Invoke(request) ?? new(
+                    request.Snapshot.SessionId,
+                    request.Snapshot.Path,
+                    request.Snapshot.BufferVersion,
+                    WorkbenchCodeResultState.Ready,
+                    [], [], [], [], false, []));
+
+        public ValueTask<WorkbenchCodeOccurrenceView> FindOccurrencesAsync(
+            WorkbenchCodeInteractiveSnapshot snapshot,
+            CancellationToken cancellationToken = default) => ValueTask.FromResult(
+                Occurrences?.Invoke(snapshot) ?? new(
+                    snapshot.SessionId,
+                    snapshot.Path,
+                    snapshot.BufferVersion,
+                    WorkbenchCodeResultState.Ready,
+                    null,
+                    [],
+                    false,
+                    []));
 
         public ValueTask StopAsync(
             WorkbenchCodeSessionId sessionId,
