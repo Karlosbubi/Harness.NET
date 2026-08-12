@@ -37,6 +37,14 @@ public sealed record GoalCodeNavigationView(
     WorkbenchCodeIssue? Issue,
     GoalCodeResultIdentity? Identity = null);
 
+public sealed record GoalMissingImportView(
+    WorkbenchCodeDocumentPath Path,
+    WorkbenchCodePosition Position,
+    WorkbenchCodeResultState State,
+    IReadOnlyList<WorkbenchCodeMissingImportCandidate> Candidates,
+    WorkbenchCodeIssue? Issue,
+    GoalCodeResultIdentity? Identity = null);
+
 public sealed record GoalCodeSemanticView(
     WorkbenchCodeDocumentPath Path,
     WorkbenchCodePosition Position,

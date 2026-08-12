@@ -32,7 +32,8 @@ Status meanings:
 | `analyze_calls`, class hierarchy tools | Incoming/outgoing call, type and override hierarchy | Delivered | Roslyn semantic identity and paging bounds |
 | `findTests` | Discover tests associated with a symbol | Delivered | Deterministic Roslyn association; runnable test-case lifecycle remains Task 052 |
 | `post_edit_quality_check` | One changed-set gate combining diagnostics, placeholders, tests/build evidence and unresolved findings | Delivered | Reuse evidence; never self-certify model output |
-| `reformat_file` | Preview/apply repository code style and format changed files | Partial | Closed document/selection formatting and import organization have exact baseline, fingerprint, file grant, atomic apply, evidence, and post-check; changed-span, paste, on-type, and unused-import cleanup remain |
+| `reformat_file` | Preview/apply repository code style and format changed files | Partial | Closed document/selection formatting, import organization, and unused-import cleanup have exact baseline, fingerprint, file grant, atomic apply, evidence, and post-check; changed-span, paste, and on-type remain |
+| `find_missing_imports` | Discover exact namespace choices for an unresolved type | Delivered | Roslyn searches source, referenced projects, and metadata, inserts each candidate in memory, and returns it only when the type binds at the exact caret; `AddMissingImport` still requires preview/fingerprint/apply |
 | `rename_refactoring` | Fingerprinted Roslyn rename preview/apply | Delivered | Approved worktree and delegated file areas |
 | signature/extract/move/namespace/safe-delete refactors | Closed preview/fingerprint/apply operations for each transformation | Planned | No arbitrary code-action executor |
 | `build_solution_start`, `build_solution_state` | Start/cancel/poll bounded build or rebuild with streaming structured problems | Partial | Workspace trust; no implicit restore |

@@ -455,6 +455,8 @@ def verify_documents_and_search(
         "Go to definition in Program.cs",
         "Find usages in Program.cs",
         "Go to implementation in Program.cs",
+        "Show quick fixes for Program.cs",
+        "Transform Program.cs",
     ):
         application.wait_for_name(action, "push button")
     application.invoke("Focus the active editor document")
@@ -472,6 +474,22 @@ def verify_documents_and_search(
         raise AssertionError(f"expected one isolated goal worktree, found {goal_worktrees}")
     if not (goal_worktrees[0] / "Program.cs").is_file():
         raise AssertionError("the approved goal worktree does not contain Program.cs")
+
+    application.invoke("Files", "page tab")
+    application.wait_for_name("Missing.cs", "push button")
+    application.invoke("Missing.cs")
+    application.wait_for_name("Editable source editor for Missing.cs", "panel")
+    application.invoke("Show quick fixes for Missing.cs")
+    application.wait_for_name(
+        "Add using System.Text for System.Text.StringBuilder", "push button"
+    )
+    application.invoke("Add using System.Text for System.Text.StringBuilder")
+    application.wait_for_name_containing("Added using System.Text", "label")
+    application.invoke("Save Missing.cs")
+    application.wait_for_name_containing("bytes to harness/goal-", "label")
+    saved_missing = (goal_worktrees[0] / "Missing.cs").read_text(encoding="utf-8")
+    if not saved_missing.startswith("using System.Text;"):
+        raise AssertionError("the missing-import quick fix was not saved to the goal worktree")
 
     application.set_text("Search tracked workspace text", "Hello")
     application.invoke("Run tracked workspace search")
@@ -557,6 +575,11 @@ def main() -> int:
                 ],
                 repository_root,
                 quiet=True,
+            )
+            (repository / "Missing.cs").write_text(
+                "StringBuilder value = new();\n"
+                "Console.WriteLine(value.Capacity);\n",
+                encoding="utf-8",
             )
             run(["git", "init", "-q"], repository)
             run(["git", "config", "user.name", "Harness Acceptance"], repository)

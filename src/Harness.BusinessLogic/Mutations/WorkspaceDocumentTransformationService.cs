@@ -185,7 +185,10 @@ internal sealed partial class WorkspaceMutationService
             !IsSha256(request.BaselineHash.Value) || request.BufferVersion is null ||
             request.BufferVersion.Value <= 0 || request.Text is null || request.Position is null ||
             (request.Kind is WorkbenchCodeDocumentTransformationKind.FormatSelection) !=
-            (request.Range is not null))
+            (request.Range is not null) ||
+            (request.Kind is WorkbenchCodeDocumentTransformationKind.AddMissingImport) !=
+            (request.ImportNamespace is not null) ||
+            request.ImportNamespace is { Value.Length: 0 })
         {
             return DocumentTransformationContext.Failure(
                 "invalid_document_transformation_request",
@@ -242,7 +245,8 @@ internal sealed partial class WorkspaceMutationService
             request.Text,
             request.Position),
         request.Kind,
-        request.Range);
+        request.Range,
+        request.ImportNamespace);
 
     private static string? ValidateDocumentTransformationGrants(
         DocumentTransformationPreviewRequest request,

@@ -131,7 +131,21 @@ public interface ICodeIntelligenceEngine
             [],
             Fingerprint: null,
             [new(new("document_transformation_not_supported"),
-                new("Document formatting and import organization are unavailable."))]));
+                new("Document formatting and import organization are unavailable."))],
+            request.ImportNamespace));
+
+    ValueTask<CodeIntelligenceMissingImportResult> GetMissingImportsAsync(
+        CodeIntelligenceInteractiveSnapshot snapshot,
+        CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult(new CodeIntelligenceMissingImportResult(
+            snapshot.ContextId,
+            snapshot.SessionId,
+            snapshot.Path,
+            snapshot.BufferVersion,
+            CodeIntelligenceResultState.Failed,
+            [],
+            [new(new("missing_imports_not_supported"),
+                new("Missing-import discovery is unavailable."))]));
 
     ValueTask CloseAsync(
         CodeIntelligenceSessionId sessionId,

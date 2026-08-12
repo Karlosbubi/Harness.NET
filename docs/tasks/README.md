@@ -342,7 +342,7 @@ Acceptance criteria:
 
 ### 049 — NetPad-level .NET editing and inspection
 
-Status: `In progress — presentation, adornments, and first closed transformations delivered`
+Status: `In progress — presentation, adornments, formatting, and closed import fixes delivered`
 
 Dependencies: 012, 043, 044, 047, 048.
 
@@ -358,16 +358,19 @@ Roslyn session and discard stale results. Viewport refresh avoids rebuilding str
 and document occurrences avoid a solution-wide search. The maintained comparison is
 [netpad-omnisharp-parity.md](../netpad-omnisharp-parity.md), with evidence in
 [editor-inlays-codelens-2026-08-12.md](../acceptance/editor-inlays-codelens-2026-08-12.md).
-Document/selection formatting and import organization now use closed Roslyn previews.
+Document/selection formatting, import organization, compiler-proven unused-import
+cleanup, and missing-type import fixes now use closed Roslyn previews. Missing-import
+discovery returns only namespaces that bind the unresolved type at the exact caret.
 The developer path is a guarded undoable live-buffer change; the Implementer path adds
 an exact fingerprint, delegated-path check, atomic apply, durable evidence, and
 post-apply validation. See
 [editor-transformations-2026-08-12.md](../acceptance/editor-transformations-2026-08-12.md).
 
 Problem: Harness.NET now has the core interactive Roslyn operations, semantic
-presentation and adornment slices, and its first closed transformations. It still lacks
-changed-span/paste/on-type formatting, unused or missing import fixes, code actions, generated
-and metadata source, syntax/IL views, configurable keybindings, optional Vim behavior,
+presentation and adornment slices, formatting, and its first closed import fixes. It
+still lacks changed-span/paste/on-type formatting, the broader closed code-action,
+refactoring, and fix-all catalog, generated and metadata source, syntax/IL views,
+configurable keybindings, optional Vim behavior,
 project User Secrets management, and typed execution targets for Run/Debug CodeLens.
 OmniSharp implements many of the underlying Roslyn services, but adopting its server
 would duplicate the current workspace and add process, download, version, recovery,

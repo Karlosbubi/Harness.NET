@@ -12,10 +12,12 @@ internal sealed partial class WorkbenchCodeIntelligenceService
             CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        bool needsRange = request.Kind is WorkbenchCodeDocumentTransformationKind.FormatSelection;
+        bool needsNamespace = request.Kind is WorkbenchCodeDocumentTransformationKind.AddMissingImport;
         if (!TryInteractive(request.Snapshot, out ActiveSession? session, out WorkbenchCodeIssue? issue) ||
-            !Enum.IsDefined(request.Kind) ||
-            (request.Kind is WorkbenchCodeDocumentTransformationKind.FormatSelection) !=
-            (request.Range is not null))
+            !Enum.IsDefined(request.Kind) || needsRange != (request.Range is not null) ||
+            needsNamespace != (request.ImportNamespace is not null) ||
+            request.ImportNamespace is { Value.Length: 0 })
         {
             return DocumentTransformationFailure(request, issue ?? Issue(
                 "invalid_document_transformation",
@@ -30,7 +32,9 @@ internal sealed partial class WorkbenchCodeIntelligenceService
                 Map(request.Kind),
                 request.Range is null ? null : new(
                     new(request.Range.Start.Line, request.Range.Start.Character),
-                    new(request.Range.End.Line, request.Range.End.Character))), cancellationToken);
+                    new(request.Range.End.Line, request.Range.End.Character)),
+                request.ImportNamespace is null ? null : new(request.ImportNamespace.Value)),
+                cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -49,6 +53,8 @@ internal sealed partial class WorkbenchCodeIntelligenceService
         }
 
         bool malformed = result.Kind != Map(request.Kind) ||
+            !string.Equals(result.ImportNamespace?.Value, request.ImportNamespace?.Value,
+                StringComparison.Ordinal) ||
             (result.Edit is not null &&
                 (!IsConfinedRelativePath(result.Edit.Path.Value) ||
                  !IsSha256(result.Edit.BaselineHash.Value) || result.Edit.ReplacementCount < 0)) ||
@@ -84,7 +90,8 @@ internal sealed partial class WorkbenchCodeIntelligenceService
                 .Select(item => new WorkbenchCodeValidationDiagnostic(
                     Map(item.Kind), Map(item.Diagnostic))).ToArray(),
             result.Fingerprint is null ? null : new(result.Fingerprint.Value),
-            MapIssues(result.Issues));
+            MapIssues(result.Issues),
+            result.ImportNamespace is null ? null : new(result.ImportNamespace.Value));
     }
 
     public async ValueTask<WorkbenchCodeRenamePreviewView> PreviewRenameAsync(
@@ -189,6 +196,10 @@ internal sealed partial class WorkbenchCodeIntelligenceService
                 CodeIntelligenceDocumentTransformationKind.FormatSelection,
             WorkbenchCodeDocumentTransformationKind.OrganizeImports =>
                 CodeIntelligenceDocumentTransformationKind.OrganizeImports,
+            WorkbenchCodeDocumentTransformationKind.RemoveUnusedImports =>
+                CodeIntelligenceDocumentTransformationKind.RemoveUnusedImports,
+            WorkbenchCodeDocumentTransformationKind.AddMissingImport =>
+                CodeIntelligenceDocumentTransformationKind.AddMissingImport,
             _ => throw new ArgumentOutOfRangeException(nameof(kind)),
         };
 
@@ -239,6 +250,70 @@ internal sealed partial class WorkbenchCodeIntelligenceService
         Fingerprint: null,
         [issue]);
 
+    public async ValueTask<WorkbenchCodeMissingImportView> GetMissingImportsAsync(
+        WorkbenchCodeInteractiveSnapshot snapshot,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        if (!TryInteractive(snapshot, out ActiveSession? session, out WorkbenchCodeIssue? issue))
+        {
+            return MissingImportFailure(snapshot, issue!);
+        }
+
+        CodeIntelligenceMissingImportResult result;
+        try
+        {
+            result = await engine.GetMissingImportsAsync(
+                ToDataSnapshot(snapshot, session!), cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return MissingImportFailure(snapshot,
+                Issue("cancelled", "Missing-import discovery was cancelled."),
+                WorkbenchCodeResultState.Cancelled);
+        }
+
+        if (!IsFresh(session!, snapshot) ||
+            !Matches(result.ContextId, result.SessionId, result.Path, result.BufferVersion,
+                session!, snapshot))
+        {
+            return MissingImportFailure(snapshot,
+                Issue("stale_buffer", "A newer document buffer superseded these import fixes."),
+                WorkbenchCodeResultState.Stale);
+        }
+
+        bool malformed = result.Candidates.Count > MaximumInteractiveItems ||
+            result.Candidates.Any(item => string.IsNullOrWhiteSpace(item.Namespace.Value) ||
+                item.Namespace.Value.Length > 512 || string.IsNullOrWhiteSpace(item.Symbol.Value) ||
+                item.Symbol.Value.Length > 1_024);
+        if (malformed)
+        {
+            return MissingImportFailure(snapshot,
+                Issue("invalid_missing_import_result",
+                    "The Roslyn adapter returned malformed import candidates."));
+        }
+
+        return new(
+            snapshot.SessionId,
+            snapshot.Path,
+            snapshot.BufferVersion,
+            Map(result.State),
+            result.Candidates.Select(item => new WorkbenchCodeMissingImportCandidate(
+                new(item.Namespace.Value), new(item.Symbol.Value), Map(item.Range))).ToArray(),
+            MapIssues(result.Issues));
+    }
+
+    private static WorkbenchCodeMissingImportView MissingImportFailure(
+        WorkbenchCodeInteractiveSnapshot snapshot,
+        WorkbenchCodeIssue issue,
+        WorkbenchCodeResultState state = WorkbenchCodeResultState.Failed) => new(
+        snapshot.SessionId,
+        snapshot.Path,
+        snapshot.BufferVersion,
+        state,
+        [],
+        [issue]);
+
     private static WorkbenchCodeDocumentTransformationPreviewView
         DocumentTransformationFailure(
             WorkbenchCodeDocumentTransformationPreviewRequest request,
@@ -255,5 +330,6 @@ internal sealed partial class WorkbenchCodeIntelligenceService
             [],
             [],
             Fingerprint: null,
-            [issue]);
+            [issue],
+            request.ImportNamespace);
 }

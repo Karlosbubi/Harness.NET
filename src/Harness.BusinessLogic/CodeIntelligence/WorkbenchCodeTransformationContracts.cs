@@ -6,11 +6,17 @@ public sealed record WorkbenchCodeSymbolIdentity(string Value);
 
 public sealed record WorkbenchCodeTransformationFingerprint(string Value);
 
+public sealed record WorkbenchCodeImportNamespace(string Value);
+
+public sealed record WorkbenchCodeImportSymbol(string Value);
+
 public enum WorkbenchCodeDocumentTransformationKind
 {
     FormatDocument,
     FormatSelection,
     OrganizeImports,
+    RemoveUnusedImports,
+    AddMissingImport,
 }
 
 public enum WorkbenchCodeTransformationDisposition
@@ -84,7 +90,8 @@ public sealed record WorkbenchCodeDocumentTransformationEdit(
 public sealed record WorkbenchCodeDocumentTransformationPreviewRequest(
     WorkbenchCodeInteractiveSnapshot Snapshot,
     WorkbenchCodeDocumentTransformationKind Kind,
-    WorkbenchCodeRange? Range);
+    WorkbenchCodeRange? Range,
+    WorkbenchCodeImportNamespace? ImportNamespace = null);
 
 public sealed record WorkbenchCodeDocumentTransformationPreviewView(
     WorkbenchCodeSessionId SessionId,
@@ -98,4 +105,18 @@ public sealed record WorkbenchCodeDocumentTransformationPreviewView(
     IReadOnlyList<WorkbenchCodeDocumentTransformationConflict> Conflicts,
     IReadOnlyList<WorkbenchCodeValidationDiagnostic> Diagnostics,
     WorkbenchCodeTransformationFingerprint? Fingerprint,
+    IReadOnlyList<WorkbenchCodeIssue> Issues,
+    WorkbenchCodeImportNamespace? ImportNamespace = null);
+
+public sealed record WorkbenchCodeMissingImportCandidate(
+    WorkbenchCodeImportNamespace Namespace,
+    WorkbenchCodeImportSymbol Symbol,
+    WorkbenchCodeRange Range);
+
+public sealed record WorkbenchCodeMissingImportView(
+    WorkbenchCodeSessionId SessionId,
+    WorkbenchCodeDocumentPath Path,
+    WorkbenchCodeBufferVersion BufferVersion,
+    WorkbenchCodeResultState State,
+    IReadOnlyList<WorkbenchCodeMissingImportCandidate> Candidates,
     IReadOnlyList<WorkbenchCodeIssue> Issues);

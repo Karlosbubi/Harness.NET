@@ -134,7 +134,8 @@ def main() -> int:
         "Editor intelligence verification passed: completion, quick info, signatures, "
         "diagnostics, semantic classification, occurrences, folding, outline, breadcrumbs, "
         "workspace symbols, inlay hints, lazy CodeLens, definitions, usages, implementations, "
-        "document/selection formatting, import organization, fingerprinted model apply, "
+        "document/selection formatting, import organization, unused-import cleanup, "
+        "proven missing-import choices, fingerprinted model apply, "
         "settings persistence, stale-result handling, "
         f"accessible production controls, and theme contracts ({sum(durations):.1f}s)."
     )

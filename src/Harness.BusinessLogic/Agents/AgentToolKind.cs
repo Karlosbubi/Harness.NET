@@ -30,6 +30,7 @@ internal enum AgentToolKind
     ApplyFileEdit,
     PreviewRename,
     ApplyRename,
+    FindMissingImports,
     PreviewDocumentTransformation,
     ApplyDocumentTransformation,
     Build,

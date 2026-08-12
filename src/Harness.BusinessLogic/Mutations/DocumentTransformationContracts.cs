@@ -21,7 +21,8 @@ public sealed record DocumentTransformationPreviewRequest(
     WorkbenchCodeDocumentTransformationKind Kind,
     WorkbenchCodeRange? Range,
     DocumentTransformationOrigin Origin,
-    IReadOnlyList<DocumentTransformationFileArea> AllowedFileAreas);
+    IReadOnlyList<DocumentTransformationFileArea> AllowedFileAreas,
+    WorkbenchCodeImportNamespace? ImportNamespace = null);
 
 public sealed record DocumentTransformationPreviewView(
     WorkbenchCodeDocumentTransformationPreviewView? Preview,

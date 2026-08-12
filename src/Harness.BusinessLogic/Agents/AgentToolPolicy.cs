@@ -66,6 +66,7 @@ internal static class AgentToolPolicy
             AgentToolKind.ApplyFileEdit,
             AgentToolKind.PreviewRename,
             AgentToolKind.ApplyRename,
+            AgentToolKind.FindMissingImports,
             AgentToolKind.PreviewDocumentTransformation,
             AgentToolKind.ApplyDocumentTransformation,
             AgentToolKind.Build,

@@ -6,11 +6,17 @@ public sealed record CodeIntelligenceSymbolIdentity(string Value);
 
 public sealed record CodeIntelligenceTransformationFingerprint(string Value);
 
+public sealed record CodeIntelligenceImportNamespace(string Value);
+
+public sealed record CodeIntelligenceImportSymbol(string Value);
+
 public enum CodeIntelligenceDocumentTransformationKind
 {
     FormatDocument,
     FormatSelection,
     OrganizeImports,
+    RemoveUnusedImports,
+    AddMissingImport,
 }
 
 public enum CodeIntelligenceTransformationDisposition
@@ -85,7 +91,8 @@ public sealed record CodeIntelligenceDocumentTransformationEdit(
 public sealed record CodeIntelligenceDocumentTransformationPreviewRequest(
     CodeIntelligenceInteractiveSnapshot Snapshot,
     CodeIntelligenceDocumentTransformationKind Kind,
-    CodeIntelligenceRange? Range);
+    CodeIntelligenceRange? Range,
+    CodeIntelligenceImportNamespace? ImportNamespace = null);
 
 public sealed record CodeIntelligenceDocumentTransformationPreviewResult(
     CodeIntelligenceContextId ContextId,
@@ -100,4 +107,19 @@ public sealed record CodeIntelligenceDocumentTransformationPreviewResult(
     IReadOnlyList<CodeIntelligenceDocumentTransformationConflict> Conflicts,
     IReadOnlyList<CodeIntelligenceValidationDiagnostic> Diagnostics,
     CodeIntelligenceTransformationFingerprint? Fingerprint,
+    IReadOnlyList<CodeIntelligenceIssue> Issues,
+    CodeIntelligenceImportNamespace? ImportNamespace = null);
+
+public sealed record CodeIntelligenceMissingImportCandidate(
+    CodeIntelligenceImportNamespace Namespace,
+    CodeIntelligenceImportSymbol Symbol,
+    CodeIntelligenceRange Range);
+
+public sealed record CodeIntelligenceMissingImportResult(
+    CodeIntelligenceContextId ContextId,
+    CodeIntelligenceSessionId SessionId,
+    CodeIntelligenceDocumentPath Path,
+    CodeIntelligenceBufferVersion BufferVersion,
+    CodeIntelligenceResultState State,
+    IReadOnlyList<CodeIntelligenceMissingImportCandidate> Candidates,
     IReadOnlyList<CodeIntelligenceIssue> Issues);

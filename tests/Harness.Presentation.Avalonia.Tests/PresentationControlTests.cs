@@ -1126,7 +1126,7 @@ public sealed class PresentationControlTests
                 .ToArray();
             Assert.Equal(
                 ["Save", "Reload", "Close", "Outline", "Symbols", "IntelliSense", "Symbol info", "Definition",
-                    "Usages", "Implementations", "Transform"],
+                    "Usages", "Implementations", "Quick fix…", "Transform"],
                 documentActions.Select(item => item.Content?.ToString() ?? string.Empty).ToArray());
             Assert.All(documentActions, item => Assert.False(
                 string.IsNullOrWhiteSpace(AutomationProperties.GetName(item))));
@@ -2020,6 +2020,45 @@ public sealed class PresentationControlTests
             Assert.True(workbench.ActiveSourceDocumentIsDirty);
             editor.Document.UndoStack.Undo();
             Assert.Equal(original, editor.Text);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Editor_quick_fix_discovers_typed_missing_import_choices_at_the_caret()
+    {
+        using HeadlessUnitTestSession testSession =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await testSession.Dispatch(() =>
+        {
+            CodeIntelligenceService codeIntelligence = new()
+            {
+                MissingImports = snapshot => new(
+                    snapshot.SessionId,
+                    snapshot.Path,
+                    snapshot.BufferVersion,
+                    WorkbenchCodeResultState.Ready,
+                    [new(new("System.Text"), new("System.Text.StringBuilder"),
+                        new(new(0, 0), new(0, 7)))],
+                    []),
+            };
+            WorkbenchDockHost workbench = CreateWorkbench(
+                ApprovedGoalShell(), new(), new() { Editable = true },
+                codeIntelligence: codeIntelligence);
+            Window window = new() { Width = 1280, Height = 800, Content = workbench.Control };
+            window.Show();
+            workbench.OpenFileAsync("src/App.cs").AsTask().GetAwaiter().GetResult();
+
+            workbench.ShowActiveQuickFixesAsync().AsTask().GetAwaiter().GetResult();
+
+            Control sourceContent = Assert.IsAssignableFrom<Control>(
+                workbench.Documents.ActiveDockable?.Context);
+            Assert.Contains(sourceContent.GetVisualDescendants().OfType<Button>(), button =>
+                button.Content?.ToString() == "Quick fix…" &&
+                AutomationProperties.GetName(button)?.StartsWith(
+                    "Show quick fixes", StringComparison.Ordinal) is true);
+            Assert.Contains(sourceContent.GetLogicalDescendants().OfType<TextBlock>(), block =>
+                block.Text?.Contains("1 missing-import fix", StringComparison.Ordinal) is true);
             window.Close();
         }, CancellationToken.None);
     }
@@ -2976,6 +3015,8 @@ public sealed class PresentationControlTests
         internal Func<WorkbenchCodeDocumentTransformationPreviewRequest,
             WorkbenchCodeDocumentTransformationPreviewView>? DocumentTransformations
         { get; init; }
+        internal Func<WorkbenchCodeInteractiveSnapshot, WorkbenchCodeMissingImportView>? MissingImports
+        { get; init; }
         internal int ImplementationCallCount { get; private set; }
 
         public ValueTask<WorkbenchCodeSessionView> StartAsync(
@@ -3111,6 +3152,17 @@ public sealed class PresentationControlTests
                     Fingerprint: null,
                     [new(new("document_transformation_unavailable"),
                         new("Document transformation is unavailable."))]));
+
+        public ValueTask<WorkbenchCodeMissingImportView> GetMissingImportsAsync(
+            WorkbenchCodeInteractiveSnapshot snapshot,
+            CancellationToken cancellationToken = default) => ValueTask.FromResult(
+            MissingImports?.Invoke(snapshot) ?? new(
+                snapshot.SessionId,
+                snapshot.Path,
+                snapshot.BufferVersion,
+                WorkbenchCodeResultState.Ready,
+                [],
+                []));
 
         public ValueTask StopAsync(
             WorkbenchCodeSessionId sessionId,

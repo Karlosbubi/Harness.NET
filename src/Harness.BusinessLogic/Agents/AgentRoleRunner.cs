@@ -862,7 +862,9 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
             "or abstractions. Use only APIs actually present and never " +
             "invent members or helper types. Use semantic rename for symbol renames instead of textual " +
             "replacement. Use the closed Roslyn document transformation preview/apply tools for C# " +
-            "formatting or import organization instead of rewriting a file for style alone. Inspect " +
+            "formatting, unused-import cleanup, or import organization instead of rewriting a file " +
+            "for style alone. For an unresolved type, use missing-import discovery and apply only a " +
+            "returned namespace through AddMissingImport. Inspect " +
             "Roslyn problems before and after compiler-relevant changes. On a " +
             "diagnostic or test failure, preserve passing code and repair only the cited range or first " +
             "relevant user-code stack frame rather than regenerating the file. Treat a failed tool " +

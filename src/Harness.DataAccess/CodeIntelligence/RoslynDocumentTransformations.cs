@@ -24,13 +24,15 @@ internal sealed partial class RoslynCodeIntelligenceEngine
                 "session_unavailable", "The Roslyn session no longer matches this source context.");
         }
 
-        if (!Enum.IsDefined(request.Kind) ||
-            (request.Kind is CodeIntelligenceDocumentTransformationKind.FormatSelection) !=
-            (request.Range is not null))
+        bool needsRange = request.Kind is CodeIntelligenceDocumentTransformationKind.FormatSelection;
+        bool needsNamespace = request.Kind is CodeIntelligenceDocumentTransformationKind.AddMissingImport;
+        if (!Enum.IsDefined(request.Kind) || needsRange != (request.Range is not null) ||
+            needsNamespace != (request.ImportNamespace is not null) ||
+            request.ImportNamespace is { Value.Length: 0 })
         {
             return DocumentTransformationFailure(request, CodeIntelligenceResultState.Failed,
                 "invalid_document_transformation",
-                "Format Selection requires one exact range; the other operations require the whole document.");
+                "Format Selection requires one exact range and Add Missing Import requires one discovered namespace.");
         }
 
         await session.OperationGate.WaitAsync(cancellationToken);
@@ -82,6 +84,24 @@ internal sealed partial class RoslynCodeIntelligenceEngine
                     candidateDocument = await Formatter.OrganizeImportsAsync(
                         baselineDocument, cancellationToken);
                     break;
+                case CodeIntelligenceDocumentTransformationKind.RemoveUnusedImports:
+                    candidateDocument = await RemoveUnusedImportsAsync(
+                        baselineDocument, cancellationToken);
+                    break;
+                case CodeIntelligenceDocumentTransformationKind.AddMissingImport:
+                    IReadOnlyList<MissingImportCandidateDocument> candidates =
+                        await FindMissingImportCandidatesAsync(prepared, cancellationToken);
+                    MissingImportCandidateDocument? import = candidates.SingleOrDefault(item =>
+                        item.Namespace.Equals(request.ImportNamespace!.Value, StringComparison.Ordinal));
+                    if (import is null)
+                    {
+                        return DocumentTransformationFailure(request, CodeIntelligenceResultState.Failed,
+                            "missing_import_candidate_changed",
+                            "The selected namespace no longer resolves the unresolved type at the caret.");
+                    }
+                    candidateDocument = import.Document;
+                    requestedSpan = import.Span;
+                    break;
                 default:
                     throw new ArgumentOutOfRangeException(nameof(request));
             }
@@ -129,7 +149,7 @@ internal sealed partial class RoslynCodeIntelligenceEngine
             CodeIntelligenceTransformationFingerprint? fingerprint = disposition is
                 CodeIntelligenceTransformationDisposition.Ready
                     ? new(DocumentTransformationFingerprint(
-                        snapshot, request.Kind, request.Range, edit, delta))
+                        snapshot, request.Kind, request.Range, request.ImportNamespace, edit, delta))
                     : null;
             return new(
                 snapshot.ContextId,
@@ -144,7 +164,8 @@ internal sealed partial class RoslynCodeIntelligenceEngine
                 conflicts,
                 delta.Take(MaximumDiagnostics).ToArray(),
                 fingerprint,
-                session.Issues.ToArray());
+                session.Issues.ToArray(),
+                request.ImportNamespace);
         }
         catch (OperationCanceledException)
         {
@@ -167,6 +188,7 @@ internal sealed partial class RoslynCodeIntelligenceEngine
         CodeIntelligenceInteractiveSnapshot snapshot,
         CodeIntelligenceDocumentTransformationKind kind,
         CodeIntelligenceRange? range,
+        CodeIntelligenceImportNamespace? importNamespace,
         CodeIntelligenceDocumentTransformationEdit edit,
         IReadOnlyList<CodeIntelligenceValidationDiagnostic> diagnostics)
     {
@@ -178,6 +200,7 @@ internal sealed partial class RoslynCodeIntelligenceEngine
             .Append(kind).Append('\n')
             .Append(range?.Start.Line).Append(':').Append(range?.Start.Character).Append('-')
             .Append(range?.End.Line).Append(':').Append(range?.End.Character).Append('\n')
+            .Append(importNamespace?.Value).Append('\n')
             .Append(Hash(edit.OriginalText.Value)).Append('\n')
             .Append(Hash(edit.Text.Value)).Append('\n')
             .Append(edit.ReplacementCount).Append('\n');
@@ -214,7 +237,8 @@ internal sealed partial class RoslynCodeIntelligenceEngine
             [],
             [],
             Fingerprint: null,
-            [Issue(code, message)]);
+            [Issue(code, message)],
+            request.ImportNamespace);
 
     private static CodeIntelligenceDocumentTransformationPreviewResult
         DocumentTransformationConflictResult(
@@ -233,5 +257,6 @@ internal sealed partial class RoslynCodeIntelligenceEngine
             [conflict],
             [],
             Fingerprint: null,
-            session.Issues.ToArray());
+            session.Issues.ToArray(),
+            request.ImportNamespace);
 }

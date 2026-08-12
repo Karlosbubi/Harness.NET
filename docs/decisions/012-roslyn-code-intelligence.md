@@ -83,10 +83,13 @@ apply. Free-form advice receives no validation claim.
 
 ### Deterministic transformations
 
-Expose closed preview/fingerprint/apply operations. Rename is the first implementation.
-Roslyn resolves symbol identity, references, conflicts, affected paths, baselines, and
-diagnostic changes. Apply recomputes context, grants, baselines, and fingerprint, then
-writes all files atomically or none. Record the applied diff and diagnostics.
+Expose closed preview/fingerprint/apply operations. Rename, document/selection
+formatting, import organization, unused-import cleanup, and missing-type import fixes
+are implemented. Roslyn resolves symbol identity or the exact import candidate,
+conflicts, affected paths, baselines, and diagnostic changes. Missing-import discovery
+returns a namespace only after an in-memory insertion binds the unresolved type at the
+caret. Apply recomputes context, grants, baselines, and fingerprint, then writes all
+files atomically or none. Record the applied diff and diagnostics.
 
 Do not provide generic “execute Roslyn action” or model-authored text-search rename.
 

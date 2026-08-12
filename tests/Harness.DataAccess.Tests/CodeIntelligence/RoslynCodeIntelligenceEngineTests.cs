@@ -589,6 +589,102 @@ public sealed class RoslynCodeIntelligenceEngineTests(ITestOutputHelper output) 
     }
 
     [Fact]
+    public async Task Remove_unused_imports_uses_Roslyn_diagnostics_without_writing()
+    {
+        const string source = "using System.Text;\nusing System;\nclass Sample { void Run() { Console.WriteLine(); } }\n";
+        await CreateProjectAsync(source);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("remove-unused-imports-context");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+
+        CodeIntelligenceDocumentTransformationPreviewResult result =
+            await engine.PreviewDocumentTransformationAsync(new(
+                InteractiveSnapshot(contextId, session.SessionId!, source, 0),
+                CodeIntelligenceDocumentTransformationKind.RemoveUnusedImports,
+                Range: null));
+
+        Assert.Equal(CodeIntelligenceTransformationDisposition.Ready, result.Disposition);
+        Assert.DoesNotContain("System.Text", result.Edit!.Text.Value, StringComparison.Ordinal);
+        Assert.Contains("using System;", result.Edit.Text.Value, StringComparison.Ordinal);
+        Assert.NotNull(result.Fingerprint);
+        Assert.Equal(source, await File.ReadAllTextAsync(Path.Combine(root, "Sample.cs")));
+    }
+
+    [Fact]
+    public async Task Remove_unused_imports_preserves_a_directive_with_attached_comments()
+    {
+        const string source = "// Why this import remains visible\nusing System.Text;\nclass Sample { }\n";
+        await CreateProjectAsync(source);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("commented-unused-import-context");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+
+        CodeIntelligenceDocumentTransformationPreviewResult result =
+            await engine.PreviewDocumentTransformationAsync(new(
+                InteractiveSnapshot(contextId, session.SessionId!, source, 0),
+                CodeIntelligenceDocumentTransformationKind.RemoveUnusedImports,
+                Range: null));
+
+        Assert.Equal(CodeIntelligenceTransformationDisposition.Ready, result.Disposition);
+        Assert.Equal(source, result.Edit!.Text.Value);
+        Assert.Equal(0, result.Edit.ReplacementCount);
+    }
+
+    [Fact]
+    public async Task Missing_import_discovery_returns_only_a_namespace_that_binds_the_type()
+    {
+        const string source = "class Sample { StringBuilder Value = new(); }\n";
+        await CreateProjectAsync(source);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("missing-import-context");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+        int offset = source.IndexOf("StringBuilder", StringComparison.Ordinal) + 3;
+        CodeIntelligenceInteractiveSnapshot snapshot =
+            InteractiveSnapshot(contextId, session.SessionId!, source, offset);
+
+        CodeIntelligenceMissingImportResult discovery =
+            await engine.GetMissingImportsAsync(snapshot);
+        CodeIntelligenceMissingImportCandidate candidate = Assert.Single(discovery.Candidates,
+            item => item.Namespace.Value == "System.Text");
+        CodeIntelligenceDocumentTransformationPreviewResult preview =
+            await engine.PreviewDocumentTransformationAsync(new(
+                snapshot,
+                CodeIntelligenceDocumentTransformationKind.AddMissingImport,
+                Range: null,
+                candidate.Namespace));
+
+        Assert.Equal(CodeIntelligenceTransformationDisposition.Ready, preview.Disposition);
+        Assert.StartsWith("using System.Text;", preview.Edit!.Text.Value, StringComparison.Ordinal);
+        Assert.DoesNotContain(preview.Diagnostics, item =>
+            item.Kind is CodeIntelligenceDiagnosticDeltaKind.Retained &&
+            item.Diagnostic.Id.Value == "CS0246");
+        Assert.NotNull(preview.Fingerprint);
+        Assert.Equal(source, await File.ReadAllTextAsync(Path.Combine(root, "Sample.cs")));
+    }
+
+    [Fact]
+    public async Task Add_missing_import_rejects_a_namespace_that_was_not_discovered()
+    {
+        const string source = "class Sample { StringBuilder Value = new(); }\n";
+        await CreateProjectAsync(source);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("invalid-import-context");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+        int offset = source.IndexOf("StringBuilder", StringComparison.Ordinal) + 3;
+
+        CodeIntelligenceDocumentTransformationPreviewResult result =
+            await engine.PreviewDocumentTransformationAsync(new(
+                InteractiveSnapshot(contextId, session.SessionId!, source, offset),
+                CodeIntelligenceDocumentTransformationKind.AddMissingImport,
+                Range: null,
+                new("System.IO")));
+
+        Assert.Equal(CodeIntelligenceTransformationDisposition.Rejected, result.Disposition);
+        Assert.Equal("missing_import_candidate_changed", Assert.Single(result.Issues).Code.Value);
+        Assert.Null(result.Fingerprint);
+    }
+
+    [Fact]
     public async Task Document_transformation_rejects_a_range_for_organize_imports()
     {
         const string source = "using System;\nclass Sample { }\n";

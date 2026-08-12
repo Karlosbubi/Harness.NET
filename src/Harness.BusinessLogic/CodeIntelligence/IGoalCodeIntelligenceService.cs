@@ -39,6 +39,13 @@ internal interface IGoalCodeIntelligenceService
         WorkbenchCodePosition position,
         CancellationToken cancellationToken = default);
 
+    ValueTask<GoalMissingImportView> FindMissingImportsAsync(
+        GoalId goalId,
+        GoalWorkspaceScope scope,
+        WorkbenchCodeDocumentPath path,
+        WorkbenchCodePosition position,
+        CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
     ValueTask<GoalCodeSemanticView> SearchSymbolsAsync(
         GoalId goalId, GoalWorkspaceScope scope, WorkbenchCodeDocumentPath path,
         string query, int maximumResults, int offset,

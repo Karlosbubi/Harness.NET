@@ -44,6 +44,7 @@ public sealed class AgentToolPolicyTests
         Assert.Contains(AgentToolKind.ApplyFileEdit, tools);
         Assert.Contains(AgentToolKind.PreviewRename, tools);
         Assert.Contains(AgentToolKind.ApplyRename, tools);
+        Assert.Contains(AgentToolKind.FindMissingImports, tools);
         Assert.Contains(AgentToolKind.PreviewDocumentTransformation, tools);
         Assert.Contains(AgentToolKind.ApplyDocumentTransformation, tools);
         Assert.Contains(AgentToolKind.Build, tools);
@@ -82,7 +83,7 @@ public sealed class AgentToolPolicyTests
     [InlineData(AgentRole.Lead,
         "read_file,read_file_range,list_workspace_tree,search_text,search_regex,inspect_git,inspect_dotnet,inspect_project_graph,search_semantic_context,inspect_code_problems,inspect_project_problems,get_symbol_info,find_symbol_definition,find_symbol_references,find_symbol_implementations,search_symbols,analyze_calls,get_type_hierarchy,find_associated_tests,discover_toolsets,request_toolset")]
     [InlineData(AgentRole.Implementer,
-        "read_file,read_file_range,list_workspace_tree,search_text,search_regex,inspect_git,inspect_dotnet,inspect_project_graph,search_semantic_context,inspect_code_problems,inspect_project_problems,get_symbol_info,find_symbol_definition,find_symbol_references,find_symbol_implementations,search_symbols,analyze_calls,get_type_hierarchy,find_associated_tests,apply_file_edit,preview_symbol_rename,apply_symbol_rename,preview_document_transformation,apply_document_transformation,dotnet_build,dotnet_test,discover_toolsets,request_toolset")]
+        "read_file,read_file_range,list_workspace_tree,search_text,search_regex,inspect_git,inspect_dotnet,inspect_project_graph,search_semantic_context,inspect_code_problems,inspect_project_problems,get_symbol_info,find_symbol_definition,find_symbol_references,find_symbol_implementations,search_symbols,analyze_calls,get_type_hierarchy,find_associated_tests,apply_file_edit,preview_symbol_rename,apply_symbol_rename,find_missing_imports,preview_document_transformation,apply_document_transformation,dotnet_build,dotnet_test,discover_toolsets,request_toolset")]
     [InlineData(AgentRole.Reviewer,
         "read_file,read_file_range,list_workspace_tree,search_text,search_regex,inspect_git,inspect_dotnet,inspect_project_graph,search_semantic_context,inspect_code_problems,inspect_project_problems,get_symbol_info,find_symbol_definition,find_symbol_references,find_symbol_implementations,search_symbols,analyze_calls,get_type_hierarchy,find_associated_tests,list_tool_evidence,discover_toolsets,request_toolset")]
     public void Factory_exposes_only_the_closed_role_scope(
@@ -102,6 +103,28 @@ public sealed class AgentToolPolicyTests
             role is AgentRole.Implementer ? [new("src")] : []);
 
         Assert.Equal(expectedNames.Split(','), tools.Select(tool => tool.Name));
+    }
+
+    [Fact]
+    public void Document_transformation_schema_keeps_import_namespace_optional()
+    {
+        AgentToolFactory factory = new(
+            new UnsupportedInspectionService(),
+            new UnsupportedMutationService(),
+            new UnsupportedEvidenceService(),
+            new UnsupportedContextService(),
+            new UnsupportedCodeIntelligenceService());
+        AIFunctionDeclaration preview = Assert.IsAssignableFrom<AIFunctionDeclaration>(
+            factory.Create(AgentRole.Implementer, new("goal-1"), [new("src")])
+                .Single(tool => tool.Name == "preview_document_transformation"));
+
+        Assert.True(preview.JsonSchema.GetProperty("properties")
+            .TryGetProperty("importNamespace", out _));
+        string?[] optional = ["startLine", "startCharacter", "endLine", "endCharacter",
+            "importNamespace"];
+        Assert.DoesNotContain(
+            preview.JsonSchema.GetProperty("required").EnumerateArray(),
+            item => optional.Contains(item.GetString(), StringComparer.Ordinal));
     }
 
     [Fact]

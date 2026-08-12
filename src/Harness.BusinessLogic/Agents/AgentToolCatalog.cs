@@ -83,6 +83,7 @@ public sealed record AgentToolCatalog(IReadOnlyList<AgentToolModule> Modules)
             AgentToolExposure.Direct,
             AgentToolAuthority.ApprovedWorktreeMutation,
             [new("preview_symbol_rename"), new("apply_symbol_rename"),
+                new("find_missing_imports"),
                 new("preview_document_transformation"),
                 new("apply_document_transformation")],
             IsOptional: false,

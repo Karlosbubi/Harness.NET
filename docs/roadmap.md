@@ -306,11 +306,14 @@ settings control visible-buffer parameter and inferred-type hints plus bounded l
 reference, implementation, and associated-test CodeLens actions. Run and Debug lenses
 remain hidden until Task 052 provides a valid typed per-declaration target. See the
 maintained [NetPad and OmniSharp parity matrix](netpad-omnisharp-parity.md). Item 3 now
-also has closed document/selection formatting and import organization: the editor uses
-one guarded undoable buffer replacement, while models use preview/fingerprint/apply,
-delegated paths, atomic persistence, durable evidence, and post-apply diagnostics.
-Changed-span, paste, on-type formatting, unused/missing imports, code actions,
-refactorings, and fix-all remain, as do items 4–8. Deterministic evidence is recorded in
+also has closed document/selection formatting, import organization, compiler-proven
+unused-import cleanup, and missing-type import fixes. The editor uses one guarded
+undoable buffer replacement. Missing-import choices are exact namespaces that Roslyn
+proves bind the unresolved type at the caret. Models discover those choices separately,
+then use preview/fingerprint/apply with delegated paths, atomic persistence, durable
+evidence, and post-apply diagnostics. Changed-span, paste, and on-type formatting plus
+the broader closed code-action, refactoring, and fix-all catalog remain, as do items
+4–8. Deterministic evidence is recorded in
 [editor-transformations-2026-08-12.md](acceptance/editor-transformations-2026-08-12.md);
 prior visual evidence is in
 [editor-inlays-codelens-2026-08-12.md](acceptance/editor-inlays-codelens-2026-08-12.md).

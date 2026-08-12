@@ -381,6 +381,84 @@ public sealed class WorkbenchCodeIntelligenceServiceTests
     }
 
     [Fact]
+    public async Task Missing_import_discovery_maps_typed_candidates()
+    {
+        DeterministicCodeIntelligenceEngine engine = new()
+        {
+            MissingImports = (snapshot, _) => ValueTask.FromResult(new
+                CodeIntelligenceMissingImportResult(
+                    snapshot.ContextId,
+                    snapshot.SessionId,
+                    snapshot.Path,
+                    snapshot.BufferVersion,
+                    CodeIntelligenceResultState.Ready,
+                    [new(new("System.Text"), new("System.Text.StringBuilder"),
+                        new(new(0, 10), new(0, 23)))],
+                    [])),
+        };
+        WorkbenchCodeIntelligenceService service = new(
+            new ContextResolver(ApprovedResolution()), engine);
+        WorkbenchCodeSessionId sessionId = (await service.StartAsync(new(
+            new("workspace-id"), new("goal-id"), new("Harness.slnx")))).SessionId!;
+        WorkbenchCodeInteractiveSnapshot snapshot = new(
+            sessionId, new("src/App.cs"), new(Baseline), new(1),
+            new("class C { StringBuilder Value; }"), new(0, 13));
+
+        WorkbenchCodeMissingImportView result = await service.GetMissingImportsAsync(snapshot);
+
+        WorkbenchCodeMissingImportCandidate candidate = Assert.Single(result.Candidates);
+        Assert.Equal("System.Text", candidate.Namespace.Value);
+        Assert.Equal("System.Text.StringBuilder", candidate.Symbol.Value);
+    }
+
+    [Fact]
+    public async Task Add_missing_import_preserves_the_exact_namespace_across_the_boundary()
+    {
+        CodeIntelligenceImportNamespace? observed = null;
+        DeterministicCodeIntelligenceEngine engine = new()
+        {
+            DocumentTransformations = (request, _) =>
+            {
+                observed = request.ImportNamespace;
+                return ValueTask.FromResult(new CodeIntelligenceDocumentTransformationPreviewResult(
+                    request.Snapshot.ContextId,
+                    request.Snapshot.SessionId,
+                    request.Snapshot.Path,
+                    request.Snapshot.BufferVersion,
+                    CodeIntelligenceResultState.Ready,
+                    CodeIntelligenceTransformationDisposition.Ready,
+                    request.Kind,
+                    request.Range,
+                    new(request.Snapshot.Path, request.Snapshot.BaselineHash,
+                        request.Snapshot.Text, new("using System.Text;\nclass C { StringBuilder Value; }"), 1),
+                    [],
+                    [],
+                    new(Baseline),
+                    [],
+                    request.ImportNamespace));
+            },
+        };
+        WorkbenchCodeIntelligenceService service = new(
+            new ContextResolver(ApprovedResolution()), engine);
+        WorkbenchCodeSessionId sessionId = (await service.StartAsync(new(
+            new("workspace-id"), new("goal-id"), new("Harness.slnx")))).SessionId!;
+        WorkbenchCodeInteractiveSnapshot snapshot = new(
+            sessionId, new("src/App.cs"), new(Baseline), new(1),
+            new("class C { StringBuilder Value; }"), new(0, 13));
+
+        WorkbenchCodeDocumentTransformationPreviewView result =
+            await service.PreviewDocumentTransformationAsync(new(
+                snapshot,
+                WorkbenchCodeDocumentTransformationKind.AddMissingImport,
+                Range: null,
+                new("System.Text")));
+
+        Assert.Equal("System.Text", observed?.Value);
+        Assert.Equal("System.Text", result.ImportNamespace?.Value);
+        Assert.Equal(WorkbenchCodeTransformationDisposition.Ready, result.Disposition);
+    }
+
+    [Fact]
     public async Task Stop_invalidates_the_session_and_disposes_the_engine_state()
     {
         DeterministicCodeIntelligenceEngine engine = new();
@@ -468,6 +546,9 @@ public sealed class WorkbenchCodeIntelligenceServiceTests
         internal Func<CodeIntelligenceDocumentTransformationPreviewRequest, CancellationToken,
             ValueTask<CodeIntelligenceDocumentTransformationPreviewResult>>? DocumentTransformations
         { get; init; }
+        internal Func<CodeIntelligenceInteractiveSnapshot, CancellationToken,
+            ValueTask<CodeIntelligenceMissingImportResult>>? MissingImports
+        { get; init; }
         internal Func<CodeIntelligenceDocumentPresentationRequest, CancellationToken,
             ValueTask<CodeIntelligenceDocumentPresentationResult>>? Presentations
         { get; init; }
@@ -549,6 +630,11 @@ public sealed class WorkbenchCodeIntelligenceServiceTests
             DocumentTransformations is null
                 ? throw new NotSupportedException()
                 : DocumentTransformations(request, cancellationToken);
+        public ValueTask<CodeIntelligenceMissingImportResult> GetMissingImportsAsync(
+            CodeIntelligenceInteractiveSnapshot snapshot,
+            CancellationToken cancellationToken = default) => MissingImports is null
+            ? throw new NotSupportedException()
+            : MissingImports(snapshot, cancellationToken);
 
         public ValueTask CloseAsync(
             CodeIntelligenceSessionId sessionId,

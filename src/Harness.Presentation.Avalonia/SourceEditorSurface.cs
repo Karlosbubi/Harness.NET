@@ -54,7 +54,9 @@ internal sealed class SourceEditorSurface : IDisposable
         Button implementations,
         Button formatDocument,
         Button formatSelection,
-        Button organizeImports)
+        Button organizeImports,
+        Button removeUnusedImports,
+        Button quickFix)
     {
         Control = control;
         Editor = editor;
@@ -72,6 +74,8 @@ internal sealed class SourceEditorSurface : IDisposable
         FormatDocument = formatDocument;
         FormatSelection = formatSelection;
         OrganizeImports = organizeImports;
+        RemoveUnusedImports = removeUnusedImports;
+        QuickFix = quickFix;
     }
 
     internal Control Control { get; }
@@ -90,6 +94,8 @@ internal sealed class SourceEditorSurface : IDisposable
     internal Button FormatDocument { get; }
     internal Button FormatSelection { get; }
     internal Button OrganizeImports { get; }
+    internal Button RemoveUnusedImports { get; }
+    internal Button QuickFix { get; }
     internal event Action<WorkbenchCodePosition>? NavigationRequested;
 
     internal static SourceEditorSurface Create(WorkbenchDocumentView view)
@@ -127,6 +133,11 @@ internal sealed class SourceEditorSurface : IDisposable
             $"Format selection in {view.Path.Value}", "Format selected code · Ctrl+Alt+F");
         Button organizeImports = Action("Organize imports",
             $"Organize imports in {view.Path.Value}", "Sort and group using directives · Ctrl+Alt+O");
+        Button removeUnusedImports = Action("Remove unused imports",
+            $"Remove unused imports from {view.Path.Value}",
+            "Remove compiler-proven unused using directives");
+        Button quickFix = Action("Quick fix…", $"Show quick fixes for {view.Path.Value}",
+            "Show Roslyn fixes at the caret · Ctrl+.");
         Button transform = Action("Transform", $"Transform {view.Path.Value}",
             "Deterministic Roslyn formatting and imports");
         transform.Flyout = new Flyout
@@ -135,7 +146,7 @@ internal sealed class SourceEditorSurface : IDisposable
             {
                 Spacing = 4,
                 Margin = new Thickness(4),
-                Children = { formatDocument, formatSelection, organizeImports },
+                Children = { formatDocument, formatSelection, organizeImports, removeUnusedImports },
             },
         };
 
@@ -155,12 +166,14 @@ internal sealed class SourceEditorSurface : IDisposable
             implementations,
             formatDocument,
             formatSelection,
-            organizeImports);
+            organizeImports,
+            removeUnusedImports,
+            quickFix);
         surface.accessBadge.Child = surface.access;
         surface.accessBadge.Classes.Add("editor-access");
         surface.BuildHeader(save, reload, close);
         surface.BuildAssistanceBar(outline, workspaceSymbols, completion, symbolInfo, definition,
-            references, implementations, transform);
+            references, implementations, quickFix, transform);
         surface.ConfigureOutline(outline);
         surface.UpdateView(view);
         surface.UpdateMetrics();
@@ -193,6 +206,8 @@ internal sealed class SourceEditorSurface : IDisposable
         FormatDocument.IsEnabled = semanticAssistance &&
             view.Access is WorkbenchDocumentAccess.Editable;
         OrganizeImports.IsEnabled = FormatDocument.IsEnabled;
+        RemoveUnusedImports.IsEnabled = FormatDocument.IsEnabled;
+        QuickFix.IsEnabled = semanticAssistance && view.Access is WorkbenchDocumentAccess.Editable;
         FormatSelection.IsEnabled = FormatDocument.IsEnabled && Editor.SelectionLength > 0;
         AutomationProperties.SetName(path, $"Repository path {view.Path.Value}");
         AutomationProperties.SetName(Status, $"Editing status for {view.Path.Value}");

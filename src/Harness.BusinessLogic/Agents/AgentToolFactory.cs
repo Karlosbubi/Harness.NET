@@ -289,34 +289,51 @@ internal sealed class AgentToolFactory(
                         new(fingerprint)), cancellationToken),
                 Options("apply_symbol_rename",
                     "Recompute and atomically apply an accepted Roslyn rename preview by fingerprint.")),
+            AgentToolKind.FindMissingImports => AIFunctionFactory.Create(
+                (string relativePath, int line, int character,
+                        CancellationToken cancellationToken) =>
+                    codeIntelligenceService.FindMissingImportsAsync(
+                        goalId, Scope(role), new(relativePath), new(line, character),
+                        cancellationToken),
+                Options("find_missing_imports",
+                    "Find exact namespace candidates that Roslyn proves bind the unresolved type at " +
+                    "the zero-based caret. Use the selected namespace with AddMissingImport preview.")),
             AgentToolKind.PreviewDocumentTransformation => AIFunctionFactory.Create(
                 (string relativePath, string expectedSha256, string content,
                         WorkbenchCodeDocumentTransformationKind kind,
-                        int? startLine, int? startCharacter, int? endLine, int? endCharacter,
-                        CancellationToken cancellationToken) =>
+                        int? startLine = null, int? startCharacter = null,
+                        int? endLine = null, int? endCharacter = null,
+                        string? importNamespace = null,
+                        CancellationToken cancellationToken = default) =>
                     mutationService.PreviewDocumentTransformationAsync(
                         DocumentTransformationRequest(
                             goalId, relativePath, expectedSha256, content, kind,
-                            startLine, startCharacter, endLine, endCharacter, fileAreas),
+                            startLine, startCharacter, endLine, endCharacter, importNamespace,
+                            fileAreas),
                         cancellationToken),
                 Options("preview_document_transformation",
-                    "Preview one closed Roslyn operation: FormatDocument, FormatSelection, or " +
-                    "OrganizeImports. Pass all four zero-based selection coordinates only for " +
-                    "FormatSelection. Returns exact edit evidence and a fingerprint; it changes nothing.")),
+                    "Preview one closed Roslyn operation: FormatDocument, FormatSelection, " +
+                    "OrganizeImports, RemoveUnusedImports, or AddMissingImport. Pass all four " +
+                    "zero-based selection coordinates only for FormatSelection. For AddMissingImport, " +
+                    "pass a namespace returned by find_missing_imports. Returns exact edit evidence " +
+                    "and a fingerprint; it changes nothing.")),
             AgentToolKind.ApplyDocumentTransformation => AIFunctionFactory.Create(
                 (string correlationId, string fingerprint, string relativePath,
                         string expectedSha256, string content,
                         WorkbenchCodeDocumentTransformationKind kind,
-                        int? startLine, int? startCharacter, int? endLine, int? endCharacter,
-                        CancellationToken cancellationToken) =>
+                        int? startLine = null, int? startCharacter = null,
+                        int? endLine = null, int? endCharacter = null,
+                        string? importNamespace = null,
+                        CancellationToken cancellationToken = default) =>
                     mutationService.ApplyDocumentTransformationAsync(new(
                         DocumentTransformationRequest(
                             goalId, relativePath, expectedSha256, content, kind,
-                            startLine, startCharacter, endLine, endCharacter, fileAreas),
+                            startLine, startCharacter, endLine, endCharacter, importNamespace,
+                            fileAreas),
                         new ToolCorrelationId(correlationId),
                         new(fingerprint)), cancellationToken),
                 Options("apply_document_transformation",
-                    "Recompute and atomically apply an accepted format or organize-imports preview " +
+                    "Recompute and atomically apply an accepted closed formatting or import preview " +
                     "by exact fingerprint, then run Roslyn post-validation.")),
             AgentToolKind.Build => AIFunctionFactory.Create(
                 (string correlationId, CancellationToken cancellationToken) =>
@@ -427,6 +444,7 @@ internal sealed class AgentToolFactory(
         AgentToolKind.ApplyFileEdit => "apply_file_edit",
         AgentToolKind.PreviewRename => "preview_symbol_rename",
         AgentToolKind.ApplyRename => "apply_symbol_rename",
+        AgentToolKind.FindMissingImports => "find_missing_imports",
         AgentToolKind.PreviewDocumentTransformation => "preview_document_transformation",
         AgentToolKind.ApplyDocumentTransformation => "apply_document_transformation",
         AgentToolKind.Build => "dotnet_build",
@@ -483,6 +501,7 @@ internal sealed class AgentToolFactory(
         int? startCharacter,
         int? endLine,
         int? endCharacter,
+        string? importNamespace,
         IReadOnlyList<AgentFileArea> fileAreas)
     {
         bool hasAnyRange = startLine is not null || startCharacter is not null ||
@@ -506,7 +525,8 @@ internal sealed class AgentToolFactory(
             kind,
             range,
             DocumentTransformationOrigin.Model,
-            fileAreas.Select(area => new DocumentTransformationFileArea(area.Value)).ToArray());
+            fileAreas.Select(area => new DocumentTransformationFileArea(area.Value)).ToArray(),
+            string.IsNullOrWhiteSpace(importNamespace) ? null : new(importNamespace));
     }
 
     internal static bool IsWithinFileAreas(

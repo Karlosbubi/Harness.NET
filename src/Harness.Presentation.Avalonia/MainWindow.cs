@@ -613,6 +613,17 @@ internal sealed class MainWindow : Window
                     "Ctrl+Alt+O", UnavailableReason: host.CanTransformActiveDocument(
                         WorkbenchCodeDocumentTransformationKind.OrganizeImports)
                             ? null : "Open an editable C# document first"),
+                new("editor.remove.unused.imports", "Editor", "Remove unused imports",
+                    async () => await host.TransformActiveDocumentAsync(
+                        WorkbenchCodeDocumentTransformationKind.RemoveUnusedImports),
+                    UnavailableReason: host.CanTransformActiveDocument(
+                        WorkbenchCodeDocumentTransformationKind.RemoveUnusedImports)
+                            ? null : "Open an editable C# document first"),
+                new("editor.quick.fix", "Editor", "Show quick fixes",
+                    async () => await host.ShowActiveQuickFixesAsync(),
+                    "Ctrl+.", UnavailableReason: host.CanTransformActiveDocument(
+                        WorkbenchCodeDocumentTransformationKind.AddMissingImport)
+                            ? null : "Open an editable C# document first"),
                 new("layout.save", "Layout", "Save workbench layout",
                     async () => await host.SaveLayoutAsync()),
                 new("layout.reset", "Layout", "Reset workbench layout",
