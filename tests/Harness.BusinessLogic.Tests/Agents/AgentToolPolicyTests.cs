@@ -44,6 +44,8 @@ public sealed class AgentToolPolicyTests
         Assert.Contains(AgentToolKind.ApplyFileEdit, tools);
         Assert.Contains(AgentToolKind.PreviewRename, tools);
         Assert.Contains(AgentToolKind.ApplyRename, tools);
+        Assert.Contains(AgentToolKind.PreviewDocumentTransformation, tools);
+        Assert.Contains(AgentToolKind.ApplyDocumentTransformation, tools);
         Assert.Contains(AgentToolKind.Build, tools);
         Assert.Contains(AgentToolKind.Test, tools);
         Assert.Contains(AgentToolKind.SemanticContext, tools);
@@ -80,7 +82,7 @@ public sealed class AgentToolPolicyTests
     [InlineData(AgentRole.Lead,
         "read_file,read_file_range,list_workspace_tree,search_text,search_regex,inspect_git,inspect_dotnet,inspect_project_graph,search_semantic_context,inspect_code_problems,inspect_project_problems,get_symbol_info,find_symbol_definition,find_symbol_references,find_symbol_implementations,search_symbols,analyze_calls,get_type_hierarchy,find_associated_tests,discover_toolsets,request_toolset")]
     [InlineData(AgentRole.Implementer,
-        "read_file,read_file_range,list_workspace_tree,search_text,search_regex,inspect_git,inspect_dotnet,inspect_project_graph,search_semantic_context,inspect_code_problems,inspect_project_problems,get_symbol_info,find_symbol_definition,find_symbol_references,find_symbol_implementations,search_symbols,analyze_calls,get_type_hierarchy,find_associated_tests,apply_file_edit,preview_symbol_rename,apply_symbol_rename,dotnet_build,dotnet_test,discover_toolsets,request_toolset")]
+        "read_file,read_file_range,list_workspace_tree,search_text,search_regex,inspect_git,inspect_dotnet,inspect_project_graph,search_semantic_context,inspect_code_problems,inspect_project_problems,get_symbol_info,find_symbol_definition,find_symbol_references,find_symbol_implementations,search_symbols,analyze_calls,get_type_hierarchy,find_associated_tests,apply_file_edit,preview_symbol_rename,apply_symbol_rename,preview_document_transformation,apply_document_transformation,dotnet_build,dotnet_test,discover_toolsets,request_toolset")]
     [InlineData(AgentRole.Reviewer,
         "read_file,read_file_range,list_workspace_tree,search_text,search_regex,inspect_git,inspect_dotnet,inspect_project_graph,search_semantic_context,inspect_code_problems,inspect_project_problems,get_symbol_info,find_symbol_definition,find_symbol_references,find_symbol_implementations,search_symbols,analyze_calls,get_type_hierarchy,find_associated_tests,list_tool_evidence,discover_toolsets,request_toolset")]
     public void Factory_exposes_only_the_closed_role_scope(

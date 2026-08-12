@@ -339,6 +339,48 @@ public sealed class WorkbenchCodeIntelligenceServiceTests
     }
 
     [Fact]
+    public async Task Document_transformation_maps_exact_edit_and_fingerprint()
+    {
+        const string source = "class C{ }";
+        const string formatted = "class C { }";
+        DeterministicCodeIntelligenceEngine engine = new()
+        {
+            DocumentTransformations = (request, _) =>
+                ValueTask.FromResult<CodeIntelligenceDocumentTransformationPreviewResult>(new(
+                request.Snapshot.ContextId,
+                request.Snapshot.SessionId,
+                request.Snapshot.Path,
+                request.Snapshot.BufferVersion,
+                CodeIntelligenceResultState.Ready,
+                CodeIntelligenceTransformationDisposition.Ready,
+                request.Kind,
+                request.Range,
+                new(request.Snapshot.Path, request.Snapshot.BaselineHash,
+                    request.Snapshot.Text, new(formatted), 1),
+                [],
+                [],
+                new(Baseline),
+                [])),
+        };
+        WorkbenchCodeIntelligenceService service = new(
+            new ContextResolver(ApprovedResolution()), engine);
+        WorkbenchCodeSessionId sessionId = (await service.StartAsync(new(
+            new("workspace-id"), new("goal-id"), new("Harness.slnx")))).SessionId!;
+        WorkbenchCodeInteractiveSnapshot snapshot = new(
+            sessionId, new("src/App.cs"), new(Baseline), new(1),
+            new(source), new(0, 0));
+
+        WorkbenchCodeDocumentTransformationPreviewView result =
+            await service.PreviewDocumentTransformationAsync(new(
+                snapshot, WorkbenchCodeDocumentTransformationKind.FormatDocument, Range: null));
+
+        Assert.Equal(WorkbenchCodeTransformationDisposition.Ready, result.Disposition);
+        Assert.Equal(formatted, result.Edit!.Text.Value);
+        Assert.Equal(Baseline, result.Fingerprint!.Value);
+        Assert.Equal(WorkbenchCodeDocumentTransformationKind.FormatDocument, result.Kind);
+    }
+
+    [Fact]
     public async Task Stop_invalidates_the_session_and_disposes_the_engine_state()
     {
         DeterministicCodeIntelligenceEngine engine = new();
@@ -423,6 +465,9 @@ public sealed class WorkbenchCodeIntelligenceServiceTests
         internal Func<CodeIntelligenceRenamePreviewRequest, CancellationToken,
             ValueTask<CodeIntelligenceRenamePreviewResult>>? Renames
         { get; init; }
+        internal Func<CodeIntelligenceDocumentTransformationPreviewRequest, CancellationToken,
+            ValueTask<CodeIntelligenceDocumentTransformationPreviewResult>>? DocumentTransformations
+        { get; init; }
         internal Func<CodeIntelligenceDocumentPresentationRequest, CancellationToken,
             ValueTask<CodeIntelligenceDocumentPresentationResult>>? Presentations
         { get; init; }
@@ -497,6 +542,13 @@ public sealed class WorkbenchCodeIntelligenceServiceTests
             CancellationToken cancellationToken = default) => Renames is null
             ? throw new NotSupportedException()
             : Renames(request, cancellationToken);
+        public ValueTask<CodeIntelligenceDocumentTransformationPreviewResult>
+            PreviewDocumentTransformationAsync(
+                CodeIntelligenceDocumentTransformationPreviewRequest request,
+                CancellationToken cancellationToken = default) =>
+            DocumentTransformations is null
+                ? throw new NotSupportedException()
+                : DocumentTransformations(request, cancellationToken);
 
         public ValueTask CloseAsync(
             CodeIntelligenceSessionId sessionId,

@@ -85,6 +85,14 @@ def main() -> int:
     ))
     durations.append(run(
         root,
+        "transformation-authority",
+        test_command(
+            "tests/Harness.BusinessLogic.Tests/Harness.BusinessLogic.Tests.csproj",
+            "FullyQualifiedName~WorkspaceMutationServiceTests|FullyQualifiedName~AgentToolPolicyTests",
+        ),
+    ))
+    durations.append(run(
+        root,
         "editor-settings-policy",
         test_command(
             "tests/Harness.BusinessLogic.Tests/Harness.BusinessLogic.Tests.csproj",
@@ -126,6 +134,7 @@ def main() -> int:
         "Editor intelligence verification passed: completion, quick info, signatures, "
         "diagnostics, semantic classification, occurrences, folding, outline, breadcrumbs, "
         "workspace symbols, inlay hints, lazy CodeLens, definitions, usages, implementations, "
+        "document/selection formatting, import organization, fingerprinted model apply, "
         "settings persistence, stale-result handling, "
         f"accessible production controls, and theme contracts ({sum(durations):.1f}s)."
     )

@@ -2054,6 +2054,27 @@ internal sealed class WorkbenchDockHost
                 args.Handled = true;
                 await RenameSymbolAsync(session);
             }
+            else if (args.Key is Key.L &&
+                     args.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Alt))
+            {
+                args.Handled = true;
+                await TransformDocumentAsync(
+                    session, WorkbenchCodeDocumentTransformationKind.FormatDocument);
+            }
+            else if (args.Key is Key.F &&
+                     args.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Alt))
+            {
+                args.Handled = true;
+                await TransformDocumentAsync(
+                    session, WorkbenchCodeDocumentTransformationKind.FormatSelection);
+            }
+            else if (args.Key is Key.O &&
+                     args.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Alt))
+            {
+                args.Handled = true;
+                await TransformDocumentAsync(
+                    session, WorkbenchCodeDocumentTransformationKind.OrganizeImports);
+            }
             else if (args.Key is Key.S && args.KeyModifiers.HasFlag(KeyModifiers.Control))
             {
                 args.Handled = true;
@@ -2115,6 +2136,12 @@ internal sealed class WorkbenchDockHost
             session, SemanticNavigationKind.References);
         surface.Implementations.Click += async (_, _) => await NavigateSymbolAsync(
             session, SemanticNavigationKind.Implementations);
+        surface.FormatDocument.Click += async (_, _) => await TransformDocumentAsync(
+            session, WorkbenchCodeDocumentTransformationKind.FormatDocument);
+        surface.FormatSelection.Click += async (_, _) => await TransformDocumentAsync(
+            session, WorkbenchCodeDocumentTransformationKind.FormatSelection);
+        surface.OrganizeImports.Click += async (_, _) => await TransformDocumentAsync(
+            session, WorkbenchCodeDocumentTransformationKind.OrganizeImports);
         surface.NavigationRequested += position =>
         {
             editor.SetCaretPosition(position);
@@ -2256,6 +2283,128 @@ internal sealed class WorkbenchDockHost
         }
 
         _ = await ApplyActiveRenameAsync(pending);
+    }
+
+    internal ValueTask TransformActiveDocumentAsync(
+        WorkbenchCodeDocumentTransformationKind kind)
+    {
+        if (activeDocument?.Id is not { } id ||
+            !sourceDocuments.TryGetValue(id, out SourceDocumentSession? session))
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        return TransformDocumentAsync(session, kind);
+    }
+
+    internal bool CanTransformActiveDocument(WorkbenchCodeDocumentTransformationKind kind) =>
+        activeDocument?.Id is { } id &&
+        sourceDocuments.TryGetValue(id, out SourceDocumentSession? session) &&
+        session.View.Access is WorkbenchDocumentAccess.Editable &&
+        CanUseSemanticAssistance(session) &&
+        (kind is not WorkbenchCodeDocumentTransformationKind.FormatSelection ||
+            session.Editor.SelectionRange is not null);
+
+    private async ValueTask TransformDocumentAsync(
+        SourceDocumentSession session,
+        WorkbenchCodeDocumentTransformationKind kind)
+    {
+        if (session.View.Access is not WorkbenchDocumentAccess.Editable ||
+            !CanUseSemanticAssistance(session))
+        {
+            session.SetStatus("Formatting requires an editable C# source document.");
+            return;
+        }
+
+        WorkbenchCodeRange? range = kind is WorkbenchCodeDocumentTransformationKind.FormatSelection
+            ? session.Editor.SelectionRange
+            : null;
+        if (kind is WorkbenchCodeDocumentTransformationKind.FormatSelection && range is null)
+        {
+            session.SetStatus("Select the C# code to format first.");
+            return;
+        }
+
+        (WorkbenchCodeBufferVersion version, CancellationToken token) =
+            session.BeginInteraction(cancellationToken);
+        session.SetBusy(true, kind switch
+        {
+            WorkbenchCodeDocumentTransformationKind.FormatDocument =>
+                "Formatting the document with Roslyn…",
+            WorkbenchCodeDocumentTransformationKind.FormatSelection =>
+                "Formatting the selected code with Roslyn…",
+            WorkbenchCodeDocumentTransformationKind.OrganizeImports =>
+                "Organizing imports with Roslyn…",
+            _ => "Preparing deterministic transformation…",
+        });
+        try
+        {
+            WorkbenchCodeSessionId? codeSession = await EnsureCodeSessionAsync(session, token);
+            if (codeSession is null || !session.IsCurrentInteraction(version))
+            {
+                return;
+            }
+
+            WorkbenchCodeInteractiveSnapshot snapshot = InteractiveSnapshot(
+                session, codeSession, version);
+            WorkbenchCodeDocumentTransformationPreviewView preview =
+                await codeIntelligenceService.PreviewDocumentTransformationAsync(
+                    new(snapshot, kind, range), token);
+            if (!session.IsCurrentInteraction(version))
+            {
+                session.SetStatus("The buffer changed before the transformation could be applied.");
+                return;
+            }
+
+            if (preview.Disposition is not WorkbenchCodeTransformationDisposition.Ready ||
+                preview.Fingerprint is null || preview.Edit is null)
+            {
+                session.SetStatus(preview.Conflicts.FirstOrDefault()?.Message.Value ??
+                    preview.Issues.FirstOrDefault()?.Message.Value ??
+                    "Roslyn could not prepare the requested transformation.");
+                return;
+            }
+
+            if (!string.Equals(session.Editor.Text, preview.Edit.OriginalText.Value,
+                StringComparison.Ordinal))
+            {
+                session.SetStatus("The buffer changed before the transformation could be applied.");
+                return;
+            }
+
+            if (preview.Edit.ReplacementCount == 0)
+            {
+                session.SetStatus(kind is WorkbenchCodeDocumentTransformationKind.OrganizeImports
+                    ? "Imports are already organized."
+                    : "The requested code is already formatted.");
+                return;
+            }
+
+            int caret = session.Editor.CaretOffset;
+            session.Editor.Replace(0, session.Editor.TextLength, preview.Edit.Text.Value);
+            session.Editor.CaretOffset = Math.Min(caret, session.Editor.TextLength);
+            session.Editor.Focus();
+            session.SetStatus(kind switch
+            {
+                WorkbenchCodeDocumentTransformationKind.FormatDocument =>
+                    $"Formatted document · {preview.Edit.ReplacementCount:N0} Roslyn edit(s) · undo available.",
+                WorkbenchCodeDocumentTransformationKind.FormatSelection =>
+                    $"Formatted selection · {preview.Edit.ReplacementCount:N0} Roslyn edit(s) · undo available.",
+                WorkbenchCodeDocumentTransformationKind.OrganizeImports =>
+                    $"Organized imports · {preview.Edit.ReplacementCount:N0} Roslyn edit(s) · undo available.",
+                _ => "Applied deterministic Roslyn transformation to the live buffer.",
+            });
+            ScheduleDiagnostics(session, immediate: true);
+            SchedulePresentation(session, immediate: true);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            session.SetStatus("Document transformation cancelled.");
+        }
+        finally
+        {
+            session.SetBusy(false);
+        }
     }
 
     internal async ValueTask<PendingWorkbenchRename?> PreviewActiveRenameAsync(string newName)

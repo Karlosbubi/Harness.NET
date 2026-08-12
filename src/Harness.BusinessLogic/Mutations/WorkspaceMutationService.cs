@@ -13,7 +13,7 @@ using Harness.DataAccess.Worktrees;
 
 namespace Harness.BusinessLogic.Mutations;
 
-internal sealed class WorkspaceMutationService(
+internal sealed partial class WorkspaceMutationService(
     IGoalStore goalStore,
     IWorkspaceStore workspaceStore,
     IWorkspaceFileEditor fileEditor,

@@ -114,6 +114,25 @@ public interface ICodeIntelligenceEngine
             Fingerprint: null,
             [new(new("rename_not_supported"), new("Semantic rename is unavailable."))]));
 
+    ValueTask<CodeIntelligenceDocumentTransformationPreviewResult> PreviewDocumentTransformationAsync(
+        CodeIntelligenceDocumentTransformationPreviewRequest request,
+        CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult(new CodeIntelligenceDocumentTransformationPreviewResult(
+            request.Snapshot.ContextId,
+            request.Snapshot.SessionId,
+            request.Snapshot.Path,
+            request.Snapshot.BufferVersion,
+            CodeIntelligenceResultState.Failed,
+            CodeIntelligenceTransformationDisposition.Rejected,
+            request.Kind,
+            request.Range,
+            Edit: null,
+            [],
+            [],
+            Fingerprint: null,
+            [new(new("document_transformation_not_supported"),
+                new("Document formatting and import organization are unavailable."))]));
+
     ValueTask CloseAsync(
         CodeIntelligenceSessionId sessionId,
         CancellationToken cancellationToken = default);

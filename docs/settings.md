@@ -45,6 +45,12 @@ queries run only when the developer selects the corresponding lens. Run and Debu
 lenses remain absent unless a typed execution service reports a valid target; Settings
 cannot create execution authority.
 
+Formatting is explicit rather than a saved preference. Use the Transform menu, command
+palette, or `Ctrl+Alt+L` for the document, `Ctrl+Alt+F` for a selection, and
+`Ctrl+Alt+O` to sort and group imports. Roslyn evaluates the exact live buffer. The
+result enters the editor as one undoable change and remains unsaved until the developer
+saves it.
+
 ## Model providers
 
 Startup discovers configured catalogs without inference. The page shows provider

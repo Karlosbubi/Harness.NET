@@ -522,6 +522,93 @@ public sealed class RoslynCodeIntelligenceEngineTests(ITestOutputHelper output) 
     }
 
     [Fact]
+    public async Task Format_document_previews_complete_Roslyn_edits_without_writing()
+    {
+        const string source = "class Sample{void Run(){int value=1;}}\n";
+        await CreateProjectAsync(source);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("format-document-context");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+
+        CodeIntelligenceDocumentTransformationPreviewResult result =
+            await engine.PreviewDocumentTransformationAsync(new(
+                InteractiveSnapshot(contextId, session.SessionId!, source, 0),
+                CodeIntelligenceDocumentTransformationKind.FormatDocument,
+                Range: null));
+
+        Assert.Equal(CodeIntelligenceTransformationDisposition.Ready, result.Disposition);
+        Assert.NotNull(result.Fingerprint);
+        CodeIntelligenceDocumentTransformationEdit edit = Assert.IsType<
+            CodeIntelligenceDocumentTransformationEdit>(result.Edit);
+        Assert.True(edit.ReplacementCount > 0);
+        Assert.Contains("class Sample { void Run() { int value = 1; } }",
+            edit.Text.Value, StringComparison.Ordinal);
+        Assert.Equal(source, await File.ReadAllTextAsync(Path.Combine(root, "Sample.cs")));
+    }
+
+    [Fact]
+    public async Task Format_selection_changes_only_the_requested_member()
+    {
+        const string source = "class Sample\n{\n    void First(){int value=1;}\n    void Second(){int value=2;}\n}\n";
+        await CreateProjectAsync(source);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("format-selection-context");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+
+        CodeIntelligenceDocumentTransformationPreviewResult result =
+            await engine.PreviewDocumentTransformationAsync(new(
+                InteractiveSnapshot(contextId, session.SessionId!, source, 0),
+                CodeIntelligenceDocumentTransformationKind.FormatSelection,
+                new(new(2, 4), new(2, 37))));
+
+        Assert.Equal(CodeIntelligenceTransformationDisposition.Ready, result.Disposition);
+        Assert.Contains("void First()", result.Edit!.Text.Value, StringComparison.Ordinal);
+        Assert.Contains("void Second(){int value=2;}", result.Edit.Text.Value, StringComparison.Ordinal);
+        Assert.NotNull(result.Range);
+    }
+
+    [Fact]
+    public async Task Organize_imports_sorts_directives_and_preserves_source_on_disk()
+    {
+        const string source = "using System.Text;\nusing System;\nclass Sample { StringBuilder Value = new(); }\n";
+        await CreateProjectAsync(source);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("organize-imports-context");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+
+        CodeIntelligenceDocumentTransformationPreviewResult result =
+            await engine.PreviewDocumentTransformationAsync(new(
+                InteractiveSnapshot(contextId, session.SessionId!, source, 0),
+                CodeIntelligenceDocumentTransformationKind.OrganizeImports,
+                Range: null));
+
+        Assert.Equal(CodeIntelligenceTransformationDisposition.Ready, result.Disposition);
+        Assert.StartsWith("using System;\nusing System.Text;", result.Edit!.Text.Value,
+            StringComparison.Ordinal);
+        Assert.Equal(source, await File.ReadAllTextAsync(Path.Combine(root, "Sample.cs")));
+    }
+
+    [Fact]
+    public async Task Document_transformation_rejects_a_range_for_organize_imports()
+    {
+        const string source = "using System;\nclass Sample { }\n";
+        await CreateProjectAsync(source);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("invalid-transform-context");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+
+        CodeIntelligenceDocumentTransformationPreviewResult result =
+            await engine.PreviewDocumentTransformationAsync(new(
+                InteractiveSnapshot(contextId, session.SessionId!, source, 0),
+                CodeIntelligenceDocumentTransformationKind.OrganizeImports,
+                new(new(0, 0), new(0, 5))));
+
+        Assert.Equal(CodeIntelligenceTransformationDisposition.Rejected, result.Disposition);
+        Assert.Equal("invalid_document_transformation", Assert.Single(result.Issues).Code.Value);
+        Assert.Null(result.Fingerprint);
+    }
+
+    [Fact]
     public async Task Rename_preview_reports_semantic_name_conflicts_without_a_fingerprint()
     {
         const string source = "class Existing { } class Widget { Widget value = new(); }\n";

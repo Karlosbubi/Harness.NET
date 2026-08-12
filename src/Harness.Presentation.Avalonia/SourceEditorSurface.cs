@@ -51,7 +51,10 @@ internal sealed class SourceEditorSurface : IDisposable
         Button symbolInfo,
         Button definition,
         Button references,
-        Button implementations)
+        Button implementations,
+        Button formatDocument,
+        Button formatSelection,
+        Button organizeImports)
     {
         Control = control;
         Editor = editor;
@@ -66,6 +69,9 @@ internal sealed class SourceEditorSurface : IDisposable
         Definition = definition;
         References = references;
         Implementations = implementations;
+        FormatDocument = formatDocument;
+        FormatSelection = formatSelection;
+        OrganizeImports = organizeImports;
     }
 
     internal Control Control { get; }
@@ -81,6 +87,9 @@ internal sealed class SourceEditorSurface : IDisposable
     internal Button Definition { get; }
     internal Button References { get; }
     internal Button Implementations { get; }
+    internal Button FormatDocument { get; }
+    internal Button FormatSelection { get; }
+    internal Button OrganizeImports { get; }
     internal event Action<WorkbenchCodePosition>? NavigationRequested;
 
     internal static SourceEditorSurface Create(WorkbenchDocumentView view)
@@ -112,6 +121,23 @@ internal sealed class SourceEditorSurface : IDisposable
         Button implementations = Action("Implementations",
             $"Go to implementation in {view.Path.Value}",
             "Go to implementation · Ctrl+F12 or Ctrl+Alt+B");
+        Button formatDocument = Action("Format document",
+            $"Format document {view.Path.Value}", "Format document · Ctrl+Alt+L");
+        Button formatSelection = Action("Format selection",
+            $"Format selection in {view.Path.Value}", "Format selected code · Ctrl+Alt+F");
+        Button organizeImports = Action("Organize imports",
+            $"Organize imports in {view.Path.Value}", "Sort and group using directives · Ctrl+Alt+O");
+        Button transform = Action("Transform", $"Transform {view.Path.Value}",
+            "Deterministic Roslyn formatting and imports");
+        transform.Flyout = new Flyout
+        {
+            Content = new StackPanel
+            {
+                Spacing = 4,
+                Margin = new Thickness(4),
+                Children = { formatDocument, formatSelection, organizeImports },
+            },
+        };
 
         SourceEditorSurface surface = new(
             BuildRoot(editor, status),
@@ -126,12 +152,15 @@ internal sealed class SourceEditorSurface : IDisposable
             symbolInfo,
             definition,
             references,
-            implementations);
+            implementations,
+            formatDocument,
+            formatSelection,
+            organizeImports);
         surface.accessBadge.Child = surface.access;
         surface.accessBadge.Classes.Add("editor-access");
         surface.BuildHeader(save, reload, close);
         surface.BuildAssistanceBar(outline, workspaceSymbols, completion, symbolInfo, definition,
-            references, implementations);
+            references, implementations, transform);
         surface.ConfigureOutline(outline);
         surface.UpdateView(view);
         surface.UpdateMetrics();
@@ -161,6 +190,10 @@ internal sealed class SourceEditorSurface : IDisposable
         Definition.IsEnabled = semanticAssistance;
         References.IsEnabled = semanticAssistance;
         Implementations.IsEnabled = semanticAssistance;
+        FormatDocument.IsEnabled = semanticAssistance &&
+            view.Access is WorkbenchDocumentAccess.Editable;
+        OrganizeImports.IsEnabled = FormatDocument.IsEnabled;
+        FormatSelection.IsEnabled = FormatDocument.IsEnabled && Editor.SelectionLength > 0;
         AutomationProperties.SetName(path, $"Repository path {view.Path.Value}");
         AutomationProperties.SetName(Status, $"Editing status for {view.Path.Value}");
         AutomationProperties.SetName(metrics, $"Caret and format for {view.Path.Value}");
@@ -177,6 +210,7 @@ internal sealed class SourceEditorSurface : IDisposable
     internal void UpdateMetrics()
     {
         int selected = Editor.SelectionLength;
+        FormatSelection.IsEnabled = FormatDocument.IsEnabled && selected > 0;
         string selection = selected == 0 ? string.Empty : $" · {selected:N0} selected";
         WorkbenchCodePosition caret = Editor.CaretPosition;
         metrics.Text = $"Ln {caret.Line + 1:N0}, Col {caret.Character + 1:N0}" +

@@ -595,6 +595,24 @@ internal sealed class MainWindow : Window
                     () => { host.ShowProblems(); return ValueTask.CompletedTask; }, "Ctrl+Shift+M"),
                 new("git.diff", "Git", "Open working-tree diff",
                     async () => await host.OpenDiffAsync(), UnavailableReason: needsTrust),
+                new("editor.format.document", "Editor", "Format document",
+                    async () => await host.TransformActiveDocumentAsync(
+                        WorkbenchCodeDocumentTransformationKind.FormatDocument),
+                    "Ctrl+Alt+L", UnavailableReason: host.CanTransformActiveDocument(
+                        WorkbenchCodeDocumentTransformationKind.FormatDocument)
+                            ? null : "Open an editable C# document first"),
+                new("editor.format.selection", "Editor", "Format selection",
+                    async () => await host.TransformActiveDocumentAsync(
+                        WorkbenchCodeDocumentTransformationKind.FormatSelection),
+                    "Ctrl+Alt+F", UnavailableReason: host.CanTransformActiveDocument(
+                        WorkbenchCodeDocumentTransformationKind.FormatSelection)
+                            ? null : "Select code in an editable C# document first"),
+                new("editor.organize.imports", "Editor", "Organize imports",
+                    async () => await host.TransformActiveDocumentAsync(
+                        WorkbenchCodeDocumentTransformationKind.OrganizeImports),
+                    "Ctrl+Alt+O", UnavailableReason: host.CanTransformActiveDocument(
+                        WorkbenchCodeDocumentTransformationKind.OrganizeImports)
+                            ? null : "Open an editable C# document first"),
                 new("layout.save", "Layout", "Save workbench layout",
                     async () => await host.SaveLayoutAsync()),
                 new("layout.reset", "Layout", "Reset workbench layout",

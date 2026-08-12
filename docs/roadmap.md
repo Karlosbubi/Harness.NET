@@ -305,8 +305,14 @@ occurrence lookup is confined to the active document. Typed SQLite-backed Editor
 settings control visible-buffer parameter and inferred-type hints plus bounded lazy
 reference, implementation, and associated-test CodeLens actions. Run and Debug lenses
 remain hidden until Task 052 provides a valid typed per-declaration target. See the
-maintained [NetPad and OmniSharp parity matrix](netpad-omnisharp-parity.md). Items 3–8
-remain. Deterministic and visual evidence is recorded in
+maintained [NetPad and OmniSharp parity matrix](netpad-omnisharp-parity.md). Item 3 now
+also has closed document/selection formatting and import organization: the editor uses
+one guarded undoable buffer replacement, while models use preview/fingerprint/apply,
+delegated paths, atomic persistence, durable evidence, and post-apply diagnostics.
+Changed-span, paste, on-type formatting, unused/missing imports, code actions,
+refactorings, and fix-all remain, as do items 4–8. Deterministic evidence is recorded in
+[editor-transformations-2026-08-12.md](acceptance/editor-transformations-2026-08-12.md);
+prior visual evidence is in
 [editor-inlays-codelens-2026-08-12.md](acceptance/editor-inlays-codelens-2026-08-12.md).
 
 Keep direct in-process Roslyn as the default implementation. Source may be adapted

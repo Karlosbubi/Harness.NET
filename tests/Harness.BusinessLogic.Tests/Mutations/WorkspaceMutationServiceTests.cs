@@ -394,6 +394,65 @@ public sealed class WorkspaceMutationServiceTests
     }
 
     [Fact]
+    public async Task Fingerprinted_document_transformation_applies_atomically_and_records_validation()
+    {
+        FakeFileEditor editor = new();
+        FakeToolEvidenceStore evidence = new();
+        FakeCodeIntelligenceService codeIntelligence = new()
+        {
+            DocumentTransformationFingerprint = Baseline,
+        };
+        WorkspaceMutationService service = new(
+            new FakeGoalStore(CreateGoal("Approved"), CreateWorktree()),
+            new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)),
+            editor,
+            new FakeDotNetToolRunner(),
+            evidence,
+            new FakeCapabilityApprovalStore(),
+            codeIntelligence);
+
+        DocumentTransformationApplyView result =
+            await service.ApplyDocumentTransformationAsync(new(
+                DocumentTransformationRequest(DocumentTransformationOrigin.Human, []),
+                new("format-apply"),
+                new(Baseline)));
+
+        Assert.Null(result.ErrorCode);
+        Assert.Equal(1, editor.BatchCallCount);
+        Assert.Single(result.Files);
+        Assert.Equal(WorkbenchCodeValidationDisposition.Validated,
+            result.AppliedCodeValidation?.Disposition);
+        StoredToolCall item = Assert.Single(evidence.Items);
+        Assert.Equal(ToolKind.DocumentTransformation, item.Tool);
+        Assert.Equal(ToolCallState.Succeeded, item.State);
+        Assert.Contains("FormatDocument", item.RequestJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Model_document_transformation_fails_closed_outside_its_file_grant()
+    {
+        FakeFileEditor editor = new();
+        WorkspaceMutationService service = new(
+            new FakeGoalStore(CreateGoal("Approved"), CreateWorktree()),
+            new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)),
+            editor,
+            new FakeDotNetToolRunner(),
+            new FakeToolEvidenceStore(),
+            new FakeCapabilityApprovalStore(),
+            new FakeCodeIntelligenceService());
+
+        DocumentTransformationApplyView result =
+            await service.ApplyDocumentTransformationAsync(new(
+                DocumentTransformationRequest(
+                    DocumentTransformationOrigin.Model, [new("tests")]),
+                new("format-denied"),
+                new(Baseline)));
+
+        Assert.Equal("task_file_area_denied", result.ErrorCode);
+        Assert.Equal(0, editor.BatchCallCount);
+    }
+
+    [Fact]
     public async Task Approved_goal_runs_dotnet_in_its_worktree_with_the_registered_entry_point()
     {
         FakeDotNetToolRunner runner = new();
@@ -663,6 +722,20 @@ public sealed class WorkspaceMutationServiceTests
         origin,
         areas);
 
+    private static DocumentTransformationPreviewRequest DocumentTransformationRequest(
+        DocumentTransformationOrigin origin,
+        IReadOnlyList<DocumentTransformationFileArea> areas) => new(
+        "goal-id",
+        new("src/First.cs"),
+        new(Baseline),
+        new(1),
+        new("class First{ }"),
+        new(0, 0),
+        WorkbenchCodeDocumentTransformationKind.FormatDocument,
+        Range: null,
+        origin,
+        areas);
+
     private static StoredGoalWorktree CreateWorktree() => new(
         "goal-id",
         "workspace-id",
@@ -870,6 +943,7 @@ public sealed class WorkspaceMutationServiceTests
         internal IReadOnlyList<WorkbenchCodeValidationDiagnostic> CandidateDiagnostics { get; init; } = [];
         internal IReadOnlyList<WorkbenchCodeValidationDiagnostic> AppliedDiagnostics { get; init; } = [];
         internal string RenameFingerprint { get; init; } = Baseline;
+        internal string DocumentTransformationFingerprint { get; init; } = Baseline;
 
         public ValueTask<WorkbenchCodeSessionView> StartAsync(
             WorkbenchCodeSessionRequest request,
@@ -947,6 +1021,29 @@ public sealed class WorkspaceMutationServiceTests
                 [],
                 [],
                 new(RenameFingerprint),
+                []));
+
+        public ValueTask<WorkbenchCodeDocumentTransformationPreviewView>
+            PreviewDocumentTransformationAsync(
+                WorkbenchCodeDocumentTransformationPreviewRequest request,
+                CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new WorkbenchCodeDocumentTransformationPreviewView(
+                request.Snapshot.SessionId,
+                request.Snapshot.Path,
+                request.Snapshot.BufferVersion,
+                WorkbenchCodeResultState.Ready,
+                WorkbenchCodeTransformationDisposition.Ready,
+                request.Kind,
+                request.Range,
+                new(
+                    request.Snapshot.Path,
+                    request.Snapshot.BaselineHash,
+                    request.Snapshot.Text,
+                    new("class First { }"),
+                    1),
+                [],
+                [],
+                new(DocumentTransformationFingerprint),
                 []));
 
         public ValueTask StopAsync(

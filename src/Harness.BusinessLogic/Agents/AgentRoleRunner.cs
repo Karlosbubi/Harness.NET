@@ -861,7 +861,9 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
             "find_symbol_definition; inspect usages or implementations when changing shared behavior " +
             "or abstractions. Use only APIs actually present and never " +
             "invent members or helper types. Use semantic rename for symbol renames instead of textual " +
-            "replacement. Inspect Roslyn problems before and after compiler-relevant changes. On a " +
+            "replacement. Use the closed Roslyn document transformation preview/apply tools for C# " +
+            "formatting or import organization instead of rewriting a file for style alone. Inspect " +
+            "Roslyn problems before and after compiler-relevant changes. On a " +
             "diagnostic or test failure, preserve passing code and repair only the cited range or first " +
             "relevant user-code stack frame rather than regenerating the file. Treat a failed tool " +
             "result as actionable evidence: inspect, correct the " +

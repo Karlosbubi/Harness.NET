@@ -33,6 +33,8 @@ internal sealed class ToolEvidenceService(
                 {
                     DataAccess.Evidence.ToolKind.FileEdit => ToolKind.FileEdit,
                     DataAccess.Evidence.ToolKind.Rename => ToolKind.Rename,
+                    DataAccess.Evidence.ToolKind.DocumentTransformation =>
+                        ToolKind.DocumentTransformation,
                     DataAccess.Evidence.ToolKind.Build => ToolKind.Build,
                     DataAccess.Evidence.ToolKind.Test => ToolKind.Test,
                     DataAccess.Evidence.ToolKind.Restore => ToolKind.Restore,

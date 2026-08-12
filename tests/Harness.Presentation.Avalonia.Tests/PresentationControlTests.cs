@@ -1126,7 +1126,7 @@ public sealed class PresentationControlTests
                 .ToArray();
             Assert.Equal(
                 ["Save", "Reload", "Close", "Outline", "Symbols", "IntelliSense", "Symbol info", "Definition",
-                    "Usages", "Implementations"],
+                    "Usages", "Implementations", "Transform"],
                 documentActions.Select(item => item.Content?.ToString() ?? string.Empty).ToArray());
             Assert.All(documentActions, item => Assert.False(
                 string.IsNullOrWhiteSpace(AutomationProperties.GetName(item))));
@@ -1969,6 +1969,57 @@ public sealed class PresentationControlTests
             Assert.Null(applied.ErrorCode);
             Assert.Equal("namespace Renamed;", editor.Text);
             Assert.False(workbench.ActiveSourceDocumentIsDirty);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Editor_format_document_applies_one_undoable_live_buffer_change()
+    {
+        using HeadlessUnitTestSession testSession =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await testSession.Dispatch(() =>
+        {
+            CodeIntelligenceService codeIntelligence = new()
+            {
+                DocumentTransformations = request => new(
+                    request.Snapshot.SessionId,
+                    request.Snapshot.Path,
+                    request.Snapshot.BufferVersion,
+                    WorkbenchCodeResultState.Ready,
+                    WorkbenchCodeTransformationDisposition.Ready,
+                    request.Kind,
+                    request.Range,
+                    new(
+                        request.Snapshot.Path,
+                        request.Snapshot.BaselineHash,
+                        request.Snapshot.Text,
+                        new("namespace Example;\n"),
+                        1),
+                    [],
+                    [],
+                    new("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+                    []),
+            };
+            WorkbenchDockHost workbench = CreateWorkbench(
+                ApprovedGoalShell(),
+                new(),
+                new() { Editable = true },
+                codeIntelligence: codeIntelligence);
+            Window window = new() { Width = 1280, Height = 800, Content = workbench.Control };
+            window.Show();
+            workbench.OpenFileAsync("src/App.cs").AsTask().GetAwaiter().GetResult();
+            TextEditor editor = workbench.ActiveSourceEditor!;
+            string original = editor.Text;
+
+            workbench.TransformActiveDocumentAsync(
+                WorkbenchCodeDocumentTransformationKind.FormatDocument)
+                .AsTask().GetAwaiter().GetResult();
+
+            Assert.Equal("namespace Example;\n", editor.Text);
+            Assert.True(workbench.ActiveSourceDocumentIsDirty);
+            editor.Document.UndoStack.Undo();
+            Assert.Equal(original, editor.Text);
             window.Close();
         }, CancellationToken.None);
     }
@@ -2922,6 +2973,9 @@ public sealed class PresentationControlTests
             get;
             init;
         }
+        internal Func<WorkbenchCodeDocumentTransformationPreviewRequest,
+            WorkbenchCodeDocumentTransformationPreviewView>? DocumentTransformations
+        { get; init; }
         internal int ImplementationCallCount { get; private set; }
 
         public ValueTask<WorkbenchCodeSessionView> StartAsync(
@@ -3038,6 +3092,25 @@ public sealed class PresentationControlTests
                     [],
                     false,
                     []));
+
+        public ValueTask<WorkbenchCodeDocumentTransformationPreviewView>
+            PreviewDocumentTransformationAsync(
+                WorkbenchCodeDocumentTransformationPreviewRequest request,
+                CancellationToken cancellationToken = default) => ValueTask.FromResult(
+                DocumentTransformations?.Invoke(request) ?? new(
+                    request.Snapshot.SessionId,
+                    request.Snapshot.Path,
+                    request.Snapshot.BufferVersion,
+                    WorkbenchCodeResultState.Failed,
+                    WorkbenchCodeTransformationDisposition.Rejected,
+                    request.Kind,
+                    request.Range,
+                    Edit: null,
+                    [],
+                    [],
+                    Fingerprint: null,
+                    [new(new("document_transformation_unavailable"),
+                        new("Document transformation is unavailable."))]));
 
         public ValueTask StopAsync(
             WorkbenchCodeSessionId sessionId,

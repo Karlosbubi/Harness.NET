@@ -30,6 +30,8 @@ internal enum AgentToolKind
     ApplyFileEdit,
     PreviewRename,
     ApplyRename,
+    PreviewDocumentTransformation,
+    ApplyDocumentTransformation,
     Build,
     Test,
     ListEvidence,

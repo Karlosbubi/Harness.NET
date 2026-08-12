@@ -28,6 +28,28 @@ public interface IWorkspaceMutationService
             "rename_not_supported",
             "Semantic rename is unavailable."));
 
+    ValueTask<DocumentTransformationPreviewView> PreviewDocumentTransformationAsync(
+        DocumentTransformationPreviewRequest request,
+        CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult(new DocumentTransformationPreviewView(
+            Preview: null,
+            "document_transformation_not_supported",
+            "Document formatting and import organization are unavailable."));
+
+    ValueTask<DocumentTransformationApplyView> ApplyDocumentTransformationAsync(
+        DocumentTransformationApplyRequest request,
+        CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult(new DocumentTransformationApplyView(
+            request.PreviewRequest.GoalId,
+            request.CorrelationId,
+            Preview: null,
+            [],
+            WasRolledBack: false,
+            WasCancelled: false,
+            AppliedCodeValidation: null,
+            "document_transformation_not_supported",
+            "Document formatting and import organization are unavailable."));
+
     ValueTask<DotNetOperationView> RunDotNetAsync(
         DotNetOperationRequest request,
         CancellationToken cancellationToken = default);

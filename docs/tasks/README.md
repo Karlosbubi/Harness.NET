@@ -342,7 +342,7 @@ Acceptance criteria:
 
 ### 049 — NetPad-level .NET editing and inspection
 
-Status: `In progress — semantic presentation, inlay hints, and CodeLens delivered`
+Status: `In progress — presentation, adornments, and first closed transformations delivered`
 
 Dependencies: 012, 043, 044, 047, 048.
 
@@ -358,9 +358,15 @@ Roslyn session and discard stale results. Viewport refresh avoids rebuilding str
 and document occurrences avoid a solution-wide search. The maintained comparison is
 [netpad-omnisharp-parity.md](../netpad-omnisharp-parity.md), with evidence in
 [editor-inlays-codelens-2026-08-12.md](../acceptance/editor-inlays-codelens-2026-08-12.md).
+Document/selection formatting and import organization now use closed Roslyn previews.
+The developer path is a guarded undoable live-buffer change; the Implementer path adds
+an exact fingerprint, delegated-path check, atomic apply, durable evidence, and
+post-apply validation. See
+[editor-transformations-2026-08-12.md](../acceptance/editor-transformations-2026-08-12.md).
 
-Problem: Harness.NET now has the core interactive Roslyn operations and semantic
-presentation and adornment slices. It still lacks formatting, code actions, generated
+Problem: Harness.NET now has the core interactive Roslyn operations, semantic
+presentation and adornment slices, and its first closed transformations. It still lacks
+changed-span/paste/on-type formatting, unused or missing import fixes, code actions, generated
 and metadata source, syntax/IL views, configurable keybindings, optional Vim behavior,
 project User Secrets management, and typed execution targets for Run/Debug CodeLens.
 OmniSharp implements many of the underlying Roslyn services, but adopting its server

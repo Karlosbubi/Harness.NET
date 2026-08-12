@@ -289,6 +289,35 @@ internal sealed class AgentToolFactory(
                         new(fingerprint)), cancellationToken),
                 Options("apply_symbol_rename",
                     "Recompute and atomically apply an accepted Roslyn rename preview by fingerprint.")),
+            AgentToolKind.PreviewDocumentTransformation => AIFunctionFactory.Create(
+                (string relativePath, string expectedSha256, string content,
+                        WorkbenchCodeDocumentTransformationKind kind,
+                        int? startLine, int? startCharacter, int? endLine, int? endCharacter,
+                        CancellationToken cancellationToken) =>
+                    mutationService.PreviewDocumentTransformationAsync(
+                        DocumentTransformationRequest(
+                            goalId, relativePath, expectedSha256, content, kind,
+                            startLine, startCharacter, endLine, endCharacter, fileAreas),
+                        cancellationToken),
+                Options("preview_document_transformation",
+                    "Preview one closed Roslyn operation: FormatDocument, FormatSelection, or " +
+                    "OrganizeImports. Pass all four zero-based selection coordinates only for " +
+                    "FormatSelection. Returns exact edit evidence and a fingerprint; it changes nothing.")),
+            AgentToolKind.ApplyDocumentTransformation => AIFunctionFactory.Create(
+                (string correlationId, string fingerprint, string relativePath,
+                        string expectedSha256, string content,
+                        WorkbenchCodeDocumentTransformationKind kind,
+                        int? startLine, int? startCharacter, int? endLine, int? endCharacter,
+                        CancellationToken cancellationToken) =>
+                    mutationService.ApplyDocumentTransformationAsync(new(
+                        DocumentTransformationRequest(
+                            goalId, relativePath, expectedSha256, content, kind,
+                            startLine, startCharacter, endLine, endCharacter, fileAreas),
+                        new ToolCorrelationId(correlationId),
+                        new(fingerprint)), cancellationToken),
+                Options("apply_document_transformation",
+                    "Recompute and atomically apply an accepted format or organize-imports preview " +
+                    "by exact fingerprint, then run Roslyn post-validation.")),
             AgentToolKind.Build => AIFunctionFactory.Create(
                 (string correlationId, CancellationToken cancellationToken) =>
                     mutationService.RunDotNetAsync(
@@ -398,6 +427,8 @@ internal sealed class AgentToolFactory(
         AgentToolKind.ApplyFileEdit => "apply_file_edit",
         AgentToolKind.PreviewRename => "preview_symbol_rename",
         AgentToolKind.ApplyRename => "apply_symbol_rename",
+        AgentToolKind.PreviewDocumentTransformation => "preview_document_transformation",
+        AgentToolKind.ApplyDocumentTransformation => "apply_document_transformation",
         AgentToolKind.Build => "dotnet_build",
         AgentToolKind.Test => "dotnet_test",
         AgentToolKind.RequestVisualCapture => "request_visual_capture",
@@ -441,6 +472,42 @@ internal sealed class AgentToolFactory(
         new(newName),
         RenameSymbolOrigin.Model,
         fileAreas.Select(area => new RenameFileArea(area.Value)).ToArray());
+
+    private static DocumentTransformationPreviewRequest DocumentTransformationRequest(
+        GoalId goalId,
+        string relativePath,
+        string expectedSha256,
+        string content,
+        WorkbenchCodeDocumentTransformationKind kind,
+        int? startLine,
+        int? startCharacter,
+        int? endLine,
+        int? endCharacter,
+        IReadOnlyList<AgentFileArea> fileAreas)
+    {
+        bool hasAnyRange = startLine is not null || startCharacter is not null ||
+            endLine is not null || endCharacter is not null;
+        bool hasCompleteRange = startLine is not null && startCharacter is not null &&
+            endLine is not null && endCharacter is not null;
+        WorkbenchCodeRange? range = hasCompleteRange
+            ? new(
+                new(startLine!.Value, startCharacter!.Value),
+                new(endLine!.Value, endCharacter!.Value))
+            : hasAnyRange
+                ? new(new(-1, -1), new(-1, -1))
+                : null;
+        return new(
+            goalId.Value,
+            new(relativePath),
+            new(expectedSha256),
+            new(1),
+            new(content),
+            range?.Start ?? new(0, 0),
+            kind,
+            range,
+            DocumentTransformationOrigin.Model,
+            fileAreas.Select(area => new DocumentTransformationFileArea(area.Value)).ToArray());
+    }
 
     internal static bool IsWithinFileAreas(
         string relativePath,

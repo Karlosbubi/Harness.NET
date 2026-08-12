@@ -925,7 +925,7 @@ internal sealed class GoalWorkflowService(
         return evidence.ErrorCode is null && evidence.Items.Any(item =>
             !previousIds.Contains(item.Id.Value) &&
             item.State is ToolEvidenceState.Succeeded &&
-            item.Tool is ToolKind.FileEdit or ToolKind.Rename);
+            item.Tool is ToolKind.FileEdit or ToolKind.Rename or ToolKind.DocumentTransformation);
     }
 
     private async ValueTask<StoredGoalWorkflowSnapshot> MarkDirectionAsync(

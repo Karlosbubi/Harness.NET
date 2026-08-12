@@ -107,6 +107,7 @@ internal sealed class ModelProviderChatClient(
             .SelectMany(message => message.Contents.OfType<FunctionCallContent>())
             .Where(call => completedCallIds.Contains(call.CallId))
             .Any(call => call.Name is "apply_file_edit" or "apply_symbol_rename" or
+                "apply_document_transformation" or
                 "dotnet_build" or "dotnet_test");
         List<ProviderChatMessage> providerMessages = [];
         if (!string.IsNullOrWhiteSpace(options?.Instructions))
@@ -142,6 +143,7 @@ internal sealed class ModelProviderChatClient(
                         "find_symbol_definition" or "find_symbol_references" or
                         "find_symbol_implementations" or "apply_file_edit" or
                         "preview_symbol_rename" or "apply_symbol_rename" or
+                        "preview_document_transformation" or "apply_document_transformation" or
                         "request_visual_capture" or "inspect_visual_capture");
         }
 

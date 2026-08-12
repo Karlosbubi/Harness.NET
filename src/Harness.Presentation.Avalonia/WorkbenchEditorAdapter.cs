@@ -27,6 +27,7 @@ internal interface IWorkbenchEditorAdapter : IDisposable
     int TextLength { get; }
     int CaretOffset { get; set; }
     WorkbenchCodePosition CaretPosition { get; }
+    WorkbenchCodeRange? SelectionRange { get; }
 
     event EventHandler? TextChanged;
     event EventHandler? CaretChanged;
@@ -107,6 +108,20 @@ internal sealed class AvaloniaEditWorkbenchEditorAdapter : IWorkbenchEditorAdapt
     public WorkbenchCodePosition CaretPosition => new(
         NativeEditor.TextArea.Caret.Line - 1,
         NativeEditor.TextArea.Caret.Column - 1);
+    public WorkbenchCodeRange? SelectionRange
+    {
+        get
+        {
+            if (NativeEditor.SelectionLength == 0)
+                return null;
+            var start = NativeEditor.Document.GetLocation(NativeEditor.SelectionStart);
+            var end = NativeEditor.Document.GetLocation(
+                NativeEditor.SelectionStart + NativeEditor.SelectionLength);
+            return new(
+                new(start.Line - 1, start.Column - 1),
+                new(end.Line - 1, end.Column - 1));
+        }
+    }
 
     public event EventHandler? TextChanged;
     public event EventHandler? CaretChanged;

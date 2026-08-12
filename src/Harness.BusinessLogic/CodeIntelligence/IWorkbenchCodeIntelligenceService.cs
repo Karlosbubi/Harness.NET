@@ -107,6 +107,24 @@ public interface IWorkbenchCodeIntelligenceService
             Fingerprint: null,
             [new(new("rename_not_supported"), new("Semantic rename is unavailable."))]));
 
+    ValueTask<WorkbenchCodeDocumentTransformationPreviewView> PreviewDocumentTransformationAsync(
+        WorkbenchCodeDocumentTransformationPreviewRequest request,
+        CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult(new WorkbenchCodeDocumentTransformationPreviewView(
+            request.Snapshot.SessionId,
+            request.Snapshot.Path,
+            request.Snapshot.BufferVersion,
+            WorkbenchCodeResultState.Failed,
+            WorkbenchCodeTransformationDisposition.Rejected,
+            request.Kind,
+            request.Range,
+            Edit: null,
+            [],
+            [],
+            Fingerprint: null,
+            [new(new("document_transformation_not_supported"),
+                new("Document formatting and import organization are unavailable."))]));
+
     ValueTask StopAsync(
         WorkbenchCodeSessionId sessionId,
         CancellationToken cancellationToken = default);

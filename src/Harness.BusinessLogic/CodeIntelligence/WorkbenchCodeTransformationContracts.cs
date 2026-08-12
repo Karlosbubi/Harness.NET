@@ -6,6 +6,13 @@ public sealed record WorkbenchCodeSymbolIdentity(string Value);
 
 public sealed record WorkbenchCodeTransformationFingerprint(string Value);
 
+public enum WorkbenchCodeDocumentTransformationKind
+{
+    FormatDocument,
+    FormatSelection,
+    OrganizeImports,
+}
+
 public enum WorkbenchCodeTransformationDisposition
 {
     Ready,
@@ -51,6 +58,44 @@ public sealed record WorkbenchCodeRenamePreviewView(
     WorkbenchCodeRenameName NewName,
     IReadOnlyList<WorkbenchCodeRenameEdit> Edits,
     IReadOnlyList<WorkbenchCodeRenameConflict> Conflicts,
+    IReadOnlyList<WorkbenchCodeValidationDiagnostic> Diagnostics,
+    WorkbenchCodeTransformationFingerprint? Fingerprint,
+    IReadOnlyList<WorkbenchCodeIssue> Issues);
+
+public enum WorkbenchCodeDocumentTransformationConflictKind
+{
+    Semantic,
+    Generated,
+    Uneditable,
+    TooLarge,
+}
+
+public sealed record WorkbenchCodeDocumentTransformationConflict(
+    WorkbenchCodeDocumentTransformationConflictKind Kind,
+    WorkbenchCodeMessage Message);
+
+public sealed record WorkbenchCodeDocumentTransformationEdit(
+    WorkbenchCodeDocumentPath Path,
+    WorkbenchCodeBaselineHash BaselineHash,
+    WorkbenchCodeText OriginalText,
+    WorkbenchCodeText Text,
+    int ReplacementCount);
+
+public sealed record WorkbenchCodeDocumentTransformationPreviewRequest(
+    WorkbenchCodeInteractiveSnapshot Snapshot,
+    WorkbenchCodeDocumentTransformationKind Kind,
+    WorkbenchCodeRange? Range);
+
+public sealed record WorkbenchCodeDocumentTransformationPreviewView(
+    WorkbenchCodeSessionId SessionId,
+    WorkbenchCodeDocumentPath Path,
+    WorkbenchCodeBufferVersion BufferVersion,
+    WorkbenchCodeResultState State,
+    WorkbenchCodeTransformationDisposition Disposition,
+    WorkbenchCodeDocumentTransformationKind Kind,
+    WorkbenchCodeRange? Range,
+    WorkbenchCodeDocumentTransformationEdit? Edit,
+    IReadOnlyList<WorkbenchCodeDocumentTransformationConflict> Conflicts,
     IReadOnlyList<WorkbenchCodeValidationDiagnostic> Diagnostics,
     WorkbenchCodeTransformationFingerprint? Fingerprint,
     IReadOnlyList<WorkbenchCodeIssue> Issues);
