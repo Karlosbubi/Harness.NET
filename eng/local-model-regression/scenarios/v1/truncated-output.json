@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "harness-local-model-regression-v1",
+  "id": "truncated-output",
+  "version": 1,
+  "kind": "fixture",
+  "prompt": "Preserve a typed failure and partial evidence when a model response ends mid-structure.",
+  "expectedOutcome": "truncated",
+  "validation": {
+    "allowedPaths": [],
+    "requiredTools": [],
+    "semanticTools": [],
+    "requiredEvidence": ["truncated-output", "checkpoint"],
+    "maximumRewriteLines": 0
+  },
+  "fixtureEvents": [
+    {"kind":"checkpoint","partial":true},
+    {"kind":"evidence","evidenceKind":"truncated-output"},
+    {"kind":"evidence","evidenceKind":"checkpoint"},
+    {"kind":"terminal","outcome":"truncated"}
+  ]
+}

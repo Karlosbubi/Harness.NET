@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "harness-local-model-regression-v1",
+  "id": "tictactoe",
+  "version": 1,
+  "kind": "live",
+  "prompt": "Build the validated immutable Tic-Tac-Toe engine, minimax opponent, console UI, and tests defined by the Tic-Tac-Toe regression fixture.",
+  "expectedOutcome": "completed",
+  "validation": {
+    "allowedPaths": ["src/TicTacToe", "tests/TicTacToe.Tests"],
+    "requiredTools": ["Build", "Test"],
+    "semanticTools": ["GetSymbolInfo", "FindSymbolDefinition", "InspectCodeProblems"],
+    "requiredEvidence": ["build", "test", "diff", "independent-validator"],
+    "maximumRewriteLines": 500
+  },
+  "fixtureEvents": []
+}

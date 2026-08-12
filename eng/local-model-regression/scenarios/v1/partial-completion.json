@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "harness-local-model-regression-v1",
+  "id": "partial-completion",
+  "version": 1,
+  "kind": "fixture",
+  "prompt": "Stop at a coherent partial-completion checkpoint after one completed implementation slice.",
+  "expectedOutcome": "partial",
+  "validation": {
+    "allowedPaths": ["src/Sample"],
+    "requiredTools": ["FileEdit", "Build"],
+    "semanticTools": [],
+    "requiredEvidence": ["checkpoint", "build"],
+    "maximumRewriteLines": 40
+  },
+  "fixtureEvents": [
+    {"kind":"plan","valid":true},
+    {"kind":"tool","tool":"FileEdit","path":"src/Sample/FirstSlice.cs","mutation":true,"changedLines":20},
+    {"kind":"tool","tool":"Build"},
+    {"kind":"evidence","evidenceKind":"checkpoint"},
+    {"kind":"evidence","evidenceKind":"build"},
+    {"kind":"checkpoint","partial":true},
+    {"kind":"terminal","outcome":"partial"}
+  ]
+}

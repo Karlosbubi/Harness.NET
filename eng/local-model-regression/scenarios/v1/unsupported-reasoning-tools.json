@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "harness-local-model-regression-v1",
+  "id": "unsupported-reasoning-tools",
+  "version": 1,
+  "kind": "fixture",
+  "prompt": "Reject a model route that lacks the production role's tool capability while preserving its declared reasoning metadata.",
+  "expectedOutcome": "unsupported_capability",
+  "validation": {
+    "allowedPaths": [],
+    "requiredTools": ["harness_goal_models"],
+    "semanticTools": [],
+    "requiredEvidence": ["capability-mismatch"],
+    "maximumRewriteLines": 0
+  },
+  "fixtureEvents": [
+    {"kind":"tool","tool":"harness_goal_models","error":"role_incompatible"},
+    {"kind":"evidence","evidenceKind":"capability-mismatch"},
+    {"kind":"terminal","outcome":"unsupported_capability"}
+  ]
+}

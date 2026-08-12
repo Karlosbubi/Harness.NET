@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "harness-local-model-regression-v1",
+  "id": "cancellation",
+  "version": 1,
+  "kind": "fixture",
+  "prompt": "Cancel an active model operation by exact operation identity without replaying it.",
+  "expectedOutcome": "cancelled",
+  "validation": {
+    "allowedPaths": [],
+    "requiredTools": ["harness_cancel_goal_operation"],
+    "semanticTools": [],
+    "requiredEvidence": ["cancelled-boundary"],
+    "maximumRewriteLines": 0
+  },
+  "fixtureEvents": [
+    {"kind":"tool","tool":"harness_cancel_goal_operation"},
+    {"kind":"evidence","evidenceKind":"cancelled-boundary"},
+    {"kind":"terminal","outcome":"cancelled"}
+  ]
+}

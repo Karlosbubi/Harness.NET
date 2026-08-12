@@ -1,0 +1,27 @@
+{
+  "schemaVersion": "harness-local-model-regression-v1",
+  "id": "failure-retry",
+  "version": 1,
+  "kind": "fixture",
+  "prompt": "Recover from a rejected compiler-regressing edit with one bounded retry and preserve the last safe checkpoint.",
+  "expectedOutcome": "completed",
+  "validation": {
+    "allowedPaths": ["src/Sample"],
+    "requiredTools": ["FileEdit", "InspectCodeProblems", "Build"],
+    "semanticTools": ["InspectCodeProblems"],
+    "requiredEvidence": ["rejection", "build"],
+    "maximumRewriteLines": 40
+  },
+  "fixtureEvents": [
+    {"kind":"plan","valid":true},
+    {"kind":"tool","tool":"FileEdit","path":"src/Sample/Parser.cs","error":"compiler_regression"},
+    {"kind":"compiler","introduced":1},
+    {"kind":"retry"},
+    {"kind":"tool","tool":"InspectCodeProblems","path":"src/Sample/Parser.cs"},
+    {"kind":"tool","tool":"FileEdit","path":"src/Sample/Parser.cs","mutation":true,"changedLines":16},
+    {"kind":"tool","tool":"Build"},
+    {"kind":"evidence","evidenceKind":"rejection"},
+    {"kind":"evidence","evidenceKind":"build"},
+    {"kind":"terminal","outcome":"completed"}
+  ]
+}

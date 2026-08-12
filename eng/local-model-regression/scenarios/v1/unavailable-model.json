@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "harness-local-model-regression-v1",
+  "id": "unavailable-model",
+  "version": 1,
+  "kind": "fixture",
+  "prompt": "Fail closed when the selected local model is absent from the discovered Ollama catalog.",
+  "expectedOutcome": "unavailable",
+  "validation": {
+    "allowedPaths": [],
+    "requiredTools": ["harness_goal_models"],
+    "semanticTools": [],
+    "requiredEvidence": ["model-unavailable"],
+    "maximumRewriteLines": 0
+  },
+  "fixtureEvents": [
+    {"kind":"tool","tool":"harness_goal_models","error":"model_unavailable"},
+    {"kind":"evidence","evidenceKind":"model-unavailable"},
+    {"kind":"terminal","outcome":"unavailable"}
+  ]
+}

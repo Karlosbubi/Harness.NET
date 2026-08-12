@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "harness-local-model-regression-v1",
+  "id": "server-restart",
+  "version": 1,
+  "kind": "fixture",
+  "prompt": "Restart the isolated Harness server and require a new application identity while preserving durable state.",
+  "expectedOutcome": "restarted",
+  "validation": {
+    "allowedPaths": [],
+    "requiredTools": ["harness_application", "harness_goals"],
+    "semanticTools": [],
+    "requiredEvidence": ["identity-changed", "durable-state"],
+    "maximumRewriteLines": 0
+  },
+  "fixtureEvents": [
+    {"kind":"tool","tool":"harness_application"},
+    {"kind":"tool","tool":"harness_application"},
+    {"kind":"tool","tool":"harness_goals"},
+    {"kind":"evidence","evidenceKind":"identity-changed"},
+    {"kind":"evidence","evidenceKind":"durable-state"},
+    {"kind":"terminal","outcome":"restarted"}
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "schemaVersion": "harness-local-model-regression-v1",
+  "id": "multi-file-build-test",
+  "version": 1,
+  "kind": "fixture",
+  "prompt": "Implement one bounded multi-file C# change, then build and test the complete solution without restore.",
+  "expectedOutcome": "completed",
+  "validation": {
+    "allowedPaths": ["src/Sample", "tests/Sample.Tests"],
+    "requiredTools": ["FileEdit", "Build", "Test"],
+    "semanticTools": ["InspectCodeProblems"],
+    "requiredEvidence": ["build", "test", "diff"],
+    "maximumRewriteLines": 80
+  },
+  "fixtureEvents": [
+    {"kind":"plan","valid":true},
+    {"kind":"tool","tool":"InspectCodeProblems","path":"src/Sample/Service.cs"},
+    {"kind":"tool","tool":"FileEdit","path":"src/Sample/Service.cs","mutation":true,"changedLines":14},
+    {"kind":"tool","tool":"FileEdit","path":"tests/Sample.Tests/ServiceTests.cs","mutation":true,"changedLines":18},
+    {"kind":"tool","tool":"Build"},
+    {"kind":"tool","tool":"Test"},
+    {"kind":"evidence","evidenceKind":"build"},
+    {"kind":"evidence","evidenceKind":"test"},
+    {"kind":"evidence","evidenceKind":"diff"},
+    {"kind":"terminal","outcome":"completed"}
+  ]
+}

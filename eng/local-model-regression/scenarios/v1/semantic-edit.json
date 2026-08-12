@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "harness-local-model-regression-v1",
+  "id": "semantic-edit",
+  "version": 1,
+  "kind": "fixture",
+  "prompt": "Rename one C# symbol through the deterministic Roslyn preview/fingerprint/apply operation and validate the affected project.",
+  "expectedOutcome": "completed",
+  "validation": {
+    "allowedPaths": ["src/Sample"],
+    "requiredTools": ["SemanticRenamePreview", "SemanticRenameApply", "Build"],
+    "semanticTools": ["SemanticRenamePreview", "SemanticRenameApply"],
+    "requiredEvidence": ["rename", "build", "diff"],
+    "maximumRewriteLines": 12
+  },
+  "fixtureEvents": [
+    {"kind":"plan","valid":true},
+    {"kind":"tool","tool":"SemanticRenamePreview","path":"src/Sample/Counter.cs"},
+    {"kind":"tool","tool":"SemanticRenameApply","path":"src/Sample/Counter.cs","mutation":true,"changedLines":4,"diff":"-Count\n+Total\n"},
+    {"kind":"tool","tool":"Build"},
+    {"kind":"evidence","evidenceKind":"rename"},
+    {"kind":"evidence","evidenceKind":"build"},
+    {"kind":"evidence","evidenceKind":"diff"},
+    {"kind":"terminal","outcome":"completed"}
+  ]
+}

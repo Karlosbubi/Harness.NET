@@ -4,6 +4,8 @@ set -euo pipefail
 repository_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
 # Deterministic tests use local fakes and never load repository .env credentials.
+python3 "$repository_root/eng/test_local_model_regression.py"
+
 dotnet test "$repository_root/Harness.slnx" \
   --no-restore \
   --nologo \

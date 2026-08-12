@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "harness-local-model-regression-v1",
+  "id": "malformed-tool-call",
+  "version": 1,
+  "kind": "fixture",
+  "prompt": "Reject a malformed typed tool call without repository mutation and preserve the provider response evidence.",
+  "expectedOutcome": "malformed_tool_call",
+  "validation": {
+    "allowedPaths": [],
+    "requiredTools": ["FileEdit"],
+    "semanticTools": [],
+    "requiredEvidence": ["malformed-tool-call", "unchanged-repository"],
+    "maximumRewriteLines": 0
+  },
+  "fixtureEvents": [
+    {"kind":"tool","tool":"FileEdit","error":"invalid_arguments"},
+    {"kind":"evidence","evidenceKind":"malformed-tool-call"},
+    {"kind":"evidence","evidenceKind":"unchanged-repository"},
+    {"kind":"terminal","outcome":"malformed_tool_call"}
+  ]
+}
