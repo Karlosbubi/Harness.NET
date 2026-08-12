@@ -307,7 +307,7 @@ The detailed status matrix is [agent-ide-capabilities.md](../agent-ide-capabilit
 
 ### 048 — Morgania editor evaluation and conditional migration
 
-Status: `Planned`
+Status: `Evaluated — migration rejected at the dependency gate`
 
 Dependencies: 010, 012, 032, 043, 044.
 

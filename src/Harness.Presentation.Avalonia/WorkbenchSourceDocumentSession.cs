@@ -36,7 +36,9 @@ internal sealed class SourceDocumentSession : IDisposable
 
     internal SourceDockDocument Document { get; }
     internal SourceEditorSurface Surface { get; }
-    internal TextEditor Editor => Surface.Editor;
+    internal IWorkbenchEditorAdapter Editor => Surface.Editor;
+    internal TextEditor NativeEditor =>
+        ((AvaloniaEditWorkbenchEditorAdapter)Surface.Editor).NativeEditor;
     internal TextBlock Status => Surface.Status;
     internal Button Save => Surface.Save;
     internal Button Reload => Surface.Reload;
@@ -145,7 +147,7 @@ internal sealed class SourceDocumentSession : IDisposable
             Editor.IsReadOnly = view.Access is not WorkbenchDocumentAccess.Editable;
             Surface.UpdateView(view);
             AutomationProperties.SetName(
-                Editor,
+                Editor.Control,
                 view.Access is WorkbenchDocumentAccess.Editable
                     ? $"Editable source editor for {view.Path.Value}"
                     : $"Read-only source editor for {view.Path.Value}");

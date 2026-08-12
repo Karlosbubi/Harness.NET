@@ -3,7 +3,6 @@ using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
-using AvaloniaEdit;
 using Harness.BusinessLogic.CodeIntelligence;
 using Harness.BusinessLogic.Documents;
 
@@ -16,7 +15,6 @@ namespace Harness.Presentation.Avalonia;
 internal sealed class SourceEditorSurface : IDisposable
 {
     private string codeHealth = "Code intelligence loading";
-    private CodeDiagnosticRenderer renderer = null!;
     private readonly TextBlock path = new()
     {
         FontFamily = new FontFamily("Cascadia Code,JetBrains Mono,Consolas,Menlo,monospace"),
@@ -35,7 +33,7 @@ internal sealed class SourceEditorSurface : IDisposable
 
     private SourceEditorSurface(
         Control control,
-        TextEditor editor,
+        IWorkbenchEditorAdapter editor,
         TextBlock status,
         Button save,
         Button reload,
@@ -60,7 +58,7 @@ internal sealed class SourceEditorSurface : IDisposable
     }
 
     internal Control Control { get; }
-    internal TextEditor Editor { get; }
+    internal IWorkbenchEditorAdapter Editor { get; }
     internal TextBlock Status { get; }
     internal Button Save { get; }
     internal Button Reload { get; }
@@ -73,13 +71,8 @@ internal sealed class SourceEditorSurface : IDisposable
 
     internal static SourceEditorSurface Create(WorkbenchDocumentView view)
     {
-        TextEditor editor = CodeEditorView.Create(
-            view.Content.Value,
-            isReadOnly: view.Access is not WorkbenchDocumentAccess.Editable,
-            wordWrap: false,
-            showLineNumbers: true,
-            path: view.Path.Value);
-        editor.Classes.Add("source-editor");
+        IWorkbenchEditorAdapter editor = new AvaloniaEditWorkbenchEditorAdapter(view);
+        editor.Control.Classes.Add("source-editor");
         TextBlock status = new()
         {
             Text = view.AccessDescription,
@@ -114,14 +107,13 @@ internal sealed class SourceEditorSurface : IDisposable
             definition,
             references,
             implementations);
-        surface.renderer = new(editor);
         surface.accessBadge.Child = surface.access;
         surface.accessBadge.Classes.Add("editor-access");
         surface.BuildHeader(save, reload, close);
         surface.BuildAssistanceBar(completion, symbolInfo, definition, references, implementations);
         surface.UpdateView(view);
         surface.UpdateMetrics();
-        editor.TextArea.Caret.PositionChanged += (_, _) => surface.UpdateMetrics();
+        editor.CaretChanged += (_, _) => surface.UpdateMetrics();
         editor.TextChanged += (_, _) => surface.UpdateMetrics();
         return surface;
     }
@@ -163,13 +155,14 @@ internal sealed class SourceEditorSurface : IDisposable
     {
         int selected = Editor.SelectionLength;
         string selection = selected == 0 ? string.Empty : $" · {selected:N0} selected";
-        metrics.Text = $"Ln {Editor.TextArea.Caret.Line:N0}, Col {Editor.TextArea.Caret.Column:N0}" +
+        WorkbenchCodePosition caret = Editor.CaretPosition;
+        metrics.Text = $"Ln {caret.Line + 1:N0}, Col {caret.Character + 1:N0}" +
                        selection + $" · UTF-8 · {LineEndings(Editor.Text)} · {codeHealth}";
     }
 
     internal void UpdateCodeHealth(WorkbenchCodeDiagnosticView result)
     {
-        renderer.SetDiagnostics(result.Diagnostics);
+        Editor.SetDiagnostics(result.Diagnostics);
         int errors = result.Diagnostics.Count(item =>
             item.Severity is WorkbenchCodeDiagnosticSeverity.Error);
         int warnings = result.Diagnostics.Count(item =>
@@ -193,19 +186,19 @@ internal sealed class SourceEditorSurface : IDisposable
 
     internal void BeginCodeHealthUpdate()
     {
-        renderer.SetDiagnostics([]);
+        Editor.SetDiagnostics([]);
         codeHealth = "Checking…";
         UpdateMetrics();
     }
 
     internal void SetCodeHealthNotApplicable()
     {
-        renderer.SetDiagnostics([]);
+        Editor.SetDiagnostics([]);
         codeHealth = "Compiler check not applicable";
         UpdateMetrics();
     }
 
-    public void Dispose() => renderer.Dispose();
+    public void Dispose() => Editor.Dispose();
 
     private static Button Action(string content, string name, string tip)
     {
@@ -216,11 +209,11 @@ internal sealed class SourceEditorSurface : IDisposable
         return button;
     }
 
-    private static Grid BuildRoot(TextEditor editor, TextBlock status)
+    private static Grid BuildRoot(IWorkbenchEditorAdapter editor, TextBlock status)
     {
         Grid root = new() { RowDefinitions = new("Auto,Auto,*,Auto") };
-        Grid.SetRow(editor, 2);
-        root.Children.Add(editor);
+        Grid.SetRow(editor.Control, 2);
+        root.Children.Add(editor.Control);
 
         Grid footer = new()
         {

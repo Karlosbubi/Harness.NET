@@ -335,6 +335,46 @@ public sealed class GoalWorkflowServiceTests
     }
 
     [Fact]
+    public async Task Rejected_lead_delegation_preserves_bounded_output_for_recovery()
+    {
+        const string rejected = """
+            {"plan":"Inspect first.","tasks":[{"title":"Inspect the editor","objective":"Analyze the current editor implementation.","fileAreas":["src/"],"acceptanceCriteria":["Inspection recorded."]}]}
+            """;
+        FakeGoalService goals = new();
+        FakeAgentRunner agents = new() { LeadOutput = rejected };
+        InMemoryGoalWorkflowStore store = new();
+        GoalWorkflowService service = CreateService(store, goals, agents);
+
+        GoalWorkflowSnapshot result = (await CollectAsync(
+            service.StartPlanningAsync(new(goals.Goal.Id))))[^1];
+
+        Assert.Equal(GoalWorkflowState.NeedsDirection, result.State);
+        WorkflowEvidenceView evidence = result.Evidence[^1];
+        Assert.Equal("Rejected Lead output", evidence.Title.Value);
+        Assert.Contains("Standalone discovery", evidence.Content.Value,
+            StringComparison.Ordinal);
+        Assert.Contains(rejected, evidence.Content.Value, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Rejected_lead_output_is_truncated_before_it_becomes_recovery_evidence()
+    {
+        string rejected = "not-json:" + new string('x', 20_000);
+        FakeGoalService goals = new();
+        FakeAgentRunner agents = new() { LeadOutput = rejected };
+        InMemoryGoalWorkflowStore store = new();
+        GoalWorkflowService service = CreateService(store, goals, agents);
+
+        GoalWorkflowSnapshot result = (await CollectAsync(
+            service.StartPlanningAsync(new(goals.Goal.Id))))[^1];
+
+        WorkflowEvidenceView evidence = result.Evidence[^1];
+        Assert.Contains("[truncated]", evidence.Content.Value, StringComparison.Ordinal);
+        Assert.DoesNotContain(new string('x', 17_000), evidence.Content.Value,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Explicit_retry_recovers_a_definitive_lead_provider_outage()
     {
         FakeGoalService goals = new();

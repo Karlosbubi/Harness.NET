@@ -18,6 +18,9 @@ internal sealed class GoalWorkflowService(
     IToolEvidenceService evidenceService,
     TimeProvider timeProvider) : IGoalWorkflowService
 {
+    private const int MaximumRejectedLeadOutputCharacters = 16 * 1024;
+    private const int MaximumRejectedLeadErrorCharacters = 4 * 1024;
+
     public async ValueTask<GoalWorkflowSnapshot?> GetLatestAsync(
         GoalId goalId,
         CancellationToken cancellationToken = default)
@@ -98,8 +101,11 @@ internal sealed class GoalWorkflowService(
         GoalDelegation delegation = GoalDelegationParser.Parse(result.Output.Value);
         if (delegation.Error is not null)
         {
-            snapshot = await MarkDirectionAsync(snapshot,
-                $"Lead call did not produce a bounded delegation: {delegation.Error}",
+            snapshot = await MarkRejectedLeadOutputAsync(
+                snapshot,
+                "Lead call did not produce a bounded delegation",
+                result.Output.Value,
+                delegation.Error,
                 cancellationToken);
             yield return await ToViewAsync(snapshot, cancellationToken);
             yield break;
@@ -649,8 +655,11 @@ internal sealed class GoalWorkflowService(
         GoalDelegation delegation = GoalDelegationParser.Parse(result.Output.Value);
         if (delegation.Error is not null)
         {
-            snapshot = await MarkDirectionAsync(snapshot,
-                $"Retried Lead call did not produce a bounded delegation: {delegation.Error}",
+            snapshot = await MarkRejectedLeadOutputAsync(
+                snapshot,
+                "Retried Lead call did not produce a bounded delegation",
+                result.Output.Value,
+                delegation.Error,
                 cancellationToken);
             yield return await ToViewAsync(snapshot, cancellationToken);
             yield break;
@@ -930,6 +939,33 @@ internal sealed class GoalWorkflowService(
             latest.Kind, snapshot.Run.State, StoredState.NeedsDirection,
             cancellationToken);
     }
+
+    private async ValueTask<StoredGoalWorkflowSnapshot> MarkRejectedLeadOutputAsync(
+        StoredGoalWorkflowSnapshot snapshot,
+        string summary,
+        string output,
+        string error,
+        CancellationToken cancellationToken)
+    {
+        string bounded = BoundText(output, MaximumRejectedLeadOutputCharacters);
+        string reason = $"{summary}: {BoundText(error, MaximumRejectedLeadErrorCharacters)}";
+        string evidence = $$"""
+            {{reason}}
+
+            REJECTED LEAD OUTPUT
+            {{bounded}}
+            """;
+        StoredGoalWorkflowCheckpoint latest = snapshot.Checkpoints[^1];
+        return await AppendAsync(snapshot, StoredKind.UserDirectionRequired,
+            StoredActor.System, reason, "Rejected Lead output", evidence,
+            latest.Kind, snapshot.Run.State, StoredState.NeedsDirection,
+            cancellationToken);
+    }
+
+    private static string BoundText(string value, int maximumCharacters) =>
+        value.Length <= maximumCharacters
+            ? value
+            : value[..maximumCharacters] + "\n[truncated]";
 
     private async ValueTask<StoredGoalWorkflowSnapshot> MarkAgentFailureAsync(
         StoredGoalWorkflowSnapshot snapshot,

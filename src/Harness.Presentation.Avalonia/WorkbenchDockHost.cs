@@ -321,7 +321,7 @@ internal sealed class WorkbenchDockHost
     internal TextBox FileFilter => fileFilter;
     internal TextEditor? ActiveSourceEditor => activeDocument?.Id is { } id &&
                                                sourceDocuments.TryGetValue(id, out SourceDocumentSession? session)
-        ? session.Editor
+        ? session.NativeEditor
         : null;
     internal ListBox Problems => problems;
     internal string? ProblemsStatusText => problemsStatus.Text;
@@ -484,7 +484,7 @@ internal sealed class WorkbenchDockHost
     {
         foreach (SourceDocumentSession session in sourceDocuments.Values)
         {
-            CodeEditorView.ApplyTheme(session.Editor);
+            session.Editor.ApplyTheme();
         }
 
         WorkspaceView? active = snapshot.Workspaces.Registered.FirstOrDefault(item => item.IsActive);
@@ -1649,11 +1649,9 @@ internal sealed class WorkbenchDockHost
         }
 
         SetActiveDocument(session.Document);
-        int line = choice.Diagnostic.Range.Start.Line + 1;
-        int column = choice.Diagnostic.Range.Start.Character + 1;
-        session.Editor.TextArea.Caret.Line = Math.Clamp(line, 1, session.Editor.Document.LineCount);
-        session.Editor.TextArea.Caret.Column = Math.Max(1, column);
-        session.Editor.ScrollTo(line, column);
+        WorkbenchCodePosition position = choice.Diagnostic.Range.Start;
+        session.Editor.SetCaretPosition(position);
+        session.Editor.ScrollTo(position);
         session.Editor.Focus();
     }
 
@@ -1831,9 +1829,9 @@ internal sealed class WorkbenchDockHost
         WorkbenchDocumentView view)
     {
         SourceEditorSurface surface = SourceEditorSurface.Create(view);
-        TextEditor editor = surface.Editor;
+        IWorkbenchEditorAdapter editor = surface.Editor;
         AutomationProperties.SetName(
-            editor,
+            editor.Control,
             view.Access is WorkbenchDocumentAccess.Editable
                 ? $"Editable source editor for {view.Path.Value}"
                 : $"Read-only source editor for {view.Path.Value}");
@@ -1915,7 +1913,7 @@ internal sealed class WorkbenchDockHost
                 await RequestSourceDocumentCloseAsync(session);
             }
         };
-        editor.TextArea.TextEntered += async (_, args) =>
+        editor.TextEntered += async (_, args) =>
         {
             if (args.Text is not { Length: 1 })
             {
@@ -1941,14 +1939,13 @@ internal sealed class WorkbenchDockHost
                     value);
             }
         };
-        editor.PointerMoved += (_, args) =>
+        editor.PointerPositionChanged += (_, args) =>
         {
-            var position = editor.GetPositionFromPoint(args.GetPosition(editor));
-            if (position is { } value)
+            if (args.Position is { } position)
             {
                 _ = ShowQuickInfoOnHoverAsync(
                     session,
-                    new(value.Line - 1, value.Column - 1),
+                    position,
                     session.BeginHover(cancellationToken));
             }
         };
@@ -2003,10 +2000,10 @@ internal sealed class WorkbenchDockHost
             }
 
             session.CompletionWindow?.Hide();
-            CompletionWindow window = new RoslynCompletionWindow(session.Editor.TextArea)
+            CompletionWindow window = new RoslynCompletionWindow(session.NativeEditor.TextArea)
             {
-                StartOffset = Offset(session.Editor, result.ApplicableRange.Start),
-                EndOffset = Offset(session.Editor, result.ApplicableRange.End),
+                StartOffset = session.Editor.GetOffset(result.ApplicableRange.Start),
+                EndOffset = session.Editor.GetOffset(result.ApplicableRange.End),
                 CloseWhenCaretAtBeginning = triggerKind is WorkbenchCodeCompletionTriggerKind.Invoke,
             };
             foreach (WorkbenchCodeCompletionItem item in result.Items)
@@ -2085,9 +2082,7 @@ internal sealed class WorkbenchDockHost
             new(session.View.Sha256.Value),
             version,
             new(session.Editor.Text),
-            new(
-                session.Editor.TextArea.Caret.Line - 1,
-                session.Editor.TextArea.Caret.Column - 1),
+            session.Editor.CaretPosition,
             new(newName),
             RenameSymbolOrigin.Human,
             []);
@@ -2209,29 +2204,29 @@ internal sealed class WorkbenchDockHost
             }
 
             foreach (WorkbenchCodeTextChange change in result.Changes
-                         .OrderByDescending(value => Offset(session.Editor, value.Range.Start)))
+                         .OrderByDescending(value => session.Editor.GetOffset(value.Range.Start)))
             {
-                int start = Offset(session.Editor, change.Range.Start);
-                int end = Offset(session.Editor, change.Range.End);
-                session.Editor.Document.Replace(start, Math.Max(0, end - start), change.Text.Value);
+                int start = session.Editor.GetOffset(change.Range.Start);
+                int end = session.Editor.GetOffset(change.Range.End);
+                session.Editor.Replace(start, Math.Max(0, end - start), change.Text.Value);
             }
 
             if (result.NewPosition is { } position)
             {
-                session.Editor.TextArea.Caret.Offset = Offset(session.Editor, position);
+                session.Editor.CaretOffset = session.Editor.GetOffset(position);
             }
             else if (result.Changes.LastOrDefault() is { } last)
             {
-                session.Editor.TextArea.Caret.Offset =
-                    Offset(session.Editor, last.Range.Start) + last.Text.Value.Length;
+                session.Editor.CaretOffset =
+                    session.Editor.GetOffset(last.Range.Start) + last.Text.Value.Length;
             }
 
             if (commitCharacter is { } value && value is not '\t' and not '\n' &&
-                (session.Editor.TextArea.Caret.Offset >= session.Editor.Document.TextLength ||
-                 session.Editor.Document.GetCharAt(session.Editor.TextArea.Caret.Offset) != value))
+                (session.Editor.CaretOffset >= session.Editor.TextLength ||
+                 session.Editor.GetCharAt(session.Editor.CaretOffset) != value))
             {
-                session.Editor.Document.Insert(session.Editor.TextArea.Caret.Offset, value.ToString());
-                session.Editor.TextArea.Caret.Offset++;
+                session.Editor.Insert(session.Editor.CaretOffset, value.ToString());
+                session.Editor.CaretOffset++;
             }
 
             session.SetStatus($"Completed {item.DisplayText.Value} with Roslyn.");
@@ -2312,15 +2307,15 @@ internal sealed class WorkbenchDockHost
             AutomationProperties.SetName(card,
                 $"Quick info for {session.View.Path.Value}: " +
                 string.Join(" ", result.Sections.Select(section => section.Value)));
-            InsightWindow window = new(session.Editor.TextArea)
+            InsightWindow window = new(session.NativeEditor.TextArea)
             {
                 Child = card,
                 StartOffset = result.ApplicableRange is null
-                    ? session.Editor.TextArea.Caret.Offset
-                    : Offset(session.Editor, result.ApplicableRange.Start),
+                    ? session.Editor.CaretOffset
+                    : session.Editor.GetOffset(result.ApplicableRange.Start),
                 EndOffset = result.ApplicableRange is null
-                    ? session.Editor.TextArea.Caret.Offset
-                    : Offset(session.Editor, result.ApplicableRange.End),
+                    ? session.Editor.CaretOffset
+                    : session.Editor.GetOffset(result.ApplicableRange.End),
             };
             session.QuickInfoWindow = window;
             window.Show();
@@ -2359,11 +2354,11 @@ internal sealed class WorkbenchDockHost
             }
 
             session.SignatureWindow?.Hide();
-            OverloadInsightWindow window = new(session.Editor.TextArea)
+            OverloadInsightWindow window = new(session.NativeEditor.TextArea)
             {
                 Provider = new RoslynOverloadProvider(result),
-                StartOffset = Math.Max(0, session.Editor.TextArea.Caret.Offset - 1),
-                EndOffset = session.Editor.Document.TextLength,
+                StartOffset = Math.Max(0, session.Editor.CaretOffset - 1),
+                EndOffset = session.Editor.TextLength,
             };
             session.SignatureWindow = window;
             window.Show();
@@ -2448,11 +2443,11 @@ internal sealed class WorkbenchDockHost
             AutomationProperties.SetName(list,
                 $"{source.Length} source {NavigationLabel(kind)} destinations for " +
                 session.View.Path.Value);
-            InsightWindow window = new(session.Editor.TextArea)
+            InsightWindow window = new(session.NativeEditor.TextArea)
             {
                 Child = list,
-                StartOffset = session.Editor.TextArea.Caret.Offset,
-                EndOffset = session.Editor.TextArea.Caret.Offset,
+                StartOffset = session.Editor.CaretOffset,
+                EndOffset = session.Editor.CaretOffset,
             };
             list.SelectionChanged += async (_, _) =>
             {
@@ -2505,11 +2500,9 @@ internal sealed class WorkbenchDockHost
         }
 
         SetActiveDocument(target.Document);
-        int line = destination.Range.Start.Line + 1;
-        int column = destination.Range.Start.Character + 1;
-        target.Editor.TextArea.Caret.Line = Math.Clamp(line, 1, target.Editor.Document.LineCount);
-        target.Editor.TextArea.Caret.Column = Math.Max(1, column);
-        target.Editor.ScrollTo(line, column);
+        WorkbenchCodePosition position = destination.Range.Start;
+        target.Editor.SetCaretPosition(position);
+        target.Editor.ScrollTo(position);
         target.Editor.Focus();
     }
 
@@ -2523,21 +2516,11 @@ internal sealed class WorkbenchDockHost
         new(session.View.Sha256!.Value),
         version,
         new(session.Editor.Text),
-        requestedPosition ?? new(
-            session.Editor.TextArea.Caret.Line - 1,
-            session.Editor.TextArea.Caret.Column - 1));
+        requestedPosition ?? session.Editor.CaretPosition);
 
     private static bool CanUseSemanticAssistance(SourceDocumentSession session) =>
         session.View.Sha256 is not null && !session.View.IsTruncated &&
         IsDotNetSource(session.View.Path.Value);
-
-    private static int Offset(TextEditor editor, WorkbenchCodePosition position)
-    {
-        int line = Math.Clamp(position.Line + 1, 1, editor.Document.LineCount);
-        var documentLine = editor.Document.GetLineByNumber(line);
-        int character = Math.Clamp(position.Character, 0, documentLine.Length);
-        return documentLine.Offset + character;
-    }
 
     private async ValueTask<bool> SaveSourceDocumentAsync(
         SourceDocumentSession session,

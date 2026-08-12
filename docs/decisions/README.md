@@ -36,3 +36,4 @@ records in both directions.
 | [017](017-portal-visual-verification.md) | Accepted | Portal-mediated visual verification |
 | [018](018-documentation-dependency-evidence-and-sbom.md) | Accepted | Documentation, dependency evidence, and SBOM |
 | [019](019-inbound-mcp-control-and-evaluation.md) | Accepted | Inbound MCP control and evaluation |
+| [020](020-editor-platform-boundary-and-morgania-evaluation.md) | Accepted | Editor platform boundary and Morgania evaluation |

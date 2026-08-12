@@ -195,7 +195,7 @@ expected semantic operations. The gate must catch the large-rewrite and invalid-
 regressions already observed in hands-on use. See the
 [acceptance record](acceptance/local-model-regression-2026-08-12.md).
 
-### Planned: Task 048 — Morgania editor evaluation and conditional migration
+### Evaluated: Task 048 — Morgania editor evaluation and conditional migration
 
 Evaluate Morgania as the Avalonia editor platform before adding more
 Presentation-specific behavior to the current AvaloniaEdit integration. Morgania is
@@ -244,6 +244,15 @@ implementation types across layers, cannot meet accessibility or input requireme
 adds unacceptable startup or memory cost, or requires routine large private Roslyn
 patches. Retain a working rollback path until the migrated editor passes the complete
 desktop release gate; remove the old stack only in a separate, reviewed cutover.
+
+The 2026-08-12 evaluation rejected the inspected RoslynPad 22.1 implementation at
+the package, provenance, version-coupling, maintenance, and upstream-smoke gates.
+Harness.NET retained AvaloniaEdit behind a new Presentation-owned adapter and kept
+the existing Roslyn contracts and shared live buffer. See
+[ADR 020](decisions/020-editor-platform-boundary-and-morgania-evaluation.md) and the
+[evaluation record](acceptance/morgania-editor-evaluation-2026-08-12.md). Reconsider
+the migration only when a pinned, supported, publicly verifiable Morgania release is
+available; that is a new evaluation, not unfinished work on the rejected revision.
 
 ### Planned: Task 049 — NetPad-level .NET editing and inspection
 
