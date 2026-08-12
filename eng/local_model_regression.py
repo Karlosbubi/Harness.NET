@@ -112,29 +112,52 @@ class StatelessMcpClient:
         self.endpoint = endpoint
         self.token = token
         self.client_id = client_id
+        self.trace: list[dict[str, Any]] = []
 
     def call(self, tool: str, arguments: dict[str, Any]) -> Any:
-        self._post({
-            "jsonrpc": "2.0", "id": 1, "method": "initialize",
-            "params": {
-                "protocolVersion": "2025-06-18", "capabilities": {},
-                "clientInfo": {"name": "Harness.NET local regression", "version": "1"},
-            },
-        })
-        response = self._post({
-            "jsonrpc": "2.0", "id": 2, "method": "tools/call",
-            "params": {"name": tool, "arguments": arguments},
-        })
-        if "error" in response:
-            raise RuntimeError(f"MCP {tool} failed: {response['error']}")
-        result = response.get("result", {})
-        if result.get("isError"):
-            raise RuntimeError(f"MCP {tool} returned an error")
-        text = next(
-            (item.get("text") for item in result.get("content", [])
-             if item.get("type") == "text"), None,
-        )
-        return None if text is None else json.loads(text)
+        started = time.monotonic()
+        trace = {
+            "tool": tool,
+            "startedAt": utc_now(),
+            "arguments": arguments,
+            "succeeded": False,
+            "error": None,
+        }
+        try:
+            self._post({
+                "jsonrpc": "2.0", "id": 1, "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-06-18", "capabilities": {},
+                    "clientInfo": {
+                        "name": "Harness.NET local regression", "version": "1",
+                    },
+                },
+            })
+            response = self._post({
+                "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                "params": {"name": tool, "arguments": arguments},
+            })
+            if "error" in response:
+                raise RuntimeError(f"MCP {tool} failed: {response['error']}")
+            result = response.get("result", {})
+            if result.get("isError"):
+                detail = next(
+                    (item.get("text") for item in result.get("content", [])
+                     if item.get("type") == "text"), None,
+                )
+                raise RuntimeError(f"MCP {tool} returned an error: {detail}")
+            text = next(
+                (item.get("text") for item in result.get("content", [])
+                 if item.get("type") == "text"), None,
+            )
+            trace["succeeded"] = True
+            return None if text is None else json.loads(text)
+        except BaseException as error:
+            trace["error"] = f"{type(error).__name__}: {error}"
+            raise
+        finally:
+            trace["elapsedMs"] = max(1, round((time.monotonic() - started) * 1000))
+            self.trace.append(trace)
 
     def _post(self, payload: dict[str, Any]) -> dict[str, Any]:
         request = Request(
@@ -157,6 +180,141 @@ class StatelessMcpClient:
                     if candidate.get("id") == payload["id"]:
                         return candidate
         raise RuntimeError("MCP response ended before the matching result")
+
+
+class LiveGoalDriver:
+    """Bounded typed lifecycle driver for one isolated Harness.NET goal."""
+
+    WORKFLOW_RUNNING = 0
+    WORKFLOW_AWAITING_PLAN = 1
+    WORKFLOW_AWAITING_ACCEPTANCE = 2
+    WORKFLOW_NEEDS_DIRECTION = 3
+    WORKFLOW_PARTIAL = 4
+    WORKFLOW_COMPLETED = 5
+    WORKFLOW_ABORTED = 6
+
+    def __init__(
+        self,
+        client: StatelessMcpClient,
+        instance_id: str,
+        workspace_id: str,
+        timeout_seconds: int,
+        sample_resources: Any | None = None,
+    ):
+        self.client = client
+        self.instance_id = instance_id
+        self.workspace_id = workspace_id
+        self.timeout_seconds = timeout_seconds
+        self.sample_resources = sample_resources
+
+    def create_goal(self, title: str, objective: str, review_cycles: int = 2) -> str:
+        value = self.client.call("harness_create_goal", {
+            "expectedInstanceId": self.instance_id,
+            "workspaceId": self.workspace_id,
+            "title": title,
+            "objective": objective,
+            "reviewCycleLimit": review_cycles,
+            "remoteBudgetMicrousd": None,
+        })
+        return str(value["result"]["goal"]["id"]["value"])
+
+    def select_model(self, goal_id: str, role: str, provider: str, model: str) -> None:
+        self.client.call("harness_select_goal_model", {
+            "expectedInstanceId": self.instance_id,
+            "goalId": goal_id,
+            "role": role,
+            "provider": provider,
+            "model": model,
+        })
+
+    def start_planning(self, goal_id: str) -> dict[str, Any]:
+        self.client.call("harness_start_planning", {
+            "expectedInstanceId": self.instance_id,
+            "goalId": goal_id,
+        })
+        return self.wait_for(goal_id, {
+            self.WORKFLOW_AWAITING_PLAN, self.WORKFLOW_NEEDS_DIRECTION,
+        })
+
+    def retry(self, goal_id: str, role: str, guidance: str | None) -> dict[str, Any]:
+        self.client.call("harness_retry_goal", {
+            "expectedInstanceId": self.instance_id,
+            "goalId": goal_id,
+            "role": role,
+            "guidance": guidance,
+        })
+        terminal = (
+            {self.WORKFLOW_AWAITING_PLAN, self.WORKFLOW_NEEDS_DIRECTION}
+            if role == "Lead" else
+            {
+                self.WORKFLOW_RUNNING,
+                self.WORKFLOW_AWAITING_ACCEPTANCE,
+                self.WORKFLOW_NEEDS_DIRECTION,
+                self.WORKFLOW_PARTIAL,
+                self.WORKFLOW_COMPLETED,
+            }
+        )
+        return self.wait_for(goal_id, terminal)
+
+    def approve_plan(self, goal: dict[str, Any], reason: str) -> None:
+        self.client.call("harness_decide_plan", {
+            "expectedInstanceId": self.instance_id,
+            "goalId": goal["goal"]["id"]["value"],
+            "planId": goal["plan"]["id"]["value"],
+            "decision": "Approve",
+            "reason": reason,
+        })
+
+    def resume(self, goal_id: str) -> dict[str, Any]:
+        self.client.call("harness_resume_goal", {
+            "expectedInstanceId": self.instance_id,
+            "goalId": goal_id,
+        })
+        return self.wait_for(goal_id, {
+            self.WORKFLOW_AWAITING_ACCEPTANCE,
+            self.WORKFLOW_NEEDS_DIRECTION,
+            self.WORKFLOW_PARTIAL,
+            self.WORKFLOW_COMPLETED,
+        })
+
+    def wait_for(self, goal_id: str, states: set[int]) -> dict[str, Any]:
+        deadline = time.monotonic() + self.timeout_seconds
+        last_progress: tuple[Any, ...] | None = None
+        progress_deadline = deadline
+        while time.monotonic() < deadline:
+            if self.sample_resources is not None:
+                self.sample_resources()
+            value = self.client.call("harness_goals", {
+                "goalId": goal_id,
+                "maximumResults": 1,
+                "continuation": None,
+            })
+            matches = value.get("goals", [])
+            if len(matches) != 1:
+                raise RuntimeError(f"Harness returned {len(matches)} matches for exact goal")
+            goal = matches[0]
+            workflow = goal.get("workflow")
+            operation = goal.get("inboundOperation")
+            workflow_state = None if workflow is None else int(workflow["state"])
+            operation_running = (
+                operation is not None and int(operation.get("state", 0)) == 0
+            )
+            if workflow_state in states and not (
+                workflow_state == self.WORKFLOW_RUNNING and operation_running
+            ):
+                return goal
+            progress = (
+                None if workflow is None else workflow.get("state"),
+                0 if workflow is None else len(workflow.get("activities", [])),
+                None if operation is None else operation.get("state"),
+            )
+            if progress != last_progress:
+                last_progress = progress
+                progress_deadline = min(deadline, time.monotonic() + self.timeout_seconds)
+            if time.monotonic() >= progress_deadline:
+                break
+            time.sleep(0.5)
+        raise TimeoutError(f"Harness goal {goal_id} did not reach {sorted(states)}")
 
 
 def collect_ollama_identity(endpoint: str, model: str) -> dict[str, Any]:
@@ -184,15 +342,22 @@ def collect_ollama_identity(endpoint: str, model: str) -> dict[str, Any]:
         (item for item in running.get("models", []) if model in {item.get("name"), item.get("model")}),
         None,
     )
+    model_info = show.get("model_info", {})
+    declared_context = next(
+        (value for key, value in model_info.items()
+         if key == "context_length" or key.endswith(".context_length")),
+        None,
+    )
     return {
         "provider": "Ollama",
         "model": model,
         "available": True,
         "digest": found.get("digest"),
+        "modelSizeBytes": found.get("size"),
         "parameterSize": found.get("details", {}).get("parameter_size"),
         "quantization": found.get("details", {}).get("quantization_level"),
         "capabilities": sorted(show.get("capabilities", [])),
-        "declaredContextLength": show.get("model_info", {}).get("context_length"),
+        "declaredContextLength": declared_context,
         "effectiveContextLength": None if loaded is None else loaded.get("context_length"),
         "loadedVramBytes": None if loaded is None else loaded.get("size_vram"),
     }
@@ -204,7 +369,10 @@ def derive_metrics(events: Iterable[dict[str, Any]], elapsed_ms: int, peak_rss: 
     return {
         "planValid": any(item.get("kind") == "plan" and item.get("valid") is True for item in values),
         "completed": any(item.get("kind") == "terminal" and item.get("outcome") == "completed" for item in values),
-        "partialCompletion": any(item.get("kind") == "checkpoint" and item.get("partial") is True for item in values),
+        "partialCompletion": any(
+            item.get("kind") == "checkpoint" and item.get("partial") is True or
+            item.get("kind") == "terminal" and item.get("outcome") == "partial"
+            for item in values),
         "retryCount": sum(item.get("kind") == "retry" for item in values),
         "toolErrors": sum(item.get("error") is not None for item in tool_events),
         "rewriteLines": sum(int(item.get("changedLines", 0)) for item in tool_events if item.get("mutation")),
@@ -213,6 +381,21 @@ def derive_metrics(events: Iterable[dict[str, Any]], elapsed_ms: int, peak_rss: 
         "latencyMs": elapsed_ms,
         "peakRssBytes": peak_rss,
     }
+
+
+def semantic_validation_summary(result: dict[str, Any]) -> tuple[bool, int]:
+    """Return whether a durable edit has Roslyn validation and introduced errors."""
+    validation = result.get("candidateCodeValidation")
+    if not isinstance(validation, dict):
+        return False, 0
+    diagnostics = validation.get("diagnostics", [])
+    introduced_errors = sum(
+        1 for item in diagnostics
+        if isinstance(item, dict) and item.get("kind") == "Introduced" and
+        isinstance(item.get("diagnostic"), dict) and
+        item["diagnostic"].get("severity") == "Error"
+    )
+    return validation.get("disposition") == "Validated", introduced_errors
 
 
 def validate_run(scenario: Scenario, run: dict[str, Any]) -> list[str]:
@@ -301,10 +484,35 @@ def compare_runs(current: list[dict[str, Any]], baseline: list[dict[str, Any]]) 
                 "reviewFindings", "latencyMs", "peakRssBytes",
             ):
                 deltas[metric] = item["metrics"][metric] - old["metrics"][metric]
+        regressions: list[str] = []
+        improvements: list[str] = []
+        if old is not None:
+            if old["passed"] and not item["passed"]:
+                regressions.append("scenario changed from passing to failing")
+            elif not old["passed"] and item["passed"]:
+                improvements.append("scenario changed from failing to passing")
+            lower_is_better = {
+                "retryCount", "toolErrors", "rewriteLines", "compilerRegressions",
+                "reviewFindings", "latencyMs", "peakRssBytes",
+            }
+            for metric, delta in deltas.items():
+                if metric in lower_is_better and delta > 0:
+                    regressions.append(f"{metric} increased by {delta}")
+                elif metric in lower_is_better and delta < 0:
+                    improvements.append(f"{metric} decreased by {-delta}")
+        classification = (
+            "regressed" if regressions else
+            "improved" if improvements else
+            "unchanged" if old is not None else
+            "new"
+        )
         comparisons.append({
             "scenario": {"id": identity[0], "version": identity[1]},
             "baselineFound": old is not None,
             "passedChanged": None if old is None else item["passed"] != old["passed"],
             "metricDeltas": deltas,
+            "classification": classification,
+            "regressions": regressions,
+            "improvements": improvements,
         })
     return {"schemaVersion": SCHEMA_VERSION, "comparisons": comparisons}

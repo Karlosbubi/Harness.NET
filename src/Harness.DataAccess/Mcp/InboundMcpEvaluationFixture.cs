@@ -113,7 +113,27 @@ internal sealed class InboundMcpEvaluationFixture(
         string[] tracked = repository.Index.Select(entry => entry.Path)
             .Order(StringComparer.Ordinal).ToArray();
         int changed = repository.RetrieveStatus().Count(item => item.State != FileStatus.Ignored);
-        return new(root, Path.Combine(root, "Fixture.slnx"), repository.Head.Tip.Sha,
+        return new(root, ResolveEntryPoint(root, tracked), repository.Head.Tip.Sha,
             changed, tracked, timeProvider.GetUtcNow());
+    }
+
+    private static string ResolveEntryPoint(string root, IReadOnlyList<string> tracked)
+    {
+        string[] solutions = tracked.Where(path =>
+                Path.GetExtension(path) is string extension &&
+                (extension.Equals(".slnx", StringComparison.OrdinalIgnoreCase) ||
+                 extension.Equals(".sln", StringComparison.OrdinalIgnoreCase)))
+            .ToArray();
+        string[] candidates = solutions.Length > 0
+            ? solutions
+            : tracked.Where(path => Path.GetExtension(path)
+                .Equals(".csproj", StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (candidates.Length != 1)
+        {
+            throw new InvalidOperationException(
+                "The isolated evaluation repository must track exactly one solution, " +
+                "or exactly one project when no solution is present.");
+        }
+        return Path.Combine(root, candidates[0]);
     }
 }

@@ -14,7 +14,7 @@ from typing import Any
 
 from local_model_regression import (
     SCHEMA_VERSION, collect_ollama_identity, compare_runs, fixture_run, git_revision,
-    load_corpus, write_json,
+    load_corpus, utc_now, validate_run, write_json,
 )
 
 
@@ -25,6 +25,10 @@ def parse_args() -> argparse.Namespace:
                         help="authorize local Ollama inference; never enables OpenRouter")
     parser.add_argument("--model", action="append", default=[],
                         help="Ollama model to run sequentially; may be repeated")
+    parser.add_argument("--implementer-model",
+                        help="optional Implementer route for every live comparison")
+    parser.add_argument("--reviewer-model",
+                        help="optional Reviewer route for every live comparison")
     parser.add_argument("--ollama-endpoint", default="http://127.0.0.1:11434")
     parser.add_argument("--baseline", type=Path)
     parser.add_argument("--output-root", type=Path)
@@ -81,17 +85,96 @@ def main() -> int:
     runs = [fixture_run(item, revision) for item in scenarios if item.kind == "fixture"]
     model_identities = []
     if args.live:
-        # Models are intentionally inspected and run one at a time. The legacy
-        # Tic-Tac-Toe adapter is migrated by the next Task 038 slice; fail closed
-        # instead of silently falling back to UI automation or paid inference.
-        for model in args.model:
-            identity = collect_ollama_identity(args.ollama_endpoint, model)
-            model_identities.append(identity)
+        identity_models = list(dict.fromkeys([
+            *args.model,
+            *([args.implementer_model] if args.implementer_model else []),
+            *([args.reviewer_model] if args.reviewer_model else []),
+        ]))
+        identities = {
+            model: collect_ollama_identity(args.ollama_endpoint, model)
+            for model in identity_models
+        }
+        model_identities.extend(identities.values())
+        for model, identity in identities.items():
             if not identity.get("available"):
                 raise SystemExit(f"Ollama model is unavailable: {model}")
-        if live_scenarios:
-            raise SystemExit(
-                "live scenario adapter is not installed yet; deterministic results were not written")
+            if int(identity.get("modelSizeBytes", 0) or 0) > 16 * 1024**3:
+                raise SystemExit(f"Ollama model exceeds the 16 GB limit: {model}")
+        for index, model in enumerate(args.model):
+            identity = identities[model]
+            for scenario in live_scenarios:
+                if scenario.scenario_id != "tictactoe":
+                    raise SystemExit(
+                        f"no live adapter is registered for {scenario.scenario_id}")
+                safe_model = "".join(
+                    character if character.isalnum() or character in "-." else "-"
+                    for character in model
+                )
+                live_output = output / "live" / f"{scenario.scenario_id}-{safe_model}"
+                command = [
+                    sys.executable,
+                    str(repository / "eng/verify-ollama-tictactoe-usability.py"),
+                    "--ollama-endpoint", args.ollama_endpoint,
+                    "--model", model,
+                    "--output-root", str(live_output),
+                ]
+                if args.implementer_model:
+                    command.extend(["--implementer-model", args.implementer_model])
+                if args.reviewer_model:
+                    command.extend(["--reviewer-model", args.reviewer_model])
+                if index > 0:
+                    command.append("--skip-host-build")
+                result = subprocess.run(
+                    command, cwd=repository, text=True,
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False,
+                )
+                live_output.mkdir(parents=True, exist_ok=True)
+                (live_output / "runner.log").write_text(
+                    result.stdout or "", encoding="utf-8")
+                usability_path = live_output / "usability-report.json"
+                usability = (
+                    json.loads(usability_path.read_text(encoding="utf-8"))
+                    if usability_path.is_file() else {}
+                )
+                run_result = usability.get("regression_run")
+                if run_result is None:
+                    run_result = {
+                        "schemaVersion": SCHEMA_VERSION,
+                        "harnessRevision": revision,
+                        "scenario": {
+                            "id": scenario.scenario_id,
+                            "version": scenario.version,
+                            "prompt": scenario.prompt,
+                        },
+                        "modelServer": identity,
+                        "discoveredCapabilities": identity.get("capabilities", []),
+                        "routes": {},
+                        "startedAt": usability.get("started_at", utc_now()),
+                        "finishedAt": usability.get("finished_at", utc_now()),
+                        "resource": {},
+                        "toolTrace": [],
+                        "diff": "",
+                        "evidence": [],
+                        "terminalOutcome": "failed",
+                        "metrics": {
+                            "planValid": False, "completed": False,
+                            "partialCompletion": False, "retryCount": 0,
+                            "toolErrors": 0, "rewriteLines": 0,
+                            "compilerRegressions": 0, "reviewFindings": 0,
+                            "latencyMs": 0, "peakRssBytes": 0,
+                        },
+                        "passed": False,
+                        "validationFailures": [
+                            usability.get("error") or
+                            f"live adapter exited with status {result.returncode}"
+                        ],
+                    }
+                else:
+                    run_result["scenario"]["corpusPrompt"] = scenario.prompt
+                    run_result["validationFailures"] = validate_run(scenario, run_result)
+                    run_result["passed"] = (
+                        result.returncode == 0 and not run_result["validationFailures"])
+                runs.append(run_result)
 
     report = {
         "schemaVersion": SCHEMA_VERSION,

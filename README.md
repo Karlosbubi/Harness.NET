@@ -45,8 +45,8 @@ Delivered:
 
 Open work is tracked in [the roadmap](docs/roadmap.md) and
 [task ledger](docs/tasks/README.md). The semantic tool foundation and inbound MCP
-evaluation surface are delivered. The local-model regression gate is next before the
-editor and daily-use IDE slices expand further.
+evaluation surface and local-model regression gate are delivered. The roadmap now
+continues with the editor and daily-use IDE slices.
 
 ## Safety model
 
@@ -173,6 +173,17 @@ Local-model Tic-Tac-Toe usability test:
 
 This test performs real local inference and writes its repository, state, logs,
 timings, and validation evidence under `artifacts/usability/`.
+
+Versioned local-model regression corpus (deterministic and free by default):
+
+```bash
+./eng/verify-local-model-regression.py
+```
+
+Live runs require `--live` and explicit Ollama models. They run sequentially and do
+not configure paid providers. See the
+[acceptance record](docs/acceptance/local-model-regression-2026-08-12.md) for live,
+comparison, retention, and cleanup commands.
 
 Ollama live adapter test:
 

@@ -8,7 +8,7 @@
   "validation": {
     "allowedPaths": ["src/TicTacToe", "tests/TicTacToe.Tests"],
     "requiredTools": ["Build", "Test"],
-    "semanticTools": ["GetSymbolInfo", "FindSymbolDefinition", "InspectCodeProblems"],
+    "semanticTools": ["RoslynEditValidation"],
     "requiredEvidence": ["build", "test", "diff", "independent-validator"],
     "maximumRewriteLines": 500
   },

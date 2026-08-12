@@ -1,5 +1,6 @@
 using Harness.DataAccess.Configuration;
 using Harness.DataAccess.Mcp;
+using LibGit2Sharp;
 
 namespace Harness.DataAccess.Tests.Mcp;
 
@@ -27,6 +28,31 @@ public sealed class InboundMcpEvaluationFixtureTests : IDisposable
         Assert.DoesNotContain("changed", await File.ReadAllTextAsync(source));
         Assert.False(File.Exists(Path.Combine(baseline.RootPath, "untracked.txt")));
         Assert.Equal("developer state", await File.ReadAllTextAsync(outside));
+    }
+
+    [Fact]
+    public async Task Ensure_uses_the_single_tracked_solution_in_a_preseeded_fixture()
+    {
+        string repositoryRoot = Path.Combine(root, "data", "evaluation-fixture");
+        Directory.CreateDirectory(Path.Combine(repositoryRoot, "src", "One"));
+        await File.WriteAllTextAsync(
+            Path.Combine(repositoryRoot, "Custom.slnx"),
+            "<Solution><Project Path=\"src/One/One.csproj\" /></Solution>\n");
+        await File.WriteAllTextAsync(
+            Path.Combine(repositoryRoot, "src", "One", "One.csproj"),
+            "<Project Sdk=\"Microsoft.NET.Sdk\" />\n");
+        Repository.Init(repositoryRoot);
+        using (Repository repository = new(repositoryRoot))
+        {
+            Commands.Stage(repository, "*");
+            Signature signature = new("Test", "test@localhost", DateTimeOffset.UnixEpoch);
+            repository.Commit("Seed custom fixture", signature, signature);
+        }
+        InboundMcpEvaluationFixture fixture = new(new Paths(root), TimeProvider.System);
+
+        InboundMcpEvaluationSnapshot snapshot = await fixture.EnsureAsync();
+
+        Assert.Equal(Path.Combine(repositoryRoot, "Custom.slnx"), snapshot.EntryPoint);
     }
 
     public void Dispose()

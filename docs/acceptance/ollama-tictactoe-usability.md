@@ -1,8 +1,9 @@
 # Ollama Tic-Tac-Toe usability test
 
-`eng/verify-ollama-tictactoe-usability.py` drives the Avalonia UI through Linux AT-SPI
-and uses real Ollama models for planning, implementation, review, and recovery. It is
-not part of the deterministic release gate.
+`eng/verify-ollama-tictactoe-usability.py` drives an isolated Harness.NET instance
+through its authenticated stateless MCP surface and uses real Ollama models for
+planning, implementation, review, and recovery. It is not part of the deterministic
+release gate.
 
 ## Test repository
 
@@ -22,11 +23,13 @@ validation, minimax solver, and generated tests.
 
 The script:
 
-1. selects models and generates a plan;
-2. approves the plan;
-3. runs the real Implementer and Reviewer workflow;
-4. uses retry with another model or guidance if a role reaches `NeedsDirection`;
-5. records checkpoints, routes, recovery, edit attempts, and tool calls.
+1. starts an ephemeral loopback-only MCP server with an owner-only bearer token;
+2. selects models and generates a plan;
+3. approves the plan;
+4. runs the real Implementer and Reviewer workflow;
+5. uses explicit retry guidance if a role reaches `NeedsDirection`, then explicitly
+   resumes after a successful retried task;
+6. records MCP calls, checkpoints, routes, recovery, edit attempts, and tool calls.
 
 Exact-file generation accepts fenced C# source. Later corrections use one to four
 exact `SEARCH`/`REPLACE` blocks against the last candidate. Prose is rejected before
@@ -64,6 +67,11 @@ After `AwaitingAcceptance`, the script:
 `HARNESS_OLLAMA_ENDPOINT` and `HARNESS_OLLAMA_MODEL` provide defaults. The script uses
 no OpenRouter provider. It retains artifacts on success and failure. Real local
 inference may take several minutes.
+
+The versioned wrapper is `eng/verify-local-model-regression.py`. It adds corpus
+metadata, model comparison, deterministic validators, bounded partial-result capture,
+and cleanup. See
+[the Task 038 acceptance record](local-model-regression-2026-08-12.md).
 
 ## Accepted run: 2026-08-09
 

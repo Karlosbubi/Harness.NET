@@ -56,6 +56,13 @@ deletes the file before starting the MCP listener. The token is never accepted a
 command-line value, copied to normal storage, or logged. Normal mode cannot use this
 bootstrap path.
 
+An evaluator may also pre-seed the disposable fixture repository inside that same
+evaluation root. Registration resolves exactly one tracked `.slnx` or `.sln` entry
+point, or exactly one tracked `.csproj` when no solution is present. Missing or
+ambiguous entry points fail closed. This does not accept an external repository path,
+change normal workspace registration, or allow reset to address anything outside the
+identified temporary fixture root.
+
 ### Tool policy
 
 Tools are individually allowlisted and declare read-only, mutation, execution,

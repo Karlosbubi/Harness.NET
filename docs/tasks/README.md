@@ -73,14 +73,15 @@ Use small commits with one result. Do not mix unrelated cleanup into feature wor
 
 ### 038 — local-model quality regression
 
-Status: `Planned`
+Status: `Delivered`
+
+Acceptance: [Local-model regression corpus](../acceptance/local-model-regression-2026-08-12.md).
 
 Dependencies: 045, 046, 047, 059.
 
-Problem: the current Tic-Tac-Toe script exercises a realistic local workflow, but it
-is not yet a versioned regression corpus. Hands-on runs have exposed invalid plans,
-poor tool choice, large rewrites, weak recovery, and model-specific failures that
-ordinary deterministic tests cannot measure.
+Delivery: the Tic-Tac-Toe script now exercises the stateless MCP lifecycle as part of
+a versioned regression corpus. It records invalid plans, tool choice, rewrite size,
+recovery, and model-specific failures that ordinary deterministic tests do not expose.
 
 Acceptance criteria:
 

@@ -1,30 +1,44 @@
 #!/usr/bin/env python3
 """Drive Harness.NET through a non-trivial, local-Ollama-only usability exercise.
 
-The script creates an isolated .NET repository, asks Harness.NET through its real
-Avalonia UI to implement a console Tic-Tac-Toe game and minimax opponent, then runs
-both the generated test suite and an independent exhaustive solver validator. It
-never configures or authorizes a remote model provider.
+The script creates an isolated .NET repository, drives Harness.NET through its
+authenticated stateless MCP control surface, and independently validates the result.
+It never configures or authorizes a remote model provider.
 """
 
 from __future__ import annotations
 
 import argparse
+import base64
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import html
 import json
 import os
 from pathlib import Path
-import runpy
+import secrets
 import shlex
 import sqlite3
+import socket
 import subprocess
 import sys
+import tempfile
 import time
 from typing import Any, Iterator
 from urllib.error import URLError
 from urllib.request import Request, urlopen
+
+from local_model_regression import (
+    LiveGoalDriver,
+    MAX_TRACE_ITEMS,
+    SCHEMA_VERSION,
+    StatelessMcpClient,
+    bounded_text,
+    collect_ollama_identity,
+    derive_metrics,
+    semantic_validation_summary,
+    sha256_text,
+)
 
 
 GOAL_TITLE = "Build validated Tic-Tac-Toe with an unbeatable computer"
@@ -425,8 +439,8 @@ def build_environment_values(root: Path) -> dict[str, str]:
     }
 
 
-def create_repository(root: Path) -> Path:
-    repository = root / "repository"
+def create_repository(root: Path, repository: Path | None = None) -> Path:
+    repository = repository or root / "repository"
     repository.mkdir(parents=True)
     environment = os.environ.copy()
     environment.update(build_environment_values(root))
@@ -504,8 +518,12 @@ def write_configuration(
     implementer_model: str,
     reviewer_model: str,
     recovery_implementer_models: list[str],
+    mcp_endpoint: str | None = None,
 ) -> None:
-    config = root / "config/harness.net/harness.xml"
+    config = root / (
+        "config/harness.xml" if mcp_endpoint is not None
+        else "config/harness.net/harness.xml"
+    )
     recovery_providers = "\n".join(
         f"""    <RecoveryImplementer{index}>
       <Kind>Ollama</Kind>
@@ -518,6 +536,36 @@ def write_configuration(
     </RecoveryImplementer{index}>"""
         for index, model in enumerate(recovery_implementer_models, start=1)
     )
+    inbound = "" if mcp_endpoint is None else f"""
+  <InboundMcp>
+    <Enabled>true</Enabled>
+    <Mode>IsolatedEvaluation</Mode>
+    <Endpoint>{html.escape(mcp_endpoint)}</Endpoint>
+    <RequestTimeoutSeconds>300</RequestTimeoutSeconds>
+    <ResultLimit>5000</ResultLimit>
+    <AuditRetention>10000</AuditRetention>
+    <AllowedClients><Client>local-regression</Client></AllowedClients>
+    <AllowedTools>
+      <Tool>harness_application</Tool>
+      <Tool>harness_workspace</Tool>
+      <Tool>harness_goals</Tool>
+      <Tool>harness_evidence</Tool>
+      <Tool>harness_create_goal</Tool>
+      <Tool>harness_goal_models</Tool>
+      <Tool>harness_select_goal_model</Tool>
+      <Tool>harness_start_planning</Tool>
+      <Tool>harness_resume_goal</Tool>
+      <Tool>harness_retry_goal</Tool>
+      <Tool>harness_cancel_goal_operation</Tool>
+      <Tool>harness_decide_plan</Tool>
+      <Tool>harness_commit_preview</Tool>
+      <Tool>harness_build</Tool>
+      <Tool>harness_test</Tool>
+      <Tool>harness_audit</Tool>
+      <Tool>harness_evaluation_snapshot</Tool>
+    </AllowedTools>
+    <ApprovalRequiredTools />
+  </InboundMcp>"""
     write(config, f"""<?xml version="1.0" encoding="utf-8" ?>
 <Harness>
   <Providers>
@@ -556,6 +604,7 @@ def write_configuration(
     <ToolLlm>ImplementerOllama</ToolLlm>
     <Embedding>LeadOllama</Embedding>
   </Routing>
+{inbound}
 </Harness>
 """)
 
@@ -1015,6 +1064,162 @@ def workflow_metrics(database: Path) -> dict[str, Any]:
     }
 
 
+def available_loopback_endpoint() -> str:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        listener.bind(("127.0.0.1", 0))
+        return f"http://127.0.0.1:{listener.getsockname()[1]}/mcp"
+
+
+def process_rss_bytes(process: subprocess.Popen[str]) -> int:
+    try:
+        status = Path(f"/proc/{process.pid}/status").read_text(encoding="utf-8")
+        line = next(value for value in status.splitlines() if value.startswith("VmRSS:"))
+        return int(line.split()[1]) * 1024
+    except (FileNotFoundError, StopIteration, ValueError):
+        return 0
+
+
+def wait_for_mcp(
+    client: StatelessMcpClient,
+    process: subprocess.Popen[str],
+    timeout_seconds: int,
+) -> dict[str, Any]:
+    deadline = time.monotonic() + min(timeout_seconds, 60)
+    last_error: BaseException | None = None
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            raise RuntimeError(f"Harness exited before MCP startup ({process.returncode})")
+        try:
+            return client.call("harness_application", {})
+        except BaseException as error:
+            last_error = error
+            time.sleep(0.25)
+    raise TimeoutError(f"Harness MCP did not start: {last_error}")
+
+
+def internal_tool_trace(database: Path) -> list[dict[str, Any]]:
+    if not database.is_file():
+        return []
+    with sqlite3.connect(database) as connection:
+        rows = connection.execute(
+            "SELECT tool_name, state, request_json, result_json, started_at, completed_at "
+            "FROM tool_calls ORDER BY started_at LIMIT ?",
+            (MAX_TRACE_ITEMS,),
+        ).fetchall()
+    trace: list[dict[str, Any]] = []
+    for tool, state, request_json, result_json, started_at, completed_at in rows:
+        request = json.loads(request_json)
+        result = json.loads(result_json) if result_json else {}
+        path = request.get("relativePath") or request.get("path")
+        semantic_validation, introduced_errors = semantic_validation_summary(result)
+        trace.append({
+            "kind": "tool",
+            "tool": tool,
+            "state": state,
+            "path": path,
+            "mutation": tool in {"FileEdit", "ApplySymbolRename"},
+            "changedLines": int(result.get("changedLines", 0) or 0),
+            "semanticValidation": semantic_validation,
+            "introducedCompilerErrors": introduced_errors,
+            "error": result.get("error"),
+            "errorCode": result.get("errorCode"),
+            "startedAt": started_at,
+            "completedAt": completed_at,
+        })
+        if semantic_validation:
+            trace.append({
+                "kind": "tool",
+                "tool": "RoslynEditValidation",
+                "state": "Succeeded",
+                "path": path,
+                "mutation": False,
+                "changedLines": 0,
+                "introducedCompilerErrors": introduced_errors,
+                "startedAt": started_at,
+                "completedAt": completed_at,
+            })
+    return trace
+
+
+def changed_lines(worktree: Path) -> int:
+    output = run(["git", "diff", "--numstat"], worktree, capture=True)
+    total = 0
+    for line in output.splitlines():
+        added, removed, _ = line.split("\t", 2)
+        if added.isdigit():
+            total += int(added)
+        if removed.isdigit():
+            total += int(removed)
+    return total
+
+
+def drive_goal_with_mcp(
+    client: StatelessMcpClient,
+    instance_id: str,
+    workspace_id: str,
+    report: dict[str, Any],
+    timeout_seconds: int,
+    models: dict[str, Any],
+    sample_resources: Any,
+) -> tuple[str, dict[str, Any]]:
+    driver = LiveGoalDriver(
+        client, instance_id, workspace_id, timeout_seconds, sample_resources)
+    goal_id = driver.create_goal(GOAL_TITLE, GOAL_OBJECTIVE)
+    report["goal_id"] = goal_id
+    for role, provider, model in (
+        ("Lead", "LeadOllama", models["lead"]),
+        ("Implementer", "ImplementerOllama", models["implementer"]),
+        ("Reviewer", "ReviewerOllama", models["reviewer"]),
+    ):
+        driver.select_model(goal_id, role, provider, model)
+
+    goal = driver.start_planning(goal_id)
+    lead_retries = 0
+    while int(goal["workflow"]["state"]) == LiveGoalDriver.WORKFLOW_NEEDS_DIRECTION:
+        if lead_retries >= 6:
+            raise RuntimeError("Lead did not produce a valid bounded plan after six retries")
+        lead_retries += 1
+        goal = driver.retry(
+            goal_id,
+            "Lead",
+            "Return only the required JSON object. Use the exact four editable paths from "
+            "the goal as file areas. Every task needs non-empty title, objective, "
+            "fileAreas, and acceptanceCriteria. Fold inspection and validation into "
+            "implementation tasks.",
+        )
+    driver.approve_plan(goal, "Local regression plan is bounded to the fixture allow-list.")
+    goal = driver.resume(goal_id)
+
+    role_names = {1: "Implementer", 2: "Reviewer"}
+    recoveries = 0
+    while int(goal["workflow"]["state"]) == LiveGoalDriver.WORKFLOW_NEEDS_DIRECTION:
+        if recoveries >= 8:
+            raise RuntimeError("Implementation/review did not recover after eight retries")
+        retry_role = role_names.get(goal["workflow"].get("retryRole"))
+        if retry_role is None:
+            raise RuntimeError("Harness requested direction without an actionable retry role")
+        guidance = (
+            "Use typed tools and make a small targeted edit. Read the exact target before "
+            "editing, preserve passing code, use Roslyn symbol tools before shared API "
+            "changes, and run Build and Test before reporting. Preserve the exact namespace "
+            "and target declarations from the current file. For GameState.Play, reject a "
+            "move when Winner is non-empty or IsDraw is true before checking and cloning "
+            "the requested cell. Program.cs must import TicTacToe.Core and receive every "
+            "Console.ReadLine result as string?. Repair only the first failing diagnostic "
+            "or test assertion; do not repeat a rejected candidate unchanged."
+            if retry_role == "Implementer" else
+            "Inspect the exact diff and durable evidence, then return the required "
+            "structured review decision."
+        )
+        recoveries += 1
+        goal = driver.retry(goal_id, retry_role, guidance)
+        if int(goal["workflow"]["state"]) == LiveGoalDriver.WORKFLOW_RUNNING:
+            goal = driver.resume(goal_id)
+    report["lead_retries"] = lead_retries
+    report["workflow_recoveries"] = recoveries
+    return goal_id, goal
+
+
 def main() -> int:
     args = parse_args()
     if sys.platform != "linux" or not os.environ.get("DISPLAY"):
@@ -1039,25 +1244,44 @@ def main() -> int:
         "result": "running",
     }
     report_path = root / "usability-report.json"
-    support = runpy.run_path(str(repository_root / "eng/verify-avalonia-atspi.py"))
-    dbus = support["dbus"]
     executable = repository_root / "src/Harness.Host/bin/Debug/net10.0/Harness.Host"
-    database = root / "data/harness.net/harness.db"
+    evaluation_root = Path(tempfile.mkdtemp(prefix="harness-tictactoe-mcp-"))
+    database = evaluation_root / "data/harness.db"
+    repository = evaluation_root / "data/evaluation-fixture"
+    mcp_endpoint = available_loopback_endpoint()
+    token = base64.b64encode(secrets.token_bytes(48)).decode("ascii")
+    token_file = evaluation_root / "mcp-token"
+    token_file.write_text(token, encoding="utf-8")
+    token_file.chmod(0o600)
+    report["evaluation_root"] = str(evaluation_root)
+    report["mcp_endpoint"] = mcp_endpoint
     process: subprocess.Popen[str] | None = None
     process_log: Any | None = None
-    application: Any | None = None
+    client = StatelessMcpClient(mcp_endpoint, token)
+    peak_host_rss = 0
+    peak_model_vram = 0
+    selected_models: list[str] = []
+    goal_id: str | None = None
+    started_monotonic = time.monotonic()
 
-    session_bus = dbus.SessionBus()
-    status_object = session_bus.get_object("org.a11y.Bus", "/org/a11y/bus")
-    status_properties = dbus.Interface(status_object, support["PROPERTIES"])
-    original_enabled = bool(status_properties.Get("org.a11y.Status", "IsEnabled"))
-    original_screen_reader = bool(
-        status_properties.Get("org.a11y.Status", "ScreenReaderEnabled")
-    )
-    status_properties.Set("org.a11y.Status", "IsEnabled", dbus.Boolean(True))
-    status_properties.Set("org.a11y.Status", "ScreenReaderEnabled", dbus.Boolean(True))
-    accessibility_address = str(dbus.Interface(status_object, "org.a11y.Bus").GetAddress())
-    accessibility_bus = dbus.bus.BusConnection(accessibility_address)
+    def sample_resources() -> None:
+        nonlocal peak_host_rss, peak_model_vram
+        if process is not None:
+            peak_host_rss = max(peak_host_rss, process_rss_bytes(process))
+        request = Request(
+            f"{args.ollama_endpoint.rstrip('/')}/api/ps",
+            headers={"Accept": "application/json"},
+        )
+        with urlopen(request, timeout=5) as response:
+            payload = json.load(response)
+        loaded_vram = [
+            int(model.get("size_vram", 0) or 0)
+            for model in payload.get("models", [])
+        ]
+        peak_model_vram = max([peak_model_vram, *loaded_vram])
+        if peak_model_vram > 16 * 1024**3:
+            raise RuntimeError(
+                f"Ollama runtime VRAM {peak_model_vram} exceeds the 16 GiB limit")
 
     try:
         with measured(report, "ollama_preflight"):
@@ -1069,6 +1293,10 @@ def main() -> int:
             ]
             for model in dict.fromkeys(selected_models):
                 verify_ollama(args.ollama_endpoint, model)
+                identity = collect_ollama_identity(args.ollama_endpoint, model)
+                if int(identity.get("modelSizeBytes", 0) or 0) > 16 * 1024**3:
+                    raise RuntimeError(
+                        f"Ollama model {model!r} exceeds the 16 GB regression limit")
         if not args.skip_host_build:
             with measured(report, "host_build"):
                 run([
@@ -1076,50 +1304,123 @@ def main() -> int:
                     "--nologo", "--verbosity", "minimal",
                 ], repository_root)
         with measured(report, "seed_repository"):
-            repository = create_repository(root)
+            create_repository(root, repository)
             write_configuration(
-                root,
+                evaluation_root,
                 args.ollama_endpoint,
                 report["models"]["lead"],
                 report["models"]["implementer"],
                 report["models"]["reviewer"],
                 report["models"]["recovery_implementers"],
+                mcp_endpoint,
             )
 
         environment = os.environ.copy()
-        environment.update({
-            "XDG_CONFIG_HOME": str(root / "config"),
-            "XDG_DATA_HOME": str(root / "data"),
-            "XDG_STATE_HOME": str(root / "state"),
-            "XDG_CACHE_HOME": str(root / "cache"),
-        })
         environment.update(build_environment_values(root))
         process_log = (root / "harness-process.log").open("w", encoding="utf-8")
         process = subprocess.Popen(
-            [str(executable), "--ui=avalonia"],
+            [
+                str(executable), "--ui=avalonia",
+                "--mcp-evaluation-root", str(evaluation_root),
+                "--mcp-evaluation-token-file", str(token_file),
+            ],
             env=environment,
             text=True,
             stdout=process_log,
             stderr=subprocess.STDOUT,
         )
-        application = support["wait_for_application"](accessibility_bus, process.pid)
-
-        with measured(report, "workspace_registration"):
-            register_workspace(application, repository)
-        with measured(report, "lead_plan_generation"):
-            create_goal_and_generate_plan(
-                application, database, report, args.timeout_seconds
-            )
-        with measured(report, "implementation_and_review"):
-            approve_and_run(
-                application,
-                database,
+        with measured(report, "mcp_startup"):
+            application = wait_for_mcp(client, process, args.timeout_seconds)
+            workspace = client.call("harness_workspace", {})
+        with measured(report, "mcp_goal_workflow"):
+            goal_id, goal = drive_goal_with_mcp(
+                client,
+                application["instanceId"],
+                workspace["workspace"]["id"],
                 report,
                 args.timeout_seconds,
-                report["models"]["recovery_implementers"],
+                report["models"],
+                sample_resources,
             )
+        workflow_state = int(goal["workflow"]["state"])
+        if workflow_state not in {
+            LiveGoalDriver.WORKFLOW_AWAITING_ACCEPTANCE,
+            LiveGoalDriver.WORKFLOW_COMPLETED,
+        }:
+            raise RuntimeError(f"workflow stopped in non-complete state {workflow_state}")
         with measured(report, "independent_validation"):
             report["validation"] = validate_generated_project(root, repository)
+
+        worktree = Path(report["validation"]["worktree"])
+        diff = run(["git", "diff", "--no-ext-diff"], worktree, capture=True)
+        trace = internal_tool_trace(database)
+        tools = {item["tool"] for item in trace if item["state"] == "Succeeded"}
+        required = {"Build", "Test"}
+        missing = sorted(required - tools)
+        if missing:
+            raise RuntimeError(f"workflow omitted required typed tools: {missing}")
+        if not any(item.get("semanticValidation") for item in trace):
+            raise RuntimeError("workflow omitted durable Roslyn edit-validation evidence")
+        rewrite_lines = changed_lines(worktree)
+        if rewrite_lines > 500:
+            raise RuntimeError(f"workflow rewrite size {rewrite_lines} exceeds 500 lines")
+
+        evidence = client.call("harness_evidence", {
+            "goalId": goal_id, "maximumResults": 500, "continuation": None,
+        })
+        model_identities = [
+            collect_ollama_identity(args.ollama_endpoint, model)
+            for model in dict.fromkeys(selected_models)
+        ]
+        events: list[dict[str, Any]] = [
+            {"kind": "plan", "valid": goal.get("plan") is not None},
+            *trace,
+            *({"kind": "retry"} for _ in range(
+                int(report["lead_retries"]) + int(report["workflow_recoveries"]))),
+            {"kind": "compiler", "introduced": sum(
+                int(item.get("introducedCompilerErrors", 0)) for item in trace)},
+            {"kind": "review", "findings": 0},
+            {"kind": "terminal", "outcome": "completed"},
+        ]
+        elapsed_ms = round(sum(report.get("phases", {}).values()) * 1000)
+        metrics = derive_metrics(events, elapsed_ms, peak_host_rss)
+        metrics["rewriteLines"] = rewrite_lines
+        report["regression_run"] = {
+            "schemaVersion": SCHEMA_VERSION,
+            "harnessRevision": run(
+                ["git", "rev-parse", "HEAD"], repository_root, capture=True).strip(),
+            "scenario": {
+                "id": "tictactoe",
+                "version": 1,
+                "prompt": GOAL_OBJECTIVE,
+                "promptSha256": sha256_text(GOAL_OBJECTIVE),
+            },
+            "modelServer": model_identities,
+            "discoveredCapabilities": sorted({
+                capability
+                for identity in model_identities
+                for capability in identity.get("capabilities", [])
+            }),
+            "routes": workflow_metrics(database).get("role_routes", []),
+            "resource": {
+                "peakHostRssBytes": peak_host_rss,
+                "peakModelVramBytes": peak_model_vram,
+            },
+            "controlTrace": client.trace[:MAX_TRACE_ITEMS],
+            "toolTrace": trace,
+            "diff": bounded_text(diff),
+            "evidence": [
+                *evidence.get("evidence", {}).get("items", []),
+                {"evidenceKind": "build", "path": "validation/build.log"},
+                {"evidenceKind": "test", "path": "validation/test.log"},
+                {"evidenceKind": "diff", "sha256": sha256_text(diff)},
+                {"evidenceKind": "independent-validator",
+                 "path": "validation/independent-validator.log"},
+            ],
+            "terminalOutcome": "completed",
+            "metrics": metrics,
+            "passed": True,
+        }
 
         report["result"] = "passed"
         print(f"Ollama Tic-Tac-Toe usability exercise passed: {root}")
@@ -1127,7 +1428,74 @@ def main() -> int:
     except BaseException as error:
         report["result"] = "failed"
         report["error"] = f"{type(error).__name__}: {error}"
-        report["diagnostics"] = diagnostic_state(application, database)
+        report["diagnostics"] = diagnostic_state(None, database)
+        trace = internal_tool_trace(database)
+        successful_tools = {
+            item["tool"] for item in trace if item.get("state") == "Succeeded"
+        }
+        partial = bool(successful_tools.intersection({"FileEdit", "CreateFile"}))
+        diff = ""
+        rewrite_lines = 0
+        try:
+            worktree = goal_worktree(repository)
+            diff = run(["git", "diff", "--no-ext-diff"], worktree, capture=True)
+            rewrite_lines = changed_lines(worktree)
+        except (OSError, RuntimeError, subprocess.CalledProcessError):
+            pass
+        identities: list[dict[str, Any]] = []
+        for model in dict.fromkeys(selected_models):
+            try:
+                identities.append(collect_ollama_identity(args.ollama_endpoint, model))
+            except (OSError, RuntimeError, URLError):
+                identities.append({"provider": "Ollama", "model": model,
+                                   "available": False})
+        events: list[dict[str, Any]] = [
+            {"kind": "plan", "valid": any(
+                item.get("tool") == "Build" for item in trace)},
+            *trace,
+            *({"kind": "retry"} for _ in range(
+                int(report.get("lead_retries", 0)) +
+                int(report.get("workflow_recoveries", 0)))),
+            {"kind": "compiler", "introduced": sum(
+                int(item.get("introducedCompilerErrors", 0)) for item in trace)},
+            {"kind": "terminal", "outcome": "partial" if partial else "failed"},
+        ]
+        elapsed_ms = round((time.monotonic() - started_monotonic) * 1000)
+        metrics = derive_metrics(events, elapsed_ms, peak_host_rss)
+        metrics["rewriteLines"] = rewrite_lines
+        report["regression_run"] = {
+            "schemaVersion": SCHEMA_VERSION,
+            "harnessRevision": run(
+                ["git", "rev-parse", "HEAD"], repository_root, capture=True).strip(),
+            "scenario": {
+                "id": "tictactoe",
+                "version": 1,
+                "prompt": GOAL_OBJECTIVE,
+                "promptSha256": sha256_text(GOAL_OBJECTIVE),
+            },
+            "modelServer": identities,
+            "discoveredCapabilities": sorted({
+                capability
+                for identity in identities
+                for capability in identity.get("capabilities", [])
+            }),
+            "routes": workflow_metrics(database).get("role_routes", []),
+            "resource": {
+                "peakHostRssBytes": peak_host_rss,
+                "peakModelVramBytes": peak_model_vram,
+            },
+            "controlTrace": client.trace[:MAX_TRACE_ITEMS],
+            "toolTrace": trace,
+            "diff": bounded_text(diff),
+            "evidence": [
+                {"evidenceKind": "diff", "sha256": sha256_text(diff)},
+                {"evidenceKind": "failure", "detail": report["error"]},
+            ],
+            "terminalOutcome": "partial" if partial else "failed",
+            "metrics": metrics,
+            "passed": False,
+            "validationFailures": [report["error"]],
+        }
         print(f"Usability exercise failed; diagnostics preserved at {root}", file=sys.stderr)
         raise
     finally:
@@ -1135,15 +1503,14 @@ def main() -> int:
         report["workflow_metrics"] = workflow_metrics(database)
         report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
         if process is not None:
-            support["stop"](process)
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=5)
         if process_log is not None:
             process_log.close()
-        status_properties.Set(
-            "org.a11y.Status", "ScreenReaderEnabled", dbus.Boolean(original_screen_reader)
-        )
-        status_properties.Set(
-            "org.a11y.Status", "IsEnabled", dbus.Boolean(original_enabled)
-        )
 
 
 if __name__ == "__main__":

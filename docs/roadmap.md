@@ -177,10 +177,10 @@ control, silent screenshot capture, or a route around typed Harness authority. R
 an ADR for inbound MCP ownership, authentication, modes, tool policy, application
 instance identity, test isolation, privacy, and shutdown before implementation.
 
-### Next quality gate: Task 038 — local-model workflow regression
+### Delivered quality gate: Task 038 — local-model workflow regression
 
-Promote the existing opt-in Tic-Tac-Toe exercise into a versioned local-model
-regression suite before expanding the workflow. Measure planning, tool selection,
+The opt-in Tic-Tac-Toe exercise is now part of a versioned local-model regression
+suite. It measures planning, tool selection,
 semantic-operation use, edit size, validation, retry behavior, review findings,
 completion, latency, and resource use. Keep live inference opt-in and local-only by
 default; deterministic fakes continue to cover ordinary test runs.
@@ -192,7 +192,8 @@ results under ignored artifacts. Compare runs without declaring model prose to b
 ground truth.
 Use deterministic validators for repository state, compilation, tests, policy, and
 expected semantic operations. The gate must catch the large-rewrite and invalid-plan
-regressions already observed in hands-on use.
+regressions already observed in hands-on use. See the
+[acceptance record](acceptance/local-model-regression-2026-08-12.md).
 
 ### Planned: Task 048 — Morgania editor evaluation and conditional migration
 
