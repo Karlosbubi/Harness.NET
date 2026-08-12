@@ -93,6 +93,10 @@ public sealed record InboundMcpEvidenceRequest(
     string GoalId,
     int MaximumResults,
     string? Continuation);
+public sealed record InboundMcpWorkflowEvidenceRequest(
+    string GoalId,
+    int MaximumResults,
+    string? Continuation);
 public sealed record InboundMcpGoalCreateRequest(
     string WorkspaceId,
     string Title,
@@ -190,6 +194,10 @@ public interface IInboundMcpApplication
 
     ValueTask<InboundMcpApplicationResult> ListEvidenceAsync(
         InboundMcpCallContext context, InboundMcpEvidenceRequest request,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<InboundMcpApplicationResult> ListWorkflowEvidenceAsync(
+        InboundMcpCallContext context, InboundMcpWorkflowEvidenceRequest request,
         CancellationToken cancellationToken = default);
 
     ValueTask<InboundMcpApplicationResult> CreateGoalAsync(

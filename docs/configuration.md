@@ -132,6 +132,7 @@ Its persisted shape is:
   <AllowedTools>harness_application
 harness_create_goal
 harness_goals
+harness_workflow_evidence
 harness_start_planning</AllowedTools>
 </worker>
 ```

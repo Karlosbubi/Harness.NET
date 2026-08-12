@@ -105,8 +105,10 @@ return a background operation ID immediately; clients poll `harness_goals` and m
 cancel only that exact operation. Commit approval still targets one accepted run,
 branch HEAD, and complete diff fingerprint and never merges the goal branch.
 
-`harness_goals`, `harness_evidence`, and `harness_goal_models` require a bounded result
-count and return continuation tokens. Goal inspection can target one exact goal.
+`harness_goals`, `harness_evidence`, `harness_workflow_evidence`, and
+`harness_goal_models` require a bounded result count and return continuation tokens.
+Goal inspection can target one exact goal. Tool/build evidence and workflow prompt,
+recovery, and model evidence are separate so clients request only the context needed.
 Model discovery can filter by provider, role, and text before paging, so a full remote
 catalog is available without injecting it all into one agent response.
 

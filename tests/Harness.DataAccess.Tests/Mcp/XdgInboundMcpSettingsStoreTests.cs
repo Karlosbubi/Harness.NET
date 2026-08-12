@@ -19,6 +19,8 @@ public sealed class XdgInboundMcpSettingsStoreTests : IDisposable
             tool => tool.Value == "harness_goal_models");
         Assert.Contains(defaults.AllowedTools,
             tool => tool.Value == "harness_commit_preview");
+        Assert.Contains(defaults.AllowedTools,
+            tool => tool.Value == "harness_workflow_evidence");
 
         InboundMcpServerSettings saved = await store.SaveAsync(defaults with
         {

@@ -12,6 +12,7 @@ internal sealed class XdgInboundMcpSettingsStore(IApplicationPaths applicationPa
     {
         "harness_application", "harness_workspace", "harness_tree", "harness_read_range",
         "harness_git", "harness_project_graph", "harness_goals", "harness_evidence",
+        "harness_workflow_evidence",
         "harness_create_goal", "harness_configure_goal", "harness_extend_goal_budget",
         "harness_goal_models", "harness_select_goal_model", "harness_start_planning",
         "harness_resume_goal", "harness_retry_goal", "harness_cancel_goal_operation",
@@ -32,7 +33,8 @@ internal sealed class XdgInboundMcpSettingsStore(IApplicationPaths applicationPa
         [],
         [new("harness_application"), new("harness_workspace"), new("harness_tree"),
             new("harness_read_range"), new("harness_git"), new("harness_project_graph"),
-            new("harness_goals"), new("harness_evidence"), new("harness_goal_models"),
+            new("harness_goals"), new("harness_evidence"),
+            new("harness_workflow_evidence"), new("harness_goal_models"),
             new("harness_commit_preview"), new("harness_ui"),
             new("harness_open_document"), new("harness_audit"),
             new("harness_evaluation_snapshot"),

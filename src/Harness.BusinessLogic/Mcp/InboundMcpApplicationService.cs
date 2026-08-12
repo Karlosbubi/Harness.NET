@@ -44,7 +44,8 @@ internal sealed class InboundMcpApplicationService(
     [
         Read("harness_application"), Read("harness_workspace"), Read("harness_tree"),
         Read("harness_read_range"), Read("harness_git"), Read("harness_project_graph"),
-        Read("harness_goals"), Read("harness_evidence"), Read("harness_ui", sensitive: true),
+        Read("harness_goals"), Read("harness_evidence"),
+        Read("harness_workflow_evidence"), Read("harness_ui", sensitive: true),
         Read("harness_goal_models"), Read("harness_commit_preview"),
         Read("harness_audit", sensitive: true), Read("harness_code_problems"),
         Read("harness_code_symbol"), Read("harness_code_definition"),
@@ -315,6 +316,38 @@ internal sealed class InboundMcpApplicationService(
                 offset,
                 Math.Min(request.MaximumResults, Math.Max(0, evidence.Items.Count - offset)),
                 evidence.Items.Count),
+            freshness = context.RequestedAt
+        });
+    }
+
+    public async ValueTask<InboundMcpApplicationResult> ListWorkflowEvidenceAsync(
+        InboundMcpCallContext context, InboundMcpWorkflowEvidenceRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        WorkspaceView? workspace = await TrustedWorkspaceAsync(context, cancellationToken);
+        if (workspace is null) return WorkspaceFailure(context);
+        if (!TryPage(request.MaximumResults, request.Continuation, out int offset,
+                out InboundMcpApplicationResult? pageFailure))
+            return pageFailure!;
+        GoalView? goal = await goalService.GetAsync(new(request.GoalId), cancellationToken);
+        if (goal is null || !goal.WorkspaceId.Equals(workspace.Id, StringComparison.Ordinal))
+            return Failure("goal_unavailable", "The goal is not part of the active workspace.");
+        GoalWorkflowSnapshot? workflow = await workflowService.GetLatestAsync(
+            goal.Id, cancellationToken);
+        IReadOnlyList<WorkflowEvidenceView> evidence = workflow?.Evidence ?? [];
+        WorkflowEvidenceView[] page = evidence
+            .Skip(offset)
+            .Take(request.MaximumResults)
+            .ToArray();
+        return Success(new
+        {
+            instanceId = context.InstanceId.Value,
+            sourceContextId = SourceId(workspace),
+            goal.Id,
+            workflowId = workflow?.Id,
+            evidence = page,
+            totalMatches = evidence.Count,
+            continuation = NextContinuation(offset, page.Length, evidence.Count),
             freshness = context.RequestedAt
         });
     }

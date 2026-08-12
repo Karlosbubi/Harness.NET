@@ -379,6 +379,16 @@ internal sealed class InboundMcpTools(
         InvokeAsync(new("harness_evidence"), context => application.ListEvidenceAsync(
             context, new(goalId, maximumResults, continuation), cancellationToken));
 
+    [McpServerTool(Name = "harness_workflow_evidence", ReadOnly = true,
+        Destructive = false, Idempotent = true, OpenWorld = false)]
+    [Description("List a bounded page of workflow prompts, recovery notices, and model or tool evidence for one exact Harness.NET goal.")]
+    public ValueTask<string> WorkflowEvidenceAsync(
+        string goalId, int maximumResults, string? continuation,
+        CancellationToken cancellationToken) =>
+        InvokeAsync(new("harness_workflow_evidence"), context =>
+            application.ListWorkflowEvidenceAsync(context,
+                new(goalId, maximumResults, continuation), cancellationToken));
+
     [McpServerTool(Name = "harness_create_goal", ReadOnly = false, Destructive = false,
         Idempotent = false, OpenWorld = false)]
     [Description("Create one draft goal in the exact active trusted workspace. This grants no model, spending, execution, worktree, or mutation authority.")]

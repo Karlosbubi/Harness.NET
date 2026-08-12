@@ -104,6 +104,11 @@ The dogfood finding produced one small workflow fix. Invalid initial and retried
 responses now create private recovery evidence containing the parser or policy error
 and at most 16 KiB of the rejected response. This gives the user enough evidence to
 change the model or prompt without placing unbounded model output in workflow state.
+The synchronized live build then reproduced the rejection on an explicit local-only
+retry. That showed workflow evidence was visible in the desktop but unavailable to
+MCP clients: `harness_evidence` returns deterministic tool evidence, not workflow
+checkpoints. The new bounded `harness_workflow_evidence` read closes that gap without
+putting historical prompts and model output back into `harness_goals`.
 
 ## Harness adapter slice
 

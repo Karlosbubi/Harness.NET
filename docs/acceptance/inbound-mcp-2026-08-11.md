@@ -114,6 +114,11 @@ The run found and fixed these defects:
   model collection tools are now bounded and continuation-paged. Goals can be selected
   by exact ID; model filtering happens by provider, role, and search text on the server;
   goal summaries omit prompt/evidence duplication.
+- A later live retry showed that the promised separate workflow-evidence read did not
+  exist: `harness_evidence` contains deterministic tool evidence only. The bounded,
+  continuation-paged `harness_workflow_evidence` tool now exposes the selected goal's
+  Lead prompt, retry guidance, recovery notices, and rejected model output without
+  expanding `harness_goals` again.
 - Three mutating lifecycle policies disagreed with their protocol annotations and were
   displayed as idempotent in Settings. Configuration, model selection, and commit
   request are now consistently non-idempotent, so a caller will not replay them after

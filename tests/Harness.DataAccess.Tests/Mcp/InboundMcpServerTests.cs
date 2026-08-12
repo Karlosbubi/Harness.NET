@@ -41,7 +41,7 @@ public sealed class InboundMcpServerTests
             transport, loggerFactory: NullLoggerFactory.Instance);
         IList<McpClientTool> tools = await client.ListToolsAsync();
 
-        Assert.Equal(14, tools.Count);
+        Assert.Equal(15, tools.Count);
         Assert.Contains("no shell", client.ServerInstructions, StringComparison.OrdinalIgnoreCase);
         Assert.All(tools, tool => Assert.StartsWith("harness_", tool.Name, StringComparison.Ordinal));
         Assert.All(tools.Where(tool => tool.Name is not "harness_open_document" and
@@ -101,6 +101,16 @@ public sealed class InboundMcpServerTests
             });
         Assert.NotEqual(true, evidence.IsError);
         Assert.Equal(new("goal-a", 10, null), application.LastEvidence);
+        var workflowEvidence = await tools
+            .Single(tool => tool.Name == "harness_workflow_evidence").CallAsync(
+                new Dictionary<string, object?>
+                {
+                    ["goalId"] = "goal-a",
+                    ["maximumResults"] = 7,
+                    ["continuation"] = "3",
+                });
+        Assert.NotEqual(true, workflowEvidence.IsError);
+        Assert.Equal(new("goal-a", 7, "3"), application.LastWorkflowEvidence);
         var stale = await tools.Single(tool => tool.Name == "harness_open_document").CallAsync(
             new Dictionary<string, object?>
             {
@@ -204,6 +214,7 @@ public sealed class InboundMcpServerTests
         [new("harness_application"), new("harness_workspace"), new("harness_tree"),
             new("harness_read_range"), new("harness_git"), new("harness_project_graph"),
             new("harness_goals"), new("harness_evidence"),
+            new("harness_workflow_evidence"),
             new("harness_build"), new("harness_open_document"), new("harness_create_goal"),
             new("harness_goal_models"), new("harness_select_goal_model"),
             new("harness_start_planning"), new("harness_abort_goal"),
@@ -276,6 +287,7 @@ public sealed class InboundMcpServerTests
         public InboundMcpGoalListRequest? LastGoalList { get; private set; }
         public InboundMcpGoalCatalogRequest? LastCatalog { get; private set; }
         public InboundMcpEvidenceRequest? LastEvidence { get; private set; }
+        public InboundMcpWorkflowEvidenceRequest? LastWorkflowEvidence { get; private set; }
         public ValueTask<InboundMcpApplicationResult> GetApplicationAsync(
             InboundMcpCallContext context, CancellationToken cancellationToken = default)
         {
@@ -308,6 +320,14 @@ public sealed class InboundMcpServerTests
             InboundMcpEvidenceRequest request, CancellationToken cancellationToken = default)
         {
             LastEvidence = request;
+            return ValueTask.FromResult(new InboundMcpApplicationResult(
+                "{\"evidence\":[]}", false, null, null));
+        }
+        public ValueTask<InboundMcpApplicationResult> ListWorkflowEvidenceAsync(
+            InboundMcpCallContext context, InboundMcpWorkflowEvidenceRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            LastWorkflowEvidence = request;
             return ValueTask.FromResult(new InboundMcpApplicationResult(
                 "{\"evidence\":[]}", false, null, null));
         }
