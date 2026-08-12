@@ -577,6 +577,51 @@ public sealed class WorkbenchCodeIntelligenceServiceTests
         Assert.Equal(sessionId.Value, engine.ClosedSession?.Value);
     }
 
+    [Fact]
+    public async Task Virtual_document_identity_and_origin_cross_the_business_boundary()
+    {
+        const string source = "class C { string Value = string.Empty; }";
+        const string virtualText = "public sealed class String { public static string Empty; }";
+        string id = new('a', 64);
+        DeterministicCodeIntelligenceEngine engine = new()
+        {
+            Navigation = (snapshot, _) => ValueTask.FromResult(new CodeIntelligenceNavigationResult(
+                snapshot.ContextId, snapshot.SessionId, snapshot.Path, snapshot.BufferVersion,
+                CodeIntelligenceResultState.Ready,
+                [new(CodeIntelligenceDestinationKind.Metadata, new("string.Empty"), null, null,
+                    new(id))], [])),
+            VirtualDocuments = (request, _) => ValueTask.FromResult(
+                new CodeIntelligenceVirtualDocumentResult(
+                    request.Snapshot.ContextId, request.Snapshot.SessionId,
+                    request.Snapshot.Path, request.Snapshot.BufferVersion,
+                    CodeIntelligenceResultState.Ready, request.Id,
+                    CodeIntelligenceVirtualDocumentKind.MetadataSignature,
+                    new("String · metadata"), new(virtualText),
+                    new(new(0, 20), new(0, 26)),
+                    new(new("Sample"), new("project-version"), new("net10.0"),
+                        new("Debug"), new("System.Runtime, Version=10.0.0.0"),
+                        new(new string('b', 64))),
+                    IsReadOnly: true, [])),
+        };
+        WorkbenchCodeIntelligenceService service = new(
+            new ContextResolver(ApprovedResolution()), engine);
+        WorkbenchCodeSessionId sessionId = (await service.StartAsync(new(
+            new("workspace-id"), new("goal-id"), new("Harness.slnx")))).SessionId!;
+        WorkbenchCodeInteractiveSnapshot snapshot = new(
+            sessionId, new("src/App.cs"), new(Baseline), new(1), new(source), new(0, 38));
+
+        WorkbenchCodeNavigationView navigation = await service.FindDefinitionAsync(snapshot);
+        WorkbenchCodeSymbolDestination destination = Assert.Single(navigation.Destinations);
+        WorkbenchCodeVirtualDocumentView document = await service.GetVirtualDocumentAsync(
+            new(snapshot, destination.VirtualDocumentId!));
+
+        Assert.Equal(id, destination.VirtualDocumentId!.Value);
+        Assert.Equal(virtualText, document.Text!.Value);
+        Assert.True(document.IsReadOnly);
+        Assert.Equal("net10.0", document.Origin!.TargetFramework.Value);
+        Assert.Equal(new string('b', 64), document.Origin.Compilation.Value);
+    }
+
     private static WorkbenchCodeDocumentSnapshot Snapshot(
         WorkbenchCodeSessionId sessionId,
         long version,
@@ -656,6 +701,12 @@ public sealed class WorkbenchCodeIntelligenceServiceTests
         internal Func<CodeIntelligenceDocumentPresentationRequest, CancellationToken,
             ValueTask<CodeIntelligenceDocumentPresentationResult>>? Presentations
         { get; init; }
+        internal Func<CodeIntelligenceInteractiveSnapshot, CancellationToken,
+            ValueTask<CodeIntelligenceNavigationResult>>? Navigation
+        { get; init; }
+        internal Func<CodeIntelligenceVirtualDocumentRequest, CancellationToken,
+            ValueTask<CodeIntelligenceVirtualDocumentResult>>? VirtualDocuments
+        { get; init; }
         internal CodeIntelligenceOpenRequest? OpenRequest { get; private set; }
         internal CodeIntelligenceSessionId? ClosedSession { get; private set; }
         internal int OpenCallCount { get; private set; }
@@ -713,10 +764,15 @@ public sealed class WorkbenchCodeIntelligenceServiceTests
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public ValueTask<CodeIntelligenceNavigationResult> FindDefinitionAsync(
             CodeIntelligenceInteractiveSnapshot snapshot,
-            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+            CancellationToken cancellationToken = default) => Navigation is null
+            ? throw new NotSupportedException() : Navigation(snapshot, cancellationToken);
         public ValueTask<CodeIntelligenceNavigationResult> FindReferencesAsync(
             CodeIntelligenceInteractiveSnapshot snapshot,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<CodeIntelligenceVirtualDocumentResult> GetVirtualDocumentAsync(
+            CodeIntelligenceVirtualDocumentRequest request,
+            CancellationToken cancellationToken = default) => VirtualDocuments is null
+            ? throw new NotSupportedException() : VirtualDocuments(request, cancellationToken);
         public ValueTask<CodeIntelligenceDocumentPresentationResult> GetDocumentPresentationAsync(
             CodeIntelligenceDocumentPresentationRequest request,
             CancellationToken cancellationToken = default) => Presentations is null

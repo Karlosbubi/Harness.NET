@@ -96,6 +96,27 @@ files atomically or none. Record the applied diff and diagnostics.
 
 Do not provide generic “execute Roslyn action” or model-authored text-search rename.
 
+### Virtual source navigation
+
+Definition, usage, and implementation results may point to repository source,
+source-generator output, or metadata. Generated and metadata results use opaque
+handles bound to the active Roslyn session, exact source path, buffer version, and
+source-text hash. Resolving a handle recomputes the project and compilation identity.
+The result names the project version, target framework, configuration, assembly, and
+compilation identity.
+
+Generated documents come from Roslyn's public source-generator document APIs.
+Metadata documents are locally generated public/protected signature views built with
+public Roslyn symbol and syntax APIs. They do not claim to decompile method bodies.
+Do not depend on Roslyn's internal metadata-as-source services. Full decompilation
+requires a separately reviewed maintained dependency, license and attribution review,
+package/SBOM evidence, tests, and an amendment to this decision.
+
+Virtual documents are bounded, read-only, session-local, excluded from layout and
+ordinary document persistence, and never written into a user repository. Role tools
+resolve their text before closing a short-lived session so a model never receives an
+unusable handle. Stale handles fail closed.
+
 ### Trust and privacy
 
 Workspace trust covers project evaluation and configured analyzer/generator loading.

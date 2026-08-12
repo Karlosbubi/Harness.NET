@@ -260,8 +260,20 @@ internal sealed class GoalCodeIntelligenceService(
                         prepared.Interactive!, cancellationToken),
                 _ => throw new ArgumentOutOfRangeException(nameof(kind)),
             };
+            List<WorkbenchCodeVirtualDocumentView> virtualDocuments = [];
+            foreach (WorkbenchCodeVirtualDocumentId id in result.Destinations
+                         .Select(item => item.VirtualDocumentId)
+                         .OfType<WorkbenchCodeVirtualDocumentId>()
+                         .DistinctBy(item => item.Value)
+                         .Take(20))
+            {
+                WorkbenchCodeVirtualDocumentView document =
+                    await codeIntelligenceService.GetVirtualDocumentAsync(
+                        new(prepared.Interactive!, id), cancellationToken);
+                if (document.Text is not null) virtualDocuments.Add(document);
+            }
             return new(path, position, result.State, result.Destinations,
-                result.Issues.FirstOrDefault(), prepared.Identity);
+                result.Issues.FirstOrDefault(), prepared.Identity, virtualDocuments);
         }
         finally
         {

@@ -35,7 +35,8 @@ public sealed record GoalCodeNavigationView(
     WorkbenchCodeResultState State,
     IReadOnlyList<WorkbenchCodeSymbolDestination> Destinations,
     WorkbenchCodeIssue? Issue,
-    GoalCodeResultIdentity? Identity = null);
+    GoalCodeResultIdentity? Identity = null,
+    IReadOnlyList<WorkbenchCodeVirtualDocumentView>? VirtualDocuments = null);
 
 public sealed record GoalMissingImportView(
     WorkbenchCodeDocumentPath Path,

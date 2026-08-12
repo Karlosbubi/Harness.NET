@@ -48,6 +48,7 @@ internal sealed class WorkbenchDockHost
     private readonly WorkbenchDockLayoutCodec layoutCodec;
     private readonly Dictionary<string, Control> durableContexts = new(StringComparer.Ordinal);
     private readonly Dictionary<string, SourceDocumentSession> sourceDocuments = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, TextEditor> virtualDocuments = new(StringComparer.Ordinal);
     private readonly Dictionary<string, WorkbenchCodeDiagnosticView> documentDiagnostics =
         new(StringComparer.Ordinal);
     private readonly SemaphoreSlim codeSessionGate = new(1, 1);
@@ -320,11 +321,16 @@ internal sealed class WorkbenchDockHost
     internal bool IsCompactViewport { get; private set; }
     internal Control? LastRequestedFocusTarget { get; private set; }
     internal int SourceDocumentCount => sourceDocuments.Count;
+    internal int VirtualDocumentCount => virtualDocuments.Count;
     internal TreeView FileTree => fileTree;
     internal TextBox FileFilter => fileFilter;
     internal TextEditor? ActiveSourceEditor => activeDocument?.Id is { } id &&
                                                sourceDocuments.TryGetValue(id, out SourceDocumentSession? session)
         ? session.NativeEditor
+        : null;
+    internal TextEditor? ActiveVirtualEditor => activeDocument?.Id is { } id &&
+                                                virtualDocuments.TryGetValue(id, out TextEditor? editor)
+        ? editor
         : null;
     internal ListBox Problems => problems;
     internal string? ProblemsStatusText => problemsStatus.Text;
@@ -901,7 +907,7 @@ internal sealed class WorkbenchDockHost
     private void FocusActiveEditor()
     {
         OwnerWindow()?.Activate();
-        if (ActiveSourceEditor is { } editor)
+        if ((ActiveSourceEditor ?? ActiveVirtualEditor) is { } editor)
         {
             LastRequestedFocusTarget = editor;
             if (!editor.Focus())
@@ -3052,35 +3058,37 @@ internal sealed class WorkbenchDockHost
                 return;
             }
 
-            WorkbenchCodeSymbolDestination[] source = result.Destinations
-                .Where(destination => destination.Kind is WorkbenchCodeDestinationKind.Source &&
-                    destination.Path is not null && destination.Range is not null)
+            WorkbenchCodeSymbolDestination[] navigable = result.Destinations
+                .Where(destination =>
+                    destination.Kind is WorkbenchCodeDestinationKind.Source &&
+                    destination.Path is not null && destination.Range is not null ||
+                    destination.VirtualDocumentId is not null)
                 .ToArray();
-            if (kind is not SemanticNavigationKind.References && source.Length == 1)
+            if (kind is not SemanticNavigationKind.References && navigable.Length == 1)
             {
-                await NavigateToSymbolAsync(source[0], session.View.GoalId);
+                await NavigateToDestinationAsync(navigable[0], session);
                 return;
             }
 
-            if (source.Length == 0)
+            if (navigable.Length == 0)
             {
                 session.SetStatus(result.Destinations.FirstOrDefault()?.Display.Value ??
                     "No editable source destination is available for this symbol.");
                 return;
             }
 
-            session.SetStatus($"Found {source.Length:N0} source {NavigationLabel(kind)} " +
-                              (source.Length == 1 ? "destination." : "destinations."));
+            session.SetStatus($"Found {navigable.Length:N0} navigable {NavigationLabel(kind)} " +
+                              (navigable.Length == 1 ? "destination." : "destinations."));
 
             ListBox list = new()
             {
-                ItemsSource = source.Select(destination => new SymbolDestinationChoice(destination))
+                ItemsSource = navigable.Select(destination => new SymbolDestinationChoice(destination))
                     .ToArray(),
                 MaxHeight = 320,
                 MinWidth = 420,
             };
             AutomationProperties.SetName(list,
-                $"{source.Length} source {NavigationLabel(kind)} destinations for " +
+                $"{navigable.Length} navigable {NavigationLabel(kind)} destinations for " +
                 session.View.Path.Value);
             InsightWindow window = new(session.NativeEditor.TextArea)
             {
@@ -3093,7 +3101,7 @@ internal sealed class WorkbenchDockHost
                 if (list.SelectedItem is SymbolDestinationChoice choice)
                 {
                     window.Hide();
-                    await NavigateToSymbolAsync(choice.Destination, session.View.GoalId);
+                    await NavigateToDestinationAsync(choice.Destination, session);
                 }
             };
             session.QuickInfoWindow?.Hide();
@@ -3248,6 +3256,99 @@ internal sealed class WorkbenchDockHost
         target.Editor.ScrollTo(position);
         target.Editor.Focus();
     }
+
+    private ValueTask NavigateToDestinationAsync(
+        WorkbenchCodeSymbolDestination destination,
+        SourceDocumentSession source) => destination.VirtualDocumentId is null
+        ? NavigateToSymbolAsync(destination, source.View.GoalId)
+        : OpenVirtualDocumentAsync(source, destination);
+
+    private async ValueTask OpenVirtualDocumentAsync(
+        SourceDocumentSession source,
+        WorkbenchCodeSymbolDestination destination)
+    {
+        (WorkbenchCodeBufferVersion version, CancellationToken token) =
+            source.BeginInteraction(cancellationToken);
+        WorkbenchCodeSessionId? sessionId = await EnsureCodeSessionAsync(source, token);
+        if (sessionId is null || !source.IsCurrentInteraction(version)) return;
+        WorkbenchCodeVirtualDocumentView virtualDocument =
+            await codeIntelligenceService.GetVirtualDocumentAsync(new(
+                InteractiveSnapshot(source, sessionId, version),
+                destination.VirtualDocumentId!), token);
+        if (!source.IsCurrentInteraction(version) || virtualDocument.Text is null ||
+            virtualDocument.Title is null || virtualDocument.Origin is null)
+        {
+            source.SetStatus(virtualDocument.Issues.FirstOrDefault()?.Message.Value ??
+                "The virtual source document is unavailable.");
+            return;
+        }
+
+        string id = $"virtual:{sessionId.Value}:{virtualDocument.Id.Value}";
+        if (virtualDocuments.TryGetValue(id, out TextEditor? existing))
+        {
+            IDockable? existingDocument = documents.VisibleDockables?
+                .FirstOrDefault(item => item.Id == id);
+            if (existingDocument is not null) SetActiveDocument(existingDocument);
+            existing.Focus();
+            return;
+        }
+        if (!await PrepareActiveDocumentTransitionAsync(WorkbenchDocumentTransition.Switch)) return;
+
+        TextEditor editor = CodeEditorView.Create(
+            virtualDocument.Text.Value,
+            isReadOnly: true,
+            wordWrap: false,
+            showLineNumbers: true,
+            path: "virtual.cs");
+        AutomationProperties.SetName(editor,
+            $"Read-only {VirtualKindLabel(virtualDocument.Kind)} for {virtualDocument.Title.Value}");
+        TextBlock identity = new()
+        {
+            Text = $"{VirtualKindLabel(virtualDocument.Kind)} · read-only · " +
+                   $"{virtualDocument.Origin.Project.Value} · " +
+                   $"{virtualDocument.Origin.TargetFramework.Value} · " +
+                   $"{virtualDocument.Origin.Configuration.Value}\n" +
+                   $"Assembly {virtualDocument.Origin.Assembly.Value}\n" +
+                   $"Compilation {virtualDocument.Origin.Compilation.Value}",
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(10, 8),
+        };
+        AutomationProperties.SetName(identity, "Virtual source identity");
+        Grid content = new() { RowDefinitions = new("Auto,*") };
+        content.Children.Add(identity);
+        Grid.SetRow(editor, 1);
+        content.Children.Add(editor);
+
+        SourceDockDocument document = new()
+        {
+            Id = id,
+            Title = $"{virtualDocument.Title.Value} · read-only",
+            Factory = factory,
+            CanClose = true,
+            CanFloat = true,
+            CloseRequested = () => true,
+        };
+        WorkbenchDockContent.Attach(document, content);
+        virtualDocuments.Add(id, editor);
+        documents.AddDocument(document);
+        SetActiveDocument(document);
+        if (virtualDocument.SelectionRange is { } range)
+        {
+            editor.TextArea.Caret.Line = range.Start.Line + 1;
+            editor.TextArea.Caret.Column = range.Start.Character + 1;
+            editor.ScrollTo(range.Start.Line + 1, range.Start.Character + 1);
+        }
+        editor.Focus();
+        source.SetStatus($"Opened read-only {VirtualKindLabel(virtualDocument.Kind).ToLowerInvariant()} " +
+                         $"for {destination.Display.Value}.");
+    }
+
+    private static string VirtualKindLabel(WorkbenchCodeVirtualDocumentKind? kind) => kind switch
+    {
+        WorkbenchCodeVirtualDocumentKind.GeneratedSource => "Generated source",
+        WorkbenchCodeVirtualDocumentKind.MetadataSignature => "Metadata signature",
+        _ => "Virtual source",
+    };
 
     private static WorkbenchCodeInteractiveSnapshot InteractiveSnapshot(
         SourceDocumentSession session,
@@ -3569,6 +3670,8 @@ internal sealed class WorkbenchDockHost
             session.Dispose();
             RenderProblems();
         }
+        if (dockable?.Id is { } virtualId)
+            virtualDocuments.Remove(virtualId);
 
         if (ReferenceEquals(activeDocument, dockable))
         {
@@ -4130,7 +4233,11 @@ internal sealed class WorkbenchDockHost
         public override string ToString()
         {
             int line = Destination.Range?.Start.Line + 1 ?? 0;
-            return $"{Destination.Path?.Value}:{line}  {Destination.Display.Value}";
+            string location = Destination.VirtualDocumentId is not null
+                ? Destination.Kind is WorkbenchCodeDestinationKind.Generated
+                    ? "generated source" : "metadata signature"
+                : $"{Destination.Path?.Value}:{line}";
+            return $"{location}  {Destination.Display.Value}";
         }
     }
 

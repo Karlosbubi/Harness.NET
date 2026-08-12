@@ -133,7 +133,8 @@ def main() -> int:
     print(
         "Editor intelligence verification passed: completion, quick info, signatures, "
         "diagnostics, semantic classification, occurrences, folding, outline, breadcrumbs, "
-        "workspace symbols, inlay hints, lazy CodeLens, definitions, usages, implementations, "
+        "workspace symbols, region navigation, inlay hints, lazy CodeLens, definitions, "
+        "usages, implementations, generated source, metadata signatures, "
         "document/selection/changed-span formatting, guarded paste and on-type formatting, "
         "import organization, unused-import cleanup, "
         "proven missing-import choices, closed quick fixes, local/selection refactorings, "

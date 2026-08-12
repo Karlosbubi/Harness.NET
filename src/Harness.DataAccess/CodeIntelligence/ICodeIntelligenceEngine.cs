@@ -52,6 +52,25 @@ public interface ICodeIntelligenceEngine
             [new(new("implementations_not_supported"),
                 new("Implementation lookup is unavailable."))]));
 
+    ValueTask<CodeIntelligenceVirtualDocumentResult> GetVirtualDocumentAsync(
+        CodeIntelligenceVirtualDocumentRequest request,
+        CancellationToken cancellationToken = default) => ValueTask.FromResult(
+            new CodeIntelligenceVirtualDocumentResult(
+                request.Snapshot.ContextId,
+                request.Snapshot.SessionId,
+                request.Snapshot.Path,
+                request.Snapshot.BufferVersion,
+                CodeIntelligenceResultState.Failed,
+                request.Id,
+                Kind: null,
+                Title: null,
+                Text: null,
+                SelectionRange: null,
+                Origin: null,
+                IsReadOnly: true,
+                [new(new("virtual_document_not_supported"),
+                    new("Virtual source documents are unavailable."))]));
+
     ValueTask<CodeIntelligenceSemanticResult> SearchSymbolsAsync(
         CodeIntelligenceSemanticQuery query,
         CancellationToken cancellationToken = default) => SemanticUnavailable(query, "symbol_search_not_supported");

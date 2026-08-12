@@ -1884,6 +1884,71 @@ public sealed class PresentationControlTests
     }
 
     [Fact]
+    public async Task F12_metadata_definition_opens_a_labeled_read_only_virtual_document()
+    {
+        using HeadlessUnitTestSession testSession =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await testSession.Dispatch(() =>
+        {
+            WorkbenchCodeVirtualDocumentId id = new(new string('a', 64));
+            CodeIntelligenceService codeIntelligence = new()
+            {
+                Definition = snapshot => new(
+                    snapshot.SessionId, snapshot.Path, snapshot.BufferVersion,
+                    WorkbenchCodeResultState.Ready,
+                    [new(WorkbenchCodeDestinationKind.Metadata, new("System.String.Empty"),
+                        null, null, id)], []),
+                VirtualDocument = request => new(
+                    request.Snapshot.SessionId,
+                    request.Snapshot.Path,
+                    request.Snapshot.BufferVersion,
+                    WorkbenchCodeResultState.Ready,
+                    request.Id,
+                    WorkbenchCodeVirtualDocumentKind.MetadataSignature,
+                    new("String · metadata"),
+                    new("public sealed class String { public static string Empty; }"),
+                    new(new(0, 20), new(0, 26)),
+                    new(new("Sample"), new("version"), new("net10.0"), new("Debug"),
+                        new("System.Runtime, Version=10.0.0.0"), new(new string('b', 64))),
+                    IsReadOnly: true,
+                    []),
+            };
+            LayoutService layouts = new();
+            WorkbenchDockHost workbench = CreateWorkbench(
+                TrustedShell(), layouts, codeIntelligence: codeIntelligence);
+            Window window = new() { Width = 1280, Height = 800, Content = workbench.Control };
+            window.Show();
+            workbench.OpenFileAsync("src/App.cs").AsTask().GetAwaiter().GetResult();
+
+            workbench.ActiveSourceEditor!.RaiseEvent(new KeyEventArgs
+            {
+                RoutedEvent = InputElement.KeyDownEvent,
+                Key = Key.F12,
+                KeyModifiers = KeyModifiers.None,
+            });
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.Equal(1, workbench.VirtualDocumentCount);
+            Assert.True(workbench.ActiveVirtualEditor!.IsReadOnly);
+            Assert.Contains("public sealed class String", workbench.ActiveVirtualEditor.Text,
+                StringComparison.Ordinal);
+            Assert.Contains("read-only", workbench.Documents.ActiveDockable!.Title,
+                StringComparison.OrdinalIgnoreCase);
+            Assert.Contains(Assert.IsAssignableFrom<Control>(
+                        workbench.Documents.ActiveDockable.Context)
+                    .GetVisualDescendants().OfType<TextBlock>(),
+                text => text.Text?.Contains("Compilation " + new string('b', 64),
+                    StringComparison.Ordinal) == true);
+            workbench.SaveLayoutAsync().AsTask().GetAwaiter().GetResult();
+            Assert.NotNull(layouts.Stored);
+            Assert.DoesNotContain("virtual:", layouts.Stored, StringComparison.Ordinal);
+            Assert.DoesNotContain("public sealed class String", layouts.Stored,
+                StringComparison.Ordinal);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
     public async Task Editor_toolbar_exposes_intellisense_navigation_usages_and_implementations()
     {
         using HeadlessUnitTestSession testSession =
@@ -3127,6 +3192,9 @@ public sealed class PresentationControlTests
             get;
             init;
         }
+        internal Func<WorkbenchCodeVirtualDocumentRequest, WorkbenchCodeVirtualDocumentView>?
+            VirtualDocument
+        { get; init; }
         internal Func<
             WorkbenchCodeDocumentPresentationRequest,
             WorkbenchCodeDocumentPresentationView>? Presentation
@@ -3239,6 +3307,16 @@ public sealed class PresentationControlTests
                     snapshot.SessionId, snapshot.Path, snapshot.BufferVersion,
                     WorkbenchCodeResultState.Ready, [], []));
         }
+
+        public ValueTask<WorkbenchCodeVirtualDocumentView> GetVirtualDocumentAsync(
+            WorkbenchCodeVirtualDocumentRequest request,
+            CancellationToken cancellationToken = default) => ValueTask.FromResult(
+                VirtualDocument?.Invoke(request) ?? new(
+                    request.Snapshot.SessionId, request.Snapshot.Path,
+                    request.Snapshot.BufferVersion, WorkbenchCodeResultState.Failed,
+                    request.Id, null, null, null, null, null, true,
+                    [new(new("virtual_document_unavailable"),
+                        new("Virtual source is unavailable."))]));
 
         public ValueTask<WorkbenchCodeDocumentPresentationView> GetDocumentPresentationAsync(
             WorkbenchCodeDocumentPresentationRequest request,

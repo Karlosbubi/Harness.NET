@@ -38,6 +38,7 @@ public enum WorkbenchCodeSymbolKind
     Parameter,
     TypeParameter,
     Snippet,
+    Region,
     Other,
 }
 
@@ -122,11 +123,34 @@ public enum WorkbenchCodeDestinationKind
     Unavailable,
 }
 
+public sealed record WorkbenchCodeVirtualDocumentId(string Value);
+
+public enum WorkbenchCodeVirtualDocumentKind
+{
+    GeneratedSource,
+    MetadataSignature,
+}
+
+public sealed record WorkbenchCodeProjectVersion(string Value);
+public sealed record WorkbenchCodeTargetFramework(string Value);
+public sealed record WorkbenchCodeBuildConfiguration(string Value);
+public sealed record WorkbenchCodeAssemblyIdentity(string Value);
+public sealed record WorkbenchCodeCompilationIdentity(string Value);
+
+public sealed record WorkbenchCodeVirtualDocumentOrigin(
+    WorkbenchCodeMessage Project,
+    WorkbenchCodeProjectVersion ProjectVersion,
+    WorkbenchCodeTargetFramework TargetFramework,
+    WorkbenchCodeBuildConfiguration Configuration,
+    WorkbenchCodeAssemblyIdentity Assembly,
+    WorkbenchCodeCompilationIdentity Compilation);
+
 public sealed record WorkbenchCodeSymbolDestination(
     WorkbenchCodeDestinationKind Kind,
     WorkbenchCodeMessage Display,
     WorkbenchCodeDocumentPath? Path,
-    WorkbenchCodeRange? Range);
+    WorkbenchCodeRange? Range,
+    WorkbenchCodeVirtualDocumentId? VirtualDocumentId = null);
 
 public sealed record WorkbenchCodeNavigationView(
     WorkbenchCodeSessionId SessionId,
@@ -134,6 +158,24 @@ public sealed record WorkbenchCodeNavigationView(
     WorkbenchCodeBufferVersion BufferVersion,
     WorkbenchCodeResultState State,
     IReadOnlyList<WorkbenchCodeSymbolDestination> Destinations,
+    IReadOnlyList<WorkbenchCodeIssue> Issues);
+
+public sealed record WorkbenchCodeVirtualDocumentRequest(
+    WorkbenchCodeInteractiveSnapshot Snapshot,
+    WorkbenchCodeVirtualDocumentId Id);
+
+public sealed record WorkbenchCodeVirtualDocumentView(
+    WorkbenchCodeSessionId SessionId,
+    WorkbenchCodeDocumentPath SourcePath,
+    WorkbenchCodeBufferVersion BufferVersion,
+    WorkbenchCodeResultState State,
+    WorkbenchCodeVirtualDocumentId Id,
+    WorkbenchCodeVirtualDocumentKind? Kind,
+    WorkbenchCodeMessage? Title,
+    WorkbenchCodeText? Text,
+    WorkbenchCodeRange? SelectionRange,
+    WorkbenchCodeVirtualDocumentOrigin? Origin,
+    bool IsReadOnly,
     IReadOnlyList<WorkbenchCodeIssue> Issues);
 
 public enum WorkbenchCodeSemanticRelation

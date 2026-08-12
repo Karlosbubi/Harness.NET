@@ -85,6 +85,24 @@ public sealed class GoalCodeIntelligenceServiceTests
         Assert.True(code.WasStopped);
     }
 
+    [Fact]
+    public async Task Goal_definition_eagerly_reads_virtual_source_before_closing_the_session()
+    {
+        CapturingCodeIntelligence code = new() { ReturnVirtualDefinition = true };
+        GoalCodeIntelligenceService service = CreateService(code, GoalWorkspaceScope.Original);
+
+        GoalCodeNavigationView result = await service.FindDefinitionAsync(
+            new("goal-1"), GoalWorkspaceScope.Original,
+            new("src/Program.cs"), new(0, 6));
+
+        WorkbenchCodeSymbolDestination destination = Assert.Single(result.Destinations);
+        Assert.NotNull(destination.VirtualDocumentId);
+        WorkbenchCodeVirtualDocumentView document = Assert.Single(result.VirtualDocuments!);
+        Assert.Equal("public class String { }", document.Text!.Value);
+        Assert.True(document.IsReadOnly);
+        Assert.True(code.WasStopped);
+    }
+
     private static GoalCodeIntelligenceService CreateService(
         CapturingCodeIntelligence code,
         GoalWorkspaceScope expectedScope,
@@ -133,6 +151,7 @@ public sealed class GoalCodeIntelligenceServiceTests
         internal WorkbenchCodeSessionRequest? StartRequest { get; private set; }
         internal WorkbenchCodeInteractiveSnapshot? QuickInfoSnapshot { get; private set; }
         internal bool WasStopped { get; private set; }
+        internal bool ReturnVirtualDefinition { get; init; }
 
         public ValueTask<WorkbenchCodeSessionView> StartAsync(
             WorkbenchCodeSessionRequest request,
@@ -215,7 +234,24 @@ public sealed class GoalCodeIntelligenceServiceTests
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public ValueTask<WorkbenchCodeNavigationView> FindDefinitionAsync(
             WorkbenchCodeInteractiveSnapshot snapshot,
-            CancellationToken cancellationToken = default) => Navigation(snapshot);
+            CancellationToken cancellationToken = default) => ReturnVirtualDefinition
+            ? ValueTask.FromResult(new WorkbenchCodeNavigationView(
+                snapshot.SessionId, snapshot.Path, snapshot.BufferVersion,
+                WorkbenchCodeResultState.Ready,
+                [new(WorkbenchCodeDestinationKind.Metadata, new("String"), null, null,
+                    new(new string('a', 64)))], []))
+            : Navigation(snapshot);
+
+        public ValueTask<WorkbenchCodeVirtualDocumentView> GetVirtualDocumentAsync(
+            WorkbenchCodeVirtualDocumentRequest request,
+            CancellationToken cancellationToken = default) => ValueTask.FromResult(new
+                WorkbenchCodeVirtualDocumentView(
+                    request.Snapshot.SessionId, request.Snapshot.Path,
+                    request.Snapshot.BufferVersion, WorkbenchCodeResultState.Ready,
+                    request.Id, WorkbenchCodeVirtualDocumentKind.MetadataSignature,
+                    new("String · metadata"), new("public class String { }"), null,
+                    new(new("Sample"), new("version"), new("net10.0"), new("Debug"),
+                        new("System.Runtime"), new(new string('b', 64))), true, []));
     }
 
     private sealed class StubGoalStore : IGoalStore

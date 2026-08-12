@@ -39,6 +39,7 @@ public enum CodeIntelligenceSymbolKind
     Parameter,
     TypeParameter,
     Snippet,
+    Region,
     Other,
 }
 
@@ -127,11 +128,34 @@ public enum CodeIntelligenceDestinationKind
     Unavailable,
 }
 
+public sealed record CodeIntelligenceVirtualDocumentId(string Value);
+
+public enum CodeIntelligenceVirtualDocumentKind
+{
+    GeneratedSource,
+    MetadataSignature,
+}
+
+public sealed record CodeIntelligenceProjectVersion(string Value);
+public sealed record CodeIntelligenceTargetFramework(string Value);
+public sealed record CodeIntelligenceBuildConfiguration(string Value);
+public sealed record CodeIntelligenceAssemblyIdentity(string Value);
+public sealed record CodeIntelligenceCompilationIdentity(string Value);
+
+public sealed record CodeIntelligenceVirtualDocumentOrigin(
+    CodeIntelligenceProjectName Project,
+    CodeIntelligenceProjectVersion ProjectVersion,
+    CodeIntelligenceTargetFramework TargetFramework,
+    CodeIntelligenceBuildConfiguration Configuration,
+    CodeIntelligenceAssemblyIdentity Assembly,
+    CodeIntelligenceCompilationIdentity Compilation);
+
 public sealed record CodeIntelligenceSymbolDestination(
     CodeIntelligenceDestinationKind Kind,
     CodeIntelligenceMessage Display,
     CodeIntelligenceDocumentPath? Path,
-    CodeIntelligenceRange? Range);
+    CodeIntelligenceRange? Range,
+    CodeIntelligenceVirtualDocumentId? VirtualDocumentId = null);
 
 public sealed record CodeIntelligenceNavigationResult(
     CodeIntelligenceContextId ContextId,
@@ -140,6 +164,25 @@ public sealed record CodeIntelligenceNavigationResult(
     CodeIntelligenceBufferVersion BufferVersion,
     CodeIntelligenceResultState State,
     IReadOnlyList<CodeIntelligenceSymbolDestination> Destinations,
+    IReadOnlyList<CodeIntelligenceIssue> Issues);
+
+public sealed record CodeIntelligenceVirtualDocumentRequest(
+    CodeIntelligenceInteractiveSnapshot Snapshot,
+    CodeIntelligenceVirtualDocumentId Id);
+
+public sealed record CodeIntelligenceVirtualDocumentResult(
+    CodeIntelligenceContextId ContextId,
+    CodeIntelligenceSessionId SessionId,
+    CodeIntelligenceDocumentPath SourcePath,
+    CodeIntelligenceBufferVersion BufferVersion,
+    CodeIntelligenceResultState State,
+    CodeIntelligenceVirtualDocumentId Id,
+    CodeIntelligenceVirtualDocumentKind? Kind,
+    CodeIntelligenceMessage? Title,
+    CodeIntelligenceText? Text,
+    CodeIntelligenceRange? SelectionRange,
+    CodeIntelligenceVirtualDocumentOrigin? Origin,
+    bool IsReadOnly,
     IReadOnlyList<CodeIntelligenceIssue> Issues);
 
 public enum CodeIntelligenceSemanticRelation

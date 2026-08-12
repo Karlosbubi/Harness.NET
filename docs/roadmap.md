@@ -325,10 +325,19 @@ action is callable.
 Models use the same closed preview/fingerprint/apply path with delegated paths, atomic
 persistence, durable evidence, and post-apply diagnostics. Cross-document
 refactorings remain outside this deliberately single-document catalog until they
-receive named multi-file contracts. Items 4–8 also remain. Deterministic
+receive named multi-file contracts. Item 4 now includes file and workspace-symbol
+search, region outline navigation, and exact-buffer generated-source and metadata-
+signature virtual documents. Opaque handles are session-local and stale-safe; the
+desktop labels them read-only and layout capture drops them. Role and inbound MCP
+navigation results eagerly include resolved virtual text before closing their Roslyn session.
+Metadata views intentionally contain signatures rather than invented method bodies;
+full decompilation still needs a maintained public dependency and supply-chain review.
+Items 5–8 remain. Deterministic
 evidence is recorded in
 [editor-transformations-2026-08-12.md](acceptance/editor-transformations-2026-08-12.md);
-prior visual evidence is in
+virtual-navigation evidence is in
+[editor-virtual-navigation-2026-08-12.md](acceptance/editor-virtual-navigation-2026-08-12.md),
+and prior visual evidence is in
 [editor-inlays-codelens-2026-08-12.md](acceptance/editor-inlays-codelens-2026-08-12.md).
 
 Keep direct in-process Roslyn as the default implementation. Source may be adapted

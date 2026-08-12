@@ -455,6 +455,7 @@ public sealed class RoslynCodeIntelligenceEngineTests(ITestOutputHelper output) 
             {
                 private int count;
 
+                #region Behavior
                 public int Added(int amount)
                 {
                     count += amount;
@@ -465,6 +466,7 @@ public sealed class RoslynCodeIntelligenceEngineTests(ITestOutputHelper output) 
                 {
                     var total = Added(2);
                 }
+                #endregion
             }
             """;
         await CreateProjectAsync(persisted);
@@ -500,8 +502,13 @@ public sealed class RoslynCodeIntelligenceEngineTests(ITestOutputHelper output) 
         Assert.Contains(presentation.Outline, item =>
             item.Kind is CodeIntelligenceSymbolKind.Method &&
             item.Display.Value.StartsWith("Added", StringComparison.Ordinal));
+        Assert.Contains(presentation.Outline, item =>
+            item.Kind is CodeIntelligenceSymbolKind.Region &&
+            item.Display.Value == "#region Behavior");
         Assert.Contains(presentation.FoldingRanges, item =>
             item.Kind is CodeIntelligenceFoldingKind.Type);
+        Assert.Contains(presentation.FoldingRanges, item =>
+            item.Kind is CodeIntelligenceFoldingKind.Region);
         Assert.NotEmpty(visible.Classifications);
         Assert.All(visible.Classifications, item =>
             Assert.InRange(item.Range.Start.Line, 6, 10));
@@ -1097,6 +1104,79 @@ public sealed class RoslynCodeIntelligenceEngineTests(ITestOutputHelper output) 
     }
 
     [Fact]
+    public async Task Metadata_definition_opens_a_version_bound_read_only_signature()
+    {
+        const string source = "class Sample { string Value = string.Empty; }\n";
+        await CreateProjectAsync(source);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("metadata-virtual-document-context");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+        int offset = source.IndexOf("Empty", StringComparison.Ordinal) + 2;
+        CodeIntelligenceInteractiveSnapshot snapshot =
+            InteractiveSnapshot(contextId, session.SessionId!, source, offset);
+
+        CodeIntelligenceNavigationResult navigation = await engine.FindDefinitionAsync(snapshot);
+        CodeIntelligenceSymbolDestination destination = Assert.Single(navigation.Destinations);
+        Assert.Equal(CodeIntelligenceDestinationKind.Metadata, destination.Kind);
+        Assert.NotNull(destination.VirtualDocumentId);
+
+        CodeIntelligenceVirtualDocumentResult document = await engine.GetVirtualDocumentAsync(
+            new(snapshot, destination.VirtualDocumentId!));
+
+        Assert.Equal(CodeIntelligenceResultState.Ready, document.State);
+        Assert.Equal(CodeIntelligenceVirtualDocumentKind.MetadataSignature, document.Kind);
+        Assert.True(document.IsReadOnly);
+        Assert.Contains("Metadata signature generated locally", document.Text!.Value,
+            StringComparison.Ordinal);
+        Assert.Contains("Empty", document.Text.Value, StringComparison.Ordinal);
+        Assert.Equal("net10.0", document.Origin!.TargetFramework.Value);
+        Assert.Equal(64, document.Origin.Compilation.Value.Length);
+        Assert.False(File.Exists(Path.Combine(root, "String.cs")));
+
+        CodeIntelligenceVirtualDocumentResult stale = await engine.GetVirtualDocumentAsync(new(
+            snapshot with { BufferVersion = new(2) }, destination.VirtualDocumentId!));
+        Assert.Equal(CodeIntelligenceResultState.Stale, stale.State);
+        Assert.Equal("virtual_document_stale", Assert.Single(stale.Issues).Code.Value);
+    }
+
+    [Fact]
+    public async Task Generated_definition_opens_the_exact_read_only_generator_output()
+    {
+        const string source = "class Sample { int Value = GeneratedWidget.Number; }\n";
+        await CreateProjectAsync(source);
+        string analyzer = typeof(HarnessVirtualDocumentTestGenerator).Assembly.Location
+            .Replace("&", "&amp;", StringComparison.Ordinal)
+            .Replace("\"", "&quot;", StringComparison.Ordinal);
+        await File.WriteAllTextAsync(Path.Combine(root, "Sample.csproj"), $"""
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+              <ItemGroup><Analyzer Include="{analyzer}" /></ItemGroup>
+            </Project>
+            """);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("generated-virtual-document-context");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+        int offset = source.IndexOf("GeneratedWidget", StringComparison.Ordinal) + 4;
+        CodeIntelligenceInteractiveSnapshot snapshot =
+            InteractiveSnapshot(contextId, session.SessionId!, source, offset);
+
+        CodeIntelligenceNavigationResult navigation = await engine.FindDefinitionAsync(snapshot);
+        CodeIntelligenceSymbolDestination destination = Assert.Single(navigation.Destinations);
+        Assert.Equal(CodeIntelligenceDestinationKind.Generated, destination.Kind);
+        Assert.NotNull(destination.VirtualDocumentId);
+
+        CodeIntelligenceVirtualDocumentResult document = await engine.GetVirtualDocumentAsync(
+            new(snapshot, destination.VirtualDocumentId!));
+
+        Assert.Equal(CodeIntelligenceVirtualDocumentKind.GeneratedSource, document.Kind);
+        Assert.Contains("GeneratedWidget", document.Text!.Value, StringComparison.Ordinal);
+        Assert.Contains("Number = 42", document.Text.Value, StringComparison.Ordinal);
+        Assert.True(document.IsReadOnly);
+        Assert.NotNull(document.SelectionRange);
+        Assert.False(File.Exists(Path.Combine(root, "GeneratedWidget.g.cs")));
+    }
+
+    [Fact]
     public async Task Rename_preview_keeps_a_large_bounded_file_set_complete()
     {
         const string declaration = "public class Widget { }\n";
@@ -1486,3 +1566,14 @@ public sealed class RoslynCodeIntelligenceEngineTests(ITestOutputHelper output) 
         public void Report(CodeIntelligenceLoadProgress value) => Values.Add(value);
     }
 }
+
+#pragma warning disable RS1036, RS1038, RS1041 // Test-only in-process generator fixture.
+[Microsoft.CodeAnalysis.Generator]
+public sealed class HarnessVirtualDocumentTestGenerator : Microsoft.CodeAnalysis.IIncrementalGenerator
+{
+    public void Initialize(Microsoft.CodeAnalysis.IncrementalGeneratorInitializationContext context) =>
+        context.RegisterPostInitializationOutput(output => output.AddSource(
+            "GeneratedWidget.g.cs",
+            "internal static class GeneratedWidget { internal const int Number = 42; }\n"));
+}
+#pragma warning restore RS1036, RS1038, RS1041

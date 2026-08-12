@@ -85,6 +85,7 @@ internal sealed class RoslynCompletionData(
         WorkbenchCodeSymbolKind.Event => "V",
         WorkbenchCodeSymbolKind.Namespace => "N",
         WorkbenchCodeSymbolKind.Keyword => "K",
+        WorkbenchCodeSymbolKind.Region => "#",
         WorkbenchCodeSymbolKind.Local or WorkbenchCodeSymbolKind.Parameter => "L",
         _ => "·",
     };

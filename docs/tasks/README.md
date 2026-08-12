@@ -342,7 +342,7 @@ Acceptance criteria:
 
 ### 049 — NetPad-level .NET editing and inspection
 
-Status: `In progress — presentation, adornments, formatting, and closed single-document actions delivered`
+Status: `In progress — presentation, transformations, closed actions, and virtual-source navigation delivered`
 
 Dependencies: 012, 043, 044, 047, 048.
 
@@ -373,10 +373,19 @@ safe providers also expose a bounded document-wide fix-all. Opaque action IDs an
 typed scopes are required for preview/apply in the editor and model tools, and the
 read-only catalog is available through opt-in inbound MCP.
 
+File and workspace-symbol search cover file, type, and symbol navigation. Regions are
+first-class outline entries without polluting lexical breadcrumbs. Definitions,
+usages, and implementations resolve source-generator output and metadata signatures
+through opaque handles bound to the exact live buffer. The desktop opens these as
+labeled read-only C# documents and excludes them from repository and layout
+persistence. Role and inbound MCP navigation results eagerly include successful
+virtual documents before their short-lived Roslyn session closes. Full method-body
+decompilation remains pending a maintained public dependency and supply-chain review.
+
 Problem: Harness.NET now has the core interactive Roslyn operations, semantic
-presentation and adornment slices, formatting, and its first closed import fixes. It
-still lacks explicit cross-document refactoring contracts, generated and metadata
-source, syntax/IL views,
+presentation and adornment slices, formatting, closed actions, and bounded generated
+and metadata-signature navigation. It still lacks explicit cross-document refactoring
+contracts, full method-body decompilation, syntax/symbol/IL inspection views,
 configurable keybindings, optional Vim behavior,
 project User Secrets management, and typed execution targets for Run/Debug CodeLens.
 OmniSharp implements many of the underlying Roslyn services, but adopting its server

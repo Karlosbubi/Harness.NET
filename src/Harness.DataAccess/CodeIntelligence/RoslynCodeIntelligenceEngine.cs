@@ -1020,11 +1020,14 @@ internal sealed partial class RoslynCodeIntelligenceEngine(IMSBuildRuntime msBui
                     .Select(item => item.Location)
                     .Take(MaximumNavigationItems)
                     .ToArray();
-                destinations = locations.Select(location => MapDestination(
-                        location,
-                        symbol.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
-                        session.RootPath))
-                    .ToArray();
+                List<CodeIntelligenceSymbolDestination> mapped = [];
+                foreach (Location location in locations)
+                {
+                    mapped.Add(await MapNavigableDestinationAsync(
+                        session, snapshot, prepared.Document.Project, symbol, location,
+                        cancellationToken));
+                }
+                destinations = mapped;
             }
             else if (kind is NavigationKind.Implementations)
             {
@@ -1036,36 +1039,40 @@ internal sealed partial class RoslynCodeIntelligenceEngine(IMSBuildRuntime msBui
                         prepared.Document.Project.Solution,
                         cancellationToken: cancellationToken)
                     : [];
-                destinations = found.Concat(overrides)
-                    .Distinct(SymbolEqualityComparer.Default)
-                    .SelectMany(implementation => implementation.Locations.Select(location =>
-                        MapDestination(
-                            location,
-                            implementation.ToDisplayString(
-                                SymbolDisplayFormat.MinimallyQualifiedFormat),
-                            session.RootPath)))
-                    .Take(MaximumNavigationItems)
-                    .ToArray();
+                List<CodeIntelligenceSymbolDestination> mapped = [];
+                foreach (ISymbol implementation in found.Concat(overrides)
+                             .Distinct(SymbolEqualityComparer.Default))
+                {
+                    foreach (Location location in implementation.Locations)
+                    {
+                        mapped.Add(await MapNavigableDestinationAsync(
+                            session, snapshot, prepared.Document.Project, implementation,
+                            location, cancellationToken));
+                        if (mapped.Count >= MaximumNavigationItems) break;
+                    }
+                    if (mapped.Count >= MaximumNavigationItems) break;
+                }
+                destinations = mapped;
             }
             else
             {
-                destinations = symbol.OriginalDefinition.Locations
-                    .Take(MaximumNavigationItems)
-                    .Select(location => MapDestination(
-                        location,
-                        symbol.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
-                        session.RootPath))
-                    .ToArray();
+                List<CodeIntelligenceSymbolDestination> mapped = [];
+                foreach (Location location in symbol.OriginalDefinition.Locations
+                             .Take(MaximumNavigationItems))
+                {
+                    mapped.Add(await MapNavigableDestinationAsync(
+                        session, snapshot, prepared.Document!.Project,
+                        symbol.OriginalDefinition, location, cancellationToken));
+                }
+                destinations = mapped;
             }
             if (destinations.Count == 0)
             {
                 destinations = kind is NavigationKind.Implementations
                     ? [UnavailableDestination("No source implementation is available for this symbol.")]
-                    : [new(
-                        CodeIntelligenceDestinationKind.Metadata,
-                        new(Bound(symbol.ToDisplayString(), MaximumIssueLength)),
-                        null,
-                        null)];
+                    : [await MapNavigableDestinationAsync(
+                        session, snapshot, prepared.Document!.Project,
+                        symbol.OriginalDefinition, Location.None, cancellationToken)];
             }
 
             return new(
@@ -1830,6 +1837,9 @@ internal sealed partial class RoslynCodeIntelligenceEngine(IMSBuildRuntime msBui
         internal ConcurrentQueue<CodeIntelligenceIssue> Issues { get; } = issues;
         internal SemaphoreSlim OperationGate { get; } = new(1, 1);
         internal CompletionCache? CompletionCache { get; set; }
+        internal Dictionary<string, VirtualDocumentTarget> VirtualDocuments { get; } =
+            new(StringComparer.Ordinal);
+        internal Queue<string> VirtualDocumentOrder { get; } = new();
         internal Solution PersistedSolution { get; set; } = solution;
         internal Solution CurrentSolution { get; set; } = solution;
 

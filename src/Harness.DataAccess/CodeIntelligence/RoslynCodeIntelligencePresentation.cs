@@ -84,7 +84,8 @@ internal sealed partial class RoslynCodeIntelligenceEngine
                     item.Depth))
                 .ToArray();
             CodeIntelligenceBreadcrumb[] breadcrumbs = outlineEntries
-                .Where(item => item.Span.Contains(prepared.Offset))
+                .Where(item => item.Kind is not CodeIntelligenceSymbolKind.Region &&
+                               item.Span.Contains(prepared.Offset))
                 .OrderBy(item => item.Depth)
                 .ThenByDescending(item => item.Span.Length)
                 .Take(32)
@@ -341,7 +342,20 @@ internal sealed partial class RoslynCodeIntelligenceEngine
     {
         List<OutlineEntry> result = [];
         Visit(root, depth: 0);
-        return result;
+        Stack<RegionDirectiveTriviaSyntax> regions = new();
+        foreach (DirectiveTriviaSyntax directive in root.DescendantTrivia(descendIntoTrivia: true)
+                     .Select(item => item.GetStructure())
+                     .OfType<DirectiveTriviaSyntax>())
+        {
+            if (directive is RegionDirectiveTriviaSyntax region)
+                regions.Push(region);
+            else if (directive is EndRegionDirectiveTriviaSyntax && regions.TryPop(out var start))
+                Add(CodeIntelligenceSymbolKind.Region, start.ToString().Trim(),
+                    TextSpan.FromBounds(start.FullSpan.Start, directive.FullSpan.End),
+                    start.Span, depth: 0);
+        }
+        return result.OrderBy(item => item.Span.Start)
+            .ThenBy(item => item.Depth).ToList();
 
         void Visit(SyntaxNode node, int depth)
         {

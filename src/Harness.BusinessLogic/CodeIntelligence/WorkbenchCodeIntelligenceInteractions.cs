@@ -134,6 +134,55 @@ internal sealed partial class WorkbenchCodeIntelligenceService
         CancellationToken cancellationToken = default) =>
         NavigationAsync(snapshot, NavigationKind.Implementations, cancellationToken);
 
+    public async ValueTask<WorkbenchCodeVirtualDocumentView> GetVirtualDocumentAsync(
+        WorkbenchCodeVirtualDocumentRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (!TryInteractive(request.Snapshot, out ActiveSession? session,
+                out WorkbenchCodeIssue? issue) ||
+            request.Id is null || !IsSha256(request.Id.Value))
+        {
+            return VirtualDocumentFailure(request, issue ??
+                Issue("invalid_virtual_document", "A valid virtual document handle is required."));
+        }
+
+        CodeIntelligenceVirtualDocumentResult result;
+        try
+        {
+            result = await engine.GetVirtualDocumentAsync(new(
+                ToDataSnapshot(request.Snapshot, session!),
+                new(request.Id.Value)), cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return VirtualDocumentFailure(request,
+                Issue("cancelled", "Virtual source loading was cancelled."),
+                WorkbenchCodeResultState.Cancelled);
+        }
+        if (!IsFresh(session!, request.Snapshot) || !Matches(result, session!, request.Snapshot))
+        {
+            return VirtualDocumentFailure(request,
+                Issue("stale_buffer", "A newer document buffer superseded this virtual source."),
+                WorkbenchCodeResultState.Stale);
+        }
+
+        return new(request.Snapshot.SessionId, request.Snapshot.Path,
+            request.Snapshot.BufferVersion, Map(result.State), request.Id,
+            result.Kind is null ? null : Map(result.Kind.Value),
+            result.Title is null ? null : new(result.Title.Value),
+            result.Text is null ? null : new(result.Text.Value),
+            result.SelectionRange is null ? null : Map(result.SelectionRange),
+            result.Origin is null ? null : new(
+                new(result.Origin.Project.Value),
+                new(result.Origin.ProjectVersion.Value),
+                new(result.Origin.TargetFramework.Value),
+                new(result.Origin.Configuration.Value),
+                new(result.Origin.Assembly.Value),
+                new(result.Origin.Compilation.Value)),
+            result.IsReadOnly, MapIssues(result.Issues));
+    }
+
     public ValueTask<WorkbenchCodeSemanticView> SearchSymbolsAsync(
         WorkbenchCodeSemanticQuery query, CancellationToken cancellationToken = default) =>
         SemanticAsync(query, SemanticKind.Symbols, cancellationToken);
@@ -460,7 +509,9 @@ internal sealed partial class WorkbenchCodeIntelligenceService
                     Map(destination.Kind),
                     new(destination.Display.Value),
                     destination.Path is null ? null : new(destination.Path.Value),
-                    destination.Range is null ? null : Map(destination.Range))).ToArray(),
+                    destination.Range is null ? null : Map(destination.Range),
+                    destination.VirtualDocumentId is null
+                        ? null : new(destination.VirtualDocumentId.Value))).ToArray(),
             MapIssues(result.Issues));
     }
 
@@ -561,6 +612,13 @@ internal sealed partial class WorkbenchCodeIntelligenceService
             session, snapshot);
 
     private static bool Matches(
+        CodeIntelligenceVirtualDocumentResult result,
+        ActiveSession session,
+        WorkbenchCodeInteractiveSnapshot snapshot) =>
+        Matches(result.ContextId, result.SessionId, result.SourcePath, result.BufferVersion,
+            session, snapshot);
+
+    private static bool Matches(
         CodeIntelligenceDocumentPresentationResult result,
         ActiveSession session,
         WorkbenchCodeInteractiveSnapshot snapshot) =>
@@ -610,6 +668,7 @@ internal sealed partial class WorkbenchCodeIntelligenceService
         CodeIntelligenceSymbolKind.Parameter => WorkbenchCodeSymbolKind.Parameter,
         CodeIntelligenceSymbolKind.TypeParameter => WorkbenchCodeSymbolKind.TypeParameter,
         CodeIntelligenceSymbolKind.Snippet => WorkbenchCodeSymbolKind.Snippet,
+        CodeIntelligenceSymbolKind.Region => WorkbenchCodeSymbolKind.Region,
         CodeIntelligenceSymbolKind.Other => WorkbenchCodeSymbolKind.Other,
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
@@ -699,6 +758,24 @@ internal sealed partial class WorkbenchCodeIntelligenceService
             CodeIntelligenceDestinationKind.Unavailable => WorkbenchCodeDestinationKind.Unavailable,
             _ => throw new ArgumentOutOfRangeException(nameof(kind)),
         };
+
+    private static WorkbenchCodeVirtualDocumentKind Map(
+        CodeIntelligenceVirtualDocumentKind kind) => kind switch
+        {
+            CodeIntelligenceVirtualDocumentKind.GeneratedSource =>
+                WorkbenchCodeVirtualDocumentKind.GeneratedSource,
+            CodeIntelligenceVirtualDocumentKind.MetadataSignature =>
+                WorkbenchCodeVirtualDocumentKind.MetadataSignature,
+            _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+        };
+
+    private static WorkbenchCodeVirtualDocumentView VirtualDocumentFailure(
+        WorkbenchCodeVirtualDocumentRequest request,
+        WorkbenchCodeIssue issue,
+        WorkbenchCodeResultState state = WorkbenchCodeResultState.Failed) => new(
+            request.Snapshot.SessionId, request.Snapshot.Path, request.Snapshot.BufferVersion,
+            state, request.Id, Kind: null, Title: null, Text: null, SelectionRange: null,
+            Origin: null, IsReadOnly: true, [issue]);
 
     private static WorkbenchCodeCompletionView CompletionFailure(
         WorkbenchCodeInteractiveSnapshot snapshot,
