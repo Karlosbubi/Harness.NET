@@ -30,7 +30,7 @@ public sealed class SqliteDatabaseInitializerTests : IDisposable
 
         Assert.Equal(DatabaseInitializationKind.Created, first.Kind);
         Assert.Equal(DatabaseInitializationKind.Existing, second.Kind);
-        Assert.Equal(26, first.SchemaVersion.Value);
+        Assert.Equal(27, first.SchemaVersion.Value);
         Assert.Equal(first.SchemaVersion, second.SchemaVersion);
         Assert.True(File.Exists(databasePath));
 

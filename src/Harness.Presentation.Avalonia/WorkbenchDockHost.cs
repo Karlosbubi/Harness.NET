@@ -2093,29 +2093,11 @@ internal sealed class WorkbenchDockHost
         };
         editor.TextEntered += async (_, args) =>
         {
-            if (args.Text is not { Length: 1 })
-            {
-                return;
-            }
-
-            char value = args.Text[0];
-            if (value is '(' or ',')
-            {
-                await ShowSignatureHelpAsync(session);
-            }
-            else if (value == ')')
-            {
-                session.SignatureWindow?.Hide();
-                session.SignatureWindow = null;
-            }
-
-            if (char.IsLetterOrDigit(value) || value is '_' or '.')
-            {
-                await ShowCompletionAsync(
-                    session,
-                    WorkbenchCodeCompletionTriggerKind.Insertion,
-                    value);
-            }
+            await HandleTextEnteredAsync(session, args.Text);
+        };
+        editor.TextPasted += async (_, args) =>
+        {
+            await HandlePasteAsync(session, args.Range);
         };
         editor.PointerPositionChanged += (_, args) =>
         {
@@ -2145,6 +2127,8 @@ internal sealed class WorkbenchDockHost
             session, WorkbenchCodeDocumentTransformationKind.FormatDocument);
         surface.FormatSelection.Click += async (_, _) => await TransformDocumentAsync(
             session, WorkbenchCodeDocumentTransformationKind.FormatSelection);
+        surface.FormatChangedSpans.Click += async (_, _) => await TransformDocumentAsync(
+            session, WorkbenchCodeDocumentTransformationKind.FormatChangedSpans);
         surface.OrganizeImports.Click += async (_, _) => await TransformDocumentAsync(
             session, WorkbenchCodeDocumentTransformationKind.OrganizeImports);
         surface.RemoveUnusedImports.Click += async (_, _) => await TransformDocumentAsync(
@@ -2316,6 +2300,87 @@ internal sealed class WorkbenchDockHost
         return ShowImportFixesAsync(session);
     }
 
+    internal ValueTask HandleActiveTextEnteredAsync(string? text)
+    {
+        if (activeDocument?.Id is not { } id ||
+            !sourceDocuments.TryGetValue(id, out SourceDocumentSession? session))
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        return HandleTextEnteredAsync(session, text);
+    }
+
+    internal ValueTask HandleActivePasteAsync(WorkbenchCodeRange range)
+    {
+        if (activeDocument?.Id is not { } id ||
+            !sourceDocuments.TryGetValue(id, out SourceDocumentSession? session))
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        return HandlePasteAsync(session, range);
+    }
+
+    private ValueTask HandlePasteAsync(
+        SourceDocumentSession session,
+        WorkbenchCodeRange range) => editorIntelligencePreferences.FormatOnPaste
+        ? TransformDocumentAsync(
+            session,
+            WorkbenchCodeDocumentTransformationKind.FormatPaste,
+            range: range,
+            formattingTrigger: WorkbenchCodeFormattingTrigger.Paste,
+            automatic: true)
+        : ValueTask.CompletedTask;
+
+    private async ValueTask HandleTextEnteredAsync(
+        SourceDocumentSession session,
+        string? text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return;
+        }
+
+        IWorkbenchEditorAdapter editor = session.Editor;
+        if (text.Length > 1)
+        {
+            return;
+        }
+
+        char value = text[0];
+        if (value is '(' or ',')
+        {
+            await ShowSignatureHelpAsync(session);
+        }
+        else if (value == ')')
+        {
+            session.SignatureWindow?.Hide();
+            session.SignatureWindow = null;
+        }
+
+        if (char.IsLetterOrDigit(value) || value is '_' or '.')
+        {
+            await ShowCompletionAsync(
+                session,
+                WorkbenchCodeCompletionTriggerKind.Insertion,
+                value);
+        }
+
+        if (editorIntelligencePreferences.FormatOnType &&
+            FormattingTrigger(value) is { } formattingTrigger)
+        {
+            int end = editor.CaretOffset;
+            int start = Math.Max(0, end - 1);
+            await TransformDocumentAsync(
+                session,
+                WorkbenchCodeDocumentTransformationKind.FormatOnType,
+                range: new(editor.GetPosition(start), editor.GetPosition(end)),
+                formattingTrigger: formattingTrigger,
+                automatic: true);
+        }
+    }
+
     internal bool CanTransformActiveDocument(WorkbenchCodeDocumentTransformationKind kind) =>
         activeDocument?.Id is { } id &&
         sourceDocuments.TryGetValue(id, out SourceDocumentSession? session) &&
@@ -2327,7 +2392,10 @@ internal sealed class WorkbenchDockHost
     private async ValueTask TransformDocumentAsync(
         SourceDocumentSession session,
         WorkbenchCodeDocumentTransformationKind kind,
-        WorkbenchCodeImportNamespace? importNamespace = null)
+        WorkbenchCodeImportNamespace? importNamespace = null,
+        WorkbenchCodeRange? range = null,
+        WorkbenchCodeFormattingTrigger? formattingTrigger = null,
+        bool automatic = false)
     {
         if (session.View.Access is not WorkbenchDocumentAccess.Editable ||
             !CanUseSemanticAssistance(session))
@@ -2336,7 +2404,7 @@ internal sealed class WorkbenchDockHost
             return;
         }
 
-        WorkbenchCodeRange? range = kind is WorkbenchCodeDocumentTransformationKind.FormatSelection
+        range ??= kind is WorkbenchCodeDocumentTransformationKind.FormatSelection
             ? session.Editor.SelectionRange
             : null;
         if (kind is WorkbenchCodeDocumentTransformationKind.FormatSelection && range is null)
@@ -2347,20 +2415,25 @@ internal sealed class WorkbenchDockHost
 
         (WorkbenchCodeBufferVersion version, CancellationToken token) =
             session.BeginInteraction(cancellationToken);
-        session.SetBusy(true, kind switch
+        if (!automatic)
         {
-            WorkbenchCodeDocumentTransformationKind.FormatDocument =>
-                "Formatting the document with Roslyn…",
-            WorkbenchCodeDocumentTransformationKind.FormatSelection =>
-                "Formatting the selected code with Roslyn…",
-            WorkbenchCodeDocumentTransformationKind.OrganizeImports =>
-                "Organizing imports with Roslyn…",
-            WorkbenchCodeDocumentTransformationKind.RemoveUnusedImports =>
-                "Removing unused imports with Roslyn…",
-            WorkbenchCodeDocumentTransformationKind.AddMissingImport =>
-                $"Adding {importNamespace?.Value} with Roslyn…",
-            _ => "Preparing deterministic transformation…",
-        });
+            session.SetBusy(true, kind switch
+            {
+                WorkbenchCodeDocumentTransformationKind.FormatDocument =>
+                    "Formatting the document with Roslyn…",
+                WorkbenchCodeDocumentTransformationKind.FormatSelection =>
+                    "Formatting the selected code with Roslyn…",
+                WorkbenchCodeDocumentTransformationKind.FormatChangedSpans =>
+                    "Formatting changed code with Roslyn…",
+                WorkbenchCodeDocumentTransformationKind.OrganizeImports =>
+                    "Organizing imports with Roslyn…",
+                WorkbenchCodeDocumentTransformationKind.RemoveUnusedImports =>
+                    "Removing unused imports with Roslyn…",
+                WorkbenchCodeDocumentTransformationKind.AddMissingImport =>
+                    $"Adding {importNamespace?.Value} with Roslyn…",
+                _ => "Preparing deterministic transformation…",
+            });
+        }
         try
         {
             WorkbenchCodeSessionId? codeSession = await EnsureCodeSessionAsync(session, token);
@@ -2373,7 +2446,7 @@ internal sealed class WorkbenchDockHost
                 session, codeSession, version);
             WorkbenchCodeDocumentTransformationPreviewView preview =
                 await codeIntelligenceService.PreviewDocumentTransformationAsync(
-                    new(snapshot, kind, range, importNamespace), token);
+                    new(snapshot, kind, range, importNamespace, formattingTrigger), token);
             if (!session.IsCurrentInteraction(version))
             {
                 session.SetStatus("The buffer changed before the transformation could be applied.");
@@ -2406,6 +2479,11 @@ internal sealed class WorkbenchDockHost
                         "No compiler-proven unused imports were found.",
                     WorkbenchCodeDocumentTransformationKind.AddMissingImport =>
                         "The selected import is already present.",
+                    WorkbenchCodeDocumentTransformationKind.FormatChangedSpans =>
+                        "Changed code is already formatted.",
+                    WorkbenchCodeDocumentTransformationKind.FormatPaste or
+                        WorkbenchCodeDocumentTransformationKind.FormatOnType =>
+                        "No automatic formatting was needed.",
                     _ => "The requested code is already formatted.",
                 });
                 return;
@@ -2413,7 +2491,10 @@ internal sealed class WorkbenchDockHost
 
             int caret = session.Editor.CaretOffset;
             session.Editor.Replace(0, session.Editor.TextLength, preview.Edit.Text.Value);
-            session.Editor.CaretOffset = Math.Min(caret, session.Editor.TextLength);
+            session.Editor.CaretOffset = MapTransformedOffset(
+                preview.Edit.OriginalText.Value,
+                preview.Edit.Text.Value,
+                caret);
             session.Editor.Focus();
             session.SetStatus(kind switch
             {
@@ -2421,6 +2502,12 @@ internal sealed class WorkbenchDockHost
                     $"Formatted document · {preview.Edit.ReplacementCount:N0} Roslyn edit(s) · undo available.",
                 WorkbenchCodeDocumentTransformationKind.FormatSelection =>
                     $"Formatted selection · {preview.Edit.ReplacementCount:N0} Roslyn edit(s) · undo available.",
+                WorkbenchCodeDocumentTransformationKind.FormatChangedSpans =>
+                    $"Formatted changed code · {preview.Edit.ReplacementCount:N0} Roslyn edit(s) · undo available.",
+                WorkbenchCodeDocumentTransformationKind.FormatPaste =>
+                    "Formatted pasted code with Roslyn · undo available.",
+                WorkbenchCodeDocumentTransformationKind.FormatOnType =>
+                    "Formatted current code with Roslyn · undo available.",
                 WorkbenchCodeDocumentTransformationKind.OrganizeImports =>
                     $"Organized imports · {preview.Edit.ReplacementCount:N0} Roslyn edit(s) · undo available.",
                 WorkbenchCodeDocumentTransformationKind.RemoveUnusedImports =>
@@ -2438,8 +2525,53 @@ internal sealed class WorkbenchDockHost
         }
         finally
         {
-            session.SetBusy(false);
+            if (!automatic)
+            {
+                session.SetBusy(false);
+            }
         }
+    }
+
+    private static WorkbenchCodeFormattingTrigger? FormattingTrigger(char value) => value switch
+    {
+        ';' => WorkbenchCodeFormattingTrigger.Semicolon,
+        '}' => WorkbenchCodeFormattingTrigger.CloseBrace,
+        '\n' or '\r' => WorkbenchCodeFormattingTrigger.NewLine,
+        _ => null,
+    };
+
+    private static int MapTransformedOffset(string original, string candidate, int offset)
+    {
+        int bounded = Math.Clamp(offset, 0, original.Length);
+        int prefix = 0;
+        int prefixLimit = Math.Min(original.Length, candidate.Length);
+        while (prefix < prefixLimit && original[prefix] == candidate[prefix])
+        {
+            prefix++;
+        }
+
+        if (bounded <= prefix)
+        {
+            return bounded;
+        }
+
+        int suffix = 0;
+        while (suffix < original.Length - prefix && suffix < candidate.Length - prefix &&
+               original[original.Length - suffix - 1] == candidate[candidate.Length - suffix - 1])
+        {
+            suffix++;
+        }
+
+        int originalChangedEnd = original.Length - suffix;
+        int candidateChangedEnd = candidate.Length - suffix;
+        if (bounded >= originalChangedEnd)
+        {
+            return Math.Clamp(candidateChangedEnd + bounded - originalChangedEnd,
+                0, candidate.Length);
+        }
+
+        return Math.Clamp(prefix + Math.Min(bounded - prefix, candidateChangedEnd - prefix),
+            0, candidate.Length);
     }
 
     private async ValueTask ShowImportFixesAsync(SourceDocumentSession session)

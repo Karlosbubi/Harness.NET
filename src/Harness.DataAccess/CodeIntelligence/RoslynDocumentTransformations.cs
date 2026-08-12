@@ -24,15 +24,32 @@ internal sealed partial class RoslynCodeIntelligenceEngine
                 "session_unavailable", "The Roslyn session no longer matches this source context.");
         }
 
-        bool needsRange = request.Kind is CodeIntelligenceDocumentTransformationKind.FormatSelection;
+        bool needsRange = request.Kind is
+            CodeIntelligenceDocumentTransformationKind.FormatSelection or
+            CodeIntelligenceDocumentTransformationKind.FormatPaste or
+            CodeIntelligenceDocumentTransformationKind.FormatOnType;
         bool needsNamespace = request.Kind is CodeIntelligenceDocumentTransformationKind.AddMissingImport;
+        bool needsTrigger = request.Kind is
+            CodeIntelligenceDocumentTransformationKind.FormatPaste or
+            CodeIntelligenceDocumentTransformationKind.FormatOnType;
+        bool validTrigger = request.Kind switch
+        {
+            CodeIntelligenceDocumentTransformationKind.FormatPaste =>
+                request.FormattingTrigger is CodeIntelligenceFormattingTrigger.Paste,
+            CodeIntelligenceDocumentTransformationKind.FormatOnType =>
+                request.FormattingTrigger is CodeIntelligenceFormattingTrigger.Semicolon or
+                    CodeIntelligenceFormattingTrigger.CloseBrace or
+                    CodeIntelligenceFormattingTrigger.NewLine,
+            _ => request.FormattingTrigger is null,
+        };
         if (!Enum.IsDefined(request.Kind) || needsRange != (request.Range is not null) ||
             needsNamespace != (request.ImportNamespace is not null) ||
+            needsTrigger != (request.FormattingTrigger is not null) || !validTrigger ||
             request.ImportNamespace is { Value.Length: 0 })
         {
             return DocumentTransformationFailure(request, CodeIntelligenceResultState.Failed,
                 "invalid_document_transformation",
-                "Format Selection requires one exact range and Add Missing Import requires one discovered namespace.");
+                "Range formatting requires one exact range and trigger; Add Missing Import requires one discovered namespace.");
         }
 
         await session.OperationGate.WaitAsync(cancellationToken);
@@ -79,6 +96,27 @@ internal sealed partial class RoslynCodeIntelligenceEngine
                     requestedSpan = span;
                     candidateDocument = await Formatter.FormatAsync(
                         baselineDocument, span, cancellationToken: cancellationToken);
+                    break;
+                case CodeIntelligenceDocumentTransformationKind.FormatChangedSpans:
+                    IReadOnlyList<TextSpan> changedSpans = await ChangedFormattingSpansAsync(
+                        session, baselineDocument, prepared.Text!, cancellationToken);
+                    candidateDocument = changedSpans.Count == 0
+                        ? baselineDocument
+                        : await Formatter.FormatAsync(
+                            baselineDocument, changedSpans, cancellationToken: cancellationToken);
+                    break;
+                case CodeIntelligenceDocumentTransformationKind.FormatPaste:
+                case CodeIntelligenceDocumentTransformationKind.FormatOnType:
+                    if (!TryGetTextSpan(prepared.Text!, request.Range, out TextSpan triggerSpan))
+                    {
+                        return DocumentTransformationFailure(request, CodeIntelligenceResultState.Failed,
+                            "invalid_transformation_range", "The formatting range is outside the document.");
+                    }
+                    requestedSpan = triggerSpan;
+                    TextSpan formattingSpan = ExpandFormattingSpan(
+                        prepared.Text!, triggerSpan, request.FormattingTrigger!.Value);
+                    candidateDocument = await Formatter.FormatAsync(
+                        baselineDocument, formattingSpan, cancellationToken: cancellationToken);
                     break;
                 case CodeIntelligenceDocumentTransformationKind.OrganizeImports:
                     candidateDocument = await Formatter.OrganizeImportsAsync(
@@ -149,7 +187,8 @@ internal sealed partial class RoslynCodeIntelligenceEngine
             CodeIntelligenceTransformationFingerprint? fingerprint = disposition is
                 CodeIntelligenceTransformationDisposition.Ready
                     ? new(DocumentTransformationFingerprint(
-                        snapshot, request.Kind, request.Range, request.ImportNamespace, edit, delta))
+                        snapshot, request.Kind, request.Range, request.ImportNamespace,
+                        request.FormattingTrigger, edit, delta))
                     : null;
             return new(
                 snapshot.ContextId,
@@ -165,7 +204,8 @@ internal sealed partial class RoslynCodeIntelligenceEngine
                 delta.Take(MaximumDiagnostics).ToArray(),
                 fingerprint,
                 session.Issues.ToArray(),
-                request.ImportNamespace);
+                request.ImportNamespace,
+                request.FormattingTrigger);
         }
         catch (OperationCanceledException)
         {
@@ -189,6 +229,7 @@ internal sealed partial class RoslynCodeIntelligenceEngine
         CodeIntelligenceDocumentTransformationKind kind,
         CodeIntelligenceRange? range,
         CodeIntelligenceImportNamespace? importNamespace,
+        CodeIntelligenceFormattingTrigger? formattingTrigger,
         CodeIntelligenceDocumentTransformationEdit edit,
         IReadOnlyList<CodeIntelligenceValidationDiagnostic> diagnostics)
     {
@@ -201,6 +242,7 @@ internal sealed partial class RoslynCodeIntelligenceEngine
             .Append(range?.Start.Line).Append(':').Append(range?.Start.Character).Append('-')
             .Append(range?.End.Line).Append(':').Append(range?.End.Character).Append('\n')
             .Append(importNamespace?.Value).Append('\n')
+            .Append(formattingTrigger).Append('\n')
             .Append(Hash(edit.OriginalText.Value)).Append('\n')
             .Append(Hash(edit.Text.Value)).Append('\n')
             .Append(edit.ReplacementCount).Append('\n');
@@ -238,7 +280,8 @@ internal sealed partial class RoslynCodeIntelligenceEngine
             [],
             Fingerprint: null,
             [Issue(code, message)],
-            request.ImportNamespace);
+            request.ImportNamespace,
+            request.FormattingTrigger);
 
     private static CodeIntelligenceDocumentTransformationPreviewResult
         DocumentTransformationConflictResult(
@@ -258,5 +301,82 @@ internal sealed partial class RoslynCodeIntelligenceEngine
             [],
             Fingerprint: null,
             session.Issues.ToArray(),
-            request.ImportNamespace);
+            request.ImportNamespace,
+            request.FormattingTrigger);
+
+    private static async ValueTask<IReadOnlyList<TextSpan>> ChangedFormattingSpansAsync(
+        ActiveSession session,
+        Document currentDocument,
+        SourceText currentText,
+        CancellationToken cancellationToken)
+    {
+        Document? persistedDocument = session.PersistedSolution.GetDocument(currentDocument.Id);
+        if (persistedDocument is null)
+        {
+            return [];
+        }
+
+        SyntaxTree? persistedTree = await persistedDocument.GetSyntaxTreeAsync(cancellationToken);
+        SyntaxTree? currentTree = await currentDocument.GetSyntaxTreeAsync(cancellationToken);
+        if (persistedTree is null || currentTree is null)
+        {
+            return [];
+        }
+
+        IList<TextChange> changes = currentTree.GetChanges(persistedTree);
+        if (changes.Count == 0)
+        {
+            return [];
+        }
+
+        List<TextSpan> spans = [];
+        int delta = 0;
+        foreach (TextChange change in changes.OrderBy(item => item.Span.Start))
+        {
+            int start = Math.Clamp(change.Span.Start + delta, 0, currentText.Length);
+            int length = change.NewText?.Length ?? 0;
+            spans.Add(ExpandFormattingSpan(
+                currentText,
+                new TextSpan(start, Math.Min(length, currentText.Length - start)),
+                CodeIntelligenceFormattingTrigger.Paste));
+            delta += length - change.Span.Length;
+        }
+
+        return spans
+            .OrderBy(item => item.Start)
+            .Aggregate(new List<TextSpan>(), static (merged, next) =>
+            {
+                if (merged.Count == 0 || merged[^1].End < next.Start)
+                {
+                    merged.Add(next);
+                }
+                else
+                {
+                    TextSpan previous = merged[^1];
+                    merged[^1] = TextSpan.FromBounds(
+                        previous.Start, Math.Max(previous.End, next.End));
+                }
+                return merged;
+            });
+    }
+
+    private static TextSpan ExpandFormattingSpan(
+        SourceText text,
+        TextSpan span,
+        CodeIntelligenceFormattingTrigger trigger)
+    {
+        int startPosition = Math.Clamp(span.Start, 0, text.Length);
+        int endPosition = Math.Clamp(span.End, startPosition, text.Length);
+        int startLine = text.Lines.GetLineFromPosition(startPosition).LineNumber;
+        int endLookup = endPosition > startPosition ? endPosition - 1 : endPosition;
+        int endLine = text.Lines.GetLineFromPosition(Math.Clamp(endLookup, 0, text.Length)).LineNumber;
+        if (trigger is CodeIntelligenceFormattingTrigger.NewLine && startLine > 0)
+        {
+            startLine--;
+        }
+
+        return TextSpan.FromBounds(
+            text.Lines[startLine].Start,
+            text.Lines[endLine].EndIncludingLineBreak);
+    }
 }

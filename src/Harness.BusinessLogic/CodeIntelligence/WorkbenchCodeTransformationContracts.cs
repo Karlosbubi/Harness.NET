@@ -10,10 +10,21 @@ public sealed record WorkbenchCodeImportNamespace(string Value);
 
 public sealed record WorkbenchCodeImportSymbol(string Value);
 
+public enum WorkbenchCodeFormattingTrigger
+{
+    Paste,
+    Semicolon,
+    CloseBrace,
+    NewLine,
+}
+
 public enum WorkbenchCodeDocumentTransformationKind
 {
     FormatDocument,
     FormatSelection,
+    FormatChangedSpans,
+    FormatPaste,
+    FormatOnType,
     OrganizeImports,
     RemoveUnusedImports,
     AddMissingImport,
@@ -91,7 +102,8 @@ public sealed record WorkbenchCodeDocumentTransformationPreviewRequest(
     WorkbenchCodeInteractiveSnapshot Snapshot,
     WorkbenchCodeDocumentTransformationKind Kind,
     WorkbenchCodeRange? Range,
-    WorkbenchCodeImportNamespace? ImportNamespace = null);
+    WorkbenchCodeImportNamespace? ImportNamespace = null,
+    WorkbenchCodeFormattingTrigger? FormattingTrigger = null);
 
 public sealed record WorkbenchCodeDocumentTransformationPreviewView(
     WorkbenchCodeSessionId SessionId,
@@ -106,7 +118,8 @@ public sealed record WorkbenchCodeDocumentTransformationPreviewView(
     IReadOnlyList<WorkbenchCodeValidationDiagnostic> Diagnostics,
     WorkbenchCodeTransformationFingerprint? Fingerprint,
     IReadOnlyList<WorkbenchCodeIssue> Issues,
-    WorkbenchCodeImportNamespace? ImportNamespace = null);
+    WorkbenchCodeImportNamespace? ImportNamespace = null,
+    WorkbenchCodeFormattingTrigger? FormattingTrigger = null);
 
 public sealed record WorkbenchCodeMissingImportCandidate(
     WorkbenchCodeImportNamespace Namespace,

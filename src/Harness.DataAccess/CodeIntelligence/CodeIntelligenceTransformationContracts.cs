@@ -10,10 +10,21 @@ public sealed record CodeIntelligenceImportNamespace(string Value);
 
 public sealed record CodeIntelligenceImportSymbol(string Value);
 
+public enum CodeIntelligenceFormattingTrigger
+{
+    Paste,
+    Semicolon,
+    CloseBrace,
+    NewLine,
+}
+
 public enum CodeIntelligenceDocumentTransformationKind
 {
     FormatDocument,
     FormatSelection,
+    FormatChangedSpans,
+    FormatPaste,
+    FormatOnType,
     OrganizeImports,
     RemoveUnusedImports,
     AddMissingImport,
@@ -92,7 +103,8 @@ public sealed record CodeIntelligenceDocumentTransformationPreviewRequest(
     CodeIntelligenceInteractiveSnapshot Snapshot,
     CodeIntelligenceDocumentTransformationKind Kind,
     CodeIntelligenceRange? Range,
-    CodeIntelligenceImportNamespace? ImportNamespace = null);
+    CodeIntelligenceImportNamespace? ImportNamespace = null,
+    CodeIntelligenceFormattingTrigger? FormattingTrigger = null);
 
 public sealed record CodeIntelligenceDocumentTransformationPreviewResult(
     CodeIntelligenceContextId ContextId,
@@ -108,7 +120,8 @@ public sealed record CodeIntelligenceDocumentTransformationPreviewResult(
     IReadOnlyList<CodeIntelligenceValidationDiagnostic> Diagnostics,
     CodeIntelligenceTransformationFingerprint? Fingerprint,
     IReadOnlyList<CodeIntelligenceIssue> Issues,
-    CodeIntelligenceImportNamespace? ImportNamespace = null);
+    CodeIntelligenceImportNamespace? ImportNamespace = null,
+    CodeIntelligenceFormattingTrigger? FormattingTrigger = null);
 
 public sealed record CodeIntelligenceMissingImportCandidate(
     CodeIntelligenceImportNamespace Namespace,

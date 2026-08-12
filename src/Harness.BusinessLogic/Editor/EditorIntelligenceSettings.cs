@@ -7,10 +7,12 @@ public sealed record EditorIntelligencePreferences(
     bool ShowInferredTypeHints,
     bool ShowReferenceCodeLens,
     bool ShowImplementationCodeLens,
-    bool ShowTestCodeLens)
+    bool ShowTestCodeLens,
+    bool FormatOnPaste,
+    bool FormatOnType)
 {
     public static EditorIntelligencePreferences Default { get; } = new(
-        true, true, true, true, true);
+        true, true, true, true, true, true, true);
 }
 
 public sealed record EditorIntelligenceSettingsSnapshot(
@@ -44,7 +46,9 @@ internal sealed class EditorIntelligenceSettingsService(
             preferences.ShowInferredTypeHints,
             preferences.ShowReferenceCodeLens,
             preferences.ShowImplementationCodeLens,
-            preferences.ShowTestCodeLens), cancellationToken);
+            preferences.ShowTestCodeLens,
+            preferences.FormatOnPaste,
+            preferences.FormatOnType), cancellationToken);
         return Snapshot(saved);
     }
 
@@ -55,6 +59,8 @@ internal sealed class EditorIntelligenceSettingsService(
             preferences.ShowInferredTypeHints,
             preferences.ShowReferenceCodeLens,
             preferences.ShowImplementationCodeLens,
-            preferences.ShowTestCodeLens),
-        "Roslyn editor adornments are available for trusted C# source buffers.");
+            preferences.ShowTestCodeLens,
+            preferences.FormatOnPaste,
+            preferences.FormatOnType),
+        "Roslyn editor hints and guarded live-buffer formatting are available for trusted C# source buffers.");
 }

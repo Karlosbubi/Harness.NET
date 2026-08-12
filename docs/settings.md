@@ -5,7 +5,7 @@ Settings owns ordinary defaults. Goal-specific authority remains on the goal.
 | Page | State | Owner |
 |---|---|---|
 | General | Planned; workspace switching remains in Workspace UI. | `IWorkspaceService` and SQLite. |
-| Editor | Delivered for inlay hints and CodeLens visibility; more editor defaults remain planned. | Typed Business Logic service, SQLite preference, Roslyn and Presentation adapters. |
+| Editor | Delivered for inlay hints, CodeLens visibility, and automatic C# formatting. More editor defaults remain planned. | Typed Business Logic service, SQLite preference, Roslyn and Presentation adapters. |
 | Appearance & accessibility | Delivered. | `IAppearanceService`, SQLite preference, XDG theme files. |
 | Model providers | Delivered. | Typed Business Logic service, private XDG XML, Secret Service. |
 | MCP connections | Delivered. | MCP Data Access adapter, Business Logic policy, private XDG XML. |
@@ -35,7 +35,8 @@ immediately.
 ## Editor
 
 The page persists separate switches for parameter-name hints, inferred-type hints,
-and reference, implementation, and associated-test CodeLens actions. Defaults are on.
+reference, implementation, and associated-test CodeLens actions, format-on-paste,
+and supported format-on-type triggers. Defaults are on.
 Changes apply to open trusted C# editors without restarting Harness.NET.
 
 Roslyn computes hints only for the exact visible live buffer. Results carry the
@@ -45,11 +46,13 @@ queries run only when the developer selects the corresponding lens. Run and Debu
 lenses remain absent unless a typed execution service reports a valid target; Settings
 cannot create execution authority.
 
-Formatting is explicit rather than a saved preference. Use the Transform menu, command
-palette, or `Ctrl+Alt+L` for the document, `Ctrl+Alt+F` for a selection, and
-`Ctrl+Alt+O` to sort and group imports. Roslyn evaluates the exact live buffer. The
-result enters the editor as one undoable change and remains unsaved until the developer
-saves it.
+Use the Transform menu or command palette to format the document, a selection, or only
+syntax changed since the persisted baseline. `Ctrl+Alt+L` formats the document,
+`Ctrl+Alt+F` formats a selection, and `Ctrl+Alt+O` sorts and groups imports. When enabled,
+paste formatting is confined to the pasted lines and on-type formatting runs after
+`;`, `}`, or a new line. Each request carries an exact range and typed trigger, is
+cancelled when the buffer changes, enters the editor as one undoable change, and
+remains unsaved until the developer saves it.
 
 ## Model providers
 

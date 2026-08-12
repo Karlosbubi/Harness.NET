@@ -294,6 +294,8 @@ public sealed class PresentationControlTests
                 "Show reference CodeLens actions",
                 "Show implementation CodeLens actions",
                 "Show associated test CodeLens actions",
+                "Format C# code on paste",
+                "Format C# code on supported typing triggers",
                 "Save editor intelligence settings",
             ];
             string?[] actual = window.GetLogicalDescendants().OfType<Control>()
@@ -2020,6 +2022,65 @@ public sealed class PresentationControlTests
             Assert.True(workbench.ActiveSourceDocumentIsDirty);
             editor.Document.UndoStack.Undo();
             Assert.Equal(original, editor.Text);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Editor_formats_pasted_text_through_the_guarded_Roslyn_preview()
+    {
+        using HeadlessUnitTestSession testSession =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await testSession.Dispatch(() =>
+        {
+            WorkbenchCodeDocumentTransformationPreviewRequest? observed = null;
+            CodeIntelligenceService codeIntelligence = new()
+            {
+                DocumentTransformations = request =>
+                {
+                    observed = request;
+                    return new(
+                        request.Snapshot.SessionId,
+                        request.Snapshot.Path,
+                        request.Snapshot.BufferVersion,
+                        WorkbenchCodeResultState.Ready,
+                        WorkbenchCodeTransformationDisposition.Ready,
+                        request.Kind,
+                        request.Range,
+                        new(
+                            request.Snapshot.Path,
+                            request.Snapshot.BaselineHash,
+                            request.Snapshot.Text,
+                            new("namespace Example;\n"),
+                            1),
+                        [],
+                        [],
+                        new("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+                        [],
+                        ImportNamespace: null,
+                        FormattingTrigger: request.FormattingTrigger);
+                },
+            };
+            WorkbenchDockHost workbench = CreateWorkbench(
+                ApprovedGoalShell(),
+                new(),
+                new() { Editable = true },
+                codeIntelligence: codeIntelligence);
+            Window window = new() { Width = 1280, Height = 800, Content = workbench.Control };
+            window.Show();
+            workbench.OpenFileAsync("src/App.cs").AsTask().GetAwaiter().GetResult();
+            TextEditor editor = workbench.ActiveSourceEditor!;
+            editor.Text += "abc";
+            editor.CaretOffset = editor.Text.Length;
+
+            workbench.HandleActivePasteAsync(new(new(0, 18), new(0, 21)))
+                .AsTask().GetAwaiter().GetResult();
+
+            Assert.Equal(WorkbenchCodeDocumentTransformationKind.FormatPaste, observed?.Kind);
+            Assert.Equal(WorkbenchCodeFormattingTrigger.Paste, observed?.FormattingTrigger);
+            Assert.NotNull(observed?.Range);
+            Assert.Equal("namespace Example;\n", editor.Text);
+            Assert.True(workbench.ActiveSourceDocumentIsDirty);
             window.Close();
         }, CancellationToken.None);
     }

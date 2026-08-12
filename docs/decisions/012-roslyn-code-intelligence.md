@@ -83,9 +83,12 @@ apply. Free-form advice receives no validation claim.
 
 ### Deterministic transformations
 
-Expose closed preview/fingerprint/apply operations. Rename, document/selection
+Expose closed preview/fingerprint/apply operations. Rename, document/selection/
+changed-span formatting, exact-range paste formatting, supported typed-trigger
 formatting, import organization, unused-import cleanup, and missing-type import fixes
-are implemented. Roslyn resolves symbol identity or the exact import candidate,
+are implemented. Changed spans come from the current and persisted Roslyn syntax
+trees; automatic formatting remains settings-managed and never saves. Roslyn resolves
+symbol identity or the exact import candidate,
 conflicts, affected paths, baselines, and diagnostic changes. Missing-import discovery
 returns a namespace only after an in-memory insertion binds the unresolved type at the
 caret. Apply recomputes context, grants, baselines, and fingerprint, then writes all

@@ -12,11 +12,28 @@ internal sealed partial class WorkbenchCodeIntelligenceService
             CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        bool needsRange = request.Kind is WorkbenchCodeDocumentTransformationKind.FormatSelection;
+        bool needsRange = request.Kind is
+            WorkbenchCodeDocumentTransformationKind.FormatSelection or
+            WorkbenchCodeDocumentTransformationKind.FormatPaste or
+            WorkbenchCodeDocumentTransformationKind.FormatOnType;
         bool needsNamespace = request.Kind is WorkbenchCodeDocumentTransformationKind.AddMissingImport;
+        bool needsTrigger = request.Kind is
+            WorkbenchCodeDocumentTransformationKind.FormatPaste or
+            WorkbenchCodeDocumentTransformationKind.FormatOnType;
+        bool validTrigger = request.Kind switch
+        {
+            WorkbenchCodeDocumentTransformationKind.FormatPaste =>
+                request.FormattingTrigger is WorkbenchCodeFormattingTrigger.Paste,
+            WorkbenchCodeDocumentTransformationKind.FormatOnType =>
+                request.FormattingTrigger is WorkbenchCodeFormattingTrigger.Semicolon or
+                    WorkbenchCodeFormattingTrigger.CloseBrace or
+                    WorkbenchCodeFormattingTrigger.NewLine,
+            _ => request.FormattingTrigger is null,
+        };
         if (!TryInteractive(request.Snapshot, out ActiveSession? session, out WorkbenchCodeIssue? issue) ||
             !Enum.IsDefined(request.Kind) || needsRange != (request.Range is not null) ||
             needsNamespace != (request.ImportNamespace is not null) ||
+            needsTrigger != (request.FormattingTrigger is not null) || !validTrigger ||
             request.ImportNamespace is { Value.Length: 0 })
         {
             return DocumentTransformationFailure(request, issue ?? Issue(
@@ -33,7 +50,8 @@ internal sealed partial class WorkbenchCodeIntelligenceService
                 request.Range is null ? null : new(
                     new(request.Range.Start.Line, request.Range.Start.Character),
                     new(request.Range.End.Line, request.Range.End.Character)),
-                request.ImportNamespace is null ? null : new(request.ImportNamespace.Value)),
+                request.ImportNamespace is null ? null : new(request.ImportNamespace.Value),
+                request.FormattingTrigger is null ? null : Map(request.FormattingTrigger.Value)),
                 cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -55,6 +73,8 @@ internal sealed partial class WorkbenchCodeIntelligenceService
         bool malformed = result.Kind != Map(request.Kind) ||
             !string.Equals(result.ImportNamespace?.Value, request.ImportNamespace?.Value,
                 StringComparison.Ordinal) ||
+            (result.FormattingTrigger is null ? null : Map(result.FormattingTrigger.Value)) !=
+                request.FormattingTrigger ||
             (result.Edit is not null &&
                 (!IsConfinedRelativePath(result.Edit.Path.Value) ||
                  !IsSha256(result.Edit.BaselineHash.Value) || result.Edit.ReplacementCount < 0)) ||
@@ -91,7 +111,8 @@ internal sealed partial class WorkbenchCodeIntelligenceService
                     Map(item.Kind), Map(item.Diagnostic))).ToArray(),
             result.Fingerprint is null ? null : new(result.Fingerprint.Value),
             MapIssues(result.Issues),
-            result.ImportNamespace is null ? null : new(result.ImportNamespace.Value));
+            result.ImportNamespace is null ? null : new(result.ImportNamespace.Value),
+            result.FormattingTrigger is null ? null : Map(result.FormattingTrigger.Value));
     }
 
     public async ValueTask<WorkbenchCodeRenamePreviewView> PreviewRenameAsync(
@@ -194,6 +215,12 @@ internal sealed partial class WorkbenchCodeIntelligenceService
                 CodeIntelligenceDocumentTransformationKind.FormatDocument,
             WorkbenchCodeDocumentTransformationKind.FormatSelection =>
                 CodeIntelligenceDocumentTransformationKind.FormatSelection,
+            WorkbenchCodeDocumentTransformationKind.FormatChangedSpans =>
+                CodeIntelligenceDocumentTransformationKind.FormatChangedSpans,
+            WorkbenchCodeDocumentTransformationKind.FormatPaste =>
+                CodeIntelligenceDocumentTransformationKind.FormatPaste,
+            WorkbenchCodeDocumentTransformationKind.FormatOnType =>
+                CodeIntelligenceDocumentTransformationKind.FormatOnType,
             WorkbenchCodeDocumentTransformationKind.OrganizeImports =>
                 CodeIntelligenceDocumentTransformationKind.OrganizeImports,
             WorkbenchCodeDocumentTransformationKind.RemoveUnusedImports =>
@@ -201,6 +228,26 @@ internal sealed partial class WorkbenchCodeIntelligenceService
             WorkbenchCodeDocumentTransformationKind.AddMissingImport =>
                 CodeIntelligenceDocumentTransformationKind.AddMissingImport,
             _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+        };
+
+    private static CodeIntelligenceFormattingTrigger Map(
+        WorkbenchCodeFormattingTrigger trigger) => trigger switch
+        {
+            WorkbenchCodeFormattingTrigger.Paste => CodeIntelligenceFormattingTrigger.Paste,
+            WorkbenchCodeFormattingTrigger.Semicolon => CodeIntelligenceFormattingTrigger.Semicolon,
+            WorkbenchCodeFormattingTrigger.CloseBrace => CodeIntelligenceFormattingTrigger.CloseBrace,
+            WorkbenchCodeFormattingTrigger.NewLine => CodeIntelligenceFormattingTrigger.NewLine,
+            _ => throw new ArgumentOutOfRangeException(nameof(trigger)),
+        };
+
+    private static WorkbenchCodeFormattingTrigger Map(
+        CodeIntelligenceFormattingTrigger trigger) => trigger switch
+        {
+            CodeIntelligenceFormattingTrigger.Paste => WorkbenchCodeFormattingTrigger.Paste,
+            CodeIntelligenceFormattingTrigger.Semicolon => WorkbenchCodeFormattingTrigger.Semicolon,
+            CodeIntelligenceFormattingTrigger.CloseBrace => WorkbenchCodeFormattingTrigger.CloseBrace,
+            CodeIntelligenceFormattingTrigger.NewLine => WorkbenchCodeFormattingTrigger.NewLine,
+            _ => throw new ArgumentOutOfRangeException(nameof(trigger)),
         };
 
     private static WorkbenchCodeDocumentTransformationConflictKind Map(

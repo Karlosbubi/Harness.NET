@@ -607,6 +607,12 @@ internal sealed class MainWindow : Window
                     "Ctrl+Alt+F", UnavailableReason: host.CanTransformActiveDocument(
                         WorkbenchCodeDocumentTransformationKind.FormatSelection)
                             ? null : "Select code in an editable C# document first"),
+                new("editor.format.changed", "Editor", "Format changed code",
+                    async () => await host.TransformActiveDocumentAsync(
+                        WorkbenchCodeDocumentTransformationKind.FormatChangedSpans),
+                    UnavailableReason: host.CanTransformActiveDocument(
+                        WorkbenchCodeDocumentTransformationKind.FormatChangedSpans)
+                            ? null : "Open an editable C# document first"),
                 new("editor.organize.imports", "Editor", "Organize imports",
                     async () => await host.TransformActiveDocumentAsync(
                         WorkbenchCodeDocumentTransformationKind.OrganizeImports),

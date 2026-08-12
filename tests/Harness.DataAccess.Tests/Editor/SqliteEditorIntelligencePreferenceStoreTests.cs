@@ -23,10 +23,10 @@ public sealed class SqliteEditorIntelligencePreferenceStoreTests : IDisposable
 
         StoredEditorIntelligencePreferences initial = await store.GetAsync();
         StoredEditorIntelligencePreferences saved = await store.SaveAsync(new(
-            false, true, false, true, false));
+            false, true, false, true, false, false, true));
 
-        Assert.Equal(new(true, true, true, true, true), initial);
-        Assert.Equal(new(false, true, false, true, false), saved);
+        Assert.Equal(new(true, true, true, true, true, true, true), initial);
+        Assert.Equal(new(false, true, false, true, false, false, true), saved);
     }
 
     public void Dispose()

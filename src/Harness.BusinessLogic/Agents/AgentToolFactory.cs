@@ -304,17 +304,21 @@ internal sealed class AgentToolFactory(
                         int? startLine = null, int? startCharacter = null,
                         int? endLine = null, int? endCharacter = null,
                         string? importNamespace = null,
+                        WorkbenchCodeFormattingTrigger? formattingTrigger = null,
                         CancellationToken cancellationToken = default) =>
                     mutationService.PreviewDocumentTransformationAsync(
                         DocumentTransformationRequest(
                             goalId, relativePath, expectedSha256, content, kind,
                             startLine, startCharacter, endLine, endCharacter, importNamespace,
+                            formattingTrigger,
                             fileAreas),
                         cancellationToken),
                 Options("preview_document_transformation",
                     "Preview one closed Roslyn operation: FormatDocument, FormatSelection, " +
-                    "OrganizeImports, RemoveUnusedImports, or AddMissingImport. Pass all four " +
-                    "zero-based selection coordinates only for FormatSelection. For AddMissingImport, " +
+                    "FormatChangedSpans, FormatPaste, FormatOnType, OrganizeImports, " +
+                    "RemoveUnusedImports, or AddMissingImport. Pass all four zero-based coordinates " +
+                    "for selection, paste, or on-type formatting. Paste and on-type also require their " +
+                    "matching typed trigger. For AddMissingImport, " +
                     "pass a namespace returned by find_missing_imports. Returns exact edit evidence " +
                     "and a fingerprint; it changes nothing.")),
             AgentToolKind.ApplyDocumentTransformation => AIFunctionFactory.Create(
@@ -324,11 +328,13 @@ internal sealed class AgentToolFactory(
                         int? startLine = null, int? startCharacter = null,
                         int? endLine = null, int? endCharacter = null,
                         string? importNamespace = null,
+                        WorkbenchCodeFormattingTrigger? formattingTrigger = null,
                         CancellationToken cancellationToken = default) =>
                     mutationService.ApplyDocumentTransformationAsync(new(
                         DocumentTransformationRequest(
                             goalId, relativePath, expectedSha256, content, kind,
                             startLine, startCharacter, endLine, endCharacter, importNamespace,
+                            formattingTrigger,
                             fileAreas),
                         new ToolCorrelationId(correlationId),
                         new(fingerprint)), cancellationToken),
@@ -502,6 +508,7 @@ internal sealed class AgentToolFactory(
         int? endLine,
         int? endCharacter,
         string? importNamespace,
+        WorkbenchCodeFormattingTrigger? formattingTrigger,
         IReadOnlyList<AgentFileArea> fileAreas)
     {
         bool hasAnyRange = startLine is not null || startCharacter is not null ||
@@ -526,7 +533,8 @@ internal sealed class AgentToolFactory(
             range,
             DocumentTransformationOrigin.Model,
             fileAreas.Select(area => new DocumentTransformationFileArea(area.Value)).ToArray(),
-            string.IsNullOrWhiteSpace(importNamespace) ? null : new(importNamespace));
+            string.IsNullOrWhiteSpace(importNamespace) ? null : new(importNamespace),
+            formattingTrigger);
     }
 
     internal static bool IsWithinFileAreas(

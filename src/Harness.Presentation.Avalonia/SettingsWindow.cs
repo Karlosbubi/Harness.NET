@@ -337,6 +337,20 @@ internal sealed class SettingsWindow : Window
             IsEnabled = !settingsState.IsBusy,
         };
         AutomationProperties.SetName(tests, "Show associated test CodeLens actions");
+        CheckBox formatOnPaste = new()
+        {
+            Content = "Format pasted C# code with Roslyn",
+            IsChecked = current.FormatOnPaste,
+            IsEnabled = !settingsState.IsBusy,
+        };
+        AutomationProperties.SetName(formatOnPaste, "Format C# code on paste");
+        CheckBox formatOnType = new()
+        {
+            Content = "Format after ;, }, or a new line",
+            IsChecked = current.FormatOnType,
+            IsEnabled = !settingsState.IsBusy,
+        };
+        AutomationProperties.SetName(formatOnType, "Format C# code on supported typing triggers");
         Button save = new()
         {
             Content = "Save editor settings",
@@ -349,11 +363,13 @@ internal sealed class SettingsWindow : Window
             inferredTypes.IsChecked is true,
             references.IsChecked is true,
             implementations.IsChecked is true,
-            tests.IsChecked is true), cancellationToken);
+            tests.IsChecked is true,
+            formatOnPaste.IsChecked is true,
+            formatOnType.IsChecked is true), cancellationToken);
 
         return Page(
             "Editor",
-            "Choose which exact-buffer Roslyn hints and lazy navigation actions appear in trusted C# editors.",
+            "Choose exact-buffer Roslyn hints, formatting, and lazy navigation for trusted C# editors.",
             new StackPanel
             {
                 Spacing = 14,
@@ -365,6 +381,15 @@ internal sealed class SettingsWindow : Window
                     new TextBlock
                     {
                         Text = "Hints are computed only for the visible live buffer and never change source text.",
+                        Classes = { "muted" },
+                        TextWrapping = TextWrapping.Wrap,
+                    },
+                    new TextBlock { Text = "Formatting", FontWeight = FontWeight.SemiBold },
+                    formatOnPaste,
+                    formatOnType,
+                    new TextBlock
+                    {
+                        Text = "Automatic formatting is cancelled when the buffer changes, produces one undoable edit, and never saves the file.",
                         Classes = { "muted" },
                         TextWrapping = TextWrapping.Wrap,
                     },

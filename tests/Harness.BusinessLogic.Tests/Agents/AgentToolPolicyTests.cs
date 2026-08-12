@@ -106,7 +106,7 @@ public sealed class AgentToolPolicyTests
     }
 
     [Fact]
-    public void Document_transformation_schema_keeps_import_namespace_optional()
+    public void Document_transformation_schema_keeps_ranges_namespace_and_trigger_optional()
     {
         AgentToolFactory factory = new(
             new UnsupportedInspectionService(),
@@ -120,8 +120,10 @@ public sealed class AgentToolPolicyTests
 
         Assert.True(preview.JsonSchema.GetProperty("properties")
             .TryGetProperty("importNamespace", out _));
+        Assert.True(preview.JsonSchema.GetProperty("properties")
+            .TryGetProperty("formattingTrigger", out _));
         string?[] optional = ["startLine", "startCharacter", "endLine", "endCharacter",
-            "importNamespace"];
+            "importNamespace", "formattingTrigger"];
         Assert.DoesNotContain(
             preview.JsonSchema.GetProperty("required").EnumerateArray(),
             item => optional.Contains(item.GetString(), StringComparer.Ordinal));

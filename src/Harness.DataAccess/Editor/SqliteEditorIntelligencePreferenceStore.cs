@@ -16,7 +16,9 @@ internal sealed class SqliteEditorIntelligencePreferenceStore(
                    show_inferred_type_hints AS ShowInferredTypeHints,
                    show_reference_code_lens AS ShowReferenceCodeLens,
                    show_implementation_code_lens AS ShowImplementationCodeLens,
-                   show_test_code_lens AS ShowTestCodeLens
+                   show_test_code_lens AS ShowTestCodeLens,
+                   format_on_paste AS FormatOnPaste,
+                   format_on_type AS FormatOnType
             FROM editor_intelligence_preferences
             WHERE id = 1;
             """, cancellationToken: cancellationToken));
@@ -35,7 +37,9 @@ internal sealed class SqliteEditorIntelligencePreferenceStore(
                 show_inferred_type_hints = @inferredTypes,
                 show_reference_code_lens = @references,
                 show_implementation_code_lens = @implementations,
-                show_test_code_lens = @tests
+                show_test_code_lens = @tests,
+                format_on_paste = @formatOnPaste,
+                format_on_type = @formatOnType
             WHERE id = 1;
             """, new
         {
@@ -44,6 +48,8 @@ internal sealed class SqliteEditorIntelligencePreferenceStore(
             references = preferences.ShowReferenceCodeLens ? 1 : 0,
             implementations = preferences.ShowImplementationCodeLens ? 1 : 0,
             tests = preferences.ShowTestCodeLens ? 1 : 0,
+            formatOnPaste = preferences.FormatOnPaste ? 1 : 0,
+            formatOnType = preferences.FormatOnType ? 1 : 0,
         }, cancellationToken: cancellationToken));
         return await GetAsync(cancellationToken);
     }
@@ -68,12 +74,16 @@ internal sealed class SqliteEditorIntelligencePreferenceStore(
         public long ShowReferenceCodeLens { get; init; }
         public long ShowImplementationCodeLens { get; init; }
         public long ShowTestCodeLens { get; init; }
+        public long FormatOnPaste { get; init; }
+        public long FormatOnType { get; init; }
 
         internal StoredEditorIntelligencePreferences ToRecord() => new(
             ShowParameterNameHints == 1,
             ShowInferredTypeHints == 1,
             ShowReferenceCodeLens == 1,
             ShowImplementationCodeLens == 1,
-            ShowTestCodeLens == 1);
+            ShowTestCodeLens == 1,
+            FormatOnPaste == 1,
+            FormatOnType == 1);
     }
 }

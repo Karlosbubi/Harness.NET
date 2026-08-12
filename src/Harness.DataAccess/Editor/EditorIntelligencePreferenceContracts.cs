@@ -5,7 +5,9 @@ public sealed record StoredEditorIntelligencePreferences(
     bool ShowInferredTypeHints,
     bool ShowReferenceCodeLens,
     bool ShowImplementationCodeLens,
-    bool ShowTestCodeLens);
+    bool ShowTestCodeLens,
+    bool FormatOnPaste,
+    bool FormatOnType);
 
 public interface IEditorIntelligencePreferenceStore
 {

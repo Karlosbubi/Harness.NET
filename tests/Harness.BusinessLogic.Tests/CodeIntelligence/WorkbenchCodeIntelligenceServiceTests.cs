@@ -381,6 +381,55 @@ public sealed class WorkbenchCodeIntelligenceServiceTests
     }
 
     [Fact]
+    public async Task Triggered_formatting_preserves_the_typed_trigger_across_the_boundary()
+    {
+        CodeIntelligenceFormattingTrigger? observed = null;
+        DeterministicCodeIntelligenceEngine engine = new()
+        {
+            DocumentTransformations = (request, _) =>
+            {
+                observed = request.FormattingTrigger;
+                return ValueTask.FromResult(new CodeIntelligenceDocumentTransformationPreviewResult(
+                    request.Snapshot.ContextId,
+                    request.Snapshot.SessionId,
+                    request.Snapshot.Path,
+                    request.Snapshot.BufferVersion,
+                    CodeIntelligenceResultState.Ready,
+                    CodeIntelligenceTransformationDisposition.Ready,
+                    request.Kind,
+                    request.Range,
+                    new(request.Snapshot.Path, request.Snapshot.BaselineHash,
+                        request.Snapshot.Text, new("class C { int Value = 1; }"), 1),
+                    [],
+                    [],
+                    new(Baseline),
+                    [],
+                    ImportNamespace: null,
+                    FormattingTrigger: request.FormattingTrigger));
+            },
+        };
+        WorkbenchCodeIntelligenceService service = new(
+            new ContextResolver(ApprovedResolution()), engine);
+        WorkbenchCodeSessionId sessionId = (await service.StartAsync(new(
+            new("workspace-id"), new("goal-id"), new("Harness.slnx")))).SessionId!;
+        WorkbenchCodeInteractiveSnapshot snapshot = new(
+            sessionId, new("src/App.cs"), new(Baseline), new(1),
+            new("class C{int Value=1;}"), new(0, 21));
+
+        WorkbenchCodeDocumentTransformationPreviewView result =
+            await service.PreviewDocumentTransformationAsync(new(
+                snapshot,
+                WorkbenchCodeDocumentTransformationKind.FormatOnType,
+                new(new(0, 20), new(0, 21)),
+                ImportNamespace: null,
+                FormattingTrigger: WorkbenchCodeFormattingTrigger.Semicolon));
+
+        Assert.Equal(CodeIntelligenceFormattingTrigger.Semicolon, observed);
+        Assert.Equal(WorkbenchCodeFormattingTrigger.Semicolon, result.FormattingTrigger);
+        Assert.Equal(WorkbenchCodeTransformationDisposition.Ready, result.Disposition);
+    }
+
+    [Fact]
     public async Task Missing_import_discovery_maps_typed_candidates()
     {
         DeterministicCodeIntelligenceEngine engine = new()

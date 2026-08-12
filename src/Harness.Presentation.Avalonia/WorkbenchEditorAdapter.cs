@@ -12,6 +12,12 @@ internal sealed class WorkbenchEditorPointerEventArgs(
     internal WorkbenchCodePosition? Position { get; } = position;
 }
 
+internal sealed class WorkbenchEditorPasteEventArgs(
+    WorkbenchCodeRange range) : EventArgs
+{
+    internal WorkbenchCodeRange Range { get; } = range;
+}
+
 /// <summary>
 /// Presentation-owned boundary for the live user buffer. Third-party editor objects stay
 /// behind the adapter; Business Logic continues to receive typed text and positions only.
@@ -34,11 +40,13 @@ internal interface IWorkbenchEditorAdapter : IDisposable
     event EventHandler? ViewportChanged;
     event EventHandler<KeyEventArgs>? KeyDown;
     event EventHandler<TextInputEventArgs>? TextEntered;
+    event EventHandler<WorkbenchEditorPasteEventArgs>? TextPasted;
     event EventHandler<WorkbenchEditorPointerEventArgs>? PointerPositionChanged;
     event EventHandler? PointerExited;
     event EventHandler<WorkbenchCodeLensInvokedEventArgs>? CodeLensInvoked;
 
     int GetOffset(WorkbenchCodePosition position);
+    WorkbenchCodePosition GetPosition(int offset);
     char GetCharAt(int offset);
     void Replace(int offset, int length, string text);
     void Insert(int offset, string text);
@@ -82,6 +90,12 @@ internal sealed class AvaloniaEditWorkbenchEditorAdapter : IWorkbenchEditorAdapt
         };
         NativeEditor.KeyDown += (_, args) => KeyDown?.Invoke(this, args);
         NativeEditor.TextArea.TextEntered += (_, args) => TextEntered?.Invoke(this, args);
+        NativeEditor.TextArea.TextPasted += (_, args) =>
+        {
+            int end = CaretOffset;
+            int start = Math.Max(0, end - args.Text.Length);
+            TextPasted?.Invoke(this, new(new(GetPosition(start), GetPosition(end))));
+        };
         NativeEditor.PointerMoved += (_, args) =>
         {
             var position = NativeEditor.GetPositionFromPoint(args.GetPosition(NativeEditor));
@@ -128,6 +142,7 @@ internal sealed class AvaloniaEditWorkbenchEditorAdapter : IWorkbenchEditorAdapt
     public event EventHandler? ViewportChanged;
     public event EventHandler<KeyEventArgs>? KeyDown;
     public event EventHandler<TextInputEventArgs>? TextEntered;
+    public event EventHandler<WorkbenchEditorPasteEventArgs>? TextPasted;
     public event EventHandler<WorkbenchEditorPointerEventArgs>? PointerPositionChanged;
     public event EventHandler? PointerExited;
     public event EventHandler<WorkbenchCodeLensInvokedEventArgs>? CodeLensInvoked;
@@ -138,6 +153,12 @@ internal sealed class AvaloniaEditWorkbenchEditorAdapter : IWorkbenchEditorAdapt
         var documentLine = NativeEditor.Document.GetLineByNumber(line);
         int character = Math.Clamp(position.Character, 0, documentLine.Length);
         return documentLine.Offset + character;
+    }
+
+    public WorkbenchCodePosition GetPosition(int offset)
+    {
+        var location = NativeEditor.Document.GetLocation(Math.Clamp(offset, 0, TextLength));
+        return new(location.Line - 1, location.Column - 1);
     }
 
     public char GetCharAt(int offset) => NativeEditor.Document.GetCharAt(offset);

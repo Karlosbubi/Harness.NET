@@ -107,10 +107,10 @@ public sealed class AvaloniaPresentationStoreTests
 
         await store.LoadAsync(CancellationToken.None);
         await store.SaveEditorIntelligenceSettingsAsync(new(
-            false, true, false, true, false), CancellationToken.None);
+            false, true, false, true, false, false, true), CancellationToken.None);
 
-        Assert.Equal(new(true, true, true, true, true), editor.Initial);
-        Assert.Equal(new(false, true, false, true, false),
+        Assert.Equal(new(true, true, true, true, true, true, true), editor.Initial);
+        Assert.Equal(new(false, true, false, true, false, false, true),
             store.Current.Settings.EditorIntelligenceSettings?.Preferences);
         Assert.Equal(1, editor.SaveCalls);
     }
@@ -881,7 +881,7 @@ public sealed class AvaloniaPresentationStoreTests
         IEditorIntelligenceSettingsService
     {
         internal EditorIntelligencePreferences Initial { get; } = new(
-            true, true, true, true, true);
+            true, true, true, true, true, true, true);
         internal int SaveCalls { get; private set; }
 
         public ValueTask<EditorIntelligenceSettingsSnapshot> GetAsync(

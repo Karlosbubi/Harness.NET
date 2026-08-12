@@ -184,10 +184,16 @@ internal sealed partial class WorkspaceMutationService
             request.Path is null || request.BaselineHash is null ||
             !IsSha256(request.BaselineHash.Value) || request.BufferVersion is null ||
             request.BufferVersion.Value <= 0 || request.Text is null || request.Position is null ||
-            (request.Kind is WorkbenchCodeDocumentTransformationKind.FormatSelection) !=
+            (request.Kind is WorkbenchCodeDocumentTransformationKind.FormatSelection or
+                WorkbenchCodeDocumentTransformationKind.FormatPaste or
+                WorkbenchCodeDocumentTransformationKind.FormatOnType) !=
             (request.Range is not null) ||
             (request.Kind is WorkbenchCodeDocumentTransformationKind.AddMissingImport) !=
             (request.ImportNamespace is not null) ||
+            (request.Kind is WorkbenchCodeDocumentTransformationKind.FormatPaste or
+                WorkbenchCodeDocumentTransformationKind.FormatOnType) !=
+            (request.FormattingTrigger is not null) ||
+            !ValidFormattingTrigger(request.Kind, request.FormattingTrigger) ||
             request.ImportNamespace is { Value.Length: 0 })
         {
             return DocumentTransformationContext.Failure(
@@ -246,7 +252,21 @@ internal sealed partial class WorkspaceMutationService
             request.Position),
         request.Kind,
         request.Range,
-        request.ImportNamespace);
+        request.ImportNamespace,
+        request.FormattingTrigger);
+
+    private static bool ValidFormattingTrigger(
+        WorkbenchCodeDocumentTransformationKind kind,
+        WorkbenchCodeFormattingTrigger? trigger) => kind switch
+        {
+            WorkbenchCodeDocumentTransformationKind.FormatPaste =>
+                trigger is WorkbenchCodeFormattingTrigger.Paste,
+            WorkbenchCodeDocumentTransformationKind.FormatOnType =>
+                trigger is WorkbenchCodeFormattingTrigger.Semicolon or
+                    WorkbenchCodeFormattingTrigger.CloseBrace or
+                    WorkbenchCodeFormattingTrigger.NewLine,
+            _ => trigger is null,
+        };
 
     private static string? ValidateDocumentTransformationGrants(
         DocumentTransformationPreviewRequest request,

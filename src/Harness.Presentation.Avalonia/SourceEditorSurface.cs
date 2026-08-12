@@ -54,6 +54,7 @@ internal sealed class SourceEditorSurface : IDisposable
         Button implementations,
         Button formatDocument,
         Button formatSelection,
+        Button formatChangedSpans,
         Button organizeImports,
         Button removeUnusedImports,
         Button quickFix)
@@ -73,6 +74,7 @@ internal sealed class SourceEditorSurface : IDisposable
         Implementations = implementations;
         FormatDocument = formatDocument;
         FormatSelection = formatSelection;
+        FormatChangedSpans = formatChangedSpans;
         OrganizeImports = organizeImports;
         RemoveUnusedImports = removeUnusedImports;
         QuickFix = quickFix;
@@ -93,6 +95,7 @@ internal sealed class SourceEditorSurface : IDisposable
     internal Button Implementations { get; }
     internal Button FormatDocument { get; }
     internal Button FormatSelection { get; }
+    internal Button FormatChangedSpans { get; }
     internal Button OrganizeImports { get; }
     internal Button RemoveUnusedImports { get; }
     internal Button QuickFix { get; }
@@ -131,6 +134,9 @@ internal sealed class SourceEditorSurface : IDisposable
             $"Format document {view.Path.Value}", "Format document · Ctrl+Alt+L");
         Button formatSelection = Action("Format selection",
             $"Format selection in {view.Path.Value}", "Format selected code · Ctrl+Alt+F");
+        Button formatChangedSpans = Action("Format changed code",
+            $"Format changed code in {view.Path.Value}",
+            "Format only spans changed since the file was loaded");
         Button organizeImports = Action("Organize imports",
             $"Organize imports in {view.Path.Value}", "Sort and group using directives · Ctrl+Alt+O");
         Button removeUnusedImports = Action("Remove unused imports",
@@ -146,7 +152,14 @@ internal sealed class SourceEditorSurface : IDisposable
             {
                 Spacing = 4,
                 Margin = new Thickness(4),
-                Children = { formatDocument, formatSelection, organizeImports, removeUnusedImports },
+                Children =
+                {
+                    formatDocument,
+                    formatSelection,
+                    formatChangedSpans,
+                    organizeImports,
+                    removeUnusedImports,
+                },
             },
         };
 
@@ -166,6 +179,7 @@ internal sealed class SourceEditorSurface : IDisposable
             implementations,
             formatDocument,
             formatSelection,
+            formatChangedSpans,
             organizeImports,
             removeUnusedImports,
             quickFix);
@@ -209,6 +223,7 @@ internal sealed class SourceEditorSurface : IDisposable
         RemoveUnusedImports.IsEnabled = FormatDocument.IsEnabled;
         QuickFix.IsEnabled = semanticAssistance && view.Access is WorkbenchDocumentAccess.Editable;
         FormatSelection.IsEnabled = FormatDocument.IsEnabled && Editor.SelectionLength > 0;
+        FormatChangedSpans.IsEnabled = FormatDocument.IsEnabled;
         AutomationProperties.SetName(path, $"Repository path {view.Path.Value}");
         AutomationProperties.SetName(Status, $"Editing status for {view.Path.Value}");
         AutomationProperties.SetName(metrics, $"Caret and format for {view.Path.Value}");

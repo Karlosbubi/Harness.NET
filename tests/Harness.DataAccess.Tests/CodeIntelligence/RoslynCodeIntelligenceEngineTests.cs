@@ -568,6 +568,64 @@ public sealed class RoslynCodeIntelligenceEngineTests(ITestOutputHelper output) 
     }
 
     [Fact]
+    public async Task Format_changed_spans_leaves_unchanged_members_alone()
+    {
+        const string persisted = "class Sample\n{\n    void First() { int value = 1; }\n    void Second(){int value=2;}\n}\n";
+        const string current = "class Sample\n{\n    void First(){int value=3;}\n    void Second(){int value=2;}\n}\n";
+        await CreateProjectAsync(persisted);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("format-changed-context");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+
+        CodeIntelligenceDocumentTransformationPreviewResult result =
+            await engine.PreviewDocumentTransformationAsync(new(
+                InteractiveSnapshot(contextId, session.SessionId!, persisted, current, 0),
+                CodeIntelligenceDocumentTransformationKind.FormatChangedSpans,
+                Range: null));
+
+        Assert.Equal(CodeIntelligenceTransformationDisposition.Ready, result.Disposition);
+        Assert.Contains("void First() { int value = 3; }", result.Edit!.Text.Value,
+            StringComparison.Ordinal);
+        Assert.Contains("void Second(){int value=2;}", result.Edit.Text.Value,
+            StringComparison.Ordinal);
+        Assert.Equal(persisted, await File.ReadAllTextAsync(Path.Combine(root, "Sample.cs")));
+    }
+
+    [Theory]
+    [InlineData(CodeIntelligenceDocumentTransformationKind.FormatPaste,
+        CodeIntelligenceFormattingTrigger.Paste)]
+    [InlineData(CodeIntelligenceDocumentTransformationKind.FormatOnType,
+        CodeIntelligenceFormattingTrigger.Semicolon)]
+    public async Task Triggered_formatting_is_confined_to_the_exact_line(
+        CodeIntelligenceDocumentTransformationKind kind,
+        CodeIntelligenceFormattingTrigger trigger)
+    {
+        const string persisted = "class Sample\n{\n    void First() { }\n    void Second(){int value=2;}\n}\n";
+        const string current = "class Sample\n{\n    void First(){int value=1;}\n    void Second(){int value=2;}\n}\n";
+        await CreateProjectAsync(persisted);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new($"format-trigger-{trigger}");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+
+        CodeIntelligenceDocumentTransformationPreviewResult result =
+            await engine.PreviewDocumentTransformationAsync(new(
+                InteractiveSnapshot(contextId, session.SessionId!, persisted, current, 0),
+                kind,
+                new(new(2, 4), new(2, 30)),
+                ImportNamespace: null,
+                FormattingTrigger: trigger));
+
+        Assert.True(result.Disposition is CodeIntelligenceTransformationDisposition.Ready,
+            string.Join(" | ", result.Issues.Select(item =>
+                $"{item.Code.Value}: {item.Message.Value}")));
+        Assert.Equal(trigger, result.FormattingTrigger);
+        Assert.Contains("void First() { int value = 1; }", result.Edit!.Text.Value,
+            StringComparison.Ordinal);
+        Assert.Contains("void Second(){int value=2;}", result.Edit.Text.Value,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Organize_imports_sorts_directives_and_preserves_source_on_disk()
     {
         const string source = "using System.Text;\nusing System;\nclass Sample { StringBuilder Value = new(); }\n";
@@ -698,6 +756,34 @@ public sealed class RoslynCodeIntelligenceEngineTests(ITestOutputHelper output) 
                 InteractiveSnapshot(contextId, session.SessionId!, source, 0),
                 CodeIntelligenceDocumentTransformationKind.OrganizeImports,
                 new(new(0, 0), new(0, 5))));
+
+        Assert.Equal(CodeIntelligenceTransformationDisposition.Rejected, result.Disposition);
+        Assert.Equal("invalid_document_transformation", Assert.Single(result.Issues).Code.Value);
+        Assert.Null(result.Fingerprint);
+    }
+
+    [Theory]
+    [InlineData(CodeIntelligenceDocumentTransformationKind.FormatPaste,
+        CodeIntelligenceFormattingTrigger.Semicolon)]
+    [InlineData(CodeIntelligenceDocumentTransformationKind.FormatOnType,
+        CodeIntelligenceFormattingTrigger.Paste)]
+    public async Task Triggered_formatting_rejects_a_mismatched_trigger(
+        CodeIntelligenceDocumentTransformationKind kind,
+        CodeIntelligenceFormattingTrigger trigger)
+    {
+        const string source = "class Sample { }\n";
+        await CreateProjectAsync(source);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new($"invalid-trigger-{kind}");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+
+        CodeIntelligenceDocumentTransformationPreviewResult result =
+            await engine.PreviewDocumentTransformationAsync(new(
+                InteractiveSnapshot(contextId, session.SessionId!, source, 0),
+                kind,
+                new(new(0, 0), new(0, 1)),
+                ImportNamespace: null,
+                FormattingTrigger: trigger));
 
         Assert.Equal(CodeIntelligenceTransformationDisposition.Rejected, result.Disposition);
         Assert.Equal("invalid_document_transformation", Assert.Single(result.Issues).Code.Value);
