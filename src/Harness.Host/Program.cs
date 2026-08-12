@@ -60,6 +60,12 @@ using OperationsBackupResult = Harness.BusinessLogic.Operations.ApplicationBacku
 
 HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
 string? evaluationRoot = ArgumentValue(args, "--mcp-evaluation-root");
+string? evaluationTokenFile = ArgumentValue(args, "--mcp-evaluation-token-file");
+if (evaluationTokenFile is not null && evaluationRoot is null)
+{
+    throw new ArgumentException(
+        "--mcp-evaluation-token-file requires --mcp-evaluation-root.");
+}
 XdgApplicationPaths applicationPaths = evaluationRoot is null
     ? new()
     : new(CreateEvaluationPaths(evaluationRoot));
@@ -83,7 +89,11 @@ builder.Services.AddSingleton<IUserThemeSource, XdgUserThemeSource>();
 if (evaluationRoot is null)
     builder.Services.AddSingleton<ISecretStore, SecretServiceSecretStore>();
 else
-    builder.Services.AddSingleton<ISecretStore, VolatileSecretStore>();
+{
+    builder.Services.AddSingleton<VolatileSecretStore>();
+    builder.Services.AddSingleton<ISecretStore>(services =>
+        services.GetRequiredService<VolatileSecretStore>());
+}
 builder.Services.AddSingleton(new ModelProviderConfigurationOptions(
     configuration.Providers.Values.Select(provider => new StoredModelProviderConfiguration(
         new(provider.Name),
@@ -359,6 +369,15 @@ try
     {
         throw new InvalidOperationException(
             $"Pending application restore failed safely: {restore.Error}");
+    }
+
+    if (evaluationRoot is not null && evaluationTokenFile is not null)
+    {
+        await EvaluationMcpTokenBootstrap.SeedAsync(
+            evaluationRoot,
+            evaluationTokenFile,
+            host.Services.GetRequiredService<ISecretStore>(),
+            shutdown.Token);
     }
 
     await host.StartAsync(shutdown.Token);

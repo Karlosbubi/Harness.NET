@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-11
+- Amended: 2026-08-12
 - Extends: [ADR 005](005-isolated-goal-execution.md), [ADR 013](013-chat-first-desktop-workflow.md), [ADR 015](015-stateless-mcp-connections.md), [ADR 016](016-model-accessible-ide-capabilities.md), [ADR 017](017-portal-visual-verification.md)
 
 ## Context
@@ -46,6 +47,14 @@ explicitly selected Ollama provider, and no stored credentials or normal workspa
 Reset destroys only that identified evaluation state. Evaluation snapshots may expose
 Harness-owned rendered frames and accessibility identities. Actions may activate only
 allowlisted Harness accessibility identities in that isolated instance.
+
+An automated evaluator may seed the isolated process with one bearer token through an
+explicit token file located directly inside the dedicated evaluation root. Harness
+accepts this bootstrap only with `--mcp-evaluation-root`, requires an existing regular
+owner-only file and a valid bounded token, reads it into the volatile secret store, and
+deletes the file before starting the MCP listener. The token is never accepted as a
+command-line value, copied to normal storage, or logged. Normal mode cannot use this
+bootstrap path.
 
 ### Tool policy
 

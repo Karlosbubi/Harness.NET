@@ -178,6 +178,15 @@ the running process:
 Only `http`, loopback hosts, ports 1024–65535, known closed tool IDs, client IDs of
 1–128 characters, timeouts of 1–300 seconds, result limits of 1–5000, and audit
 retention of 0–100000 are accepted. An approval-held tool is omitted from discovery.
+
+For automated isolated evaluation only, start the host with both
+`--mcp-evaluation-root /tmp/<dedicated-directory>` and
+`--mcp-evaluation-token-file /tmp/<dedicated-directory>/mcp.token`. The token file
+must be a regular owner-only file directly inside the evaluation root and contain one
+48-byte Base64 token. Harness loads it into the volatile secret store and deletes the
+file before starting the listener. The token is not placed in process arguments,
+logs, normal configuration, SQLite, or Secret Service. Normal mode rejects this
+bootstrap option.
 The bearer token is never stored in XML. Normal mode uses Secret Service;
 IsolatedEvaluation uses process-local volatile storage.
 

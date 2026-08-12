@@ -121,6 +121,12 @@ internal static class GoalDelegationParser
     private static bool IsStandaloneDiscoveryTask(string title, string objective)
     {
         string combined = $"{title} {objective}";
+        bool isDocumentationOnly =
+            StartsWithPhrase(title, "update documentation") ||
+            StartsWithPhrase(title, "write documentation") ||
+            StartsWithPhrase(title, "add documentation") ||
+            StartsWithPhrase(title, "create documentation") ||
+            StartsWithPhrase(title, "document ");
         string[] nonMutationWords =
         [
             "inspect", "analyze", "analyse", "discover", "explore", "inventory", "assess",
@@ -137,9 +143,13 @@ internal static class GoalDelegationParser
             StartsWithWord(title, word));
         bool hasWeakMutation = weakMutationWords.Any(word => ContainsWord(combined, word));
         bool isPlanning = ContainsWord(combined, "plan") || ContainsWord(combined, "planning");
-        return titleStartsWithNonMutation && !titleHasStrongMutation ||
+        return isDocumentationOnly ||
+            titleStartsWithNonMutation && !titleHasStrongMutation ||
             hasNonMutationWord && !hasStrongMutation && (!hasWeakMutation || isPlanning);
     }
+
+    private static bool StartsWithPhrase(string value, string phrase) =>
+        value.TrimStart().StartsWith(phrase, StringComparison.OrdinalIgnoreCase);
 
     private static bool StartsWithWord(string value, string word) =>
         value.TrimStart().StartsWith(word, StringComparison.OrdinalIgnoreCase) &&

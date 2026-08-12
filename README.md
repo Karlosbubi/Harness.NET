@@ -108,6 +108,12 @@ cache, logs, worktrees, credentials, and a deterministic fixture repository. Use
 only with Settings → Harness control → IsolatedEvaluation. Normal repositories are
 unavailable in that process.
 
+Automated isolated evaluation may also pass
+`--mcp-evaluation-token-file /tmp/<dedicated-directory>/mcp.token`. The file must be
+an existing owner-only regular file containing one 48-byte Base64 token. Harness reads
+and deletes it before opening the listener; the option is rejected without
+`--mcp-evaluation-root`.
+
 Provider modules, default routes, and optional OTLP export are defined in
 `src/Harness.Host/harness.xml`. Private overrides use XDG configuration. See
 [configuration](docs/configuration.md).

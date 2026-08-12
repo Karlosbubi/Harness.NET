@@ -140,4 +140,16 @@ public sealed class GoalDelegationParserTests
         Assert.Equal("Implement accessible names", Assert.Single(result.Tasks).Title.Value);
         Assert.Contains("ignored 1 standalone", result.Plan, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Ignores_standalone_documentation_task_when_implementation_remains()
+    {
+        GoalDelegation result = GoalDelegationParser.Parse("""
+            {"plan":"Plan","tasks":[{"title":"Implement regression runner","objective":"Implement deterministic scenario execution.","fileAreas":["eng"],"acceptanceCriteria":["Runner works."]},{"title":"Update documentation and task ledger","objective":"Update README and roadmap to mark delivery.","fileAreas":["README.md","docs"],"acceptanceCriteria":["Docs are current."]}]}
+            """);
+
+        Assert.Null(result.Error);
+        Assert.Equal("Implement regression runner", Assert.Single(result.Tasks).Title.Value);
+        Assert.Contains("ignored 1 standalone", result.Plan, StringComparison.Ordinal);
+    }
 }
