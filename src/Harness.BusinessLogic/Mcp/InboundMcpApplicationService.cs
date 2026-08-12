@@ -50,6 +50,7 @@ internal sealed class InboundMcpApplicationService(
         Read("harness_audit", sensitive: true), Read("harness_code_problems"),
         Read("harness_code_symbol"), Read("harness_code_definition"),
         Read("harness_code_references"), Read("harness_code_implementations"),
+        Read("harness_code_actions"),
         Read("harness_inspect_capture", sensitive: true),
         Read("harness_evaluation_snapshot", sensitive: true),
         Action("harness_create_goal", idempotent: false),
@@ -847,6 +848,13 @@ internal sealed class InboundMcpApplicationService(
         CancellationToken cancellationToken = default) => CodePositionAsync(context, request,
             (goal, path, position, token) => codeIntelligenceService.FindImplementationsAsync(
                 goal, GoalWorkspaceScope.Original, path, position, token), cancellationToken);
+
+    public ValueTask<InboundMcpApplicationResult> FindCodeActionsAsync(
+        InboundMcpCallContext context, InboundMcpCodePositionRequest request,
+        CancellationToken cancellationToken = default) => CodePositionAsync(context, request,
+            (goal, path, position, token) => codeIntelligenceService.FindCodeActionsAsync(
+                goal, GoalWorkspaceScope.Original, path, position,
+                cancellationToken: token), cancellationToken);
 
     private static async ValueTask<InboundMcpApplicationResult> CodePositionAsync<T>(
         InboundMcpCallContext context,

@@ -864,7 +864,9 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
             "replacement. Use the closed Roslyn document transformation preview/apply tools for C# " +
             "formatting, unused-import cleanup, or import organization instead of rewriting a file " +
             "for style alone. For an unresolved type, use missing-import discovery and apply only a " +
-            "returned namespace through AddMissingImport. Inspect " +
+            "returned namespace through AddMissingImport. For compiler fixes and local refactorings, " +
+            "call find_code_actions first and preview/apply only its returned ID and scope; prefer that " +
+            "small semantic edit over regenerating a working file or method. Inspect " +
             "Roslyn problems before and after compiler-relevant changes. On a " +
             "diagnostic or test failure, preserve passing code and repair only the cited range or first " +
             "relevant user-code stack frame rather than regenerating the file. Treat a failed tool " +

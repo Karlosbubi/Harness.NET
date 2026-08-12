@@ -67,6 +67,24 @@ public sealed class GoalCodeIntelligenceServiceTests
         Assert.False(code.WasStopped);
     }
 
+    [Fact]
+    public async Task Goal_code_actions_use_the_exact_requested_source_context()
+    {
+        CapturingCodeIntelligence code = new();
+        GoalCodeIntelligenceService service = CreateService(
+            code, GoalWorkspaceScope.ApprovedWorktree);
+
+        GoalCodeActionView result = await service.FindCodeActionsAsync(
+            new("goal-1"), GoalWorkspaceScope.ApprovedWorktree,
+            new("src/Program.cs"), new(0, 6));
+
+        WorkbenchCodeActionCandidate candidate = Assert.Single(result.Candidates);
+        Assert.Equal("goal-1", code.StartRequest?.GoalId?.Value);
+        Assert.Equal(WorkbenchClosedCodeActionKind.UseExpressionBody, candidate.Kind);
+        Assert.Equal(Baseline, candidate.Id.Value);
+        Assert.True(code.WasStopped);
+    }
+
     private static GoalCodeIntelligenceService CreateService(
         CapturingCodeIntelligence code,
         GoalWorkspaceScope expectedScope,
@@ -151,6 +169,17 @@ public sealed class GoalCodeIntelligenceServiceTests
         public ValueTask<WorkbenchCodeNavigationView> FindImplementationsAsync(
             WorkbenchCodeInteractiveSnapshot snapshot,
             CancellationToken cancellationToken = default) => Navigation(snapshot);
+
+        public ValueTask<WorkbenchCodeActionView> GetCodeActionsAsync(
+            WorkbenchCodeActionRequest request,
+            CancellationToken cancellationToken = default) => ValueTask.FromResult(new
+                WorkbenchCodeActionView(
+                    request.Snapshot.SessionId, request.Snapshot.Path,
+                    request.Snapshot.BufferVersion,
+                    WorkbenchCodeResultState.Ready,
+                    [new(new(Baseline), WorkbenchClosedCodeActionKind.UseExpressionBody,
+                        WorkbenchCodeActionScope.Occurrence, new("Use expression body"),
+                        DiagnosticId: null, new(new(0, 6), new(0, 6)))], []));
 
         public ValueTask StopAsync(
             WorkbenchCodeSessionId sessionId,

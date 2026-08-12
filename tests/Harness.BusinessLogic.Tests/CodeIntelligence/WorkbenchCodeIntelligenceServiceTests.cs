@@ -461,6 +461,58 @@ public sealed class WorkbenchCodeIntelligenceServiceTests
     }
 
     [Fact]
+    public async Task Closed_code_action_identity_and_scope_cross_the_boundary_exactly()
+    {
+        const string source = "interface I { void Run(); } class C : I { }";
+        CodeIntelligenceCodeActionId actionId = new(Baseline);
+        DeterministicCodeIntelligenceEngine engine = new()
+        {
+            CodeActions = (snapshot, _) => ValueTask.FromResult(new
+                CodeIntelligenceCodeActionResult(
+                    snapshot.ContextId, snapshot.SessionId, snapshot.Path,
+                    snapshot.BufferVersion, CodeIntelligenceResultState.Ready,
+                    [new(actionId, CodeIntelligenceClosedCodeActionKind.ImplementInterface,
+                        CodeIntelligenceCodeActionScope.Occurrence,
+                        new("Implement interface"), new("CS0535"),
+                        new(new(0, 39), new(0, 40)))], [])),
+            DocumentTransformations = (request, _) => ValueTask.FromResult(new
+                CodeIntelligenceDocumentTransformationPreviewResult(
+                    request.Snapshot.ContextId, request.Snapshot.SessionId,
+                    request.Snapshot.Path, request.Snapshot.BufferVersion,
+                    CodeIntelligenceResultState.Ready,
+                    CodeIntelligenceTransformationDisposition.Ready, request.Kind,
+                    request.Range,
+                    new(request.Snapshot.Path, request.Snapshot.BaselineHash,
+                        request.Snapshot.Text, new(source + " void Run() { }"), 1),
+                    [], [], new(Baseline), [],
+                    CodeActionId: request.CodeActionId,
+                    CodeActionScope: request.CodeActionScope)),
+        };
+        WorkbenchCodeIntelligenceService service = new(
+            new ContextResolver(ApprovedResolution()), engine);
+        WorkbenchCodeSessionId sessionId = (await service.StartAsync(new(
+            new("workspace-id"), new("goal-id"), new("Harness.slnx")))).SessionId!;
+        WorkbenchCodeInteractiveSnapshot snapshot = new(
+            sessionId, new("src/App.cs"), new(Baseline), new(1),
+            new(source), new(0, 39));
+
+        WorkbenchCodeActionCandidate candidate = Assert.Single(
+            (await service.GetCodeActionsAsync(new(snapshot))).Candidates);
+        WorkbenchCodeDocumentTransformationPreviewView preview =
+            await service.PreviewDocumentTransformationAsync(new(
+                snapshot, WorkbenchCodeDocumentTransformationKind.ApplyCodeAction,
+                Range: null, CodeActionId: candidate.Id,
+                CodeActionScope: candidate.Scope));
+
+        Assert.Equal(WorkbenchClosedCodeActionKind.ImplementInterface, candidate.Kind);
+        Assert.Equal(Baseline, candidate.Id.Value);
+        Assert.Equal(WorkbenchCodeActionScope.Occurrence, candidate.Scope);
+        Assert.Equal(candidate.Id, preview.CodeActionId);
+        Assert.Equal(candidate.Scope, preview.CodeActionScope);
+        Assert.Equal(WorkbenchCodeTransformationDisposition.Ready, preview.Disposition);
+    }
+
+    [Fact]
     public async Task Add_missing_import_preserves_the_exact_namespace_across_the_boundary()
     {
         CodeIntelligenceImportNamespace? observed = null;
@@ -598,6 +650,9 @@ public sealed class WorkbenchCodeIntelligenceServiceTests
         internal Func<CodeIntelligenceInteractiveSnapshot, CancellationToken,
             ValueTask<CodeIntelligenceMissingImportResult>>? MissingImports
         { get; init; }
+        internal Func<CodeIntelligenceInteractiveSnapshot, CancellationToken,
+            ValueTask<CodeIntelligenceCodeActionResult>>? CodeActions
+        { get; init; }
         internal Func<CodeIntelligenceDocumentPresentationRequest, CancellationToken,
             ValueTask<CodeIntelligenceDocumentPresentationResult>>? Presentations
         { get; init; }
@@ -684,6 +739,11 @@ public sealed class WorkbenchCodeIntelligenceServiceTests
             CancellationToken cancellationToken = default) => MissingImports is null
             ? throw new NotSupportedException()
             : MissingImports(snapshot, cancellationToken);
+        public ValueTask<CodeIntelligenceCodeActionResult> GetCodeActionsAsync(
+            CodeIntelligenceCodeActionRequest request,
+            CancellationToken cancellationToken = default) => CodeActions is null
+            ? throw new NotSupportedException()
+            : CodeActions(request.Snapshot, cancellationToken);
 
         public ValueTask CloseAsync(
             CodeIntelligenceSessionId sessionId,

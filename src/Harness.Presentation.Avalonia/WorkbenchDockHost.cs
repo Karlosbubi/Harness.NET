@@ -2300,6 +2300,22 @@ internal sealed class WorkbenchDockHost
         return ShowImportFixesAsync(session);
     }
 
+    internal ValueTask ApplyActiveCodeActionAsync(WorkbenchCodeActionCandidate candidate)
+    {
+        ArgumentNullException.ThrowIfNull(candidate);
+        if (activeDocument?.Id is not { } id ||
+            !sourceDocuments.TryGetValue(id, out SourceDocumentSession? session))
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        return TransformDocumentAsync(
+            session,
+            WorkbenchCodeDocumentTransformationKind.ApplyCodeAction,
+            codeActionId: candidate.Id,
+            codeActionScope: candidate.Scope);
+    }
+
     internal ValueTask HandleActiveTextEnteredAsync(string? text)
     {
         if (activeDocument?.Id is not { } id ||
@@ -2395,6 +2411,8 @@ internal sealed class WorkbenchDockHost
         WorkbenchCodeImportNamespace? importNamespace = null,
         WorkbenchCodeRange? range = null,
         WorkbenchCodeFormattingTrigger? formattingTrigger = null,
+        WorkbenchCodeActionId? codeActionId = null,
+        WorkbenchCodeActionScope? codeActionScope = null,
         bool automatic = false)
     {
         if (session.View.Access is not WorkbenchDocumentAccess.Editable ||
@@ -2431,6 +2449,8 @@ internal sealed class WorkbenchDockHost
                     "Removing unused imports with Roslyn…",
                 WorkbenchCodeDocumentTransformationKind.AddMissingImport =>
                     $"Adding {importNamespace?.Value} with Roslyn…",
+                WorkbenchCodeDocumentTransformationKind.ApplyCodeAction =>
+                    "Applying the selected Roslyn code action…",
                 _ => "Preparing deterministic transformation…",
             });
         }
@@ -2446,7 +2466,8 @@ internal sealed class WorkbenchDockHost
                 session, codeSession, version);
             WorkbenchCodeDocumentTransformationPreviewView preview =
                 await codeIntelligenceService.PreviewDocumentTransformationAsync(
-                    new(snapshot, kind, range, importNamespace, formattingTrigger), token);
+                    new(snapshot, kind, range, importNamespace, formattingTrigger,
+                        codeActionId, codeActionScope), token);
             if (!session.IsCurrentInteraction(version))
             {
                 session.SetStatus("The buffer changed before the transformation could be applied.");
@@ -2484,6 +2505,8 @@ internal sealed class WorkbenchDockHost
                     WorkbenchCodeDocumentTransformationKind.FormatPaste or
                         WorkbenchCodeDocumentTransformationKind.FormatOnType =>
                         "No automatic formatting was needed.",
+                    WorkbenchCodeDocumentTransformationKind.ApplyCodeAction =>
+                        "The selected code action no longer changes this document.",
                     _ => "The requested code is already formatted.",
                 });
                 return;
@@ -2514,6 +2537,10 @@ internal sealed class WorkbenchDockHost
                     $"Removed unused imports · {preview.Edit.ReplacementCount:N0} Roslyn edit(s) · undo available.",
                 WorkbenchCodeDocumentTransformationKind.AddMissingImport =>
                     $"Added using {importNamespace?.Value} · undo available.",
+                WorkbenchCodeDocumentTransformationKind.ApplyCodeAction =>
+                    codeActionScope is WorkbenchCodeActionScope.Document
+                        ? $"Applied Roslyn fix to this document · {preview.Edit.ReplacementCount:N0} edit(s) · undo available."
+                        : $"Applied Roslyn quick fix · {preview.Edit.ReplacementCount:N0} edit(s) · undo available.",
                 _ => "Applied deterministic Roslyn transformation to the live buffer.",
             });
             ScheduleDiagnostics(session, immediate: true);
@@ -2596,17 +2623,22 @@ internal sealed class WorkbenchDockHost
 
             WorkbenchCodeInteractiveSnapshot snapshot = InteractiveSnapshot(
                 session, codeSession, version);
+            WorkbenchCodeRange? codeActionRange = session.Editor.SelectionRange;
             WorkbenchCodeMissingImportView result =
                 await codeIntelligenceService.GetMissingImportsAsync(snapshot, token);
+            WorkbenchCodeActionView codeActions =
+                await codeIntelligenceService.GetCodeActionsAsync(
+                    new(snapshot, codeActionRange), token);
             if (!session.IsCurrentInteraction(version))
             {
                 session.SetStatus("The buffer changed before quick fixes were ready.");
                 return;
             }
 
-            if (result.Candidates.Count == 0)
+            if (result.Candidates.Count == 0 && codeActions.Candidates.Count == 0)
             {
-                session.SetStatus(result.Issues.FirstOrDefault()?.Message.Value ??
+                session.SetStatus(codeActions.Issues.FirstOrDefault()?.Message.Value ??
+                    result.Issues.FirstOrDefault()?.Message.Value ??
                     "No supported quick fix is available at the caret.");
                 return;
             }
@@ -2631,8 +2663,34 @@ internal sealed class WorkbenchDockHost
                 };
                 choices.Children.Add(action);
             }
+            foreach (WorkbenchCodeActionCandidate candidate in codeActions.Candidates)
+            {
+                string suffix = candidate.Scope is WorkbenchCodeActionScope.Document
+                    ? "  ·  Fix all in document"
+                    : string.Empty;
+                Button action = new()
+                {
+                    Content = candidate.Title.Value + suffix,
+                    HorizontalContentAlignment = HorizontalAlignment.Left,
+                };
+                AutomationProperties.SetName(action,
+                    candidate.Scope is WorkbenchCodeActionScope.Document
+                        ? $"{candidate.Title.Value}, fix all in document"
+                        : candidate.Title.Value);
+                action.Click += async (_, _) =>
+                {
+                    flyout.Hide();
+                    await TransformDocumentAsync(session,
+                        WorkbenchCodeDocumentTransformationKind.ApplyCodeAction,
+                        range: codeActionRange,
+                        codeActionId: candidate.Id,
+                        codeActionScope: candidate.Scope);
+                };
+                choices.Children.Add(action);
+            }
             flyout.ShowAt(session.Surface.QuickFix);
-            session.SetStatus($"{result.Candidates.Count:N0} missing-import fix(es) available.");
+            int count = result.Candidates.Count + codeActions.Candidates.Count;
+            session.SetStatus($"{count:N0} Roslyn quick fix(es) available.");
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {

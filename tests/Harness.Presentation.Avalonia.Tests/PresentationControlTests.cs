@@ -2119,7 +2119,73 @@ public sealed class PresentationControlTests
                 AutomationProperties.GetName(button)?.StartsWith(
                     "Show quick fixes", StringComparison.Ordinal) is true);
             Assert.Contains(sourceContent.GetLogicalDescendants().OfType<TextBlock>(), block =>
-                block.Text?.Contains("1 missing-import fix", StringComparison.Ordinal) is true);
+                block.Text?.Contains("1 Roslyn quick fix", StringComparison.Ordinal) is true);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Editor_applies_a_closed_code_action_as_one_undoable_buffer_change()
+    {
+        using HeadlessUnitTestSession testSession =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await testSession.Dispatch(() =>
+        {
+            WorkbenchCodeDocumentTransformationPreviewRequest? observed = null;
+            const string actionId =
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+            CodeIntelligenceService codeIntelligence = new()
+            {
+                CodeActions = snapshot => new(
+                    snapshot.SessionId,
+                    snapshot.Path,
+                    snapshot.BufferVersion,
+                    WorkbenchCodeResultState.Ready,
+                    [new(new(actionId), WorkbenchClosedCodeActionKind.ImplementInterface,
+                        WorkbenchCodeActionScope.Occurrence, new("Implement interface"),
+                        new("CS0535"), new(new(0, 0), new(0, 7)))],
+                    []),
+                DocumentTransformations = request =>
+                {
+                    observed = request;
+                    return new(
+                        request.Snapshot.SessionId,
+                        request.Snapshot.Path,
+                        request.Snapshot.BufferVersion,
+                        WorkbenchCodeResultState.Ready,
+                        WorkbenchCodeTransformationDisposition.Ready,
+                        request.Kind,
+                        request.Range,
+                        new(request.Snapshot.Path, request.Snapshot.BaselineHash,
+                            request.Snapshot.Text,
+                            new(request.Snapshot.Text.Value + "void Run() { }\n"), 1),
+                        [], [], new(actionId), [],
+                        CodeActionId: request.CodeActionId,
+                        CodeActionScope: request.CodeActionScope);
+                },
+            };
+            WorkbenchDockHost workbench = CreateWorkbench(
+                ApprovedGoalShell(), new(), new() { Editable = true },
+                codeIntelligence: codeIntelligence);
+            Window window = new() { Width = 1280, Height = 800, Content = workbench.Control };
+            window.Show();
+            workbench.OpenFileAsync("src/App.cs").AsTask().GetAwaiter().GetResult();
+            TextEditor editor = workbench.ActiveSourceEditor!;
+            string original = editor.Text;
+
+            WorkbenchCodeActionCandidate candidate = new(
+                new(actionId), WorkbenchClosedCodeActionKind.ImplementInterface,
+                WorkbenchCodeActionScope.Occurrence, new("Implement interface"),
+                new("CS0535"), new(new(0, 0), new(0, 7)));
+            workbench.ApplyActiveCodeActionAsync(candidate).AsTask().GetAwaiter().GetResult();
+
+            Assert.Equal(WorkbenchCodeDocumentTransformationKind.ApplyCodeAction,
+                observed?.Kind);
+            Assert.Equal(actionId, observed?.CodeActionId?.Value);
+            Assert.Equal(WorkbenchCodeActionScope.Occurrence, observed?.CodeActionScope);
+            Assert.Contains("void Run()", editor.Text, StringComparison.Ordinal);
+            editor.Document.UndoStack.Undo();
+            Assert.Equal(original, editor.Text);
             window.Close();
         }, CancellationToken.None);
     }
@@ -3078,6 +3144,8 @@ public sealed class PresentationControlTests
         { get; init; }
         internal Func<WorkbenchCodeInteractiveSnapshot, WorkbenchCodeMissingImportView>? MissingImports
         { get; init; }
+        internal Func<WorkbenchCodeInteractiveSnapshot, WorkbenchCodeActionView>? CodeActions
+        { get; init; }
         internal int ImplementationCallCount { get; private set; }
 
         public ValueTask<WorkbenchCodeSessionView> StartAsync(
@@ -3221,6 +3289,17 @@ public sealed class PresentationControlTests
                 snapshot.SessionId,
                 snapshot.Path,
                 snapshot.BufferVersion,
+                WorkbenchCodeResultState.Ready,
+                [],
+                []));
+
+        public ValueTask<WorkbenchCodeActionView> GetCodeActionsAsync(
+            WorkbenchCodeActionRequest request,
+            CancellationToken cancellationToken = default) => ValueTask.FromResult(
+            CodeActions?.Invoke(request.Snapshot) ?? new(
+                request.Snapshot.SessionId,
+                request.Snapshot.Path,
+                request.Snapshot.BufferVersion,
                 WorkbenchCodeResultState.Ready,
                 [],
                 []));

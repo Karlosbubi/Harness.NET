@@ -144,6 +144,7 @@ internal sealed class ModelProviderChatClient(
                         "find_symbol_implementations" or "apply_file_edit" or
                         "preview_symbol_rename" or "apply_symbol_rename" or
                         "find_missing_imports" or
+                        "find_code_actions" or
                         "preview_document_transformation" or "apply_document_transformation" or
                         "request_visual_capture" or "inspect_visual_capture");
         }

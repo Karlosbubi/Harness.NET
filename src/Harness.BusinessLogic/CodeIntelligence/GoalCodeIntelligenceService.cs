@@ -103,6 +103,34 @@ internal sealed class GoalCodeIntelligenceService(
         }
     }
 
+    public async ValueTask<GoalCodeActionView> FindCodeActionsAsync(
+        GoalId goalId,
+        GoalWorkspaceScope scope,
+        WorkbenchCodeDocumentPath path,
+        WorkbenchCodePosition position,
+        WorkbenchCodeRange? range = null,
+        CancellationToken cancellationToken = default)
+    {
+        PreparedQuery prepared = await PrepareAsync(
+            goalId, scope, path, position, cancellationToken);
+        if (prepared.Issue is not null)
+        {
+            return new(path, position, prepared.State, [], prepared.Issue, prepared.Identity);
+        }
+
+        try
+        {
+            WorkbenchCodeActionView result = await codeIntelligenceService.GetCodeActionsAsync(
+                new(prepared.Interactive!, range), cancellationToken);
+            return new(path, position, result.State, result.Candidates,
+                result.Issues.FirstOrDefault(), prepared.Identity);
+        }
+        finally
+        {
+            await codeIntelligenceService.StopAsync(prepared.SessionId!, CancellationToken.None);
+        }
+    }
+
     public ValueTask<GoalCodeSemanticView> SearchSymbolsAsync(
         GoalId goalId, GoalWorkspaceScope scope, WorkbenchCodeDocumentPath path,
         string query, int maximumResults, int offset, CancellationToken cancellationToken = default) =>

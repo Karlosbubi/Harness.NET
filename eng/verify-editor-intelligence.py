@@ -136,7 +136,8 @@ def main() -> int:
         "workspace symbols, inlay hints, lazy CodeLens, definitions, usages, implementations, "
         "document/selection/changed-span formatting, guarded paste and on-type formatting, "
         "import organization, unused-import cleanup, "
-        "proven missing-import choices, fingerprinted model apply, "
+        "proven missing-import choices, closed quick fixes, local/selection refactorings, "
+        "document fix-all, fingerprinted model apply, "
         "settings persistence, stale-result handling, "
         f"accessible production controls, and theme contracts ({sum(durations):.1f}s)."
     )

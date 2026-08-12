@@ -37,10 +37,12 @@ Delivered:
   outline, breadcrumbs, workspace-symbol search, parameter and inferred-type inlay
   hints, lazy CodeLens navigation, definitions, usages, implementations, and semantic
   rename, plus Roslyn document, selection, changed-span, paste, and on-type formatting
-  and import organization;
+  and import organization, contextual compiler fixes, local/selection refactorings,
+  and labeled document fix-all choices;
 - Roslyn validation before model-authored source writes;
 - typed, role-scoped agent tools for files, Git, .NET metadata, Build/Test, semantic
-  retrieval, diagnostics, symbols, navigation, edits, and rename;
+  retrieval, diagnostics, symbols, navigation, edits, rename, and closed Roslyn
+  action discovery/preview/apply;
 - XDG Desktop Portal visual verification with per-frame consent, private goal-scoped
   evidence, exact-byte developer preview, typed agent tools, retention, revocation,
   and remote-disclosure controls;

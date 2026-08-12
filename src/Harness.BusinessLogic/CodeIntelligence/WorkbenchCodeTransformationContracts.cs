@@ -10,6 +10,59 @@ public sealed record WorkbenchCodeImportNamespace(string Value);
 
 public sealed record WorkbenchCodeImportSymbol(string Value);
 
+public sealed record WorkbenchCodeActionId(string Value);
+
+public sealed record WorkbenchCodeActionTitle(string Value);
+
+public enum WorkbenchClosedCodeActionKind
+{
+    ImplementInterface,
+    ImplementAbstractMembers,
+    AddExplicitCast,
+    AssignOutParameters,
+    GenerateConstructor,
+    GenerateVariable,
+    AddParameter,
+    FixReturnType,
+    MakeMemberStatic,
+    MakeTypeAbstract,
+    MakeTypePartial,
+    RemoveUnnecessaryCast,
+    SimplifyTypeName,
+    UseNullPropagation,
+    UseCompoundAssignment,
+    AddBraces,
+    InlineDeclaration,
+    UseObjectInitializer,
+    UseCollectionInitializer,
+    ConvertAutoPropertyToFullProperty,
+    ConvertLoop,
+    ConvertIfToSwitch,
+    ConvertLocalFunctionToMethod,
+    InlineTemporary,
+    IntroduceLocal,
+    InvertConditional,
+    MoveDeclarationNearReference,
+    ConvertNamespace,
+    AddParameterCheck,
+    InitializeMemberFromParameter,
+    IntroduceUsingStatement,
+    UseExplicitType,
+    UseImplicitType,
+    UseExpressionBody,
+    ExtractMethod,
+    IntroduceVariable,
+    GenerateEqualityMembers,
+    GenerateOverrides,
+    ReplaceMemberKind,
+}
+
+public enum WorkbenchCodeActionScope
+{
+    Occurrence,
+    Document,
+}
+
 public enum WorkbenchCodeFormattingTrigger
 {
     Paste,
@@ -28,6 +81,7 @@ public enum WorkbenchCodeDocumentTransformationKind
     OrganizeImports,
     RemoveUnusedImports,
     AddMissingImport,
+    ApplyCodeAction,
 }
 
 public enum WorkbenchCodeTransformationDisposition
@@ -103,7 +157,9 @@ public sealed record WorkbenchCodeDocumentTransformationPreviewRequest(
     WorkbenchCodeDocumentTransformationKind Kind,
     WorkbenchCodeRange? Range,
     WorkbenchCodeImportNamespace? ImportNamespace = null,
-    WorkbenchCodeFormattingTrigger? FormattingTrigger = null);
+    WorkbenchCodeFormattingTrigger? FormattingTrigger = null,
+    WorkbenchCodeActionId? CodeActionId = null,
+    WorkbenchCodeActionScope? CodeActionScope = null);
 
 public sealed record WorkbenchCodeDocumentTransformationPreviewView(
     WorkbenchCodeSessionId SessionId,
@@ -119,7 +175,29 @@ public sealed record WorkbenchCodeDocumentTransformationPreviewView(
     WorkbenchCodeTransformationFingerprint? Fingerprint,
     IReadOnlyList<WorkbenchCodeIssue> Issues,
     WorkbenchCodeImportNamespace? ImportNamespace = null,
-    WorkbenchCodeFormattingTrigger? FormattingTrigger = null);
+    WorkbenchCodeFormattingTrigger? FormattingTrigger = null,
+    WorkbenchCodeActionId? CodeActionId = null,
+    WorkbenchCodeActionScope? CodeActionScope = null);
+
+public sealed record WorkbenchCodeActionCandidate(
+    WorkbenchCodeActionId Id,
+    WorkbenchClosedCodeActionKind Kind,
+    WorkbenchCodeActionScope Scope,
+    WorkbenchCodeActionTitle Title,
+    WorkbenchCodeDiagnosticId? DiagnosticId,
+    WorkbenchCodeRange Range);
+
+public sealed record WorkbenchCodeActionRequest(
+    WorkbenchCodeInteractiveSnapshot Snapshot,
+    WorkbenchCodeRange? Range = null);
+
+public sealed record WorkbenchCodeActionView(
+    WorkbenchCodeSessionId SessionId,
+    WorkbenchCodeDocumentPath Path,
+    WorkbenchCodeBufferVersion BufferVersion,
+    WorkbenchCodeResultState State,
+    IReadOnlyList<WorkbenchCodeActionCandidate> Candidates,
+    IReadOnlyList<WorkbenchCodeIssue> Issues);
 
 public sealed record WorkbenchCodeMissingImportCandidate(
     WorkbenchCodeImportNamespace Namespace,

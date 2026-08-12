@@ -298,6 +298,12 @@ public interface IInboundMcpApplication
     ValueTask<InboundMcpApplicationResult> FindCodeImplementationsAsync(
         InboundMcpCallContext context, InboundMcpCodePositionRequest request,
         CancellationToken cancellationToken = default);
+    ValueTask<InboundMcpApplicationResult> FindCodeActionsAsync(
+        InboundMcpCallContext context, InboundMcpCodePositionRequest request,
+        CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult(new InboundMcpApplicationResult(
+            "{}", true, "code_actions_not_supported",
+            "Contextual code actions are unavailable."));
 }
 
 public interface IInboundMcpSettingsStore

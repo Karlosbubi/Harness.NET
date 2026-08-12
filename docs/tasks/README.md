@@ -342,7 +342,7 @@ Acceptance criteria:
 
 ### 049 — NetPad-level .NET editing and inspection
 
-Status: `In progress — presentation, adornments, guarded formatting, and closed import fixes delivered`
+Status: `In progress — presentation, adornments, formatting, and closed single-document actions delivered`
 
 Dependencies: 012, 043, 044, 047, 048.
 
@@ -367,10 +367,16 @@ an exact fingerprint, delegated-path check, atomic apply, durable evidence, and
 post-apply validation. See
 [editor-transformations-2026-08-12.md](../acceptance/editor-transformations-2026-08-12.md).
 
+The same path now carries an explicit pinned Roslyn quick-fix/refactoring catalog.
+Caret and exact-selection discovery returns only preflighted current-document edits;
+safe providers also expose a bounded document-wide fix-all. Opaque action IDs and
+typed scopes are required for preview/apply in the editor and model tools, and the
+read-only catalog is available through opt-in inbound MCP.
+
 Problem: Harness.NET now has the core interactive Roslyn operations, semantic
 presentation and adornment slices, formatting, and its first closed import fixes. It
-still lacks the broader closed code-action, refactoring, and fix-all catalog,
-generated and metadata source, syntax/IL views,
+still lacks explicit cross-document refactoring contracts, generated and metadata
+source, syntax/IL views,
 configurable keybindings, optional Vim behavior,
 project User Secrets management, and typed execution targets for Run/Debug CodeLens.
 OmniSharp implements many of the underlying Roslyn services, but adopting its server

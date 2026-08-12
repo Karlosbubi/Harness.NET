@@ -298,19 +298,35 @@ internal sealed class AgentToolFactory(
                 Options("find_missing_imports",
                     "Find exact namespace candidates that Roslyn proves bind the unresolved type at " +
                     "the zero-based caret. Use the selected namespace with AddMissingImport preview.")),
+            AgentToolKind.FindCodeActions => AIFunctionFactory.Create(
+                (string relativePath, int line, int character,
+                        int? startLine = null, int? startCharacter = null,
+                        int? endLine = null, int? endCharacter = null,
+                        CancellationToken cancellationToken = default) =>
+                    codeIntelligenceService.FindCodeActionsAsync(
+                        goalId, Scope(role), new(relativePath), new(line, character),
+                        OptionalRange(startLine, startCharacter, endLine, endCharacter),
+                        cancellationToken: cancellationToken),
+                Options("find_code_actions",
+                    "Find closed Roslyn quick fixes and refactorings at the zero-based caret or " +
+                    "optional exact selection. Supply all four selection coordinates or none. Use the returned " +
+                    "code-action ID and scope with ApplyCodeAction preview; arbitrary actions are rejected.")),
             AgentToolKind.PreviewDocumentTransformation => AIFunctionFactory.Create(
                 (string relativePath, string expectedSha256, string content,
                         WorkbenchCodeDocumentTransformationKind kind,
+                        int? line = null, int? character = null,
                         int? startLine = null, int? startCharacter = null,
                         int? endLine = null, int? endCharacter = null,
                         string? importNamespace = null,
                         WorkbenchCodeFormattingTrigger? formattingTrigger = null,
+                        string? codeActionId = null,
+                        WorkbenchCodeActionScope? codeActionScope = null,
                         CancellationToken cancellationToken = default) =>
                     mutationService.PreviewDocumentTransformationAsync(
                         DocumentTransformationRequest(
                             goalId, relativePath, expectedSha256, content, kind,
                             startLine, startCharacter, endLine, endCharacter, importNamespace,
-                            formattingTrigger,
+                            formattingTrigger, line, character, codeActionId, codeActionScope,
                             fileAreas),
                         cancellationToken),
                 Options("preview_document_transformation",
@@ -319,22 +335,27 @@ internal sealed class AgentToolFactory(
                     "RemoveUnusedImports, or AddMissingImport. Pass all four zero-based coordinates " +
                     "for selection, paste, or on-type formatting. Paste and on-type also require their " +
                     "matching typed trigger. For AddMissingImport, " +
-                    "pass a namespace returned by find_missing_imports. Returns exact edit evidence " +
+                    "pass a namespace returned by find_missing_imports. ApplyCodeAction requires a " +
+                    "zero-based line and character plus the ID and scope from find_code_actions. " +
+                    "Returns exact edit evidence " +
                     "and a fingerprint; it changes nothing.")),
             AgentToolKind.ApplyDocumentTransformation => AIFunctionFactory.Create(
                 (string correlationId, string fingerprint, string relativePath,
                         string expectedSha256, string content,
                         WorkbenchCodeDocumentTransformationKind kind,
+                        int? line = null, int? character = null,
                         int? startLine = null, int? startCharacter = null,
                         int? endLine = null, int? endCharacter = null,
                         string? importNamespace = null,
                         WorkbenchCodeFormattingTrigger? formattingTrigger = null,
+                        string? codeActionId = null,
+                        WorkbenchCodeActionScope? codeActionScope = null,
                         CancellationToken cancellationToken = default) =>
                     mutationService.ApplyDocumentTransformationAsync(new(
                         DocumentTransformationRequest(
                             goalId, relativePath, expectedSha256, content, kind,
                             startLine, startCharacter, endLine, endCharacter, importNamespace,
-                            formattingTrigger,
+                            formattingTrigger, line, character, codeActionId, codeActionScope,
                             fileAreas),
                         new ToolCorrelationId(correlationId),
                         new(fingerprint)), cancellationToken),
@@ -451,6 +472,7 @@ internal sealed class AgentToolFactory(
         AgentToolKind.PreviewRename => "preview_symbol_rename",
         AgentToolKind.ApplyRename => "apply_symbol_rename",
         AgentToolKind.FindMissingImports => "find_missing_imports",
+        AgentToolKind.FindCodeActions => "find_code_actions",
         AgentToolKind.PreviewDocumentTransformation => "preview_document_transformation",
         AgentToolKind.ApplyDocumentTransformation => "apply_document_transformation",
         AgentToolKind.Build => "dotnet_build",
@@ -509,6 +531,10 @@ internal sealed class AgentToolFactory(
         int? endCharacter,
         string? importNamespace,
         WorkbenchCodeFormattingTrigger? formattingTrigger,
+        int? line,
+        int? character,
+        string? codeActionId,
+        WorkbenchCodeActionScope? codeActionScope,
         IReadOnlyList<AgentFileArea> fileAreas)
     {
         bool hasAnyRange = startLine is not null || startCharacter is not null ||
@@ -528,13 +554,33 @@ internal sealed class AgentToolFactory(
             new(expectedSha256),
             new(1),
             new(content),
-            range?.Start ?? new(0, 0),
+            new(line ?? range?.Start.Line ?? 0, character ?? range?.Start.Character ?? 0),
             kind,
             range,
             DocumentTransformationOrigin.Model,
             fileAreas.Select(area => new DocumentTransformationFileArea(area.Value)).ToArray(),
             string.IsNullOrWhiteSpace(importNamespace) ? null : new(importNamespace),
-            formattingTrigger);
+            formattingTrigger,
+            string.IsNullOrWhiteSpace(codeActionId) ? null : new(codeActionId),
+            codeActionScope);
+    }
+
+    private static WorkbenchCodeRange? OptionalRange(
+        int? startLine,
+        int? startCharacter,
+        int? endLine,
+        int? endCharacter)
+    {
+        bool any = startLine is not null || startCharacter is not null ||
+            endLine is not null || endCharacter is not null;
+        bool complete = startLine is not null && startCharacter is not null &&
+            endLine is not null && endCharacter is not null;
+        return complete
+            ? new(new(startLine!.Value, startCharacter!.Value),
+                new(endLine!.Value, endCharacter!.Value))
+            : any
+                ? new(new(-1, -1), new(-1, -1))
+                : null;
     }
 
     internal static bool IsWithinFileAreas(

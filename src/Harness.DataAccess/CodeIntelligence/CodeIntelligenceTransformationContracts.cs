@@ -10,6 +10,59 @@ public sealed record CodeIntelligenceImportNamespace(string Value);
 
 public sealed record CodeIntelligenceImportSymbol(string Value);
 
+public sealed record CodeIntelligenceCodeActionId(string Value);
+
+public sealed record CodeIntelligenceCodeActionTitle(string Value);
+
+public enum CodeIntelligenceClosedCodeActionKind
+{
+    ImplementInterface,
+    ImplementAbstractMembers,
+    AddExplicitCast,
+    AssignOutParameters,
+    GenerateConstructor,
+    GenerateVariable,
+    AddParameter,
+    FixReturnType,
+    MakeMemberStatic,
+    MakeTypeAbstract,
+    MakeTypePartial,
+    RemoveUnnecessaryCast,
+    SimplifyTypeName,
+    UseNullPropagation,
+    UseCompoundAssignment,
+    AddBraces,
+    InlineDeclaration,
+    UseObjectInitializer,
+    UseCollectionInitializer,
+    ConvertAutoPropertyToFullProperty,
+    ConvertLoop,
+    ConvertIfToSwitch,
+    ConvertLocalFunctionToMethod,
+    InlineTemporary,
+    IntroduceLocal,
+    InvertConditional,
+    MoveDeclarationNearReference,
+    ConvertNamespace,
+    AddParameterCheck,
+    InitializeMemberFromParameter,
+    IntroduceUsingStatement,
+    UseExplicitType,
+    UseImplicitType,
+    UseExpressionBody,
+    ExtractMethod,
+    IntroduceVariable,
+    GenerateEqualityMembers,
+    GenerateOverrides,
+    ReplaceMemberKind,
+}
+
+public enum CodeIntelligenceCodeActionScope
+{
+    Occurrence,
+    Document,
+}
+
 public enum CodeIntelligenceFormattingTrigger
 {
     Paste,
@@ -28,6 +81,7 @@ public enum CodeIntelligenceDocumentTransformationKind
     OrganizeImports,
     RemoveUnusedImports,
     AddMissingImport,
+    ApplyCodeAction,
 }
 
 public enum CodeIntelligenceTransformationDisposition
@@ -104,7 +158,9 @@ public sealed record CodeIntelligenceDocumentTransformationPreviewRequest(
     CodeIntelligenceDocumentTransformationKind Kind,
     CodeIntelligenceRange? Range,
     CodeIntelligenceImportNamespace? ImportNamespace = null,
-    CodeIntelligenceFormattingTrigger? FormattingTrigger = null);
+    CodeIntelligenceFormattingTrigger? FormattingTrigger = null,
+    CodeIntelligenceCodeActionId? CodeActionId = null,
+    CodeIntelligenceCodeActionScope? CodeActionScope = null);
 
 public sealed record CodeIntelligenceDocumentTransformationPreviewResult(
     CodeIntelligenceContextId ContextId,
@@ -121,7 +177,30 @@ public sealed record CodeIntelligenceDocumentTransformationPreviewResult(
     CodeIntelligenceTransformationFingerprint? Fingerprint,
     IReadOnlyList<CodeIntelligenceIssue> Issues,
     CodeIntelligenceImportNamespace? ImportNamespace = null,
-    CodeIntelligenceFormattingTrigger? FormattingTrigger = null);
+    CodeIntelligenceFormattingTrigger? FormattingTrigger = null,
+    CodeIntelligenceCodeActionId? CodeActionId = null,
+    CodeIntelligenceCodeActionScope? CodeActionScope = null);
+
+public sealed record CodeIntelligenceCodeActionCandidate(
+    CodeIntelligenceCodeActionId Id,
+    CodeIntelligenceClosedCodeActionKind Kind,
+    CodeIntelligenceCodeActionScope Scope,
+    CodeIntelligenceCodeActionTitle Title,
+    CodeIntelligenceDiagnosticId? DiagnosticId,
+    CodeIntelligenceRange Range);
+
+public sealed record CodeIntelligenceCodeActionRequest(
+    CodeIntelligenceInteractiveSnapshot Snapshot,
+    CodeIntelligenceRange? Range = null);
+
+public sealed record CodeIntelligenceCodeActionResult(
+    CodeIntelligenceContextId ContextId,
+    CodeIntelligenceSessionId SessionId,
+    CodeIntelligenceDocumentPath Path,
+    CodeIntelligenceBufferVersion BufferVersion,
+    CodeIntelligenceResultState State,
+    IReadOnlyList<CodeIntelligenceCodeActionCandidate> Candidates,
+    IReadOnlyList<CodeIntelligenceIssue> Issues);
 
 public sealed record CodeIntelligenceMissingImportCandidate(
     CodeIntelligenceImportNamespace Namespace,

@@ -24,11 +24,14 @@ internal sealed partial class RoslynCodeIntelligenceEngine
                 "session_unavailable", "The Roslyn session no longer matches this source context.");
         }
 
-        bool needsRange = request.Kind is
+        bool requiresRange = request.Kind is
             CodeIntelligenceDocumentTransformationKind.FormatSelection or
             CodeIntelligenceDocumentTransformationKind.FormatPaste or
             CodeIntelligenceDocumentTransformationKind.FormatOnType;
+        bool allowsOptionalRange = request.Kind is
+            CodeIntelligenceDocumentTransformationKind.ApplyCodeAction;
         bool needsNamespace = request.Kind is CodeIntelligenceDocumentTransformationKind.AddMissingImport;
+        bool needsCodeAction = request.Kind is CodeIntelligenceDocumentTransformationKind.ApplyCodeAction;
         bool needsTrigger = request.Kind is
             CodeIntelligenceDocumentTransformationKind.FormatPaste or
             CodeIntelligenceDocumentTransformationKind.FormatOnType;
@@ -42,14 +45,19 @@ internal sealed partial class RoslynCodeIntelligenceEngine
                     CodeIntelligenceFormattingTrigger.NewLine,
             _ => request.FormattingTrigger is null,
         };
-        if (!Enum.IsDefined(request.Kind) || needsRange != (request.Range is not null) ||
+        if (!Enum.IsDefined(request.Kind) ||
+            (!allowsOptionalRange && requiresRange != (request.Range is not null)) ||
             needsNamespace != (request.ImportNamespace is not null) ||
+            needsCodeAction != (request.CodeActionId is not null) ||
+            needsCodeAction != (request.CodeActionScope is not null) ||
             needsTrigger != (request.FormattingTrigger is not null) || !validTrigger ||
-            request.ImportNamespace is { Value.Length: 0 })
+            request.ImportNamespace is { Value.Length: 0 } ||
+            request.CodeActionId is { Value: var codeActionId } && !IsSha256(codeActionId) ||
+            request.CodeActionScope is { } scope && !Enum.IsDefined(scope))
         {
             return DocumentTransformationFailure(request, CodeIntelligenceResultState.Failed,
                 "invalid_document_transformation",
-                "Range formatting requires one exact range and trigger; Add Missing Import requires one discovered namespace.");
+                "The closed transformation requires exactly the fields defined for its operation.");
         }
 
         await session.OperationGate.WaitAsync(cancellationToken);
@@ -140,6 +148,29 @@ internal sealed partial class RoslynCodeIntelligenceEngine
                     candidateDocument = import.Document;
                     requestedSpan = import.Span;
                     break;
+                case CodeIntelligenceDocumentTransformationKind.ApplyCodeAction:
+                    if (!TryGetCodeActionSpan(prepared.Text!, prepared.Offset, request.Range,
+                        out TextSpan codeActionSpan))
+                    {
+                        return DocumentTransformationFailure(request,
+                            CodeIntelligenceResultState.Failed,
+                            "invalid_code_action_range",
+                            "The code-action range is outside the document.");
+                    }
+                    candidateDocument = await ApplyClosedCodeActionAsync(
+                        baselineDocument,
+                        codeActionSpan,
+                        request.CodeActionId!,
+                        request.CodeActionScope!.Value,
+                        cancellationToken) ?? baselineDocument;
+                    if (candidateDocument == baselineDocument)
+                    {
+                        return DocumentTransformationFailure(request,
+                            CodeIntelligenceResultState.Stale,
+                            "code_action_changed",
+                            "The selected code action is no longer available or exceeded its closed document scope.");
+                    }
+                    break;
                 default:
                     throw new ArgumentOutOfRangeException(nameof(request));
             }
@@ -188,7 +219,8 @@ internal sealed partial class RoslynCodeIntelligenceEngine
                 CodeIntelligenceTransformationDisposition.Ready
                     ? new(DocumentTransformationFingerprint(
                         snapshot, request.Kind, request.Range, request.ImportNamespace,
-                        request.FormattingTrigger, edit, delta))
+                        request.FormattingTrigger, request.CodeActionId,
+                        request.CodeActionScope, edit, delta))
                     : null;
             return new(
                 snapshot.ContextId,
@@ -205,7 +237,9 @@ internal sealed partial class RoslynCodeIntelligenceEngine
                 fingerprint,
                 session.Issues.ToArray(),
                 request.ImportNamespace,
-                request.FormattingTrigger);
+                request.FormattingTrigger,
+                request.CodeActionId,
+                request.CodeActionScope);
         }
         catch (OperationCanceledException)
         {
@@ -230,6 +264,8 @@ internal sealed partial class RoslynCodeIntelligenceEngine
         CodeIntelligenceRange? range,
         CodeIntelligenceImportNamespace? importNamespace,
         CodeIntelligenceFormattingTrigger? formattingTrigger,
+        CodeIntelligenceCodeActionId? codeActionId,
+        CodeIntelligenceCodeActionScope? codeActionScope,
         CodeIntelligenceDocumentTransformationEdit edit,
         IReadOnlyList<CodeIntelligenceValidationDiagnostic> diagnostics)
     {
@@ -243,6 +279,8 @@ internal sealed partial class RoslynCodeIntelligenceEngine
             .Append(range?.End.Line).Append(':').Append(range?.End.Character).Append('\n')
             .Append(importNamespace?.Value).Append('\n')
             .Append(formattingTrigger).Append('\n')
+            .Append(codeActionId?.Value).Append('\n')
+            .Append(codeActionScope).Append('\n')
             .Append(Hash(edit.OriginalText.Value)).Append('\n')
             .Append(Hash(edit.Text.Value)).Append('\n')
             .Append(edit.ReplacementCount).Append('\n');
@@ -256,6 +294,10 @@ internal sealed partial class RoslynCodeIntelligenceEngine
 
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(value.ToString())));
     }
+
+    private static bool IsSha256(string value) =>
+        value.Length == 64 && value.All(static character =>
+            character is >= '0' and <= '9' or >= 'a' and <= 'f');
 
     private static CodeIntelligenceDocumentTransformationConflict DocumentTransformationConflict(
         CodeIntelligenceDocumentTransformationConflictKind kind,
@@ -281,7 +323,9 @@ internal sealed partial class RoslynCodeIntelligenceEngine
             Fingerprint: null,
             [Issue(code, message)],
             request.ImportNamespace,
-            request.FormattingTrigger);
+            request.FormattingTrigger,
+            request.CodeActionId,
+            request.CodeActionScope);
 
     private static CodeIntelligenceDocumentTransformationPreviewResult
         DocumentTransformationConflictResult(
@@ -302,7 +346,9 @@ internal sealed partial class RoslynCodeIntelligenceEngine
             Fingerprint: null,
             session.Issues.ToArray(),
             request.ImportNamespace,
-            request.FormattingTrigger);
+            request.FormattingTrigger,
+            request.CodeActionId,
+            request.CodeActionScope);
 
     private static async ValueTask<IReadOnlyList<TextSpan>> ChangedFormattingSpansAsync(
         ActiveSession session,

@@ -184,17 +184,24 @@ internal sealed partial class WorkspaceMutationService
             request.Path is null || request.BaselineHash is null ||
             !IsSha256(request.BaselineHash.Value) || request.BufferVersion is null ||
             request.BufferVersion.Value <= 0 || request.Text is null || request.Position is null ||
-            (request.Kind is WorkbenchCodeDocumentTransformationKind.FormatSelection or
-                WorkbenchCodeDocumentTransformationKind.FormatPaste or
-                WorkbenchCodeDocumentTransformationKind.FormatOnType) !=
-            (request.Range is not null) ||
+            (request.Kind is not WorkbenchCodeDocumentTransformationKind.ApplyCodeAction &&
+             ((request.Kind is WorkbenchCodeDocumentTransformationKind.FormatSelection or
+                    WorkbenchCodeDocumentTransformationKind.FormatPaste or
+                    WorkbenchCodeDocumentTransformationKind.FormatOnType) !=
+                (request.Range is not null))) ||
             (request.Kind is WorkbenchCodeDocumentTransformationKind.AddMissingImport) !=
             (request.ImportNamespace is not null) ||
+            (request.Kind is WorkbenchCodeDocumentTransformationKind.ApplyCodeAction) !=
+            (request.CodeActionId is not null) ||
+            (request.Kind is WorkbenchCodeDocumentTransformationKind.ApplyCodeAction) !=
+            (request.CodeActionScope is not null) ||
             (request.Kind is WorkbenchCodeDocumentTransformationKind.FormatPaste or
                 WorkbenchCodeDocumentTransformationKind.FormatOnType) !=
             (request.FormattingTrigger is not null) ||
             !ValidFormattingTrigger(request.Kind, request.FormattingTrigger) ||
-            request.ImportNamespace is { Value.Length: 0 })
+            request.ImportNamespace is { Value.Length: 0 } ||
+            request.CodeActionId is { Value: var codeActionId } && !IsSha256(codeActionId) ||
+            request.CodeActionScope is { } scope && !Enum.IsDefined(scope))
         {
             return DocumentTransformationContext.Failure(
                 "invalid_document_transformation_request",
@@ -253,7 +260,9 @@ internal sealed partial class WorkspaceMutationService
         request.Kind,
         request.Range,
         request.ImportNamespace,
-        request.FormattingTrigger);
+        request.FormattingTrigger,
+        request.CodeActionId,
+        request.CodeActionScope);
 
     private static bool ValidFormattingTrigger(
         WorkbenchCodeDocumentTransformationKind kind,

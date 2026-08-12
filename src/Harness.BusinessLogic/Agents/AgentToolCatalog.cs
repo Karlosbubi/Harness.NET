@@ -70,7 +70,7 @@ public sealed record AgentToolCatalog(IReadOnlyList<AgentToolModule> Modules)
             [new("inspect_code_problems"), new("inspect_project_problems"),
                 new("get_symbol_info"),
                 new("find_symbol_definition"), new("find_symbol_references"),
-                new("find_symbol_implementations")],
+                new("find_symbol_implementations"), new("find_code_actions")],
             IsOptional: false,
             UnavailableReason: null),
         new(

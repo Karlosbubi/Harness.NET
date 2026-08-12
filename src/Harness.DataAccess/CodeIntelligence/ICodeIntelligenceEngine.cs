@@ -147,6 +147,19 @@ public interface ICodeIntelligenceEngine
             [new(new("missing_imports_not_supported"),
                 new("Missing-import discovery is unavailable."))]));
 
+    ValueTask<CodeIntelligenceCodeActionResult> GetCodeActionsAsync(
+        CodeIntelligenceCodeActionRequest request,
+        CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult(new CodeIntelligenceCodeActionResult(
+            request.Snapshot.ContextId,
+            request.Snapshot.SessionId,
+            request.Snapshot.Path,
+            request.Snapshot.BufferVersion,
+            CodeIntelligenceResultState.Failed,
+            [],
+            [new(new("code_actions_not_supported"),
+                new("Contextual code actions are unavailable."))]));
+
     ValueTask CloseAsync(
         CodeIntelligenceSessionId sessionId,
         CancellationToken cancellationToken = default);

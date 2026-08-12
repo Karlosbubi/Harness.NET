@@ -2,7 +2,8 @@
 
 Task 049 now has one shared closed transformation path for document, selection,
 changed-span, paste, and supported on-type formatting, import organization,
-unused-import cleanup, and missing-type import fixes.
+unused-import cleanup, missing-type import fixes, and a closed single-document
+quick-fix/refactoring catalog.
 
 ## Behavior
 
@@ -33,7 +34,19 @@ unused-import cleanup, and missing-type import fixes.
   Roslyn.
 - There is no generic Roslyn-action executor. The current closed set is
   `FormatDocument`, `FormatSelection`, `FormatChangedSpans`, `FormatPaste`,
-  `FormatOnType`, `OrganizeImports`, `RemoveUnusedImports`, and `AddMissingImport`.
+  `FormatOnType`, `OrganizeImports`, `RemoveUnusedImports`, `AddMissingImport`, and
+  `ApplyCodeAction`. Code-action discovery composes only explicitly allowlisted pinned
+  Roslyn providers. It preflights each choice as exactly one current-document change,
+  omitting custom host operations, project/reference changes, added files, and
+  cross-document edits. Exact selections enable extract-method and introduce-variable
+  refactorings. Safe providers expose a bounded document scope that repeats the exact
+  action identity until no matching diagnostic remains.
+- The editor merges imports, compiler fixes, local refactorings, and labeled
+  “Fix all in document” choices behind Quick fix / `Ctrl+.`. An applied choice is one
+  undoable unsaved buffer replacement. Lead, Implementer, and Reviewer can discover
+  actions; only Implementer can preview/apply in its delegated worktree. The opt-in
+  inbound `harness_code_actions` MCP tool exposes the same read-only original-context
+  result.
 
 ## Deterministic verification
 
@@ -43,13 +56,17 @@ wiring, settings persistence, import ordering, compiler-proven cleanup, comment
 preservation, valid and invalid missing-import choices, Data Access to Business Logic
 mapping, accessible editor discovery, atomic fingerprinted apply, delegated-path
 rejection, evidence, and post-apply validation.
+They also cover provider composition, interface implementation, stale or unknown
+action IDs, bounded document fix-all, auto-property and exact-selection refactoring,
+cross-document omission, Data Access/Business Logic identity mapping, role and model
+schemas, accessible editor discovery, and single-step undo.
 
 Verification result:
 
 - repository build: passed with zero warnings and zero errors;
-- full deterministic suite: 649 passed, zero failed;
-- editor-intelligence verifier: passed, including 36 Roslyn adapter tests, 18 semantic
-  boundary tests, 42 transformation-authority tests, 65 editor control tests, and its
+- full deterministic suite: 659 passed, zero failed;
+- editor-intelligence verifier: passed, including 43 Roslyn adapter tests, 19 semantic
+  boundary tests, 42 transformation-authority tests, 66 editor control tests, and its
   settings and theme checks;
 - the production source-editor capture completed and was inspected at 1920×1240. The
   Quick fix and Transform actions are visible beside the semantic navigation actions
@@ -66,8 +83,7 @@ Verification result:
 
 ## Remaining Task 049 work
 
-The broader closed quick-fix, refactoring, and fix-all catalog; virtual source
-navigation; inspection views;
+Explicit multi-file refactor contracts; virtual source navigation; inspection views;
 keybindings/Vim; User Secrets; typed Run/Debug CodeLens targets; and the full editor
 performance, IME, Orca, scaling, and restoration matrix remain open.
 

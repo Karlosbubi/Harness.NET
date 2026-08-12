@@ -46,6 +46,14 @@ internal interface IGoalCodeIntelligenceService
         WorkbenchCodePosition position,
         CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
+    ValueTask<GoalCodeActionView> FindCodeActionsAsync(
+        GoalId goalId,
+        GoalWorkspaceScope scope,
+        WorkbenchCodeDocumentPath path,
+        WorkbenchCodePosition position,
+        WorkbenchCodeRange? range = null,
+        CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
     ValueTask<GoalCodeSemanticView> SearchSymbolsAsync(
         GoalId goalId, GoalWorkspaceScope scope, WorkbenchCodeDocumentPath path,
         string query, int maximumResults, int offset,

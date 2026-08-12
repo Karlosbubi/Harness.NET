@@ -23,7 +23,9 @@ public sealed record DocumentTransformationPreviewRequest(
     DocumentTransformationOrigin Origin,
     IReadOnlyList<DocumentTransformationFileArea> AllowedFileAreas,
     WorkbenchCodeImportNamespace? ImportNamespace = null,
-    WorkbenchCodeFormattingTrigger? FormattingTrigger = null);
+    WorkbenchCodeFormattingTrigger? FormattingTrigger = null,
+    WorkbenchCodeActionId? CodeActionId = null,
+    WorkbenchCodeActionScope? CodeActionScope = null);
 
 public sealed record DocumentTransformationPreviewView(
     WorkbenchCodeDocumentTransformationPreviewView? Preview,

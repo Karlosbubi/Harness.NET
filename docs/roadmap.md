@@ -313,9 +313,19 @@ persisted solution. Paste and supported `;`, `}`, and new-line triggers carry ex
 ranges and typed triggers; settings control both automatic paths. The editor uses one
 guarded undoable buffer replacement and never saves automatically. Missing-import
 choices are exact namespaces that Roslyn proves bind the unresolved type at the caret.
+The Quick fix path now also composes an explicit allowlist from the pinned Roslyn
+feature assemblies: 20 compiler/style fix providers and 25 local refactoring
+providers, including exact-selection extract-method and introduce-variable
+operations. Discovery preflights every choice and omits added or removed documents,
+project/reference changes, custom host operations, and edits outside the current
+document. Occurrence and safe document-wide scopes use opaque action IDs through the
+same preview/fingerprint/apply path. The editor, role tools, and opt-in
+`harness_code_actions` MCP tool share the typed read result; no arbitrary Roslyn
+action is callable.
 Models use the same closed preview/fingerprint/apply path with delegated paths, atomic
-persistence, durable evidence, and post-apply diagnostics. The broader closed
-code-action, refactoring, and fix-all catalog remains, as do items 4–8. Deterministic
+persistence, durable evidence, and post-apply diagnostics. Cross-document
+refactorings remain outside this deliberately single-document catalog until they
+receive named multi-file contracts. Items 4–8 also remain. Deterministic
 evidence is recorded in
 [editor-transformations-2026-08-12.md](acceptance/editor-transformations-2026-08-12.md);
 prior visual evidence is in

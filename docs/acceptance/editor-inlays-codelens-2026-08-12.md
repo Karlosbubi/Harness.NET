@@ -31,7 +31,7 @@ adding another language service or workspace.
   boundary, 1 settings-policy, 1 settings-storage, 62 production editor-control, and
   2 theme-contract tests passed.
 - `./eng/verify-avalonia-atspi.py` — production AT-SPI verification passed.
-- `./eng/verify-linux-x64-publish.sh` — self-contained publish, schema 26 startup,
+- `./eng/verify-linux-x64-publish.sh` — self-contained publish, schema 27 startup,
   backup, recovery migration, and state preservation passed.
 
 ## Visual dogfood

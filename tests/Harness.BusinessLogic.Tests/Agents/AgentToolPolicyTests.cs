@@ -45,6 +45,7 @@ public sealed class AgentToolPolicyTests
         Assert.Contains(AgentToolKind.PreviewRename, tools);
         Assert.Contains(AgentToolKind.ApplyRename, tools);
         Assert.Contains(AgentToolKind.FindMissingImports, tools);
+        Assert.Contains(AgentToolKind.FindCodeActions, tools);
         Assert.Contains(AgentToolKind.PreviewDocumentTransformation, tools);
         Assert.Contains(AgentToolKind.ApplyDocumentTransformation, tools);
         Assert.Contains(AgentToolKind.Build, tools);
@@ -81,11 +82,11 @@ public sealed class AgentToolPolicyTests
 
     [Theory]
     [InlineData(AgentRole.Lead,
-        "read_file,read_file_range,list_workspace_tree,search_text,search_regex,inspect_git,inspect_dotnet,inspect_project_graph,search_semantic_context,inspect_code_problems,inspect_project_problems,get_symbol_info,find_symbol_definition,find_symbol_references,find_symbol_implementations,search_symbols,analyze_calls,get_type_hierarchy,find_associated_tests,discover_toolsets,request_toolset")]
+        "read_file,read_file_range,list_workspace_tree,search_text,search_regex,inspect_git,inspect_dotnet,inspect_project_graph,search_semantic_context,inspect_code_problems,inspect_project_problems,get_symbol_info,find_symbol_definition,find_symbol_references,find_symbol_implementations,search_symbols,analyze_calls,get_type_hierarchy,find_associated_tests,find_code_actions,discover_toolsets,request_toolset")]
     [InlineData(AgentRole.Implementer,
-        "read_file,read_file_range,list_workspace_tree,search_text,search_regex,inspect_git,inspect_dotnet,inspect_project_graph,search_semantic_context,inspect_code_problems,inspect_project_problems,get_symbol_info,find_symbol_definition,find_symbol_references,find_symbol_implementations,search_symbols,analyze_calls,get_type_hierarchy,find_associated_tests,apply_file_edit,preview_symbol_rename,apply_symbol_rename,find_missing_imports,preview_document_transformation,apply_document_transformation,dotnet_build,dotnet_test,discover_toolsets,request_toolset")]
+        "read_file,read_file_range,list_workspace_tree,search_text,search_regex,inspect_git,inspect_dotnet,inspect_project_graph,search_semantic_context,inspect_code_problems,inspect_project_problems,get_symbol_info,find_symbol_definition,find_symbol_references,find_symbol_implementations,search_symbols,analyze_calls,get_type_hierarchy,find_associated_tests,apply_file_edit,preview_symbol_rename,apply_symbol_rename,find_missing_imports,find_code_actions,preview_document_transformation,apply_document_transformation,dotnet_build,dotnet_test,discover_toolsets,request_toolset")]
     [InlineData(AgentRole.Reviewer,
-        "read_file,read_file_range,list_workspace_tree,search_text,search_regex,inspect_git,inspect_dotnet,inspect_project_graph,search_semantic_context,inspect_code_problems,inspect_project_problems,get_symbol_info,find_symbol_definition,find_symbol_references,find_symbol_implementations,search_symbols,analyze_calls,get_type_hierarchy,find_associated_tests,list_tool_evidence,discover_toolsets,request_toolset")]
+        "read_file,read_file_range,list_workspace_tree,search_text,search_regex,inspect_git,inspect_dotnet,inspect_project_graph,search_semantic_context,inspect_code_problems,inspect_project_problems,get_symbol_info,find_symbol_definition,find_symbol_references,find_symbol_implementations,search_symbols,analyze_calls,get_type_hierarchy,find_associated_tests,find_code_actions,list_tool_evidence,discover_toolsets,request_toolset")]
     public void Factory_exposes_only_the_closed_role_scope(
         AgentRole role,
         string expectedNames)
@@ -122,8 +123,13 @@ public sealed class AgentToolPolicyTests
             .TryGetProperty("importNamespace", out _));
         Assert.True(preview.JsonSchema.GetProperty("properties")
             .TryGetProperty("formattingTrigger", out _));
+        Assert.True(preview.JsonSchema.GetProperty("properties")
+            .TryGetProperty("codeActionId", out _));
+        Assert.True(preview.JsonSchema.GetProperty("properties")
+            .TryGetProperty("codeActionScope", out _));
         string?[] optional = ["startLine", "startCharacter", "endLine", "endCharacter",
-            "importNamespace", "formattingTrigger"];
+            "line", "character", "importNamespace", "formattingTrigger", "codeActionId",
+            "codeActionScope"];
         Assert.DoesNotContain(
             preview.JsonSchema.GetProperty("required").EnumerateArray(),
             item => optional.Contains(item.GetString(), StringComparer.Ordinal));

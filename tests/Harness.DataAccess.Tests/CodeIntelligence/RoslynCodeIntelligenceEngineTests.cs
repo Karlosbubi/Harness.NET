@@ -16,6 +16,45 @@ public sealed class RoslynCodeIntelligenceEngineTests(ITestOutputHelper output) 
         Guid.NewGuid().ToString("N"));
 
     [Fact]
+    public void Composes_the_pinned_Roslyn_code_fix_catalog()
+    {
+        IReadOnlyList<string> providers =
+            RoslynCodeIntelligenceEngine.ClosedCodeFixProviderNames();
+
+        Assert.Contains("CSharpImplementInterfaceCodeFixProvider", providers);
+        Assert.Contains("CSharpImplementAbstractClassCodeFixProvider", providers);
+        Assert.Contains("CSharpAddExplicitCastCodeFixProvider", providers);
+        Assert.Contains("AssignOutParametersAboveReturnCodeFixProvider", providers);
+        Assert.Contains("AssignOutParametersAtStartCodeFixProvider", providers);
+        Assert.Contains("CSharpUseObjectInitializerCodeFixProvider", providers);
+        Assert.Contains("CSharpGenerateDefaultConstructorsCodeFixProvider", providers);
+        Assert.Contains("CSharpGenerateVariableCodeFixProvider", providers);
+        Assert.Contains("CSharpAddParameterCodeFixProvider", providers);
+        Assert.Contains("CSharpFixReturnTypeCodeFixProvider", providers);
+        Assert.Contains("CSharpMakeMemberStaticCodeFixProvider", providers);
+        Assert.Contains("CSharpMakeTypeAbstractCodeFixProvider", providers);
+        Assert.Contains("CSharpMakeTypePartialCodeFixProvider", providers);
+        Assert.Contains("CSharpRemoveUnnecessaryCastCodeFixProvider", providers);
+        Assert.Contains("SimplifyTypeNamesCodeFixProvider", providers);
+        Assert.Contains("CSharpUseNullPropagationCodeFixProvider", providers);
+        Assert.Contains("CSharpUseCompoundAssignmentCodeFixProvider", providers);
+        Assert.Contains("CSharpAddBracesCodeFixProvider", providers);
+        Assert.Contains("CSharpInlineDeclarationCodeFixProvider", providers);
+        Assert.Contains("CSharpUseCollectionInitializerCodeFixProvider", providers);
+
+        IReadOnlyList<string> refactorings =
+            RoslynCodeIntelligenceEngine.ClosedCodeRefactoringProviderNames();
+        Assert.Contains("CSharpConvertAutoPropertyToFullPropertyCodeRefactoringProvider",
+            refactorings);
+        Assert.Contains("CSharpConvertIfToSwitchCodeRefactoringProvider", refactorings);
+        Assert.Contains("CSharpInlineTemporaryCodeRefactoringProvider", refactorings);
+        Assert.Contains("UseExplicitTypeCodeRefactoringProvider", refactorings);
+        Assert.Contains("UseImplicitTypeCodeRefactoringProvider", refactorings);
+        Assert.Contains("ExtractMethodCodeRefactoringProvider", refactorings);
+        Assert.Contains("IntroduceVariableCodeRefactoringProvider", refactorings);
+    }
+
+    [Fact]
     public async Task Loads_with_progress_and_reports_version_matched_compiler_diagnostics()
     {
         const string original = "class Sample { void Run() { } }\n";
@@ -740,6 +779,187 @@ public sealed class RoslynCodeIntelligenceEngineTests(ITestOutputHelper output) 
         Assert.Equal(CodeIntelligenceTransformationDisposition.Rejected, result.Disposition);
         Assert.Equal("missing_import_candidate_changed", Assert.Single(result.Issues).Code.Value);
         Assert.Null(result.Fingerprint);
+    }
+
+    [Fact]
+    public async Task Closed_code_action_discovers_and_previews_interface_implementation_without_writing()
+    {
+        const string source = "interface IWorker { void Run(); }\nclass Worker : IWorker { }\n";
+        await CreateProjectAsync(source);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("implement-interface-context");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+        int offset = source.LastIndexOf("Worker", StringComparison.Ordinal) + 2;
+        CodeIntelligenceInteractiveSnapshot snapshot =
+            InteractiveSnapshot(contextId, session.SessionId!, source, offset);
+
+        CodeIntelligenceCodeActionResult discovery = await engine.GetCodeActionsAsync(new(snapshot));
+        CodeIntelligenceCodeActionCandidate candidate = Assert.Single(
+            discovery.Candidates,
+            item => item.Kind is CodeIntelligenceClosedCodeActionKind.ImplementInterface &&
+                item.Scope is CodeIntelligenceCodeActionScope.Occurrence &&
+                item.Title.Value.Equals("Implement interface", StringComparison.Ordinal));
+        CodeIntelligenceDocumentTransformationPreviewResult preview =
+            await engine.PreviewDocumentTransformationAsync(new(
+                snapshot,
+                CodeIntelligenceDocumentTransformationKind.ApplyCodeAction,
+                Range: null,
+                CodeActionId: candidate.Id,
+                CodeActionScope: candidate.Scope));
+
+        Assert.Equal(CodeIntelligenceTransformationDisposition.Ready, preview.Disposition);
+        Assert.Equal(candidate.Id, preview.CodeActionId);
+        Assert.Equal(candidate.Scope, preview.CodeActionScope);
+        Assert.Contains("void Run()", preview.Edit!.Text.Value, StringComparison.Ordinal);
+        Assert.NotNull(preview.Fingerprint);
+        Assert.Equal(source, await File.ReadAllTextAsync(Path.Combine(root, "Sample.cs")));
+    }
+
+    [Fact]
+    public async Task Closed_code_action_rejects_an_unknown_identifier()
+    {
+        const string source = "interface IWorker { void Run(); }\nclass Worker : IWorker { }\n";
+        await CreateProjectAsync(source);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("unknown-code-action-context");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+        int offset = source.LastIndexOf("Worker", StringComparison.Ordinal) + 2;
+
+        CodeIntelligenceDocumentTransformationPreviewResult preview =
+            await engine.PreviewDocumentTransformationAsync(new(
+                InteractiveSnapshot(contextId, session.SessionId!, source, offset),
+                CodeIntelligenceDocumentTransformationKind.ApplyCodeAction,
+                Range: null,
+                CodeActionId: new(new string('a', 64)),
+                CodeActionScope: CodeIntelligenceCodeActionScope.Occurrence));
+
+        Assert.Equal(CodeIntelligenceTransformationDisposition.Rejected, preview.Disposition);
+        Assert.Equal("code_action_changed", Assert.Single(preview.Issues).Code.Value);
+        Assert.Null(preview.Fingerprint);
+    }
+
+    [Fact]
+    public async Task Closed_document_code_action_fixes_every_matching_diagnostic()
+    {
+        const string source = "partial class Widget { }\nclass Widget { }\n" +
+            "partial class Gadget { }\nclass Gadget { }\n";
+        await CreateProjectAsync(source);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("document-fix-all-context");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+        int offset = source.LastIndexOf("class Widget", StringComparison.Ordinal) + 7;
+        CodeIntelligenceInteractiveSnapshot snapshot =
+            InteractiveSnapshot(contextId, session.SessionId!, source, offset);
+
+        CodeIntelligenceCodeActionResult discovery = await engine.GetCodeActionsAsync(new(snapshot));
+        CodeIntelligenceCodeActionCandidate candidate = Assert.Single(
+            discovery.Candidates,
+            item => item.Kind is CodeIntelligenceClosedCodeActionKind.MakeTypePartial &&
+                item.Scope is CodeIntelligenceCodeActionScope.Document);
+        CodeIntelligenceDocumentTransformationPreviewResult preview =
+            await engine.PreviewDocumentTransformationAsync(new(
+                snapshot,
+                CodeIntelligenceDocumentTransformationKind.ApplyCodeAction,
+                Range: null,
+                CodeActionId: candidate.Id,
+                CodeActionScope: candidate.Scope));
+
+        Assert.Equal(CodeIntelligenceTransformationDisposition.Ready, preview.Disposition);
+        Assert.Equal(4, preview.Edit!.Text.Value.Split("partial class").Length - 1);
+        Assert.DoesNotContain(preview.Diagnostics, item =>
+            item.Kind is CodeIntelligenceDiagnosticDeltaKind.Retained &&
+            item.Diagnostic.Id.Value == "CS0260");
+        Assert.Equal(source, await File.ReadAllTextAsync(Path.Combine(root, "Sample.cs")));
+    }
+
+    [Fact]
+    public async Task Closed_refactoring_previews_an_auto_property_conversion_without_writing()
+    {
+        const string source = "class Sample { public int Value { get; set; } }\n";
+        await CreateProjectAsync(source);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("auto-property-refactoring-context");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+        int offset = source.IndexOf("Value", StringComparison.Ordinal) + 2;
+        CodeIntelligenceInteractiveSnapshot snapshot =
+            InteractiveSnapshot(contextId, session.SessionId!, source, offset);
+
+        CodeIntelligenceCodeActionResult discovery = await engine.GetCodeActionsAsync(new(snapshot));
+        CodeIntelligenceCodeActionCandidate candidate = Assert.Single(
+            discovery.Candidates,
+            item => item.Kind is
+                CodeIntelligenceClosedCodeActionKind.ConvertAutoPropertyToFullProperty &&
+                item.Title.Value.Equals("Convert to full property", StringComparison.Ordinal));
+        Assert.Null(candidate.DiagnosticId);
+        CodeIntelligenceDocumentTransformationPreviewResult preview =
+            await engine.PreviewDocumentTransformationAsync(new(
+                snapshot,
+                CodeIntelligenceDocumentTransformationKind.ApplyCodeAction,
+                Range: null,
+                CodeActionId: candidate.Id,
+                CodeActionScope: candidate.Scope));
+
+        Assert.Equal(CodeIntelligenceTransformationDisposition.Ready, preview.Disposition);
+        Assert.Contains("private int", preview.Edit!.Text.Value, StringComparison.Ordinal);
+        Assert.Contains("get =>", preview.Edit.Text.Value, StringComparison.Ordinal);
+        Assert.NotNull(preview.Fingerprint);
+        Assert.Equal(source, await File.ReadAllTextAsync(Path.Combine(root, "Sample.cs")));
+    }
+
+    [Fact]
+    public async Task Closed_code_action_rejects_a_change_to_another_document()
+    {
+        const string target = "public class Target { public void Run(int value) { } }\n";
+        const string use = "class Use { void Go() { new Target().Run(1, 2); } }\n";
+        await CreateProjectAsync(target);
+        await File.WriteAllTextAsync(Path.Combine(root, "Use.cs"), use, Utf8WithoutBom);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("cross-document-action-context");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+        int offset = use.IndexOf("Run", StringComparison.Ordinal) + 1;
+        CodeIntelligenceInteractiveSnapshot snapshot = InteractiveSnapshot(
+            contextId, session.SessionId!, use, use, offset, "Use.cs");
+
+        CodeIntelligenceCodeActionResult discovery = await engine.GetCodeActionsAsync(new(snapshot));
+        Assert.DoesNotContain(discovery.Candidates,
+            item => item.Kind is CodeIntelligenceClosedCodeActionKind.AddParameter);
+        Assert.Equal(target, await File.ReadAllTextAsync(Path.Combine(root, "Sample.cs")));
+        Assert.Equal(use, await File.ReadAllTextAsync(Path.Combine(root, "Use.cs")));
+    }
+
+    [Fact]
+    public async Task Closed_selection_refactoring_uses_the_exact_selected_expression()
+    {
+        const string source = "class Sample { int Run() { return 1 + 2; } }\n";
+        await CreateProjectAsync(source);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("selection-refactoring-context");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+        int start = source.IndexOf("1 + 2", StringComparison.Ordinal);
+        CodeIntelligenceRange range = new(new(0, start), new(0, start + 5));
+        CodeIntelligenceInteractiveSnapshot snapshot =
+            InteractiveSnapshot(contextId, session.SessionId!, source, start);
+
+        CodeIntelligenceCodeActionResult discovery = await engine.GetCodeActionsAsync(
+            new(snapshot, range));
+        CodeIntelligenceCodeActionCandidate candidate = Assert.Single(
+            discovery.Candidates,
+            item => item.Kind is CodeIntelligenceClosedCodeActionKind.ExtractMethod &&
+                item.Title.Value.Equals("Extract method", StringComparison.Ordinal));
+        CodeIntelligenceDocumentTransformationPreviewResult preview =
+            await engine.PreviewDocumentTransformationAsync(new(
+                snapshot,
+                CodeIntelligenceDocumentTransformationKind.ApplyCodeAction,
+                range,
+                CodeActionId: candidate.Id,
+                CodeActionScope: candidate.Scope));
+
+        Assert.Equal(CodeIntelligenceTransformationDisposition.Ready, preview.Disposition);
+        Assert.Contains("return", preview.Edit!.Text.Value, StringComparison.Ordinal);
+        Assert.Contains("1 + 2", preview.Edit.Text.Value, StringComparison.Ordinal);
+        Assert.Contains("NewMethod", preview.Edit.Text.Value, StringComparison.Ordinal);
+        Assert.True(preview.Edit.ReplacementCount > 0);
+        Assert.Equal(source, await File.ReadAllTextAsync(Path.Combine(root, "Sample.cs")));
     }
 
     [Fact]

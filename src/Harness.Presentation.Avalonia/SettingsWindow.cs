@@ -111,7 +111,7 @@ internal sealed class SettingsWindow : Window
         "harness_goal_models",
         "harness_commit_preview", "harness_code_problems", "harness_code_symbol",
         "harness_code_definition", "harness_code_references",
-        "harness_code_implementations", "harness_create_goal",
+        "harness_code_implementations", "harness_code_actions", "harness_create_goal",
         "harness_configure_goal", "harness_extend_goal_budget",
         "harness_select_goal_model", "harness_start_planning", "harness_resume_goal",
         "harness_retry_goal", "harness_cancel_goal_operation", "harness_abort_goal",
@@ -815,7 +815,7 @@ internal sealed class SettingsWindow : Window
                 new("harness_evaluation_snapshot"),
                 new("harness_code_problems"), new("harness_code_symbol"),
                 new("harness_code_definition"), new("harness_code_references"),
-                new("harness_code_implementations")],
+                new("harness_code_implementations"), new("harness_code_actions")],
             [], TimeSpan.FromSeconds(30), 500, 1_000, false);
 
         CheckBox enabled = new()

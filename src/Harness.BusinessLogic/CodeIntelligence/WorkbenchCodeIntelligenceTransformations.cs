@@ -12,11 +12,14 @@ internal sealed partial class WorkbenchCodeIntelligenceService
             CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        bool needsRange = request.Kind is
+        bool requiresRange = request.Kind is
             WorkbenchCodeDocumentTransformationKind.FormatSelection or
             WorkbenchCodeDocumentTransformationKind.FormatPaste or
             WorkbenchCodeDocumentTransformationKind.FormatOnType;
+        bool allowsOptionalRange = request.Kind is
+            WorkbenchCodeDocumentTransformationKind.ApplyCodeAction;
         bool needsNamespace = request.Kind is WorkbenchCodeDocumentTransformationKind.AddMissingImport;
+        bool needsCodeAction = request.Kind is WorkbenchCodeDocumentTransformationKind.ApplyCodeAction;
         bool needsTrigger = request.Kind is
             WorkbenchCodeDocumentTransformationKind.FormatPaste or
             WorkbenchCodeDocumentTransformationKind.FormatOnType;
@@ -31,10 +34,15 @@ internal sealed partial class WorkbenchCodeIntelligenceService
             _ => request.FormattingTrigger is null,
         };
         if (!TryInteractive(request.Snapshot, out ActiveSession? session, out WorkbenchCodeIssue? issue) ||
-            !Enum.IsDefined(request.Kind) || needsRange != (request.Range is not null) ||
+            !Enum.IsDefined(request.Kind) ||
+            (!allowsOptionalRange && requiresRange != (request.Range is not null)) ||
             needsNamespace != (request.ImportNamespace is not null) ||
+            needsCodeAction != (request.CodeActionId is not null) ||
+            needsCodeAction != (request.CodeActionScope is not null) ||
             needsTrigger != (request.FormattingTrigger is not null) || !validTrigger ||
-            request.ImportNamespace is { Value.Length: 0 })
+            request.ImportNamespace is { Value.Length: 0 } ||
+            request.CodeActionId is { Value: var codeActionId } && !IsSha256(codeActionId) ||
+            request.CodeActionScope is { } scope && !Enum.IsDefined(scope))
         {
             return DocumentTransformationFailure(request, issue ?? Issue(
                 "invalid_document_transformation",
@@ -51,7 +59,9 @@ internal sealed partial class WorkbenchCodeIntelligenceService
                     new(request.Range.Start.Line, request.Range.Start.Character),
                     new(request.Range.End.Line, request.Range.End.Character)),
                 request.ImportNamespace is null ? null : new(request.ImportNamespace.Value),
-                request.FormattingTrigger is null ? null : Map(request.FormattingTrigger.Value)),
+                request.FormattingTrigger is null ? null : Map(request.FormattingTrigger.Value),
+                request.CodeActionId is null ? null : new(request.CodeActionId.Value),
+                request.CodeActionScope is null ? null : Map(request.CodeActionScope.Value)),
                 cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -75,6 +85,10 @@ internal sealed partial class WorkbenchCodeIntelligenceService
                 StringComparison.Ordinal) ||
             (result.FormattingTrigger is null ? null : Map(result.FormattingTrigger.Value)) !=
                 request.FormattingTrigger ||
+            !string.Equals(result.CodeActionId?.Value, request.CodeActionId?.Value,
+                StringComparison.Ordinal) ||
+            (result.CodeActionScope is null ? null : Map(result.CodeActionScope.Value)) !=
+                request.CodeActionScope ||
             (result.Edit is not null &&
                 (!IsConfinedRelativePath(result.Edit.Path.Value) ||
                  !IsSha256(result.Edit.BaselineHash.Value) || result.Edit.ReplacementCount < 0)) ||
@@ -112,7 +126,9 @@ internal sealed partial class WorkbenchCodeIntelligenceService
             result.Fingerprint is null ? null : new(result.Fingerprint.Value),
             MapIssues(result.Issues),
             result.ImportNamespace is null ? null : new(result.ImportNamespace.Value),
-            result.FormattingTrigger is null ? null : Map(result.FormattingTrigger.Value));
+            result.FormattingTrigger is null ? null : Map(result.FormattingTrigger.Value),
+            result.CodeActionId is null ? null : new(result.CodeActionId.Value),
+            result.CodeActionScope is null ? null : Map(result.CodeActionScope.Value));
     }
 
     public async ValueTask<WorkbenchCodeRenamePreviewView> PreviewRenameAsync(
@@ -227,7 +243,25 @@ internal sealed partial class WorkbenchCodeIntelligenceService
                 CodeIntelligenceDocumentTransformationKind.RemoveUnusedImports,
             WorkbenchCodeDocumentTransformationKind.AddMissingImport =>
                 CodeIntelligenceDocumentTransformationKind.AddMissingImport,
+            WorkbenchCodeDocumentTransformationKind.ApplyCodeAction =>
+                CodeIntelligenceDocumentTransformationKind.ApplyCodeAction,
             _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+        };
+
+    private static CodeIntelligenceCodeActionScope Map(WorkbenchCodeActionScope scope) =>
+        scope switch
+        {
+            WorkbenchCodeActionScope.Occurrence => CodeIntelligenceCodeActionScope.Occurrence,
+            WorkbenchCodeActionScope.Document => CodeIntelligenceCodeActionScope.Document,
+            _ => throw new ArgumentOutOfRangeException(nameof(scope)),
+        };
+
+    private static WorkbenchCodeActionScope Map(CodeIntelligenceCodeActionScope scope) =>
+        scope switch
+        {
+            CodeIntelligenceCodeActionScope.Occurrence => WorkbenchCodeActionScope.Occurrence,
+            CodeIntelligenceCodeActionScope.Document => WorkbenchCodeActionScope.Document,
+            _ => throw new ArgumentOutOfRangeException(nameof(scope)),
         };
 
     private static CodeIntelligenceFormattingTrigger Map(
@@ -350,6 +384,125 @@ internal sealed partial class WorkbenchCodeIntelligenceService
             MapIssues(result.Issues));
     }
 
+    public async ValueTask<WorkbenchCodeActionView> GetCodeActionsAsync(
+        WorkbenchCodeActionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        WorkbenchCodeInteractiveSnapshot snapshot = request.Snapshot;
+        if (!TryInteractive(snapshot, out ActiveSession? session, out WorkbenchCodeIssue? issue))
+        {
+            return CodeActionFailure(snapshot, issue!);
+        }
+
+        CodeIntelligenceCodeActionResult result;
+        try
+        {
+            result = await engine.GetCodeActionsAsync(
+                new(
+                    ToDataSnapshot(snapshot, session!),
+                    request.Range is null ? null : new(
+                        new(request.Range.Start.Line, request.Range.Start.Character),
+                        new(request.Range.End.Line, request.Range.End.Character))),
+                cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return CodeActionFailure(snapshot,
+                Issue("cancelled", "Code-action discovery was cancelled."),
+                WorkbenchCodeResultState.Cancelled);
+        }
+
+        if (!IsFresh(session!, snapshot) ||
+            !Matches(result.ContextId, result.SessionId, result.Path, result.BufferVersion,
+                session!, snapshot))
+        {
+            return CodeActionFailure(snapshot,
+                Issue("stale_buffer", "A newer document buffer superseded these code actions."),
+                WorkbenchCodeResultState.Stale);
+        }
+
+        bool malformed = result.Candidates.Count > MaximumInteractiveItems ||
+            result.Candidates.Any(item => !IsSha256(item.Id.Value) ||
+                !Enum.IsDefined(item.Kind) || !Enum.IsDefined(item.Scope) ||
+                string.IsNullOrWhiteSpace(item.Title.Value) || item.Title.Value.Length > 2_048 ||
+                item.DiagnosticId is { Value: var diagnosticId } &&
+                    (string.IsNullOrWhiteSpace(diagnosticId) || diagnosticId.Length > 128));
+        if (malformed)
+        {
+            return CodeActionFailure(snapshot,
+                Issue("invalid_code_action_result",
+                    "The Roslyn adapter returned malformed or unbounded code actions."));
+        }
+
+        return new(
+            snapshot.SessionId,
+            snapshot.Path,
+            snapshot.BufferVersion,
+            Map(result.State),
+            result.Candidates.Select(item => new WorkbenchCodeActionCandidate(
+                new(item.Id.Value), Map(item.Kind), Map(item.Scope), new(item.Title.Value),
+                item.DiagnosticId is null ? null : new(item.DiagnosticId.Value),
+                Map(item.Range))).ToArray(),
+            MapIssues(result.Issues));
+    }
+
+    private static WorkbenchClosedCodeActionKind Map(
+        CodeIntelligenceClosedCodeActionKind kind) => kind switch
+        {
+            CodeIntelligenceClosedCodeActionKind.ImplementInterface => WorkbenchClosedCodeActionKind.ImplementInterface,
+            CodeIntelligenceClosedCodeActionKind.ImplementAbstractMembers => WorkbenchClosedCodeActionKind.ImplementAbstractMembers,
+            CodeIntelligenceClosedCodeActionKind.AddExplicitCast => WorkbenchClosedCodeActionKind.AddExplicitCast,
+            CodeIntelligenceClosedCodeActionKind.AssignOutParameters => WorkbenchClosedCodeActionKind.AssignOutParameters,
+            CodeIntelligenceClosedCodeActionKind.GenerateConstructor => WorkbenchClosedCodeActionKind.GenerateConstructor,
+            CodeIntelligenceClosedCodeActionKind.GenerateVariable => WorkbenchClosedCodeActionKind.GenerateVariable,
+            CodeIntelligenceClosedCodeActionKind.AddParameter => WorkbenchClosedCodeActionKind.AddParameter,
+            CodeIntelligenceClosedCodeActionKind.FixReturnType => WorkbenchClosedCodeActionKind.FixReturnType,
+            CodeIntelligenceClosedCodeActionKind.MakeMemberStatic => WorkbenchClosedCodeActionKind.MakeMemberStatic,
+            CodeIntelligenceClosedCodeActionKind.MakeTypeAbstract => WorkbenchClosedCodeActionKind.MakeTypeAbstract,
+            CodeIntelligenceClosedCodeActionKind.MakeTypePartial => WorkbenchClosedCodeActionKind.MakeTypePartial,
+            CodeIntelligenceClosedCodeActionKind.RemoveUnnecessaryCast => WorkbenchClosedCodeActionKind.RemoveUnnecessaryCast,
+            CodeIntelligenceClosedCodeActionKind.SimplifyTypeName => WorkbenchClosedCodeActionKind.SimplifyTypeName,
+            CodeIntelligenceClosedCodeActionKind.UseNullPropagation => WorkbenchClosedCodeActionKind.UseNullPropagation,
+            CodeIntelligenceClosedCodeActionKind.UseCompoundAssignment => WorkbenchClosedCodeActionKind.UseCompoundAssignment,
+            CodeIntelligenceClosedCodeActionKind.AddBraces => WorkbenchClosedCodeActionKind.AddBraces,
+            CodeIntelligenceClosedCodeActionKind.InlineDeclaration => WorkbenchClosedCodeActionKind.InlineDeclaration,
+            CodeIntelligenceClosedCodeActionKind.UseObjectInitializer => WorkbenchClosedCodeActionKind.UseObjectInitializer,
+            CodeIntelligenceClosedCodeActionKind.UseCollectionInitializer => WorkbenchClosedCodeActionKind.UseCollectionInitializer,
+            CodeIntelligenceClosedCodeActionKind.ConvertAutoPropertyToFullProperty => WorkbenchClosedCodeActionKind.ConvertAutoPropertyToFullProperty,
+            CodeIntelligenceClosedCodeActionKind.ConvertLoop => WorkbenchClosedCodeActionKind.ConvertLoop,
+            CodeIntelligenceClosedCodeActionKind.ConvertIfToSwitch => WorkbenchClosedCodeActionKind.ConvertIfToSwitch,
+            CodeIntelligenceClosedCodeActionKind.ConvertLocalFunctionToMethod => WorkbenchClosedCodeActionKind.ConvertLocalFunctionToMethod,
+            CodeIntelligenceClosedCodeActionKind.InlineTemporary => WorkbenchClosedCodeActionKind.InlineTemporary,
+            CodeIntelligenceClosedCodeActionKind.IntroduceLocal => WorkbenchClosedCodeActionKind.IntroduceLocal,
+            CodeIntelligenceClosedCodeActionKind.InvertConditional => WorkbenchClosedCodeActionKind.InvertConditional,
+            CodeIntelligenceClosedCodeActionKind.MoveDeclarationNearReference => WorkbenchClosedCodeActionKind.MoveDeclarationNearReference,
+            CodeIntelligenceClosedCodeActionKind.ConvertNamespace => WorkbenchClosedCodeActionKind.ConvertNamespace,
+            CodeIntelligenceClosedCodeActionKind.AddParameterCheck => WorkbenchClosedCodeActionKind.AddParameterCheck,
+            CodeIntelligenceClosedCodeActionKind.InitializeMemberFromParameter => WorkbenchClosedCodeActionKind.InitializeMemberFromParameter,
+            CodeIntelligenceClosedCodeActionKind.IntroduceUsingStatement => WorkbenchClosedCodeActionKind.IntroduceUsingStatement,
+            CodeIntelligenceClosedCodeActionKind.UseExplicitType => WorkbenchClosedCodeActionKind.UseExplicitType,
+            CodeIntelligenceClosedCodeActionKind.UseImplicitType => WorkbenchClosedCodeActionKind.UseImplicitType,
+            CodeIntelligenceClosedCodeActionKind.UseExpressionBody => WorkbenchClosedCodeActionKind.UseExpressionBody,
+            CodeIntelligenceClosedCodeActionKind.ExtractMethod => WorkbenchClosedCodeActionKind.ExtractMethod,
+            CodeIntelligenceClosedCodeActionKind.IntroduceVariable => WorkbenchClosedCodeActionKind.IntroduceVariable,
+            CodeIntelligenceClosedCodeActionKind.GenerateEqualityMembers => WorkbenchClosedCodeActionKind.GenerateEqualityMembers,
+            CodeIntelligenceClosedCodeActionKind.GenerateOverrides => WorkbenchClosedCodeActionKind.GenerateOverrides,
+            CodeIntelligenceClosedCodeActionKind.ReplaceMemberKind => WorkbenchClosedCodeActionKind.ReplaceMemberKind,
+            _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+        };
+
+    private static WorkbenchCodeActionView CodeActionFailure(
+        WorkbenchCodeInteractiveSnapshot snapshot,
+        WorkbenchCodeIssue issue,
+        WorkbenchCodeResultState state = WorkbenchCodeResultState.Failed) => new(
+        snapshot.SessionId,
+        snapshot.Path,
+        snapshot.BufferVersion,
+        state,
+        [],
+        [issue]);
+
     private static WorkbenchCodeMissingImportView MissingImportFailure(
         WorkbenchCodeInteractiveSnapshot snapshot,
         WorkbenchCodeIssue issue,
@@ -378,5 +531,8 @@ internal sealed partial class WorkbenchCodeIntelligenceService
             [],
             Fingerprint: null,
             [issue],
-            request.ImportNamespace);
+            request.ImportNamespace,
+            request.FormattingTrigger,
+            request.CodeActionId,
+            request.CodeActionScope);
 }

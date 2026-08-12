@@ -124,7 +124,10 @@ public interface IWorkbenchCodeIntelligenceService
             Fingerprint: null,
             [new(new("document_transformation_not_supported"),
                 new("Document formatting and import organization are unavailable."))],
-            request.ImportNamespace));
+            request.ImportNamespace,
+            request.FormattingTrigger,
+            request.CodeActionId,
+            request.CodeActionScope));
 
     ValueTask<WorkbenchCodeMissingImportView> GetMissingImportsAsync(
         WorkbenchCodeInteractiveSnapshot snapshot,
@@ -137,6 +140,18 @@ public interface IWorkbenchCodeIntelligenceService
             [],
             [new(new("missing_imports_not_supported"),
                 new("Missing-import discovery is unavailable."))]));
+
+    ValueTask<WorkbenchCodeActionView> GetCodeActionsAsync(
+        WorkbenchCodeActionRequest request,
+        CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult(new WorkbenchCodeActionView(
+            request.Snapshot.SessionId,
+            request.Snapshot.Path,
+            request.Snapshot.BufferVersion,
+            WorkbenchCodeResultState.Failed,
+            [],
+            [new(new("code_actions_not_supported"),
+                new("Contextual code actions are unavailable."))]));
 
     ValueTask StopAsync(
         WorkbenchCodeSessionId sessionId,

@@ -647,6 +647,15 @@ internal sealed class InboundMcpTools(
         CancellationToken cancellationToken) => CodePositionAsync(new("harness_code_implementations"),
             application.FindCodeImplementationsAsync, goalId, relativePath, line, character, cancellationToken);
 
+    [McpServerTool(Name = "harness_code_actions", ReadOnly = true, Destructive = false,
+        Idempotent = true, OpenWorld = false)]
+    [Description("Find closed Roslyn quick fixes and local refactorings at a zero-based source position without changing the repository.")]
+    public ValueTask<string> CodeActionsAsync(
+        string goalId, string relativePath, int line, int character,
+        CancellationToken cancellationToken) => CodePositionAsync(new("harness_code_actions"),
+            application.FindCodeActionsAsync, goalId, relativePath, line, character,
+            cancellationToken);
+
     private ValueTask<string> CodePositionAsync(
         InboundMcpToolId tool,
         Func<InboundMcpCallContext, InboundMcpCodePositionRequest, CancellationToken,
