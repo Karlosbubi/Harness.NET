@@ -37,12 +37,13 @@ internal sealed class SourceEditorSurface : IDisposable
         Orientation = Orientation.Horizontal,
         VerticalAlignment = VerticalAlignment.Center,
     };
-    private readonly WrapPanel codeLensActions = new()
+    private readonly StackPanel codeLensActions = new()
     {
-        Orientation = Orientation.Horizontal,
-        VerticalAlignment = VerticalAlignment.Center,
-        IsVisible = false,
+        Spacing = 4,
+        MinWidth = 260,
     };
+    private readonly Button codeLensMenu = Action(
+        "CodeLens", "CodeLens actions loading", "Loading semantic actions for this document");
     private readonly ListBox outlineItems = new() { MaxHeight = 420, MinWidth = 360 };
     private IReadOnlyList<WorkbenchCodeOutlineItem> outline = [];
 
@@ -110,6 +111,8 @@ internal sealed class SourceEditorSurface : IDisposable
     internal Button OrganizeImports { get; }
     internal Button RemoveUnusedImports { get; }
     internal Button QuickFix { get; }
+    internal bool HasDocumentPresentation { get; private set; }
+    internal bool HasCodeLensActions { get; private set; }
     internal event Action<WorkbenchCodePosition>? NavigationRequested;
     internal event Action<WorkbenchCodeInspectionKind>? InspectionRequested;
     internal event EventHandler<WorkbenchCodeLensInvokedEventArgs>? CodeLensInvoked;
@@ -219,6 +222,15 @@ internal sealed class SourceEditorSurface : IDisposable
             organizeImports,
             removeUnusedImports,
             quickFix);
+        surface.codeLensMenu.IsEnabled = false;
+        surface.codeLensMenu.Flyout = new Flyout
+        {
+            Content = new Border
+            {
+                Padding = new Thickness(6),
+                Child = surface.codeLensActions,
+            },
+        };
         surface.accessBadge.Child = surface.access;
         surface.accessBadge.Classes.Add("editor-access");
         surface.BuildHeader(save, reload, close);
@@ -338,6 +350,8 @@ internal sealed class SourceEditorSurface : IDisposable
     {
         Editor.SetDocumentPresentation(presentation);
         UpdateCodeLensActions(presentation.CodeLenses);
+        HasDocumentPresentation = true;
+        HasCodeLensActions = presentation.CodeLenses.Count > 0;
         if (presentation.FoldingRanges.Count == 0 && presentation.Outline.Count == 0)
         {
             return;
@@ -420,6 +434,7 @@ internal sealed class SourceEditorSurface : IDisposable
     private void BuildAssistanceBar(params Button[] actions)
     {
         WrapPanel commands = new() { Orientation = Orientation.Horizontal };
+        commands.Children.Add(codeLensMenu);
         foreach (Button action in actions)
         {
             commands.Children.Add(action);
@@ -427,16 +442,12 @@ internal sealed class SourceEditorSurface : IDisposable
 
         Grid content = new()
         {
-            RowDefinitions = new("Auto,Auto"),
             ColumnDefinitions = new("*,Auto"),
             ColumnSpacing = 8,
             Children = { breadcrumbs },
         };
         Grid.SetColumn(commands, 1);
         content.Children.Add(commands);
-        Grid.SetRow(codeLensActions, 1);
-        Grid.SetColumnSpan(codeLensActions, 2);
-        content.Children.Add(codeLensActions);
         AutomationProperties.SetName(codeLensActions, "CodeLens actions for this document");
         Border surface = new() { Child = content };
         surface.Classes.Add("editor-assistance-toolbar");
@@ -466,6 +477,7 @@ internal sealed class SourceEditorSurface : IDisposable
             action.Click += (_, _) => CodeLensInvoked?.Invoke(
                 this,
                 new WorkbenchCodeLensInvokedEventArgs(lens));
+            action.Click += (_, _) => codeLensMenu.Flyout?.Hide();
             codeLensActions.Children.Add(action);
         }
 
@@ -481,7 +493,13 @@ internal sealed class SourceEditorSurface : IDisposable
                 $"{hidden:N0} more CodeLens actions are available inline");
             codeLensActions.Children.Add(overflow);
         }
-        codeLensActions.IsVisible = codeLensActions.Children.Count > 0;
+        codeLensMenu.IsEnabled = actions.Length > 0;
+        AutomationProperties.SetName(codeLensMenu, actions.Length == 0
+            ? "No CodeLens actions for this document"
+            : "Show CodeLens actions");
+        ToolTip.SetTip(codeLensMenu, actions.Length == 0
+            ? "No semantic actions are available for this document"
+            : $"Show {lenses.Count:N0} CodeLens action(s)");
     }
 
     private void ConfigureOutline(Button button)

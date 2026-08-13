@@ -2182,7 +2182,6 @@ internal sealed class WorkbenchDockHost
             await InvokeCodeLensAsync(session, args.Lens);
         editor.ViewportChanged += (_, _) => SchedulePresentation(
             session,
-            immediate: true,
             includeStructure: false);
         editor.KeyDown += async (_, args) =>
         {
@@ -3980,6 +3979,7 @@ internal sealed class WorkbenchDockHost
         {
             activeDocument = next;
             UpdateDocumentSwitcher();
+            RefreshActivatedSourceDocument(next);
             return;
         }
 
@@ -4031,10 +4031,24 @@ internal sealed class WorkbenchDockHost
             factory.SetActiveDockable(document);
             activeDocument = document;
             UpdateDocumentSwitcher();
+            RefreshActivatedSourceDocument(document);
         }
         finally
         {
             suppressDocumentActivation = false;
+        }
+    }
+
+    internal void ReactivateDocumentForTest(IDockable document) => SetActiveDocument(document);
+
+    private void RefreshActivatedSourceDocument(IDockable? document)
+    {
+        if (document?.Id is { } id &&
+            sourceDocuments.TryGetValue(id, out SourceDocumentSession? session) &&
+            (!session.Surface.HasDocumentPresentation ||
+             !session.Surface.HasCodeLensActions))
+        {
+            SchedulePresentation(session, immediate: true);
         }
     }
 

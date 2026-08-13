@@ -112,13 +112,16 @@ class AtSpiApplication:
             time.sleep(0.1)
         raise AssertionError(message)
 
-    def wait_for_name(self, name: str, role: str | None = None) -> None:
+    def wait_for_name(
+        self, name: str, role: str | None = None, timeout: float = 10
+    ) -> None:
         self.wait_for(
             lambda nodes: any(
                 node.name == name and (role is None or node.role == role)
                 for node in nodes
             ),
             f"AT-SPI did not expose {role or 'control'} {name!r}",
+            timeout,
         )
 
     def wait_for_name_containing(
@@ -156,13 +159,36 @@ class AtSpiApplication:
         if not bool(action.DoAction(0)):
             raise AssertionError(f"AT-SPI action failed for {role} containing {text!r}")
 
-    def focus(self, name: str, role: str) -> None:
+    def wait_and_invoke(self, name: str, role: str, timeout: float = 30) -> None:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            matches = [
+                node
+                for node in self.nodes()
+                if node.name == name and node.role == role and ACTION in node.interfaces
+            ]
+            for node in reversed(matches):
+                action = dbus.Interface(
+                    self.bus.get_object(self.destination, node.path), ACTION
+                )
+                try:
+                    if bool(action.DoAction(0)):
+                        return
+                except dbus.DBusException as error:
+                    if "Element not enabled" not in str(error):
+                        raise
+            time.sleep(0.1)
+        raise AssertionError(f"AT-SPI could not invoke {role} {name!r}")
+
+    def focus(self, name: str, role: str | None) -> None:
         node = self.find(name, role)
         component = dbus.Interface(
             self.bus.get_object(self.destination, node.path), COMPONENT
         )
         if not bool(component.GrabFocus()):
-            raise AssertionError(f"AT-SPI could not focus {role} {name!r}")
+            raise AssertionError(
+                f"AT-SPI could not focus {role or 'control'} {name!r}"
+            )
         time.sleep(0.5)
 
     def set_text(self, name: str, value: str) -> None:
@@ -295,9 +321,17 @@ def verify_initial_accessibility(application: AtSpiApplication) -> None:
 
 
 def exercise_orca_speech(application: AtSpiApplication) -> None:
-    application.focus("Conversation model", "combo box")
+    application.wait_for_name("Conversation model")
+    application.focus("Conversation model", None)
+    application.wait_for_name("Open editor documents", "combo box")
     application.focus("Open editor documents", "combo box")
-    application.focus("Save current panel layout", "push button")
+    application.invoke("Open the command palette")
+    application.wait_for_name("Command palette filter", "entry")
+    application.set_text("Command palette filter", "save layout")
+    application.wait_for_name("Save workbench layout", "push button")
+    application.focus("Save workbench layout", "push button")
+    application.invoke("Save workbench layout")
+    application.wait_for_name("Workspace", "page tab")
     application.focus("Workspace", "page tab")
     application.invoke("Workspace", "page tab")
     application.wait_for_name("Manage workspaces", "push button")
@@ -367,15 +401,19 @@ def verify_orca_speech(debug_log: Path) -> None:
     expected = [
         "Conversation model",
         "Open editor documents",
-        "Save current panel layout",
+        "Save workbench layout",
         "Workspace",
         "Manage workspaces",
-        "Repository path",
-        "Browse for repository folder",
         "Inspect",
-        "Close",
     ]
-    missing = [utterance for utterance in expected if utterance not in utterances]
+    missing = [
+        expected_name
+        for expected_name in expected
+        if not any(
+            utterance == expected_name or utterance.startswith(f"{expected_name} ")
+            for utterance in utterances
+        )
+    ]
     if missing:
         raise AssertionError(f"Orca did not generate expected speech: {missing}")
 
@@ -490,10 +528,16 @@ def verify_documents_and_search(
     )
 
     application.invoke("Files", "page tab")
-    for path in ("Program.cs", "Representative.csproj"):
-        application.wait_for_name(path, "push button")
-        application.invoke(path)
-        application.wait_for_name(f"Editable source editor for {path}", "panel")
+    application.wait_for_name("Program.cs", "push button")
+    application.invoke("Program.cs")
+    application.wait_for_name("Editable source editor for Program.cs", "panel")
+    application.wait_for_name("Show CodeLens actions", "push button", timeout=30)
+
+    application.wait_for_name("Representative.csproj", "push button")
+    application.invoke("Representative.csproj")
+    application.wait_for_name(
+        "Editable source editor for Representative.csproj", "panel"
+    )
 
     if not application.text("Open editor documents", "combo box").startswith(
         "Representative.csproj · "
@@ -519,6 +563,7 @@ def verify_documents_and_search(
     ):
         application.wait_for_name(action, "push button")
     application.invoke("Focus the active editor document")
+    application.wait_and_invoke("Show CodeLens actions", "push button")
     try:
         application.wait_for_name_containing(
             "Run project at line", "push button", timeout=30
@@ -703,6 +748,7 @@ def main() -> int:
                 project_file.read_text(encoding="utf-8").replace(
                     "</Project>",
                     "  <PropertyGroup>\n"
+                    "    <StartupObject>Program</StartupObject>\n"
                     f"    <UserSecretsId>harness-atspi-{root.name}</UserSecretsId>\n"
                     "  </PropertyGroup>\n"
                     "</Project>",

@@ -1007,7 +1007,14 @@ public sealed class PresentationControlTests
                 false,
                 []));
 
-            Button action = Assert.Single(surface.Control.GetVisualDescendants().OfType<Button>(),
+            Button menu = Assert.Single(surface.Control.GetVisualDescendants().OfType<Button>(),
+                button => AutomationProperties.GetName(button) == "Show CodeLens actions");
+            Assert.True(menu.IsEnabled);
+            menu.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Border flyoutContent = Assert.IsType<Border>(
+                Assert.IsType<Flyout>(menu.Flyout).Content);
+            Button action = Assert.Single(
+                Assert.IsType<StackPanel>(flyoutContent.Child).Children.OfType<Button>(),
                 button => AutomationProperties.GetName(button) == "Run project at line 1");
             Assert.Equal("Run project · L1", action.Content);
             action.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
@@ -1019,9 +1026,72 @@ public sealed class PresentationControlTests
                 new(1),
                 WorkbenchCodeResultState.Ready,
                 [], [], [], [], [], [], false, []));
-            Assert.DoesNotContain(surface.Control.GetVisualDescendants().OfType<Button>(),
+            Assert.False(menu.IsEnabled);
+            Assert.DoesNotContain(
+                Assert.IsType<StackPanel>(flyoutContent.Child).Children.OfType<Button>(),
                 button => AutomationProperties.GetName(button)?.StartsWith(
                     "Run project at line", StringComparison.Ordinal) is true);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Reactivating_a_source_document_recovers_an_initial_presentation_without_actions()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            bool ready = false;
+            CodeIntelligenceService codeIntelligence = new()
+            {
+                Presentation = request => ready
+                    ? new(
+                        request.Snapshot.SessionId,
+                        request.Snapshot.Path,
+                        request.Snapshot.BufferVersion,
+                        WorkbenchCodeResultState.Ready,
+                        [], [], [], [], [],
+                        [new(new(0, 0), new(0, 6), WorkbenchCodeLensKind.References,
+                            new("Find references"), false)],
+                        false,
+                        [])
+                    : new(
+                        request.Snapshot.SessionId,
+                        request.Snapshot.Path,
+                        request.Snapshot.BufferVersion,
+                        WorkbenchCodeResultState.Ready,
+                        [], [], [], [], [], [], false, []),
+            };
+            WorkbenchDockHost workbench = CreateWorkbench(
+                ApprovedGoalShell(),
+                new(),
+                codeIntelligence: codeIntelligence);
+            Window window = new() { Width = 1280, Height = 800, Content = workbench.Control };
+            window.Show();
+
+            workbench.OpenFileAsync("src/App.cs").AsTask().GetAwaiter().GetResult();
+            IDockable source = workbench.Documents.ActiveDockable!;
+            workbench.OpenFileAsync("src/App.csproj").AsTask().GetAwaiter().GetResult();
+            ready = true;
+            workbench.ReactivateDocumentForTest(source);
+            for (int attempt = 0; attempt < 100; attempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                if (source.Context is Control current &&
+                    current.GetVisualDescendants().OfType<Button>().Any(button =>
+                        AutomationProperties.GetName(button) == "Show CodeLens actions" &&
+                        button.IsEnabled))
+                {
+                    break;
+                }
+                Thread.Sleep(10);
+            }
+
+            Control content = Assert.IsAssignableFrom<Control>(source.Context);
+            Assert.Contains(content.GetVisualDescendants().OfType<Button>(), button =>
+                AutomationProperties.GetName(button) == "Show CodeLens actions" &&
+                button.IsEnabled);
             window.Close();
         }, CancellationToken.None);
     }
@@ -1244,7 +1314,7 @@ public sealed class PresentationControlTests
                 .OfType<Button>()
                 .ToArray();
             Assert.Equal(
-                ["Save", "Reload", "Close", "Outline", "Symbols", "IntelliSense", "Symbol info", "Definition",
+                ["Save", "Reload", "Close", "CodeLens", "Outline", "Symbols", "IntelliSense", "Symbol info", "Definition",
                     "Usages", "Implementations", "Inspect", "Quick fix…", "Transform"],
                 documentActions.Select(item => item.Content?.ToString() ?? string.Empty).ToArray());
             Assert.All(documentActions, item => Assert.False(
@@ -1809,7 +1879,17 @@ public sealed class PresentationControlTests
             Window window = new() { Width = 1280, Height = 800, Content = workbench.Control };
             window.Show();
             workbench.OpenFileAsync("src/App.cs").AsTask().GetAwaiter().GetResult();
-            Dispatcher.UIThread.RunJobs();
+            for (int attempt = 0; attempt < 100; attempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                if (workbench.Documents.ActiveDockable?.Context is Control current &&
+                    current.GetVisualDescendants().OfType<Button>().Any(button =>
+                        Equals(button.Content, "Example")))
+                {
+                    break;
+                }
+                Thread.Sleep(10);
+            }
 
             Control source = Assert.IsAssignableFrom<Control>(
                 workbench.Documents.ActiveDockable?.Context);

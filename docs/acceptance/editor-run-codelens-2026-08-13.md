@@ -19,7 +19,9 @@ CodeLens requirement. Debug is not part of this slice.
 - Editor Settings controls Run visibility. Debug visibility has no effect until a
   debugger capability exists.
 - CodeLens discovery is document-wide and bounded. Inline actions have a matching
-  keyboard- and AT-SPI-accessible toolbar action.
+  keyboard- and AT-SPI-accessible toolbar menu that remains available in compact
+  layouts. Source-tab reactivation retries an initial presentation that produced no
+  semantic actions, and viewport refresh is debounced to avoid cancellation churn.
 
 ## Verification
 
@@ -54,3 +56,7 @@ isolated XDG home.
 - Task 049 still needs its final large-solution, latency, memory, cancellation,
   analyzer-failure, repeated-context, keyboard, IME, Orca, scaling, Dock restoration,
   and Linux publication audit.
+- The Orca path completes its representative workflow and speaks named controls, but
+  Avalonia/Dock still exposes unnamed framework containers such as `Grid`, `Border`,
+  `ContentPresenter`, `ScrollContentPresenter`, and `VisualLayerManager`. The strict
+  speech-leak assertion remains failing until those peers are hidden or named.
