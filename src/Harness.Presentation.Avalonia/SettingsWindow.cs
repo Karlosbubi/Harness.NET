@@ -24,6 +24,7 @@ internal enum SettingsCategoryId
 {
     General,
     Editor,
+    Keybindings,
     Appearance,
     ModelProviders,
     McpConnections,
@@ -55,6 +56,8 @@ internal static class SettingsCatalog
             ["workspace", "startup", "application"], IsAvailable: false),
         new(SettingsCategoryId.Editor, "Editor", "Editing and code intelligence",
             ["font", "code", "roslyn", "completion", "diagnostics", "inlay", "codelens", "references", "tests"], IsAvailable: true),
+        new(SettingsCategoryId.Keybindings, "Keybindings", "Keyboard shortcuts and command discovery",
+            ["keyboard", "shortcut", "keys", "bindings", "conflict", "reset", "import", "export", "command palette"], IsAvailable: true),
         new(SettingsCategoryId.Appearance, "Appearance & accessibility", "Theme and visual preferences",
             ["color", "theme", "contrast", "accessibility"], IsAvailable: true),
         new(SettingsCategoryId.ModelProviders, "Model providers", "Ollama and OpenRouter availability",
@@ -129,6 +132,7 @@ internal sealed class SettingsWindow : Window
     private AppearanceSnapshot? appearance;
     private ApplicationSettingsState settingsState = ApplicationSettingsState.Initial;
     private bool suppressThemeSelection;
+    private string keybindingDocumentText = string.Empty;
 
     internal SettingsWindow(
         AvaloniaPresentationStore store,
@@ -287,6 +291,7 @@ internal sealed class SettingsWindow : Window
         {
             SettingsCategoryId.Appearance => AppearancePage(),
             SettingsCategoryId.Editor => EditorPage(),
+            SettingsCategoryId.Keybindings => KeybindingsPage(),
             SettingsCategoryId.ModelProviders => ModelProvidersPage(),
             SettingsCategoryId.McpConnections => McpConnectionsPage(),
             SettingsCategoryId.InboundMcp => InboundMcpPage(),
@@ -409,6 +414,192 @@ internal sealed class SettingsWindow : Window
                     {
                         Text = settingsState.EditorIntelligenceSettings?.Status ??
                                "Editor settings are loading.",
+                        Classes = { "muted" },
+                        TextWrapping = TextWrapping.Wrap,
+                    },
+                    new TextBlock
+                    {
+                        Text = settingsState.Status ?? string.Empty,
+                        Classes = { "muted" },
+                        TextWrapping = TextWrapping.Wrap,
+                    },
+                },
+            });
+    }
+
+    private Control KeybindingsPage()
+    {
+        KeybindingSettingsSnapshot snapshot = settingsState.KeybindingSettings ??
+                                               KeybindingSettingsSnapshot.Default;
+        Dictionary<KeybindingCommand, TextBox> editors = [];
+        TextBlock validation = new()
+        {
+            Classes = { "muted" },
+            TextWrapping = TextWrapping.Wrap,
+        };
+        Button save = new()
+        {
+            Content = "Save keybindings",
+            IsEnabled = !settingsState.IsBusy,
+            Classes = { "primary" },
+        };
+        AutomationProperties.SetName(save, "Save validated keybindings");
+
+        StackPanel rows = new() { Spacing = 10 };
+        foreach (KeybindingCommandBindings binding in snapshot.Bindings)
+        {
+            TextBox editor = new()
+            {
+                Text = binding.DisplayText,
+                PlaceholderText = "Unbound",
+                IsEnabled = !settingsState.IsBusy,
+            };
+            AutomationProperties.SetName(editor, $"Shortcut for {binding.Definition.Title}");
+            editors.Add(binding.Definition.Command, editor);
+            Grid row = new()
+            {
+                ColumnDefinitions = new("240,*"),
+                ColumnSpacing = 12,
+                Children =
+                {
+                    new StackPanel
+                    {
+                        Spacing = 1,
+                        Children =
+                        {
+                            new TextBlock
+                            {
+                                Text = binding.Definition.Title,
+                                FontWeight = FontWeight.SemiBold,
+                            },
+                            new TextBlock
+                            {
+                                Text = binding.Definition.Category,
+                                Classes = { "muted" },
+                                FontSize = 11,
+                            },
+                        },
+                    },
+                },
+            };
+            Grid.SetColumn(editor, 1);
+            row.Children.Add(editor);
+            rows.Children.Add(row);
+        }
+
+        KeybindingUpdateRequest Draft() => new(editors.Select(pair =>
+            new KeybindingUpdateEntry(pair.Key, pair.Value.Text ?? string.Empty)).ToArray());
+        void ValidateDraft()
+        {
+            KeybindingValidationResult result = store.ValidateKeybindings(Draft());
+            save.IsEnabled = result.IsValid && !settingsState.IsBusy;
+            validation.Text = result.IsValid
+                ? "No conflicts. Changes take effect immediately after saving."
+                : string.Join('\n', result.Issues.Select(issue => $"• {issue.Message}").Distinct());
+            validation.Classes.Set("warning", !result.IsValid);
+        }
+        foreach (TextBox editor in editors.Values)
+        {
+            editor.GetObservable(TextBox.TextProperty).Subscribe(_ => ValidateDraft());
+        }
+        save.Click += async (_, _) =>
+        {
+            await store.SaveKeybindingsAsync(Draft(), cancellationToken);
+            validation.Text = store.Current.Settings.Status ?? validation.Text;
+        };
+
+        Button reset = new() { Content = "Reset to defaults", IsEnabled = !settingsState.IsBusy };
+        reset.Classes.Add("command");
+        AutomationProperties.SetName(reset, "Reset all keybindings to defaults");
+        reset.Click += async (_, _) =>
+        {
+            await store.ResetKeybindingsAsync(cancellationToken);
+            RenderSelectedPage();
+        };
+
+        TextBox document = new()
+        {
+            AcceptsReturn = true,
+            TextWrapping = TextWrapping.NoWrap,
+            MinHeight = 150,
+            MaxHeight = 260,
+            PlaceholderText = "Versioned keybinding JSON appears here",
+            IsEnabled = !settingsState.IsBusy,
+            Text = keybindingDocumentText,
+        };
+        document.GetObservable(TextBox.TextProperty).Subscribe(value =>
+            keybindingDocumentText = value ?? string.Empty);
+        AutomationProperties.SetName(document, "Keybinding import and export document");
+        Button export = new() { Content = "Export and copy JSON", IsEnabled = !settingsState.IsBusy };
+        export.Classes.Add("command");
+        AutomationProperties.SetName(export, "Export keybindings as safe JSON");
+        export.Click += async (_, _) =>
+        {
+            string? text = await store.ExportKeybindingsAsync(cancellationToken);
+            if (text is null) return;
+            keybindingDocumentText = text;
+            document.Text = text;
+            if (TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard)
+            {
+                await clipboard.SetTextAsync(text);
+            }
+        };
+        Button import = new() { Content = "Validate and import JSON", IsEnabled = !settingsState.IsBusy };
+        import.Classes.Add("command");
+        AutomationProperties.SetName(import, "Validate and import keybinding JSON");
+        import.Click += async (_, _) =>
+        {
+            await store.ImportKeybindingsAsync(document.Text ?? string.Empty, cancellationToken);
+            validation.Text = store.Current.Settings.Status ?? validation.Text;
+        };
+        StackPanel actions = new()
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            Children = { save, reset },
+        };
+        StackPanel transfer = new()
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            Children = { export, import },
+        };
+
+        ValidateDraft();
+        return Page(
+            "Keybindings",
+            "Configure real workbench commands. Separate alternate gestures with a semicolon.",
+            new StackPanel
+            {
+                Spacing = 16,
+                Children =
+                {
+                    new Border
+                    {
+                        Classes = { "card" },
+                        Child = new TextBlock
+                        {
+                            Text = "Reserved desktop, accessibility, and unmodified typing keys cannot be assigned. Conflicts block saving instead of choosing an arbitrary command.",
+                            TextWrapping = TextWrapping.Wrap,
+                        },
+                    },
+                    rows,
+                    validation,
+                    actions,
+                    new Separator(),
+                    new TextBlock { Text = "Portable configuration", FontWeight = FontWeight.SemiBold },
+                    new TextBlock
+                    {
+                        Text = "Import accepts only the bounded harness-keybindings-v1 JSON schema. It cannot name files, scripts, or executable actions.",
+                        Classes = { "muted" },
+                        TextWrapping = TextWrapping.Wrap,
+                    },
+                    document,
+                    transfer,
+                    new TextBlock
+                    {
+                        Text = settingsState.KeybindingSettings?.Status ??
+                               "Keybinding settings are loading; safe defaults are shown.",
                         Classes = { "muted" },
                         TextWrapping = TextWrapping.Wrap,
                     },

@@ -96,7 +96,8 @@ def main() -> int:
         "editor-settings-policy",
         test_command(
             "tests/Harness.BusinessLogic.Tests/Harness.BusinessLogic.Tests.csproj",
-            "FullyQualifiedName~EditorIntelligenceSettingsServiceTests",
+            "FullyQualifiedName~EditorIntelligenceSettingsServiceTests|"
+            "FullyQualifiedName~KeybindingSettingsServiceTests",
         ),
     ))
     durations.append(run(
@@ -104,7 +105,8 @@ def main() -> int:
         "editor-settings-storage",
         test_command(
             "tests/Harness.DataAccess.Tests/Harness.DataAccess.Tests.csproj",
-            "FullyQualifiedName~SqliteEditorIntelligencePreferenceStoreTests",
+            "FullyQualifiedName~SqliteEditorIntelligencePreferenceStoreTests|"
+            "FullyQualifiedName~SqliteKeybindingPreferenceStoreTests",
         ),
     ))
     durations.append(run(
@@ -140,7 +142,8 @@ def main() -> int:
         "import organization, unused-import cleanup, "
         "proven missing-import choices, closed quick fixes, local/selection refactorings, "
         "document fix-all, fingerprinted model apply, "
-        "settings persistence, stale-result handling, "
+        "settings persistence, typed keybinding dispatch, conflict validation, safe import/export, "
+        "stale-result handling, "
         f"accessible production controls, and theme contracts ({sum(durations):.1f}s)."
     )
     return 0

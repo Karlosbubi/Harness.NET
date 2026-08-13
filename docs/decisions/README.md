@@ -37,3 +37,4 @@ records in both directions.
 | [018](018-documentation-dependency-evidence-and-sbom.md) | Accepted | Documentation, dependency evidence, and SBOM |
 | [019](019-inbound-mcp-control-and-evaluation.md) | Accepted | Inbound MCP control and evaluation |
 | [020](020-editor-platform-boundary-and-morgania-evaluation.md) | Accepted | Editor platform boundary and Morgania evaluation |
+| [021](021-typed-keybindings-and-modal-input.md) | Accepted | Typed keybindings and modal input boundary |

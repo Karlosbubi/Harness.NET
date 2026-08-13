@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Input;
 using Avalonia.LogicalTree;
+using Harness.BusinessLogic.Editor;
 
 namespace Harness.Presentation.Avalonia.Tests;
 
@@ -85,6 +86,42 @@ public sealed class CommandPaletteFilterTests
 
         Assert.True(ranked[0].IsAvailable);
         Assert.False(ranked[^1].IsAvailable);
+    }
+}
+
+public sealed class KeybindingInputTests
+{
+    [Fact]
+    public void Runtime_matching_uses_the_saved_typed_gesture_instead_of_a_hard_coded_shortcut()
+    {
+        KeybindingSettingsSnapshot defaults = KeybindingSettingsSnapshot.Default;
+        KeybindingSettingsSnapshot custom = defaults with
+        {
+            Bindings = defaults.Bindings.Select(binding =>
+                binding.Definition.Command is KeybindingCommand.ShowChat
+                    ? binding with
+                    {
+                        Gestures = [new(KeybindingModifiers.Alt, KeybindingKey.C)],
+                    }
+                    : binding).ToArray(),
+            UsesDefaults = false,
+        };
+        KeyEventArgs customGesture = new()
+        {
+            RoutedEvent = InputElement.KeyDownEvent,
+            Key = Key.C,
+            KeyModifiers = KeyModifiers.Alt,
+        };
+        KeyEventArgs oldDefault = new()
+        {
+            RoutedEvent = InputElement.KeyDownEvent,
+            Key = Key.C,
+            KeyModifiers = KeyModifiers.Control | KeyModifiers.Shift,
+        };
+
+        Assert.Equal(KeybindingCommand.ShowChat, KeybindingInput.Match(
+            customGesture, custom, [KeybindingCommand.ShowChat]));
+        Assert.Null(KeybindingInput.Match(oldDefault, custom, [KeybindingCommand.ShowChat]));
     }
 }
 

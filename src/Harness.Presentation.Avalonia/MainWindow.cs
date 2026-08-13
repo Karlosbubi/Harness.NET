@@ -15,6 +15,7 @@ using Harness.BusinessLogic.Approvals;
 using Harness.BusinessLogic.CodeIntelligence;
 using Harness.BusinessLogic.Dashboard;
 using Harness.BusinessLogic.Documents;
+using Harness.BusinessLogic.Editor;
 using Harness.BusinessLogic.Evidence;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Inspection;
@@ -96,6 +97,18 @@ internal sealed class MainWindow : Window
     private bool suppressSelection;
     private bool loaded;
     private bool closingAfterLayoutSave;
+    private static readonly KeybindingCommand[] ShellKeyCommands =
+    [
+        KeybindingCommand.ShowCommandPalette,
+        KeybindingCommand.QuickOpen,
+        KeybindingCommand.OpenSettings,
+        KeybindingCommand.ShowChat,
+        KeybindingCommand.ShowFiles,
+        KeybindingCommand.ShowGit,
+        KeybindingCommand.ShowRunOutput,
+        KeybindingCommand.ShowProblems,
+        KeybindingCommand.FocusNextRegion,
+    ];
 
     internal MainWindow(
         AvaloniaPresentationStore store,
@@ -286,7 +299,12 @@ internal sealed class MainWindow : Window
         Border shortcut = new()
         {
             Classes = { "kbd" },
-            Child = new TextBlock { Text = "Ctrl+Shift+P" },
+            Child = new TextBlock
+            {
+                Text = (store.Current.Settings.KeybindingSettings ??
+                        KeybindingSettingsSnapshot.Default)
+                    .DisplayFor(KeybindingCommand.ShowCommandPalette),
+            },
         };
         shortcut.SetValue(Grid.ColumnProperty, 1);
         content.Children.Add(shortcut);
@@ -492,26 +510,42 @@ internal sealed class MainWindow : Window
 
     private async void OnShellKeyDown(object? sender, KeyEventArgs args)
     {
-        if (args.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Shift) && args.Key is Key.P)
+        KeybindingSettingsSnapshot bindings = store.Current.Settings.KeybindingSettings ??
+                                              KeybindingSettingsSnapshot.Default;
+        KeybindingCommand? command = KeybindingInput.Match(args, bindings, ShellKeyCommands);
+        if (command is null) return;
+        args.Handled = true;
+        switch (command.Value)
         {
-            args.Handled = true;
-            await ShowCommandPaletteAsync();
-        }
-        else if (args.KeyModifiers == KeyModifiers.Control && args.Key is Key.P)
-        {
-            args.Handled = true;
-            await ShowQuickOpenAsync();
-        }
-        else if (args.KeyModifiers == KeyModifiers.Control && args.Key is Key.OemComma)
-        {
-            args.Handled = true;
-            await ShowSettingsAsync();
-        }
-        else if (args.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Shift) &&
-                 args.Key is Key.C)
-        {
-            args.Handled = true;
-            ShowConversation();
+            case KeybindingCommand.ShowCommandPalette:
+                await ShowCommandPaletteAsync();
+                break;
+            case KeybindingCommand.QuickOpen:
+                await ShowQuickOpenAsync();
+                break;
+            case KeybindingCommand.OpenSettings:
+                await ShowSettingsAsync();
+                break;
+            case KeybindingCommand.ShowChat:
+                ShowConversation();
+                break;
+            case KeybindingCommand.ShowFiles:
+                workbench?.ShowFiles();
+                break;
+            case KeybindingCommand.ShowGit:
+                workbench?.ShowGit();
+                break;
+            case KeybindingCommand.ShowRunOutput:
+                workbench?.ShowRunOutput();
+                break;
+            case KeybindingCommand.ShowProblems:
+                workbench?.ShowProblems();
+                break;
+            case KeybindingCommand.FocusNextRegion:
+                workbench?.FocusNextRegion();
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(command));
         }
     }
 
@@ -548,6 +582,8 @@ internal sealed class MainWindow : Window
     internal IReadOnlyList<PaletteCommand> BuildCommands()
     {
         AvaloniaShellState state = store.Current;
+        KeybindingSettingsSnapshot bindings = state.Settings.KeybindingSettings ??
+                                              KeybindingSettingsSnapshot.Default;
         WorkspaceView? active = state.Workspaces.Registered.FirstOrDefault(item => item.IsActive);
         string? needsWorkspace = active is null ? "Open a workspace first" : null;
         string? needsTrust = active is null
@@ -560,6 +596,10 @@ internal sealed class MainWindow : Window
                 () => new(ShowWorkspaceDialogAsync(true))),
             new("workspace.manage", "Workspace", "Manage workspaces…",
                 () => new(ShowWorkspaceDialogAsync(false))),
+            new("workspace.quick.open", "Workspace", "Go to file…",
+                () => new(ShowQuickOpenAsync()),
+                bindings.DisplayFor(KeybindingCommand.QuickOpen),
+                UnavailableReason: needsTrust),
             new("goal.context", "Goal", "Inspect semantic context…",
                 () => new(ShowSemanticContextAsync()),
                 UnavailableReason: state.Goals.SelectedGoal is null
@@ -569,7 +609,7 @@ internal sealed class MainWindow : Window
                 () => new(ShowDialogAsync(new FrameworkDialog(store, cancellationToken))),
                 UnavailableReason: needsWorkspace),
             new("settings.open", "Application", "Settings…",
-                () => new(ShowSettingsAsync()), "Ctrl+,"),
+                () => new(ShowSettingsAsync()), bindings.DisplayFor(KeybindingCommand.OpenSettings)),
             new("operations.manage", "Application", "Operations and backup…",
                 () => new(ShowDialogAsync(new OperationsDialog(store, cancellationToken)))),
             new("provider.refresh", "Providers", "Refresh provider health",
@@ -583,29 +623,50 @@ internal sealed class MainWindow : Window
             commands.AddRange(
             [
                 new("tool.files", "Panels", "Show Files panel",
-                    () => { host.ShowFiles(); return ValueTask.CompletedTask; }, "Ctrl+Shift+E"),
+                    () => { host.ShowFiles(); return ValueTask.CompletedTask; },
+                    bindings.DisplayFor(KeybindingCommand.ShowFiles)),
                 new("tool.conversation", "Panels", "Show Chat panel",
-                    () => { ShowConversation(); return ValueTask.CompletedTask; }, "Ctrl+Shift+C",
+                    () => { ShowConversation(); return ValueTask.CompletedTask; },
+                    bindings.DisplayFor(KeybindingCommand.ShowChat),
                     MatchText: "Panels Show Chat Conversation goal agent message"),
                 new("tool.git", "Panels", "Show Git panel",
-                    () => { host.ShowGit(); return ValueTask.CompletedTask; }, "Ctrl+Shift+G"),
+                    () => { host.ShowGit(); return ValueTask.CompletedTask; },
+                    bindings.DisplayFor(KeybindingCommand.ShowGit)),
                 new("tool.output", "Panels", "Show Run output panel",
-                    () => { host.ShowRunOutput(); return ValueTask.CompletedTask; }, "Ctrl+J"),
+                    () => { host.ShowRunOutput(); return ValueTask.CompletedTask; },
+                    bindings.DisplayFor(KeybindingCommand.ShowRunOutput)),
                 new("tool.problems", "Panels", "Show Problems panel",
-                    () => { host.ShowProblems(); return ValueTask.CompletedTask; }, "Ctrl+Shift+M"),
+                    () => { host.ShowProblems(); return ValueTask.CompletedTask; },
+                    bindings.DisplayFor(KeybindingCommand.ShowProblems)),
                 new("git.diff", "Git", "Open working-tree diff",
                     async () => await host.OpenDiffAsync(), UnavailableReason: needsTrust),
+                EditorCommand("editor.save", "Save document", KeybindingCommand.SaveDocument,
+                    "Open an editable document first"),
+                EditorCommand("editor.close", "Close document", KeybindingCommand.CloseDocument,
+                    "Open a source document first"),
+                EditorCommand("editor.completion", "Show completion", KeybindingCommand.ShowCompletion,
+                    "Open a C# document first"),
+                EditorCommand("editor.quick.info", "Show quick info", KeybindingCommand.ShowQuickInfo,
+                    "Open a C# document first"),
+                EditorCommand("editor.definition", "Go to definition", KeybindingCommand.GoToDefinition,
+                    "Open a C# document first"),
+                EditorCommand("editor.references", "Find references", KeybindingCommand.FindReferences,
+                    "Open a C# document first"),
+                EditorCommand("editor.implementations", "Find implementations",
+                    KeybindingCommand.FindImplementations, "Open a C# document first"),
+                EditorCommand("editor.rename", "Rename symbol", KeybindingCommand.RenameSymbol,
+                    "Open an editable C# document first"),
                 new("editor.format.document", "Editor", "Format document",
-                    async () => await host.TransformActiveDocumentAsync(
-                        WorkbenchCodeDocumentTransformationKind.FormatDocument),
-                    "Ctrl+Alt+L", UnavailableReason: host.CanTransformActiveDocument(
-                        WorkbenchCodeDocumentTransformationKind.FormatDocument)
+                    async () => await host.InvokeActiveEditorCommandAsync(
+                        KeybindingCommand.FormatDocument),
+                    bindings.DisplayFor(KeybindingCommand.FormatDocument),
+                    UnavailableReason: host.CanInvokeActiveEditorCommand(KeybindingCommand.FormatDocument)
                             ? null : "Open an editable C# document first"),
                 new("editor.format.selection", "Editor", "Format selection",
-                    async () => await host.TransformActiveDocumentAsync(
-                        WorkbenchCodeDocumentTransformationKind.FormatSelection),
-                    "Ctrl+Alt+F", UnavailableReason: host.CanTransformActiveDocument(
-                        WorkbenchCodeDocumentTransformationKind.FormatSelection)
+                    async () => await host.InvokeActiveEditorCommandAsync(
+                        KeybindingCommand.FormatSelection),
+                    bindings.DisplayFor(KeybindingCommand.FormatSelection),
+                    UnavailableReason: host.CanInvokeActiveEditorCommand(KeybindingCommand.FormatSelection)
                             ? null : "Select code in an editable C# document first"),
                 new("editor.format.changed", "Editor", "Format changed code",
                     async () => await host.TransformActiveDocumentAsync(
@@ -614,10 +675,10 @@ internal sealed class MainWindow : Window
                         WorkbenchCodeDocumentTransformationKind.FormatChangedSpans)
                             ? null : "Open an editable C# document first"),
                 new("editor.organize.imports", "Editor", "Organize imports",
-                    async () => await host.TransformActiveDocumentAsync(
-                        WorkbenchCodeDocumentTransformationKind.OrganizeImports),
-                    "Ctrl+Alt+O", UnavailableReason: host.CanTransformActiveDocument(
-                        WorkbenchCodeDocumentTransformationKind.OrganizeImports)
+                    async () => await host.InvokeActiveEditorCommandAsync(
+                        KeybindingCommand.OrganizeImports),
+                    bindings.DisplayFor(KeybindingCommand.OrganizeImports),
+                    UnavailableReason: host.CanInvokeActiveEditorCommand(KeybindingCommand.OrganizeImports)
                             ? null : "Open an editable C# document first"),
                 new("editor.remove.unused.imports", "Editor", "Remove unused imports",
                     async () => await host.TransformActiveDocumentAsync(
@@ -626,15 +687,29 @@ internal sealed class MainWindow : Window
                         WorkbenchCodeDocumentTransformationKind.RemoveUnusedImports)
                             ? null : "Open an editable C# document first"),
                 new("editor.quick.fix", "Editor", "Show quick fixes",
-                    async () => await host.ShowActiveQuickFixesAsync(),
-                    "Ctrl+.", UnavailableReason: host.CanTransformActiveDocument(
-                        WorkbenchCodeDocumentTransformationKind.AddMissingImport)
+                    async () => await host.InvokeActiveEditorCommandAsync(
+                        KeybindingCommand.ShowQuickFixes),
+                    bindings.DisplayFor(KeybindingCommand.ShowQuickFixes),
+                    UnavailableReason: host.CanInvokeActiveEditorCommand(KeybindingCommand.ShowQuickFixes)
                             ? null : "Open an editable C# document first"),
                 new("layout.save", "Layout", "Save workbench layout",
                     async () => await host.SaveLayoutAsync()),
                 new("layout.reset", "Layout", "Reset workbench layout",
                     async () => await host.ResetLayoutAsync()),
+                new("accessibility.focus.next", "Accessibility", "Focus next workbench region",
+                    () => { host.FocusNextRegion(); return ValueTask.CompletedTask; },
+                    bindings.DisplayFor(KeybindingCommand.FocusNextRegion)),
             ]);
+
+            PaletteCommand EditorCommand(
+                string id,
+                string title,
+                KeybindingCommand command,
+                string unavailable) => new(
+                id, "Editor", title,
+                async () => await host.InvokeActiveEditorCommandAsync(command),
+                bindings.DisplayFor(command),
+                host.CanInvokeActiveEditorCommand(command) ? null : unavailable);
         }
 
         return commands;
@@ -760,6 +835,7 @@ internal sealed class MainWindow : Window
 
     private void Render(AvaloniaShellState state)
     {
+        commandBar.Content = BuildCommandBar();
         suppressSelection = true;
         try
         {

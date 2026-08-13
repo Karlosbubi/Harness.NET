@@ -33,7 +33,8 @@ public sealed class AvaloniaPresentationStoreTests
         IResearchSettingsService? researchSettingsService = null,
         IDocumentationResearchService? documentationResearchService = null,
         IDependencyResearchService? dependencyResearchService = null,
-        IEditorIntelligenceSettingsService? editorIntelligenceSettingsService = null) => new(
+        IEditorIntelligenceSettingsService? editorIntelligenceSettingsService = null,
+        IKeybindingSettingsService? keybindingSettingsService = null) => new(
         new DashboardService(),
         new AppearanceService(),
         new WorkspaceService(),
@@ -55,7 +56,8 @@ public sealed class AvaloniaPresentationStoreTests
       researchSettingsService,
       documentationResearchService,
       dependencyResearchService,
-      editorIntelligenceSettingsService: editorIntelligenceSettingsService);
+      editorIntelligenceSettingsService: editorIntelligenceSettingsService,
+      keybindingSettingsService: keybindingSettingsService);
 
     [Theory]
     [InlineData("I am **Gemma 4** 😊</blockquote>", "I am Gemma 4 😊")]

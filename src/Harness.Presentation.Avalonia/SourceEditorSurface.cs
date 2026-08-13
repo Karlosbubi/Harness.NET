@@ -5,6 +5,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Harness.BusinessLogic.CodeIntelligence;
 using Harness.BusinessLogic.Documents;
+using Harness.BusinessLogic.Editor;
 
 namespace Harness.Presentation.Avalonia;
 
@@ -105,7 +106,9 @@ internal sealed class SourceEditorSurface : IDisposable
     internal event Action<WorkbenchCodePosition>? NavigationRequested;
     internal event Action<WorkbenchCodeInspectionKind>? InspectionRequested;
 
-    internal static SourceEditorSurface Create(WorkbenchDocumentView view)
+    internal static SourceEditorSurface Create(
+        WorkbenchDocumentView view,
+        KeybindingSettingsSnapshot keybindings)
     {
         IWorkbenchEditorAdapter editor = new AvaloniaEditWorkbenchEditorAdapter(view);
         editor.Control.Classes.Add("source-editor");
@@ -115,25 +118,25 @@ internal sealed class SourceEditorSurface : IDisposable
             TextTrimming = TextTrimming.CharacterEllipsis,
             VerticalAlignment = VerticalAlignment.Center,
         };
-        Button save = Action("Save", $"Save {view.Path.Value}", "Save · Ctrl+S");
+        Button save = Action("Save", $"Save {view.Path.Value}", "Save document");
         save.IsEnabled = false;
         Button reload = Action("Reload", $"Reload {view.Path.Value}", "Reload from worktree");
-        Button close = Action("Close", $"Close {view.Path.Value}", "Close · Ctrl+W");
+        Button close = Action("Close", $"Close {view.Path.Value}", "Close document");
         Button outline = Action("Outline", $"Show document outline for {view.Path.Value}",
             "Document outline");
         Button workspaceSymbols = Action("Symbols", "Search workspace symbols",
             "Search types and members across the workspace");
         Button completion = Action("IntelliSense", $"Show IntelliSense for {view.Path.Value}",
-            "Code completion · Ctrl+Space");
+            "Code completion");
         Button symbolInfo = Action("Symbol info", $"Show symbol information for {view.Path.Value}",
-            "Quick info · Ctrl+K");
+            "Quick info");
         Button definition = Action("Definition", $"Go to definition in {view.Path.Value}",
-            "Go to definition · F12");
+            "Go to definition");
         Button references = Action("Usages", $"Find usages in {view.Path.Value}",
-            "Find usages · Shift+F12 or Alt+F7");
+            "Find usages");
         Button implementations = Action("Implementations",
             $"Go to implementation in {view.Path.Value}",
-            "Go to implementation · Ctrl+F12 or Ctrl+Alt+B");
+            "Go to implementation");
         Button syntaxTree = Action("Syntax tree", $"Inspect syntax tree for {view.Path.Value}",
             "Read-only exact-buffer Roslyn syntax tree");
         Button symbolDetails = Action("Symbol details", $"Inspect symbol in {view.Path.Value}",
@@ -155,19 +158,19 @@ internal sealed class SourceEditorSurface : IDisposable
             },
         };
         Button formatDocument = Action("Format document",
-            $"Format document {view.Path.Value}", "Format document · Ctrl+Alt+L");
+            $"Format document {view.Path.Value}", "Format document");
         Button formatSelection = Action("Format selection",
-            $"Format selection in {view.Path.Value}", "Format selected code · Ctrl+Alt+F");
+            $"Format selection in {view.Path.Value}", "Format selected code");
         Button formatChangedSpans = Action("Format changed code",
             $"Format changed code in {view.Path.Value}",
             "Format only spans changed since the file was loaded");
         Button organizeImports = Action("Organize imports",
-            $"Organize imports in {view.Path.Value}", "Sort and group using directives · Ctrl+Alt+O");
+            $"Organize imports in {view.Path.Value}", "Sort and group using directives");
         Button removeUnusedImports = Action("Remove unused imports",
             $"Remove unused imports from {view.Path.Value}",
             "Remove compiler-proven unused using directives");
         Button quickFix = Action("Quick fix…", $"Show quick fixes for {view.Path.Value}",
-            "Show Roslyn fixes at the caret · Ctrl+.");
+            "Show Roslyn fixes at the caret");
         Button transform = Action("Transform", $"Transform {view.Path.Value}",
             "Deterministic Roslyn formatting and imports");
         transform.Flyout = new Flyout
@@ -222,11 +225,45 @@ internal sealed class SourceEditorSurface : IDisposable
         intermediateLanguage.Click += (_, _) =>
             surface.InspectionRequested?.Invoke(WorkbenchCodeInspectionKind.IntermediateLanguage);
         surface.ConfigureOutline(outline);
+        surface.ApplyKeybindings(keybindings);
         surface.UpdateView(view);
         surface.UpdateMetrics();
         editor.CaretChanged += (_, _) => surface.UpdateMetrics();
         editor.TextChanged += (_, _) => surface.UpdateMetrics();
         return surface;
+    }
+
+    internal void ApplyKeybindings(KeybindingSettingsSnapshot settings)
+    {
+        SetShortcutTip(Save, "Save", settings, KeybindingCommand.SaveDocument);
+        SetShortcutTip(Close, "Close", settings, KeybindingCommand.CloseDocument);
+        SetShortcutTip(Completion, "Code completion", settings, KeybindingCommand.ShowCompletion);
+        SetShortcutTip(SymbolInfo, "Quick info", settings, KeybindingCommand.ShowQuickInfo);
+        SetShortcutTip(Definition, "Go to definition", settings, KeybindingCommand.GoToDefinition);
+        SetShortcutTip(References, "Find usages", settings, KeybindingCommand.FindReferences);
+        SetShortcutTip(Implementations, "Go to implementation", settings,
+            KeybindingCommand.FindImplementations);
+        SetShortcutTip(FormatDocument, "Format document", settings,
+            KeybindingCommand.FormatDocument);
+        SetShortcutTip(FormatSelection, "Format selected code", settings,
+            KeybindingCommand.FormatSelection);
+        SetShortcutTip(OrganizeImports, "Sort and group using directives", settings,
+            KeybindingCommand.OrganizeImports);
+        SetShortcutTip(QuickFix, "Show Roslyn fixes at the caret", settings,
+            KeybindingCommand.ShowQuickFixes);
+    }
+
+    private static void SetShortcutTip(
+        Control control,
+        string description,
+        KeybindingSettingsSnapshot settings,
+        KeybindingCommand command)
+    {
+        string shortcut = settings.DisplayFor(command).Replace("; ", " or ",
+            StringComparison.Ordinal);
+        ToolTip.SetTip(control, shortcut.Length == 0
+            ? $"{description} · unbound"
+            : $"{description} · {shortcut}");
     }
 
     internal void UpdateView(WorkbenchDocumentView view)

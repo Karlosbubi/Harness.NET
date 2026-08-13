@@ -342,7 +342,7 @@ Acceptance criteria:
 
 ### 049 — NetPad-level .NET editing and inspection
 
-Status: `In progress — presentation, transformations, navigation, and exact-context inspections delivered`
+Status: `In progress — presentation, transformations, navigation, inspections, and typed keybindings delivered`
 
 Dependencies: 012, 043, 044, 047, 048.
 
@@ -390,10 +390,18 @@ memory emit and metadata reader; it neither executes the project nor writes buil
 output. Roles and opt-in inbound MCP receive the same closed contract through
 `inspect_code` and `harness_code_inspection`.
 
+The workbench now uses one typed keybinding snapshot for shell and editor dispatch,
+Settings, header hints, and command discovery. Settings provides whole-set validation,
+conflict display, protected platform/input shortcuts, reset, and strict bounded
+`harness-keybindings-v1` import/export. Preferences persist in private SQLite state
+and apply without restart. Optional Vim behavior remains pending under ADR 021.
+Deterministic and visual evidence is recorded in
+[editor-keybindings-2026-08-13.md](../acceptance/editor-keybindings-2026-08-13.md).
+
 Problem: Harness.NET now has the core interactive Roslyn operations, semantic
-presentation and adornment slices, formatting, closed actions, and bounded generated
-and metadata-signature navigation. It still lacks explicit cross-document refactoring
-contracts and full method-body decompilation. It also lacks configurable keybindings,
+presentation and adornment slices, formatting, closed actions, bounded generated and
+metadata-signature navigation, and configurable keybindings. It still lacks explicit
+cross-document refactoring contracts and full method-body decompilation. It also lacks
 optional Vim behavior,
 project User Secrets management, and typed execution targets for Run/Debug CodeLens.
 OmniSharp implements many of the underlying Roslyn services, but adopting its server

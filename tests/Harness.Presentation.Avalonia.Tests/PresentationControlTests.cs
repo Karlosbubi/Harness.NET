@@ -22,6 +22,7 @@ using Dock.Model.Core;
 using Harness.BusinessLogic.Agents;
 using Harness.BusinessLogic.CodeIntelligence;
 using Harness.BusinessLogic.Documents;
+using Harness.BusinessLogic.Editor;
 using Harness.BusinessLogic.Evidence;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Inspection;
@@ -235,7 +236,7 @@ public sealed class PresentationControlTests
     [Fact]
     public void Settings_search_matches_stable_categories_and_related_terms()
     {
-        Assert.Equal(13, SettingsCatalog.All.Count);
+        Assert.Equal(14, SettingsCatalog.All.Count);
         Assert.Equal(
             SettingsCategoryId.InboundMcp,
             Assert.Single(SettingsCatalog.Filter("dogfood")).Id);
@@ -266,8 +267,11 @@ public sealed class PresentationControlTests
         Assert.Equal(
             SettingsCategoryId.Editor,
             Assert.Single(SettingsCatalog.Filter("inlay")).Id);
+        Assert.Equal(
+            SettingsCategoryId.Keybindings,
+            Assert.Single(SettingsCatalog.Filter("shortcut")).Id);
         Assert.Empty(SettingsCatalog.Filter("not-a-real-setting"));
-        Assert.Equal(10, SettingsCatalog.All.Count(category => category.IsAvailable));
+        Assert.Equal(11, SettingsCatalog.All.Count(category => category.IsAvailable));
     }
 
     [Fact]
@@ -304,6 +308,47 @@ public sealed class PresentationControlTests
             Assert.Contains("resolve only when selected", string.Join('\n', window
                 .GetLogicalDescendants().OfType<TextBlock>().Select(block => block.Text)),
                 StringComparison.Ordinal);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Keybinding_settings_expose_conflicts_reset_and_safe_import_export()
+    {
+        using AvaloniaPresentationStore store = AvaloniaPresentationStoreTests.CreateStore(
+            keybindingSettingsService: new KeybindingSettingsService());
+        await store.LoadAsync(CancellationToken.None);
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            SettingsWindow window = new(store, CancellationToken.None);
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            ListBox categories = Assert.Single(window.GetLogicalDescendants().OfType<ListBox>());
+            categories.SelectedItem = SettingsCatalog.All.Single(category =>
+                category.Id is SettingsCategoryId.Keybindings);
+            Dispatcher.UIThread.RunJobs();
+
+            TextBox chat = window.GetLogicalDescendants().OfType<TextBox>().Single(control =>
+                AutomationProperties.GetName(control) == "Shortcut for Show Chat");
+            TextBox quickOpen = window.GetLogicalDescendants().OfType<TextBox>().Single(control =>
+                AutomationProperties.GetName(control) == "Shortcut for Go to file");
+            chat.Text = quickOpen.Text;
+            Dispatcher.UIThread.RunJobs();
+
+            Button save = window.GetLogicalDescendants().OfType<Button>().Single(control =>
+                AutomationProperties.GetName(control) == "Save validated keybindings");
+            string text = string.Join('\n', window.GetLogicalDescendants().OfType<TextBlock>()
+                .Select(block => block.Text));
+            Assert.False(save.IsEnabled);
+            Assert.Contains("conflicts", text, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains(window.GetLogicalDescendants().OfType<Control>(), control =>
+                AutomationProperties.GetName(control) == "Reset all keybindings to defaults");
+            Assert.Contains(window.GetLogicalDescendants().OfType<Control>(), control =>
+                AutomationProperties.GetName(control) == "Export keybindings as safe JSON");
+            Assert.Contains(window.GetLogicalDescendants().OfType<Control>(), control =>
+                AutomationProperties.GetName(control) == "Validate and import keybinding JSON");
             window.Close();
         }, CancellationToken.None);
     }
@@ -1837,6 +1882,80 @@ public sealed class PresentationControlTests
             });
             Dispatcher.UIThread.RunJobs();
             Assert.True(workbench.ActiveQuickInfoIsOpen);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Source_editor_dispatches_the_saved_completion_keybinding_only()
+    {
+        using HeadlessUnitTestSession testSession =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await testSession.Dispatch(() =>
+        {
+            CodeIntelligenceService codeIntelligence = new()
+            {
+                Completions = request => new(
+                    request.Snapshot.SessionId,
+                    request.Snapshot.Path,
+                    request.Snapshot.BufferVersion,
+                    WorkbenchCodeResultState.Ready,
+                    new("custom-keys"),
+                    new(request.Snapshot.Position, request.Snapshot.Position),
+                    [new(new("item"), new("Example"), new("Example"), new("Example"),
+                        new("namespace"), WorkbenchCodeSymbolKind.Namespace, ['\t'], false)],
+                    []),
+            };
+            KeybindingSettingsSnapshot defaults = KeybindingSettingsSnapshot.Default;
+            KeybindingSettingsSnapshot custom = defaults with
+            {
+                Bindings = defaults.Bindings.Select(binding =>
+                    binding.Definition.Command is KeybindingCommand.ShowCompletion
+                        ? binding with
+                        {
+                            Gestures = [new(
+                                KeybindingModifiers.Control | KeybindingModifiers.Shift,
+                                KeybindingKey.Q)],
+                        }
+                        : binding).ToArray(),
+                UsesDefaults = false,
+            };
+            AvaloniaShellState shell = TrustedShell() with
+            {
+                Settings = TrustedShell().Settings with { KeybindingSettings = custom },
+            };
+            WorkbenchDockHost workbench = CreateWorkbench(
+                shell, new(), codeIntelligence: codeIntelligence);
+            workbench.Update(shell);
+            Dispatcher.UIThread.RunJobs();
+            Window window = new() { Width = 1280, Height = 800, Content = workbench.Control };
+            window.Show();
+            workbench.OpenFileAsync("src/App.cs").AsTask().GetAwaiter().GetResult();
+            TextEditor editor = workbench.ActiveSourceEditor!;
+            Control source = Assert.IsAssignableFrom<Control>(
+                workbench.Documents.ActiveDockable?.Context);
+            Button completion = Assert.Single(source.GetVisualDescendants().OfType<Button>(),
+                button => Equals(button.Content, "IntelliSense"));
+            Assert.Contains("Ctrl+Shift+Q", Assert.IsType<string>(ToolTip.GetTip(completion)),
+                StringComparison.Ordinal);
+
+            editor.RaiseEvent(new KeyEventArgs
+            {
+                RoutedEvent = InputElement.KeyDownEvent,
+                Key = Key.Space,
+                KeyModifiers = KeyModifiers.Control,
+            });
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal(0, workbench.ActiveCompletionItemCount);
+
+            editor.RaiseEvent(new KeyEventArgs
+            {
+                RoutedEvent = InputElement.KeyDownEvent,
+                Key = Key.Q,
+                KeyModifiers = KeyModifiers.Control | KeyModifiers.Shift,
+            });
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal(1, workbench.ActiveCompletionItemCount);
             window.Close();
         }, CancellationToken.None);
     }
@@ -3620,6 +3739,46 @@ public sealed class PresentationControlTests
 
         public ValueTask<ResearchSettingsSnapshot> CleanupCacheAsync(
             CancellationToken cancellationToken = default) => ValueTask.FromResult(Snapshot);
+    }
+
+    private sealed class KeybindingSettingsService : IKeybindingSettingsService
+    {
+        private KeybindingSettingsSnapshot snapshot = KeybindingSettingsSnapshot.Default;
+
+        public ValueTask<KeybindingSettingsSnapshot> GetAsync(
+            CancellationToken cancellationToken = default) => ValueTask.FromResult(snapshot);
+
+        public KeybindingValidationResult Validate(KeybindingUpdateRequest request)
+        {
+            string[] duplicates = request.Entries.SelectMany(entry =>
+                    entry.GestureText.Split(';', StringSplitOptions.TrimEntries |
+                                               StringSplitOptions.RemoveEmptyEntries))
+                .GroupBy(text => text, StringComparer.OrdinalIgnoreCase)
+                .Where(group => group.Count() > 1)
+                .Select(group => group.Key)
+                .ToArray();
+            IReadOnlyList<KeybindingIssue> issues = duplicates.Select(text => new KeybindingIssue(
+                KeybindingIssueKind.Conflict, null, $"{text} conflicts with another command.")).ToArray();
+            return new(issues.Count == 0, issues, snapshot.Bindings);
+        }
+
+        public ValueTask<KeybindingSettingsSnapshot> SaveAsync(
+            KeybindingUpdateRequest request,
+            CancellationToken cancellationToken = default) => ValueTask.FromResult(snapshot);
+
+        public ValueTask<KeybindingSettingsSnapshot> ResetAsync(
+            CancellationToken cancellationToken = default)
+        {
+            snapshot = KeybindingSettingsSnapshot.Default;
+            return ValueTask.FromResult(snapshot);
+        }
+
+        public ValueTask<string> ExportAsync(CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult("{\"format\":\"harness-keybindings-v1\",\"bindings\":[]}");
+
+        public ValueTask<KeybindingSettingsSnapshot> ImportAsync(
+            string document,
+            CancellationToken cancellationToken = default) => ValueTask.FromResult(snapshot);
     }
 
     private sealed class LayoutService : IWorkbenchLayoutService

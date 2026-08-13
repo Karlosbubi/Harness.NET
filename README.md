@@ -41,6 +41,8 @@ Delivered:
   inspection views, plus Roslyn document, selection, changed-span, paste, and on-type formatting
   and import organization, contextual compiler fixes, local/selection refactorings,
   and labeled document fix-all choices;
+- typed configurable workbench and editor keybindings with conflict validation,
+  command discovery, reset, and bounded declarative import/export;
 - Roslyn validation before model-authored source writes;
 - typed, role-scoped agent tools for files, Git, .NET metadata, Build/Test, semantic
   retrieval, diagnostics, symbols, navigation, edits, rename, and closed Roslyn

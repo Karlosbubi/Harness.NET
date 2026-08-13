@@ -88,6 +88,8 @@ builder.Services.AddSingleton<IApplicationOperationsService, ApplicationOperatio
 builder.Services.AddSingleton<IAppearancePreferenceStore, SqliteAppearancePreferenceStore>();
 builder.Services.AddSingleton<IEditorIntelligencePreferenceStore,
     SqliteEditorIntelligencePreferenceStore>();
+builder.Services.AddSingleton<IKeybindingPreferenceStore,
+    SqliteKeybindingPreferenceStore>();
 builder.Services.AddSingleton<IRemoteSpendPreferenceStore, SqliteRemoteSpendPreferenceStore>();
 builder.Services.AddSingleton<IUserThemeSource, XdgUserThemeSource>();
 if (evaluationRoot is null)
@@ -212,6 +214,7 @@ builder.Services.AddSingleton<ICodeIntelligenceEngine, RoslynCodeIntelligenceEng
 builder.Services.AddSingleton<IWorkspaceInspectionService, WorkspaceInspectionService>();
 builder.Services.AddSingleton<IWorkbenchWorkspaceContextResolver, WorkbenchWorkspaceContextResolver>();
 builder.Services.AddSingleton<IWorkbenchCodeIntelligenceService, WorkbenchCodeIntelligenceService>();
+builder.Services.AddSingleton<IKeybindingSettingsService, KeybindingSettingsService>();
 builder.Services.AddSingleton<IWorkbenchInspectionService, WorkbenchInspectionService>();
 builder.Services.AddSingleton<IWorkbenchDocumentService, WorkbenchDocumentService>();
 builder.Services.AddSingleton<IWorkbenchLayoutStore, FileWorkbenchLayoutStore>();

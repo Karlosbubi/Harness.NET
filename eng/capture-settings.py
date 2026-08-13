@@ -125,6 +125,12 @@ def main() -> int:
             application.wait_for_name("Save editor intelligence settings", "push button")
             time.sleep(1.0)
             screenshot(arguments.output / "settings-editor-intelligence-2026-08-12.png")
+            application.set_text("Search settings", "shortcut")
+            application.wait_for_name("Save validated keybindings", "push button")
+            application.wait_for_name("Reset all keybindings to defaults", "push button")
+            application.wait_for_name("Export keybindings as safe JSON", "push button")
+            time.sleep(1.0)
+            screenshot(arguments.output / "settings-keybindings-2026-08-13.png")
     finally:
         if process is not None:
             atspi.stop(process)

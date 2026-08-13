@@ -127,6 +127,30 @@ internal sealed class WorkbenchDockHost
     private string? codeSessionKey;
     private EditorIntelligencePreferences editorIntelligencePreferences =
         EditorIntelligencePreferences.Default;
+    private KeybindingSettingsSnapshot keybindingSettings = KeybindingSettingsSnapshot.Default;
+    private static readonly KeybindingCommand[] EditorKeyCommands =
+    [
+        KeybindingCommand.SaveDocument,
+        KeybindingCommand.CloseDocument,
+        KeybindingCommand.ShowCompletion,
+        KeybindingCommand.ShowQuickInfo,
+        KeybindingCommand.GoToDefinition,
+        KeybindingCommand.FindReferences,
+        KeybindingCommand.FindImplementations,
+        KeybindingCommand.RenameSymbol,
+        KeybindingCommand.FormatDocument,
+        KeybindingCommand.FormatSelection,
+        KeybindingCommand.OrganizeImports,
+        KeybindingCommand.ShowQuickFixes,
+    ];
+    private static readonly KeybindingCommand[] WorkbenchKeyCommands =
+    [
+        KeybindingCommand.ShowFiles,
+        KeybindingCommand.ShowGit,
+        KeybindingCommand.ShowRunOutput,
+        KeybindingCommand.ShowProblems,
+        KeybindingCommand.FocusNextRegion,
+    ];
 
     internal WorkbenchDockHost(
         IRunOutputService runOutputService,
@@ -495,9 +519,17 @@ internal sealed class WorkbenchDockHost
             .EditorIntelligenceSettings?.Preferences ?? EditorIntelligencePreferences.Default;
         bool editorPreferencesChanged = nextEditorPreferences != editorIntelligencePreferences;
         editorIntelligencePreferences = nextEditorPreferences;
+        KeybindingSettingsSnapshot nextKeybindings = snapshot.Settings.KeybindingSettings ??
+                                                     KeybindingSettingsSnapshot.Default;
+        bool keybindingsChanged = nextKeybindings != keybindingSettings;
+        keybindingSettings = nextKeybindings;
         foreach (SourceDocumentSession session in sourceDocuments.Values)
         {
             session.Editor.ApplyTheme();
+            if (keybindingsChanged)
+            {
+                session.Surface.ApplyKeybindings(keybindingSettings);
+            }
             if (editorPreferencesChanged)
             {
                 SchedulePresentation(session, immediate: true, includeStructure: false);
@@ -1977,7 +2009,7 @@ internal sealed class WorkbenchDockHost
         string id,
         WorkbenchDocumentView view)
     {
-        SourceEditorSurface surface = SourceEditorSurface.Create(view);
+        SourceEditorSurface surface = SourceEditorSurface.Create(view, keybindingSettings);
         IWorkbenchEditorAdapter editor = surface.Editor;
         AutomationProperties.SetName(
             editor.Control,
@@ -2016,86 +2048,11 @@ internal sealed class WorkbenchDockHost
             includeStructure: false);
         editor.KeyDown += async (_, args) =>
         {
-            if (args.Key is Key.Space && args.KeyModifiers == KeyModifiers.Control)
-            {
-                args.Handled = true;
-                await ShowCompletionAsync(
-                    session,
-                    WorkbenchCodeCompletionTriggerKind.Invoke,
-                    triggerCharacter: null);
-            }
-            else if (args.Key is Key.K && args.KeyModifiers == KeyModifiers.Control)
-            {
-                args.Handled = true;
-                await ShowQuickInfoAsync(session);
-            }
-            else if (args.Key is Key.F12 && args.KeyModifiers == KeyModifiers.None)
-            {
-                args.Handled = true;
-                await NavigateSymbolAsync(session, SemanticNavigationKind.Definition);
-            }
-            else if (args.Key is Key.F12 && args.KeyModifiers == KeyModifiers.Shift)
-            {
-                args.Handled = true;
-                await NavigateSymbolAsync(session, SemanticNavigationKind.References);
-            }
-            else if (args.Key is Key.F12 && args.KeyModifiers == KeyModifiers.Control)
-            {
-                args.Handled = true;
-                await NavigateSymbolAsync(session, SemanticNavigationKind.Implementations);
-            }
-            else if (args.Key is Key.F7 && args.KeyModifiers == KeyModifiers.Alt)
-            {
-                args.Handled = true;
-                await NavigateSymbolAsync(session, SemanticNavigationKind.References);
-            }
-            else if (args.Key is Key.B &&
-                     args.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Alt))
-            {
-                args.Handled = true;
-                await NavigateSymbolAsync(session, SemanticNavigationKind.Implementations);
-            }
-            else if (args.Key is Key.F2 && args.KeyModifiers == KeyModifiers.None)
-            {
-                args.Handled = true;
-                await RenameSymbolAsync(session);
-            }
-            else if (args.Key is Key.L &&
-                     args.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Alt))
-            {
-                args.Handled = true;
-                await TransformDocumentAsync(
-                    session, WorkbenchCodeDocumentTransformationKind.FormatDocument);
-            }
-            else if (args.Key is Key.F &&
-                     args.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Alt))
-            {
-                args.Handled = true;
-                await TransformDocumentAsync(
-                    session, WorkbenchCodeDocumentTransformationKind.FormatSelection);
-            }
-            else if (args.Key is Key.O &&
-                     args.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Alt))
-            {
-                args.Handled = true;
-                await TransformDocumentAsync(
-                    session, WorkbenchCodeDocumentTransformationKind.OrganizeImports);
-            }
-            else if (args.Key is Key.OemPeriod && args.KeyModifiers == KeyModifiers.Control)
-            {
-                args.Handled = true;
-                await ShowImportFixesAsync(session);
-            }
-            else if (args.Key is Key.S && args.KeyModifiers.HasFlag(KeyModifiers.Control))
-            {
-                args.Handled = true;
-                await SaveSourceDocumentAsync(session);
-            }
-            else if (args.Key is Key.W && args.KeyModifiers.HasFlag(KeyModifiers.Control))
-            {
-                args.Handled = true;
-                await RequestSourceDocumentCloseAsync(session);
-            }
+            KeybindingCommand? command = KeybindingInput.Match(
+                args, keybindingSettings, EditorKeyCommands);
+            if (command is null) return;
+            args.Handled = true;
+            await ExecuteEditorCommandAsync(session, command.Value);
         };
         editor.TextEntered += async (_, args) =>
         {
@@ -2422,6 +2379,96 @@ internal sealed class WorkbenchDockHost
         CanUseSemanticAssistance(session) &&
         (kind is not WorkbenchCodeDocumentTransformationKind.FormatSelection ||
             session.Editor.SelectionRange is not null);
+
+    internal bool CanInvokeActiveEditorCommand(KeybindingCommand command)
+    {
+        if (activeDocument?.Id is not { } id ||
+            !sourceDocuments.TryGetValue(id, out SourceDocumentSession? session))
+        {
+            return false;
+        }
+
+        return command switch
+        {
+            KeybindingCommand.CloseDocument => true,
+            KeybindingCommand.SaveDocument =>
+                session.View.Access is WorkbenchDocumentAccess.Editable,
+            KeybindingCommand.ShowCompletion or KeybindingCommand.ShowQuickInfo or
+                KeybindingCommand.GoToDefinition or KeybindingCommand.FindReferences or
+                KeybindingCommand.FindImplementations => CanUseSemanticAssistance(session),
+            KeybindingCommand.RenameSymbol => mutationService is not null &&
+                session.View.Access is WorkbenchDocumentAccess.Editable &&
+                CanUseSemanticAssistance(session),
+            KeybindingCommand.FormatDocument => CanTransformActiveDocument(
+                WorkbenchCodeDocumentTransformationKind.FormatDocument),
+            KeybindingCommand.FormatSelection => CanTransformActiveDocument(
+                WorkbenchCodeDocumentTransformationKind.FormatSelection),
+            KeybindingCommand.OrganizeImports => CanTransformActiveDocument(
+                WorkbenchCodeDocumentTransformationKind.OrganizeImports),
+            KeybindingCommand.ShowQuickFixes => CanTransformActiveDocument(
+                WorkbenchCodeDocumentTransformationKind.AddMissingImport),
+            _ => false,
+        };
+    }
+
+    internal async ValueTask InvokeActiveEditorCommandAsync(KeybindingCommand command)
+    {
+        if (activeDocument?.Id is { } id &&
+            sourceDocuments.TryGetValue(id, out SourceDocumentSession? session))
+        {
+            await ExecuteEditorCommandAsync(session, command);
+        }
+    }
+
+    private async ValueTask ExecuteEditorCommandAsync(
+        SourceDocumentSession session,
+        KeybindingCommand command)
+    {
+        switch (command)
+        {
+            case KeybindingCommand.SaveDocument:
+                await SaveSourceDocumentAsync(session);
+                break;
+            case KeybindingCommand.CloseDocument:
+                await RequestSourceDocumentCloseAsync(session);
+                break;
+            case KeybindingCommand.ShowCompletion:
+                await ShowCompletionAsync(session, WorkbenchCodeCompletionTriggerKind.Invoke, null);
+                break;
+            case KeybindingCommand.ShowQuickInfo:
+                await ShowQuickInfoAsync(session);
+                break;
+            case KeybindingCommand.GoToDefinition:
+                await NavigateSymbolAsync(session, SemanticNavigationKind.Definition);
+                break;
+            case KeybindingCommand.FindReferences:
+                await NavigateSymbolAsync(session, SemanticNavigationKind.References);
+                break;
+            case KeybindingCommand.FindImplementations:
+                await NavigateSymbolAsync(session, SemanticNavigationKind.Implementations);
+                break;
+            case KeybindingCommand.RenameSymbol:
+                await RenameSymbolAsync(session);
+                break;
+            case KeybindingCommand.FormatDocument:
+                await TransformDocumentAsync(
+                    session, WorkbenchCodeDocumentTransformationKind.FormatDocument);
+                break;
+            case KeybindingCommand.FormatSelection:
+                await TransformDocumentAsync(
+                    session, WorkbenchCodeDocumentTransformationKind.FormatSelection);
+                break;
+            case KeybindingCommand.OrganizeImports:
+                await TransformDocumentAsync(
+                    session, WorkbenchCodeDocumentTransformationKind.OrganizeImports);
+                break;
+            case KeybindingCommand.ShowQuickFixes:
+                await ShowImportFixesAsync(session);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(command));
+        }
+    }
 
     private async ValueTask TransformDocumentAsync(
         SourceDocumentSession session,
@@ -3893,29 +3940,18 @@ internal sealed class WorkbenchDockHost
 
     private void OnWorkbenchKeyDown(object? sender, KeyEventArgs args)
     {
-        if (args.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Shift) &&
-            args.Key is Key.E)
+        KeybindingCommand? command = KeybindingInput.Match(
+            args, keybindingSettings, WorkbenchKeyCommands);
+        if (command is null) return;
+        args.Handled = command switch
         {
-            args.Handled = ShowFiles();
-        }
-        else if (args.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Shift) &&
-                 args.Key is Key.G)
-        {
-            args.Handled = ShowGit();
-        }
-        else if (args.KeyModifiers == KeyModifiers.Control && args.Key is Key.J)
-        {
-            args.Handled = ShowRunOutput();
-        }
-        else if (args.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Shift) &&
-                 args.Key is Key.M)
-        {
-            args.Handled = ShowProblems();
-        }
-        else if (args.Key is Key.F6 && args.KeyModifiers is KeyModifiers.None)
-        {
-            args.Handled = FocusNextRegion();
-        }
+            KeybindingCommand.ShowFiles => ShowFiles(),
+            KeybindingCommand.ShowGit => ShowGit(),
+            KeybindingCommand.ShowRunOutput => ShowRunOutput(),
+            KeybindingCommand.ShowProblems => ShowProblems(),
+            KeybindingCommand.FocusNextRegion => FocusNextRegion(),
+            _ => false,
+        };
     }
 
     /// <summary>Activates the Files panel, the same path as its keyboard shortcut.</summary>
@@ -4116,7 +4152,7 @@ internal sealed class WorkbenchDockHost
         }
     }
 
-    private bool FocusNextRegion()
+    internal bool FocusNextRegion()
     {
         string[] regions =
         [

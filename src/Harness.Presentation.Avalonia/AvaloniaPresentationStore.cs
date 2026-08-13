@@ -44,7 +44,8 @@ internal sealed class AvaloniaPresentationStore(
     IDependencyResearchService? dependencyResearchService = null,
     IInboundMcpSettingsService? inboundMcpSettingsService = null,
     IAgentToolExposureSettingsService? agentToolExposureSettingsService = null,
-    IEditorIntelligenceSettingsService? editorIntelligenceSettingsService = null) : IDisposable
+    IEditorIntelligenceSettingsService? editorIntelligenceSettingsService = null,
+    IKeybindingSettingsService? keybindingSettingsService = null) : IDisposable
 {
     private readonly BehaviorSubject<AvaloniaShellState> states = new(AvaloniaShellState.Initial);
     private readonly SemaphoreSlim commandGate = new(1, 1);
@@ -88,6 +89,9 @@ internal sealed class AvaloniaPresentationStore(
                 editorIntelligenceSettingsService is null
                     ? null
                     : await editorIntelligenceSettingsService.GetAsync(cancellationToken);
+            KeybindingSettingsSnapshot? keybindingSettings = keybindingSettingsService is null
+                ? null
+                : await keybindingSettingsService.GetAsync(cancellationToken);
             IReadOnlyList<WorkspaceView> workspaces = await workspaceService.ListAsync(cancellationToken);
             IReadOnlyList<GoalView> goals = await LoadGoalsAsync(workspaces, cancellationToken);
             Publish(Current with
@@ -104,6 +108,7 @@ internal sealed class AvaloniaPresentationStore(
                     ResearchSettings = researchSettings,
                     VisualCaptureSettings = visualCaptureSettings,
                     EditorIntelligenceSettings = editorIntelligenceSettings,
+                    KeybindingSettings = keybindingSettings,
                     RemoteSpendPreference = remoteSpendPreference,
                 },
                 Workspaces = Current.Workspaces with { Registered = workspaces },
@@ -118,6 +123,109 @@ internal sealed class AvaloniaPresentationStore(
             logger.LogError(exception, "Avalonia presentation initialization failed");
             Publish(Current with { IsLoading = false, Error = exception.Message });
         }
+    }
+
+    internal KeybindingValidationResult ValidateKeybindings(KeybindingUpdateRequest request) =>
+        keybindingSettingsService?.Validate(request) ?? new(false,
+            [new(KeybindingIssueKind.InvalidDocument, null,
+                "Keybinding settings are unavailable.")], []);
+
+    internal async ValueTask SaveKeybindingsAsync(
+        KeybindingUpdateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (keybindingSettingsService is null) return;
+        await ApplyKeybindingChangeAsync(
+            () => keybindingSettingsService.SaveAsync(request, cancellationToken),
+            "Saving keybindings…", cancellationToken);
+    }
+
+    internal async ValueTask ResetKeybindingsAsync(CancellationToken cancellationToken)
+    {
+        if (keybindingSettingsService is null) return;
+        await ApplyKeybindingChangeAsync(
+            () => keybindingSettingsService.ResetAsync(cancellationToken),
+            "Restoring default keybindings…", cancellationToken);
+    }
+
+    internal async ValueTask<string?> ExportKeybindingsAsync(CancellationToken cancellationToken)
+    {
+        if (keybindingSettingsService is null) return null;
+        try
+        {
+            string exported = await keybindingSettingsService.ExportAsync(cancellationToken);
+            Publish(Current with
+            {
+                Settings = Current.Settings with { Status = "Keybindings exported to the document below." },
+            });
+            return exported;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            Publish(Current with
+            {
+                Settings = Current.Settings with { Status = $"Keybindings were not exported: {exception.Message}" },
+            });
+            return null;
+        }
+    }
+
+    internal async ValueTask ImportKeybindingsAsync(
+        string document,
+        CancellationToken cancellationToken)
+    {
+        if (keybindingSettingsService is null) return;
+        await ApplyKeybindingChangeAsync(
+            () => keybindingSettingsService.ImportAsync(document, cancellationToken),
+            "Validating and importing keybindings…", cancellationToken);
+    }
+
+    private async ValueTask ApplyKeybindingChangeAsync(
+        Func<ValueTask<KeybindingSettingsSnapshot>> change,
+        string busyStatus,
+        CancellationToken cancellationToken)
+    {
+        Publish(Current with
+        {
+            Settings = Current.Settings with { IsBusy = true, Status = busyStatus },
+        });
+        try
+        {
+            KeybindingSettingsSnapshot saved = await change();
+            Publish(Current with
+            {
+                Settings = Current.Settings with
+                {
+                    KeybindingSettings = saved,
+                    IsBusy = false,
+                    Status = saved.Status,
+                },
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            Publish(Current with
+            {
+                Settings = Current.Settings with
+                {
+                    IsBusy = false,
+                    Status = "Keybinding change cancelled.",
+                },
+            });
+            throw;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            Publish(Current with
+            {
+                Settings = Current.Settings with
+                {
+                    IsBusy = false,
+                    Status = $"Keybindings were not changed: {exception.Message}",
+                },
+            });
+        }
+        cancellationToken.ThrowIfCancellationRequested();
     }
 
     internal async ValueTask SaveEditorIntelligenceSettingsAsync(

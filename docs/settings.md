@@ -6,6 +6,7 @@ Settings owns ordinary defaults. Goal-specific authority remains on the goal.
 |---|---|---|
 | General | Planned; workspace switching remains in Workspace UI. | `IWorkspaceService` and SQLite. |
 | Editor | Delivered for inlay hints, CodeLens visibility, and automatic C# formatting. More editor defaults remain planned. | Typed Business Logic service, SQLite preference, Roslyn and Presentation adapters. |
+| Keybindings | Delivered for workbench and editor commands; optional Vim behavior remains planned. | Typed Business Logic command/gesture policy, SQLite preference, Avalonia input adapter. |
 | Appearance & accessibility | Delivered. | `IAppearanceService`, SQLite preference, XDG theme files. |
 | Model providers | Delivered. | Typed Business Logic service, private XDG XML, Secret Service. |
 | MCP connections | Delivered. | MCP Data Access adapter, Business Logic policy, private XDG XML. |
@@ -53,6 +54,26 @@ paste formatting is confined to the pasted lines and on-type formatting runs aft
 `;`, `}`, or a new line. Each request carries an exact range and typed trigger, is
 cancelled when the buffer changes, enters the editor as one undoable change, and
 remains unsaved until the developer saves it.
+
+## Keybindings
+
+The page edits the closed workbench and editor command catalog. Separate alternate
+gestures with a semicolon. Whole-set validation reports duplicate assignments,
+cross-command conflicts, invalid keys, and protected desktop or unmodified input
+shortcuts before Save is enabled. Empty text deliberately unbinds a command. Changes
+apply to open editors and the shell without restart, and the command palette and
+header show the same active snapshot used for dispatch.
+
+Reset restores the shipped defaults. Export copies a bounded
+`harness-keybindings-v1` JSON document. Import accepts only that exact declarative
+schema, known command IDs, and up to eight string gestures per command; it rejects
+unknown properties, scripts, paths, and arbitrary actions. Preferences live in the
+private SQLite database and are included in application backup.
+
+The parser leaves unmodified typing, navigation, Escape, desktop close/session/lock,
+and Linux virtual-terminal shortcuts with the focused control or platform. Optional
+Vim behavior remains a separate Task 049 slice and must preserve IME composition,
+AT-SPI semantics, and these platform reservations.
 
 ## Model providers
 

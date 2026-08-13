@@ -336,13 +336,20 @@ Item 5 is delivered through one closed exact-buffer inspection contract covering
 syntax tree, semantic symbol details, generated-source inventory, and locally emitted
 IL. The developer menu, role tool, and opt-in inbound MCP use the same bounded read-
 only result and exact project/version/TFM/configuration/assembly/compilation identity.
-IL emission is in memory and never executes project code. Items 6–8 remain. Deterministic
+IL emission is in memory and never executes project code. Item 6 now has one typed,
+SQLite-backed workbench/editor command layer. Settings validates the complete binding
+set, shows conflicts, resets defaults, and imports or exports only bounded
+`harness-keybindings-v1` JSON. The active snapshot also drives shell/editor dispatch,
+header hints, and command-palette labels. Optional Vim behavior remains the next item
+6 slice under ADR 021; items 7 and 8 remain. Deterministic
 evidence is recorded in
 [editor-transformations-2026-08-12.md](acceptance/editor-transformations-2026-08-12.md);
 virtual-navigation evidence is in
 [editor-virtual-navigation-2026-08-12.md](acceptance/editor-virtual-navigation-2026-08-12.md),
 inspection evidence is in
 [editor-code-inspection-2026-08-12.md](acceptance/editor-code-inspection-2026-08-12.md),
+keybinding evidence is in
+[editor-keybindings-2026-08-13.md](acceptance/editor-keybindings-2026-08-13.md),
 and prior visual evidence is in
 [editor-inlays-codelens-2026-08-12.md](acceptance/editor-inlays-codelens-2026-08-12.md).
 
