@@ -5,6 +5,7 @@ using AvaloniaEdit.CodeCompletion;
 using Dock.Model.Avalonia.Controls;
 using Harness.BusinessLogic.CodeIntelligence;
 using Harness.BusinessLogic.Documents;
+using Harness.BusinessLogic.Editor;
 
 namespace Harness.Presentation.Avalonia;
 
@@ -29,16 +30,21 @@ internal sealed class SourceDocumentSession : IDisposable
     internal SourceDocumentSession(
         SourceDockDocument document,
         SourceEditorSurface surface,
-        WorkbenchDocumentView view)
+        WorkbenchDocumentView view,
+        EditorInputMode inputMode)
     {
         Document = document;
         Surface = surface;
         View = view;
+        Vim = new(Editor, inputMode);
+        Vim.StateChanged += OnVimStateChanged;
+        Surface.SetInputModeStatus(Vim.StatusText);
     }
 
     internal SourceDockDocument Document { get; }
     internal SourceEditorSurface Surface { get; }
     internal IWorkbenchEditorAdapter Editor => Surface.Editor;
+    internal VimEditorController Vim { get; }
     internal TextEditor NativeEditor =>
         ((AvaloniaEditWorkbenchEditorAdapter)Surface.Editor).NativeEditor;
     internal TextBlock Status => Surface.Status;
@@ -49,6 +55,7 @@ internal sealed class SourceDocumentSession : IDisposable
     internal bool IsDirty { get; private set; }
     internal bool AllowClose { get; set; }
     internal bool IgnoreNextActivationChange { get; set; }
+    internal bool IsDisposed { get; private set; }
     internal long CurrentBufferVersion => bufferVersion;
     internal CompletionWindow? CompletionWindow { get; set; }
     internal InsightWindow? QuickInfoWindow { get; set; }
@@ -222,20 +229,31 @@ internal sealed class SourceDocumentSession : IDisposable
 
     public void Dispose()
     {
+        if (IsDisposed) return;
+        IsDisposed = true;
         diagnosticsCancellation?.Cancel();
         diagnosticsCancellation?.Dispose();
+        diagnosticsCancellation = null;
         interactionCancellation?.Cancel();
         interactionCancellation?.Dispose();
+        interactionCancellation = null;
         hoverCancellation?.Cancel();
         hoverCancellation?.Dispose();
+        hoverCancellation = null;
         occurrenceCancellation?.Cancel();
         occurrenceCancellation?.Dispose();
+        occurrenceCancellation = null;
         presentationCancellation?.Cancel();
         presentationCancellation?.Dispose();
+        presentationCancellation = null;
         CloseInteractiveWindows();
+        Vim.StateChanged -= OnVimStateChanged;
         Document.CloseRequested = null;
         Surface.Dispose();
     }
+
+    private void OnVimStateChanged(object? sender, EventArgs args) =>
+        Surface.SetInputModeStatus(Vim.StatusText);
 
     private static string Title(WorkbenchDocumentView view)
     {

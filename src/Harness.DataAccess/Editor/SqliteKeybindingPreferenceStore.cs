@@ -14,9 +14,13 @@ internal sealed class SqliteKeybindingPreferenceStore(
         CancellationToken cancellationToken = default)
     {
         await using SqliteConnection connection = await OpenAsync(cancellationToken);
-        bool useDefaults = await connection.QuerySingleAsync<long>(new CommandDefinition("""
-            SELECT use_defaults FROM keybinding_configuration WHERE id = 1;
-            """, cancellationToken: cancellationToken)) == 1;
+        ConfigurationRow configuration = await connection.QuerySingleAsync<ConfigurationRow>(
+            new CommandDefinition("""
+            SELECT use_defaults AS UseDefaults,
+                   input_mode AS InputMode
+            FROM keybinding_configuration
+            WHERE id = 1;
+            """, cancellationToken: cancellationToken));
         Row[] rows = (await connection.QueryAsync<Row>(new CommandDefinition("""
             SELECT command_name AS CommandName,
                    position AS Position,
@@ -29,7 +33,14 @@ internal sealed class SqliteKeybindingPreferenceStore(
             throw new InvalidDataException("Stored keybindings exceed the supported limit.");
         }
 
-        return new(useDefaults, rows.Select(row => row.ToRecord()).ToArray());
+        if (!Enum.TryParse(configuration.InputMode, ignoreCase: false,
+                out StoredEditorInputMode inputMode) || !Enum.IsDefined(inputMode))
+        {
+            throw new InvalidDataException("Stored editor input mode is not supported.");
+        }
+
+        return new(configuration.UseDefaults == 1,
+            rows.Select(row => row.ToRecord()).ToArray(), inputMode);
     }
 
     public async ValueTask<StoredKeybindingPreferences> SaveAsync(
@@ -58,20 +69,40 @@ internal sealed class SqliteKeybindingPreferenceStore(
         }
 
         await connection.ExecuteAsync(new CommandDefinition("""
-            UPDATE keybinding_configuration SET use_defaults = @UseDefaults WHERE id = 1;
-            """, new { UseDefaults = preferences.UseDefaults ? 1 : 0 }, transaction,
+            UPDATE keybinding_configuration
+            SET use_defaults = @UseDefaults,
+                input_mode = @InputMode
+            WHERE id = 1;
+            """, new
+        {
+            UseDefaults = preferences.UseDefaults ? 1 : 0,
+            InputMode = preferences.InputMode.ToString(),
+        }, transaction,
             cancellationToken: cancellationToken));
         await transaction.CommitAsync(cancellationToken);
         return await GetAsync(cancellationToken);
     }
 
-    public ValueTask<StoredKeybindingPreferences> ResetAsync(
-        CancellationToken cancellationToken = default) =>
-        SaveAsync(new(true, []), cancellationToken);
+    public async ValueTask<StoredKeybindingPreferences> ResetAsync(
+        CancellationToken cancellationToken = default)
+    {
+        await using SqliteConnection connection = await OpenAsync(cancellationToken);
+        await using DbTransaction transaction = await connection.BeginTransactionAsync(
+            cancellationToken);
+        await connection.ExecuteAsync(new CommandDefinition(
+            "DELETE FROM keybinding_preferences;", transaction: transaction,
+            cancellationToken: cancellationToken));
+        await connection.ExecuteAsync(new CommandDefinition("""
+            UPDATE keybinding_configuration SET use_defaults = 1 WHERE id = 1;
+            """, transaction: transaction, cancellationToken: cancellationToken));
+        await transaction.CommitAsync(cancellationToken);
+        return await GetAsync(cancellationToken);
+    }
 
     private static void Validate(StoredKeybindingPreferences preferences)
     {
-        if (preferences.Bindings.Count > MaximumBindings ||
+        if (!Enum.IsDefined(preferences.InputMode) ||
+            preferences.Bindings.Count > MaximumBindings ||
             preferences.UseDefaults && preferences.Bindings.Count != 0)
         {
             throw new InvalidDataException("Keybinding settings are inconsistent or too large.");
@@ -117,5 +148,11 @@ internal sealed class SqliteKeybindingPreferenceStore(
 
         internal StoredKeybinding ToRecord() => new(
             new(CommandName), Position, new(GestureText));
+    }
+
+    private sealed class ConfigurationRow
+    {
+        public long UseDefaults { get; init; }
+        public required string InputMode { get; init; }
     }
 }

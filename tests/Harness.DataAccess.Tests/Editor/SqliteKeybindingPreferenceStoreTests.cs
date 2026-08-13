@@ -27,18 +27,20 @@ public sealed class SqliteKeybindingPreferenceStoreTests : IDisposable
             new(new("ShowChat"), 0, new("Alt+C")),
             new(new("FindReferences"), 0, new("Shift+F12")),
             new(new("FindReferences"), 1, new("Alt+F7")),
-        ]));
+        ], StoredEditorInputMode.Vim));
         StoredKeybindingPreferences reset = await store.ResetAsync();
 
         Assert.True(initial.UseDefaults);
         Assert.Empty(initial.Bindings);
         Assert.False(saved.UseDefaults);
+        Assert.Equal(StoredEditorInputMode.Vim, saved.InputMode);
         Assert.Equal(3, saved.Bindings.Count);
         Assert.Contains(saved.Bindings, binding =>
             binding.Command.Value == "FindReferences" && binding.Position == 1 &&
             binding.Gesture.Value == "Alt+F7");
         Assert.True(reset.UseDefaults);
         Assert.Empty(reset.Bindings);
+        Assert.Equal(StoredEditorInputMode.Vim, reset.InputMode);
     }
 
     [Fact]

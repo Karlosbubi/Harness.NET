@@ -1,5 +1,8 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
+using Avalonia.Input.TextInput;
 using AvaloniaEdit;
 using Harness.BusinessLogic.CodeIntelligence;
 using Harness.BusinessLogic.Documents;
@@ -32,6 +35,9 @@ internal interface IWorkbenchEditorAdapter : IDisposable
     int LineCount { get; }
     int TextLength { get; }
     int CaretOffset { get; set; }
+    int SelectionStart { get; }
+    string SelectedText { get; }
+    bool IsTextCompositionActive { get; }
     WorkbenchCodePosition CaretPosition { get; }
     WorkbenchCodeRange? SelectionRange { get; }
 
@@ -50,6 +56,10 @@ internal interface IWorkbenchEditorAdapter : IDisposable
     char GetCharAt(int offset);
     void Replace(int offset, int length, string text);
     void Insert(int offset, string text);
+    void Select(int offset, int length);
+    void Undo();
+    void Redo();
+    ValueTask CopyToClipboardAsync(string text);
     void SetCaretPosition(WorkbenchCodePosition position);
     void ScrollTo(WorkbenchCodePosition position);
     void Focus();
@@ -65,6 +75,7 @@ internal sealed class AvaloniaEditWorkbenchEditorAdapter : IWorkbenchEditorAdapt
     private readonly CodeDiagnosticRenderer diagnostics;
     private readonly CodeSemanticRenderer semantics;
     private WorkbenchCodeRange? lastVisibleRange;
+    private bool isTextCompositionActive;
 
     internal AvaloniaEditWorkbenchEditorAdapter(WorkbenchDocumentView view)
     {
@@ -89,6 +100,14 @@ internal sealed class AvaloniaEditWorkbenchEditorAdapter : IWorkbenchEditorAdapt
             ViewportChanged?.Invoke(this, EventArgs.Empty);
         };
         NativeEditor.KeyDown += (_, args) => KeyDown?.Invoke(this, args);
+        NativeEditor.TextInputMethodClientRequested += (_, args) =>
+        {
+            if (args.Client is { } client and not TrackingTextInputMethodClient)
+            {
+                args.Client = new TrackingTextInputMethodClient(client,
+                    active => isTextCompositionActive = active);
+            }
+        };
         NativeEditor.TextArea.TextEntered += (_, args) => TextEntered?.Invoke(this, args);
         NativeEditor.TextArea.TextPasted += (_, args) =>
         {
@@ -114,6 +133,9 @@ internal sealed class AvaloniaEditWorkbenchEditorAdapter : IWorkbenchEditorAdapt
     public int SelectionLength => NativeEditor.SelectionLength;
     public int LineCount => NativeEditor.Document.LineCount;
     public int TextLength => NativeEditor.Document.TextLength;
+    public int SelectionStart => NativeEditor.SelectionStart;
+    public string SelectedText => NativeEditor.SelectedText;
+    public bool IsTextCompositionActive => isTextCompositionActive;
     public int CaretOffset
     {
         get => NativeEditor.TextArea.Caret.Offset;
@@ -165,6 +187,28 @@ internal sealed class AvaloniaEditWorkbenchEditorAdapter : IWorkbenchEditorAdapt
     public void Replace(int offset, int length, string text) =>
         NativeEditor.Document.Replace(offset, length, text);
     public void Insert(int offset, string text) => NativeEditor.Document.Insert(offset, text);
+    public void Select(int offset, int length)
+    {
+        int caret = CaretOffset;
+        int start = Math.Clamp(offset, 0, TextLength);
+        NativeEditor.Select(start, Math.Clamp(length, 0, TextLength - start));
+        CaretOffset = caret;
+    }
+    public void Undo()
+    {
+        if (NativeEditor.CanUndo) NativeEditor.Undo();
+    }
+    public void Redo()
+    {
+        if (NativeEditor.CanRedo) NativeEditor.Redo();
+    }
+    public async ValueTask CopyToClipboardAsync(string text)
+    {
+        if (TopLevel.GetTopLevel(NativeEditor)?.Clipboard is { } clipboard)
+        {
+            await clipboard.SetTextAsync(text);
+        }
+    }
 
     public void SetCaretPosition(WorkbenchCodePosition position)
     {
@@ -202,5 +246,56 @@ internal sealed class AvaloniaEditWorkbenchEditorAdapter : IWorkbenchEditorAdapt
     {
         semantics.Dispose();
         diagnostics.Dispose();
+    }
+
+    private sealed class TrackingTextInputMethodClient : TextInputMethodClient
+    {
+        private readonly TextInputMethodClient inner;
+        private readonly Action<bool> setCompositionActive;
+
+        internal TrackingTextInputMethodClient(
+            TextInputMethodClient inner,
+            Action<bool> setCompositionActive)
+        {
+            this.inner = inner;
+            this.setCompositionActive = setCompositionActive;
+            inner.TextViewVisualChanged += (_, _) => RaiseTextViewVisualChanged();
+            inner.CursorRectangleChanged += (_, _) => RaiseCursorRectangleChanged();
+            inner.SurroundingTextChanged += (_, _) => RaiseSurroundingTextChanged();
+            inner.SelectionChanged += (_, _) => RaiseSelectionChanged();
+            inner.ResetRequested += (_, _) =>
+            {
+                setCompositionActive(false);
+                RequestReset();
+            };
+            inner.InputPaneActivationRequested += (_, _) =>
+                RaiseInputPaneActivationRequested();
+        }
+
+        public override Visual TextViewVisual => inner.TextViewVisual;
+        public override bool SupportsPreedit => inner.SupportsPreedit;
+        public override bool SupportsSurroundingText => inner.SupportsSurroundingText;
+        public override string SurroundingText => inner.SurroundingText;
+        public override Rect CursorRectangle => inner.CursorRectangle;
+        public override TextSelection Selection
+        {
+            get => inner.Selection;
+            set => inner.Selection = value;
+        }
+
+        public override void SetPreeditText(string? preeditText)
+        {
+            setCompositionActive(!string.IsNullOrEmpty(preeditText));
+            inner.SetPreeditText(preeditText);
+        }
+
+        public override void SetPreeditText(string? preeditText, int? cursorPos)
+        {
+            setCompositionActive(!string.IsNullOrEmpty(preeditText));
+            inner.SetPreeditText(preeditText, cursorPos);
+        }
+
+        public override void ExecuteContextMenuAction(ContextMenuAction action) =>
+            inner.ExecuteContextMenuAction(action);
     }
 }

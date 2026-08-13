@@ -529,6 +529,7 @@ internal sealed class WorkbenchDockHost
             if (keybindingsChanged)
             {
                 session.Surface.ApplyKeybindings(keybindingSettings);
+                session.Vim.SetInputMode(keybindingSettings.InputMode);
             }
             if (editorPreferencesChanged)
             {
@@ -1460,6 +1461,7 @@ internal sealed class WorkbenchDockHost
 
     private void ScheduleDiagnostics(SourceDocumentSession session, bool immediate = false)
     {
+        if (session.IsDisposed) return;
         if (session.View.Sha256 is null || session.View.IsTruncated ||
             !IsDotNetSource(session.View.Path.Value))
         {
@@ -1546,6 +1548,7 @@ internal sealed class WorkbenchDockHost
         bool immediate = false,
         bool includeStructure = true)
     {
+        if (session.IsDisposed) return;
         if (!CanUseSemanticAssistance(session))
         {
             return;
@@ -1620,6 +1623,7 @@ internal sealed class WorkbenchDockHost
 
     private void ScheduleOccurrences(SourceDocumentSession session)
     {
+        if (session.IsDisposed) return;
         if (!CanUseSemanticAssistance(session))
         {
             session.Editor.SetOccurrences([]);
@@ -2029,7 +2033,8 @@ internal sealed class WorkbenchDockHost
         SourceDocumentSession session = new(
             document,
             surface,
-            view);
+            view,
+            keybindingSettings.InputMode);
         document.CloseRequested = () => OnSourceDocumentCloseRequested(session);
         editor.TextChanged += (_, _) =>
         {
@@ -2050,9 +2055,17 @@ internal sealed class WorkbenchDockHost
         {
             KeybindingCommand? command = KeybindingInput.Match(
                 args, keybindingSettings, EditorKeyCommands);
-            if (command is null) return;
-            args.Handled = true;
-            await ExecuteEditorCommandAsync(session, command.Value);
+            if (command is not null)
+            {
+                args.Handled = true;
+                await ExecuteEditorCommandAsync(session, command.Value);
+                return;
+            }
+            if (session.Vim.ShouldHandle(args))
+            {
+                args.Handled = true;
+                _ = session.Vim.Handle(args);
+            }
         };
         editor.TextEntered += async (_, args) =>
         {

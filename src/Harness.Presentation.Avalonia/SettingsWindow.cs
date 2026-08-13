@@ -57,7 +57,7 @@ internal static class SettingsCatalog
         new(SettingsCategoryId.Editor, "Editor", "Editing and code intelligence",
             ["font", "code", "roslyn", "completion", "diagnostics", "inlay", "codelens", "references", "tests"], IsAvailable: true),
         new(SettingsCategoryId.Keybindings, "Keybindings", "Keyboard shortcuts and command discovery",
-            ["keyboard", "shortcut", "keys", "bindings", "conflict", "reset", "import", "export", "command palette"], IsAvailable: true),
+            ["keyboard", "shortcut", "keys", "bindings", "conflict", "reset", "import", "export", "command palette", "vim", "modal", "normal", "insert", "visual"], IsAvailable: true),
         new(SettingsCategoryId.Appearance, "Appearance & accessibility", "Theme and visual preferences",
             ["color", "theme", "contrast", "accessibility"], IsAvailable: true),
         new(SettingsCategoryId.ModelProviders, "Model providers", "Ollama and OpenRouter availability",
@@ -431,6 +431,14 @@ internal sealed class SettingsWindow : Window
     {
         KeybindingSettingsSnapshot snapshot = settingsState.KeybindingSettings ??
                                                KeybindingSettingsSnapshot.Default;
+        ComboBox inputMode = new()
+        {
+            ItemsSource = Enum.GetValues<EditorInputMode>(),
+            SelectedItem = snapshot.InputMode,
+            IsEnabled = !settingsState.IsBusy,
+            MinWidth = 220,
+        };
+        AutomationProperties.SetName(inputMode, "Editor keyboard input mode");
         Dictionary<KeybindingCommand, TextBox> editors = [];
         TextBlock validation = new()
         {
@@ -488,7 +496,10 @@ internal sealed class SettingsWindow : Window
         }
 
         KeybindingUpdateRequest Draft() => new(editors.Select(pair =>
-            new KeybindingUpdateEntry(pair.Key, pair.Value.Text ?? string.Empty)).ToArray());
+                new KeybindingUpdateEntry(pair.Key, pair.Value.Text ?? string.Empty)).ToArray(),
+            inputMode.SelectedItem is EditorInputMode selected
+                ? selected
+                : EditorInputMode.Standard);
         void ValidateDraft()
         {
             KeybindingValidationResult result = store.ValidateKeybindings(Draft());
@@ -502,6 +513,7 @@ internal sealed class SettingsWindow : Window
         {
             editor.GetObservable(TextBox.TextProperty).Subscribe(_ => ValidateDraft());
         }
+        inputMode.SelectionChanged += (_, _) => ValidateDraft();
         save.Click += async (_, _) =>
         {
             await store.SaveKeybindingsAsync(Draft(), cancellationToken);
@@ -583,6 +595,8 @@ internal sealed class SettingsWindow : Window
                             TextWrapping = TextWrapping.Wrap,
                         },
                     },
+                    Labeled("Editor input mode", inputMode,
+                        "Vim starts each source editor in Normal mode. Escape or Ctrl+[ leaves Insert or Visual mode after IME composition ends. Application shortcuts remain active."),
                     rows,
                     validation,
                     actions,

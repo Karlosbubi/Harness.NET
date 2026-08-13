@@ -3,6 +3,12 @@ using Harness.DataAccess.Editor;
 
 namespace Harness.BusinessLogic.Editor;
 
+public enum EditorInputMode
+{
+    Standard,
+    Vim,
+}
+
 public enum KeybindingCommand
 {
     ShowCommandPalette,
@@ -77,7 +83,8 @@ public sealed record KeybindingUpdateEntry(
     string GestureText);
 
 public sealed record KeybindingUpdateRequest(
-    IReadOnlyList<KeybindingUpdateEntry> Entries);
+    IReadOnlyList<KeybindingUpdateEntry> Entries,
+    EditorInputMode InputMode = EditorInputMode.Standard);
 
 public enum KeybindingIssueKind
 {
@@ -105,10 +112,11 @@ public sealed record KeybindingSettingsSnapshot(
     IReadOnlyList<KeybindingCommandBindings> Bindings,
     IReadOnlyList<KeybindingIssue> Issues,
     bool UsesDefaults,
+    EditorInputMode InputMode,
     string Status)
 {
     public static KeybindingSettingsSnapshot Default { get; } = new(
-        KeybindingCatalog.DefaultBindings, [], true,
+        KeybindingCatalog.DefaultBindings, [], true, EditorInputMode.Standard,
         "Default keybindings are active. Shortcuts are validated before dispatch.");
 
     public IReadOnlyList<KeybindingGesture> GesturesFor(KeybindingCommand command) =>
@@ -151,15 +159,15 @@ internal sealed class KeybindingSettingsService(
         StoredKeybindingPreferences stored = await store.GetAsync(cancellationToken);
         if (stored.UseDefaults)
         {
-            return Snapshot(KeybindingCatalog.DefaultBindings, true,
+            return Snapshot(KeybindingCatalog.DefaultBindings, true, Decode(stored.InputMode),
                 "Default keybindings are active. Shortcuts are validated before dispatch.");
         }
 
         KeybindingValidationResult decoded = Decode(stored.Bindings);
         return decoded.IsValid
-            ? Snapshot(decoded.Bindings, false,
+            ? Snapshot(decoded.Bindings, false, Decode(stored.InputMode),
                 "Custom keybindings are active. Shortcuts are validated before dispatch.")
-            : Snapshot(KeybindingCatalog.DefaultBindings, true,
+            : Snapshot(KeybindingCatalog.DefaultBindings, true, EditorInputMode.Standard,
                 "Stored keybindings were rejected; safe defaults are active.", decoded.Issues);
     }
 
@@ -167,6 +175,11 @@ internal sealed class KeybindingSettingsService(
     {
         ArgumentNullException.ThrowIfNull(request);
         List<KeybindingIssue> issues = [];
+        if (!Enum.IsDefined(request.InputMode))
+        {
+            issues.Add(new(KeybindingIssueKind.InvalidDocument, null,
+                "The editor input mode is not supported."));
+        }
         Dictionary<KeybindingCommand, IReadOnlyList<KeybindingGesture>> parsed = [];
         if (request.Entries.Count > 64)
         {
@@ -268,21 +281,21 @@ internal sealed class KeybindingSettingsService(
         }
 
         StoredKeybindingPreferences saved = await store.SaveAsync(new(false,
-            Encode(validation.Bindings)), cancellationToken);
+            Encode(validation.Bindings), Encode(request.InputMode)), cancellationToken);
         KeybindingValidationResult decoded = Decode(saved.Bindings);
         if (!decoded.IsValid)
         {
             throw new InvalidDataException("Saved keybindings did not round-trip exactly.");
         }
-        return Snapshot(decoded.Bindings, false,
+        return Snapshot(decoded.Bindings, false, Decode(saved.InputMode),
             "Custom keybindings saved and active.");
     }
 
     public async ValueTask<KeybindingSettingsSnapshot> ResetAsync(
         CancellationToken cancellationToken = default)
     {
-        await store.ResetAsync(cancellationToken);
-        return Snapshot(KeybindingCatalog.DefaultBindings, true,
+        StoredKeybindingPreferences reset = await store.ResetAsync(cancellationToken);
+        return Snapshot(KeybindingCatalog.DefaultBindings, true, Decode(reset.InputMode),
             "Default keybindings restored and active.");
     }
 
@@ -311,7 +324,10 @@ internal sealed class KeybindingSettingsService(
             throw new InvalidDataException("The keybinding document must contain 1–65,536 characters.");
         }
 
-        KeybindingUpdateRequest request = ParseImport(document);
+        KeybindingUpdateRequest request = ParseImport(document) with
+        {
+            InputMode = (await GetAsync(cancellationToken)).InputMode,
+        };
         return await SaveAsync(request, cancellationToken);
     }
 
@@ -406,9 +422,25 @@ internal sealed class KeybindingSettingsService(
     private static KeybindingSettingsSnapshot Snapshot(
         IReadOnlyList<KeybindingCommandBindings> bindings,
         bool defaults,
+        EditorInputMode inputMode,
         string status,
         IReadOnlyList<KeybindingIssue>? issues = null) =>
-        new(bindings, issues ?? [], defaults, status);
+        new(bindings, issues ?? [], defaults, inputMode,
+            $"{status} {(inputMode is EditorInputMode.Vim ? "Vim" : "Standard")} editor input is active.");
+
+    private static EditorInputMode Decode(StoredEditorInputMode mode) => mode switch
+    {
+        StoredEditorInputMode.Standard => EditorInputMode.Standard,
+        StoredEditorInputMode.Vim => EditorInputMode.Vim,
+        _ => throw new InvalidDataException("Stored editor input mode is not supported."),
+    };
+
+    private static StoredEditorInputMode Encode(EditorInputMode mode) => mode switch
+    {
+        EditorInputMode.Standard => StoredEditorInputMode.Standard,
+        EditorInputMode.Vim => StoredEditorInputMode.Vim,
+        _ => throw new ArgumentOutOfRangeException(nameof(mode)),
+    };
 
     private static IEnumerable<string> Split(string text) =>
         string.IsNullOrWhiteSpace(text)

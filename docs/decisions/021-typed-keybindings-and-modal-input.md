@@ -40,21 +40,24 @@ document cannot name paths, scripts, types, or arbitrary actions. Export is an
 explicit copy action.
 
 Presentation maps Avalonia keys to the typed gesture; Avalonia types do not cross its
-boundary. Focused controls keep ordinary text input and unmodified navigation. A
-future Vim implementation is an optional Presentation-owned modal state machine over
-the same command IDs. It must suspend modal interpretation during IME composition,
-preserve AT-SPI semantics and platform shortcuts, and receive separate acceptance
-evidence before activation.
+boundary. Focused controls keep ordinary text input and unmodified navigation. Vim is
+an optional Presentation-owned modal state machine over the same live editor buffer.
+Its typed Standard/Vim preference is stored with the keybinding configuration.
+AvaloniaEdit's input-method client is wrapped to observe preedit state; modal exit is
+suspended while composition is active. Configured commands run before modal input,
+unrelated Control/Alt/Meta gestures pass through, and the visible mode text remains
+available to AT-SPI. Separate acceptance evidence covers the delivered behavior.
 
 ## Consequences
 
 - Runtime behavior and displayed shortcuts can no longer drift independently.
 - Private database schema version 28 adds the keybinding configuration and binding
-  tables; application backup naturally includes them with the database.
+  tables. Version 29 adds the closed editor input mode; application backup includes
+  both with the database.
 - New configurable workbench commands must be added to the closed catalog, default
   policy, Settings surface, runtime dispatcher, and command discovery together.
-- The current slice does not claim Vim behavior; ADR 021 defines its boundary and
-  safety conditions for the next Task 049 slice.
+- Vim remains an input adapter, not a second editor. Roslyn, dirty state, save,
+  diagnostics, undo, and document lifecycle continue to use the same live buffer.
 
 ## Alternatives considered
 

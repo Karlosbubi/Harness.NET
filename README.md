@@ -42,7 +42,8 @@ Delivered:
   and import organization, contextual compiler fixes, local/selection refactorings,
   and labeled document fix-all choices;
 - typed configurable workbench and editor keybindings with conflict validation,
-  command discovery, reset, and bounded declarative import/export;
+  command discovery, reset, bounded declarative import/export, and optional Vim
+  Normal, Insert, Visual, and Visual Line behavior;
 - Roslyn validation before model-authored source writes;
 - typed, role-scoped agent tools for files, Git, .NET metadata, Build/Test, semantic
   retrieval, diagnostics, symbols, navigation, edits, rename, and closed Roslyn

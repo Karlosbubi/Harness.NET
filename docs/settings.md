@@ -6,7 +6,7 @@ Settings owns ordinary defaults. Goal-specific authority remains on the goal.
 |---|---|---|
 | General | Planned; workspace switching remains in Workspace UI. | `IWorkspaceService` and SQLite. |
 | Editor | Delivered for inlay hints, CodeLens visibility, and automatic C# formatting. More editor defaults remain planned. | Typed Business Logic service, SQLite preference, Roslyn and Presentation adapters. |
-| Keybindings | Delivered for workbench and editor commands; optional Vim behavior remains planned. | Typed Business Logic command/gesture policy, SQLite preference, Avalonia input adapter. |
+| Keybindings | Delivered for workbench/editor commands and optional Vim input. | Typed Business Logic command/gesture policy, SQLite preference, Avalonia input adapter. |
 | Appearance & accessibility | Delivered. | `IAppearanceService`, SQLite preference, XDG theme files. |
 | Model providers | Delivered. | Typed Business Logic service, private XDG XML, Secret Service. |
 | MCP connections | Delivered. | MCP Data Access adapter, Business Logic policy, private XDG XML. |
@@ -70,10 +70,19 @@ schema, known command IDs, and up to eight string gestures per command; it rejec
 unknown properties, scripts, paths, and arbitrary actions. Preferences live in the
 private SQLite database and are included in application backup.
 
-The parser leaves unmodified typing, navigation, Escape, desktop close/session/lock,
-and Linux virtual-terminal shortcuts with the focused control or platform. Optional
-Vim behavior remains a separate Task 049 slice and must preserve IME composition,
-AT-SPI semantics, and these platform reservations.
+The editor input selector switches between Standard and Vim without restarting or
+reopening documents. Vim starts an editor in Normal mode and shows its current mode,
+count, or pending operator beside the caret position. It supports counted
+`h/j/k/l`, `w/b/e`, `0/$`, `gg/G`; `i/a/I/A/o/O`; `x/X`, `d/y/c`, `D/C/Y`, `p/P`;
+`u`/`Ctrl+R`; and character or line Visual mode with `v/V`. Yank and delete update
+the desktop clipboard and the private Vim register. Escape returns to Normal mode;
+`Ctrl+[` is the alternate.
+
+The AvaloniaEdit input-method client is wrapped only to observe preedit state. Escape
+and `Ctrl+[` remain with the IME while composition is active. Vim ignores Alt, Meta,
+and unrelated Control gestures. Configured application commands are dispatched
+before modal input, so accessibility and platform shortcuts keep their existing
+behavior. Standard input remains the default.
 
 ## Model providers
 

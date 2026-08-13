@@ -1,7 +1,7 @@
 # Editor keybinding acceptance — 2026-08-13
 
-This record covers the configurable-keybinding portion of Task 049 item 6. Optional
-Vim behavior remains a separate incomplete portion of that item.
+This record covers the configurable-keybinding portion of Task 049 item 6. The
+separate Vim acceptance record now completes the modal-input portion.
 
 ## Delivered behavior
 
@@ -78,8 +78,6 @@ names; no separate modal editor or fake state was introduced.
 
 ## Remaining Task 049 work
 
-- optional Vim behavior with explicit mode state, IME-composition suspension,
-  accessibility announcements, and platform-shortcut tests;
 - project User Secrets with masked and separately authorized developer actions;
 - Task 052-backed typed Run/Debug CodeLens targets;
 - final Task 049 performance, cancellation, large-solution, repeated-context,

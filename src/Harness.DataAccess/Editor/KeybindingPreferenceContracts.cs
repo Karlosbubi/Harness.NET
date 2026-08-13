@@ -4,6 +4,12 @@ public sealed record StoredKeybindingCommandName(string Value);
 
 public sealed record StoredKeyGestureText(string Value);
 
+public enum StoredEditorInputMode
+{
+    Standard,
+    Vim,
+}
+
 public sealed record StoredKeybinding(
     StoredKeybindingCommandName Command,
     int Position,
@@ -11,7 +17,8 @@ public sealed record StoredKeybinding(
 
 public sealed record StoredKeybindingPreferences(
     bool UseDefaults,
-    IReadOnlyList<StoredKeybinding> Bindings);
+    IReadOnlyList<StoredKeybinding> Bindings,
+    StoredEditorInputMode InputMode = StoredEditorInputMode.Standard);
 
 public interface IKeybindingPreferenceStore
 {

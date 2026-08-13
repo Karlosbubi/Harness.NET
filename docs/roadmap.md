@@ -340,8 +340,10 @@ IL emission is in memory and never executes project code. Item 6 now has one typ
 SQLite-backed workbench/editor command layer. Settings validates the complete binding
 set, shows conflicts, resets defaults, and imports or exports only bounded
 `harness-keybindings-v1` JSON. The active snapshot also drives shell/editor dispatch,
-header hints, and command-palette labels. Optional Vim behavior remains the next item
-6 slice under ADR 021; items 7 and 8 remain. Deterministic
+header hints, and command-palette labels. Item 6 is now complete: the same persistent
+settings select optional Vim input over the live buffer, with explicit modal state,
+counted core motions/operators, clipboard synchronization, IME-preedit suspension,
+and platform-shortcut pass-through. Items 7 and 8 remain. Deterministic
 evidence is recorded in
 [editor-transformations-2026-08-12.md](acceptance/editor-transformations-2026-08-12.md);
 virtual-navigation evidence is in
@@ -350,6 +352,8 @@ inspection evidence is in
 [editor-code-inspection-2026-08-12.md](acceptance/editor-code-inspection-2026-08-12.md),
 keybinding evidence is in
 [editor-keybindings-2026-08-13.md](acceptance/editor-keybindings-2026-08-13.md),
+Vim evidence is in
+[editor-vim-mode-2026-08-13.md](acceptance/editor-vim-mode-2026-08-13.md),
 and prior visual evidence is in
 [editor-inlays-codelens-2026-08-12.md](acceptance/editor-inlays-codelens-2026-08-12.md).
 

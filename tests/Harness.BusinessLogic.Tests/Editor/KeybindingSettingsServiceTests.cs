@@ -41,6 +41,24 @@ public sealed class KeybindingSettingsServiceTests
     }
 
     [Fact]
+    public async Task Vim_mode_persists_while_keybinding_reset_and_import_only_replace_bindings()
+    {
+        MemoryStore store = new(new(true, []));
+        KeybindingSettingsService service = new(store);
+        KeybindingUpdateRequest vim = Request() with { InputMode = EditorInputMode.Vim };
+
+        KeybindingSettingsSnapshot saved = await service.SaveAsync(vim);
+        string exported = await service.ExportAsync();
+        KeybindingSettingsSnapshot reset = await service.ResetAsync();
+        KeybindingSettingsSnapshot imported = await service.ImportAsync(exported);
+
+        Assert.Equal(EditorInputMode.Vim, saved.InputMode);
+        Assert.Equal(EditorInputMode.Vim, reset.InputMode);
+        Assert.True(reset.UsesDefaults);
+        Assert.Equal(EditorInputMode.Vim, imported.InputMode);
+    }
+
+    [Fact]
     public void Conflicts_reserved_desktop_keys_and_missing_commands_block_save()
     {
         KeybindingSettingsService service = new(new MemoryStore(new(true, [])));
@@ -118,7 +136,7 @@ public sealed class KeybindingSettingsServiceTests
         public ValueTask<StoredKeybindingPreferences> ResetAsync(
             CancellationToken cancellationToken = default)
         {
-            Current = new(true, []);
+            Current = new(true, [], Current.InputMode);
             return ValueTask.FromResult(Current);
         }
     }

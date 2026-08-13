@@ -114,7 +114,7 @@ def main() -> int:
         "editor-controls",
         test_command(
             "tests/Harness.Presentation.Avalonia.Tests/Harness.Presentation.Avalonia.Tests.csproj",
-            "FullyQualifiedName~PresentationControlTests",
+            "FullyQualifiedName~PresentationControlTests|FullyQualifiedName~VimEditorControllerTests",
         ),
     ))
     durations.append(run(
@@ -143,6 +143,7 @@ def main() -> int:
         "proven missing-import choices, closed quick fixes, local/selection refactorings, "
         "document fix-all, fingerprinted model apply, "
         "settings persistence, typed keybinding dispatch, conflict validation, safe import/export, "
+        "optional Vim modes, counted motions/operators, IME suspension, "
         "stale-result handling, "
         f"accessible production controls, and theme contracts ({sum(durations):.1f}s)."
     )

@@ -349,6 +349,9 @@ public sealed class PresentationControlTests
                 AutomationProperties.GetName(control) == "Export keybindings as safe JSON");
             Assert.Contains(window.GetLogicalDescendants().OfType<Control>(), control =>
                 AutomationProperties.GetName(control) == "Validate and import keybinding JSON");
+            ComboBox inputMode = Assert.Single(window.GetLogicalDescendants().OfType<ComboBox>(),
+                control => AutomationProperties.GetName(control) == "Editor keyboard input mode");
+            Assert.Equal(EditorInputMode.Standard, inputMode.SelectedItem);
             window.Close();
         }, CancellationToken.None);
     }
@@ -1956,6 +1959,75 @@ public sealed class PresentationControlTests
             });
             Dispatcher.UIThread.RunJobs();
             Assert.Equal(1, workbench.ActiveCompletionItemCount);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Source_editor_applies_vim_mode_to_the_live_editable_buffer_and_reports_mode()
+    {
+        using HeadlessUnitTestSession testSession =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await testSession.Dispatch(() =>
+        {
+            KeybindingSettingsSnapshot vim = KeybindingSettingsSnapshot.Default with
+            {
+                InputMode = EditorInputMode.Vim,
+            };
+            AvaloniaShellState shell = TrustedShell() with
+            {
+                Settings = TrustedShell().Settings with { KeybindingSettings = vim },
+            };
+            DocumentService documents = new() { Content = "one two\nthree\n" };
+            WorkbenchDockHost workbench = CreateWorkbench(shell, new(), documents);
+            workbench.Update(shell);
+            Dispatcher.UIThread.RunJobs();
+            Window window = new() { Width = 1280, Height = 800, Content = workbench.Control };
+            window.Show();
+            workbench.OpenFileAsync("src/App.cs").AsTask().GetAwaiter().GetResult();
+            TextEditor editor = workbench.ActiveSourceEditor!;
+            Control source = Assert.IsAssignableFrom<Control>(
+                workbench.Documents.ActiveDockable?.Context);
+
+            Assert.Contains("VIM NORMAL", string.Join('\n', source
+                .GetVisualDescendants().OfType<TextBlock>().Select(block => block.Text)),
+                StringComparison.Ordinal);
+            editor.RaiseEvent(new KeyEventArgs
+            {
+                RoutedEvent = InputElement.KeyDownEvent,
+                Key = Key.W,
+            });
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal(4, editor.CaretOffset);
+
+            KeyEventArgs deleteKey = new()
+            {
+                RoutedEvent = InputElement.KeyDownEvent,
+                Key = Key.X,
+            };
+            editor.RaiseEvent(deleteKey);
+            Dispatcher.UIThread.RunJobs();
+            Assert.True(deleteKey.Handled);
+            Assert.Equal("one wo\nthree\n", editor.Text);
+
+            editor.RaiseEvent(new KeyEventArgs
+            {
+                RoutedEvent = InputElement.KeyDownEvent,
+                Key = Key.I,
+            });
+            Dispatcher.UIThread.RunJobs();
+            Assert.Contains("VIM INSERT", string.Join('\n', source
+                .GetVisualDescendants().OfType<TextBlock>().Select(block => block.Text)),
+                StringComparison.Ordinal);
+            editor.RaiseEvent(new KeyEventArgs
+            {
+                RoutedEvent = InputElement.KeyDownEvent,
+                Key = Key.Escape,
+            });
+            Dispatcher.UIThread.RunJobs();
+            Assert.Contains("VIM NORMAL", string.Join('\n', source
+                .GetVisualDescendants().OfType<TextBlock>().Select(block => block.Text)),
+                StringComparison.Ordinal);
             window.Close();
         }, CancellationToken.None);
     }

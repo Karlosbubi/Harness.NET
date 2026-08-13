@@ -16,6 +16,7 @@ namespace Harness.Presentation.Avalonia;
 internal sealed class SourceEditorSurface : IDisposable
 {
     private string codeHealth = "Code intelligence loading";
+    private string inputMode = string.Empty;
     private readonly TextBlock path = new()
     {
         FontFamily = new FontFamily("Cascadia Code,JetBrains Mono,Consolas,Menlo,monospace"),
@@ -314,9 +315,16 @@ internal sealed class SourceEditorSurface : IDisposable
         FormatSelection.IsEnabled = FormatDocument.IsEnabled && selected > 0;
         string selection = selected == 0 ? string.Empty : $" · {selected:N0} selected";
         WorkbenchCodePosition caret = Editor.CaretPosition;
-        metrics.Text = $"Ln {caret.Line + 1:N0}, Col {caret.Character + 1:N0}" +
+        metrics.Text = (inputMode.Length == 0 ? string.Empty : $"{inputMode} · ") +
+                       $"Ln {caret.Line + 1:N0}, Col {caret.Character + 1:N0}" +
                        selection + $" · UTF-8 · {LineEndings(Editor.Text)} · {codeHealth}";
         UpdateBreadcrumbs(caret);
+    }
+
+    internal void SetInputModeStatus(string status)
+    {
+        inputMode = status;
+        UpdateMetrics();
     }
 
     internal void UpdateDocumentPresentation(WorkbenchCodeDocumentPresentationView presentation)
