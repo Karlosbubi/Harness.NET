@@ -129,6 +129,7 @@ public enum WorkbenchCodeVirtualDocumentKind
 {
     GeneratedSource,
     MetadataSignature,
+    DecompiledSource,
 }
 
 public sealed record WorkbenchCodeProjectVersion(string Value);

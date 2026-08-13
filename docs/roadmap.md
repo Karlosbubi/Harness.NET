@@ -169,12 +169,13 @@ providers, no stored credentials, and resettable state; it may add Harness-owned
 snapshots and accessibility-ID actions that cannot address other applications or the
 normal developer environment.
 
-The server is disabled by default, loopback-only, authenticated, visibly active,
-revocable, and fully audited. Tools declare read, mutation, execution, sensitive, and
+The server is disabled by default, strictly loopback-only, intentionally unauthenticated,
+visibly active, revocable, and fully audited. Client IDs provide attribution and
+allowlisting, not identity proof. Tools declare read, mutation, execution, sensitive, and
 destructive behavior and remain individually allowlisted and approval-controlled.
 Do not expose generic click/type, shell, SQL, arbitrary command dispatch, desktop
 control, silent screenshot capture, or a route around typed Harness authority. Record
-an ADR for inbound MCP ownership, authentication, modes, tool policy, application
+an ADR for inbound MCP ownership, loopback boundary, modes, tool policy, application
 instance identity, test isolation, privacy, and shutdown before implementation.
 
 ### Delivered quality gate: Task 038 — local-model workflow regression
@@ -254,7 +255,7 @@ the existing Roslyn contracts and shared live buffer. See
 the migration only when a pinned, supported, publicly verifiable Morgania release is
 available; that is a new evaluation, not unfinished work on the rejected revision.
 
-### Planned: Task 049 — NetPad-level .NET editing and inspection
+### Completed: Task 049 — NetPad-level .NET editing and inspection
 
 Close the remaining user-facing code-intelligence gaps identified against
 [NetPad at `0c74746`](https://github.com/tareqimbasher/NetPad/commit/0c74746daf6f5402ad4d9a2cf3958131bdfc8011)
@@ -334,8 +335,11 @@ and workspace-symbol search, region outline navigation, and exact-buffer generat
 source and metadata-signature virtual documents. Opaque handles are session-local and stale-safe; the
 desktop labels them read-only and layout capture drops them. Role and inbound MCP
 navigation results eagerly include resolved virtual text before closing their Roslyn session.
-Metadata views intentionally contain signatures rather than invented method bodies;
-full decompilation still needs a maintained public dependency and supply-chain review.
+Metadata navigation now uses the pinned MIT-licensed `ICSharpCode.Decompiler`
+`10.1.1.8388` package to reconstruct a selected member from an exact local
+implementation assembly. Reference-only or unavailable bodies use an explicit
+signature fallback. ADR 012 and the decompilation acceptance record contain the
+license, provenance, integrity, SBOM, authority, test, and rollback review.
 Item 5 is delivered through one closed exact-buffer inspection contract covering
 syntax tree, semantic symbol details, generated-source inventory, and locally emitted
 IL. The developer menu, role tool, and opt-in inbound MCP use the same bounded read-

@@ -191,7 +191,7 @@ def main() -> int:
         "Editor intelligence verification passed: completion, quick info, signatures, "
         "diagnostics, semantic classification, occurrences, folding, outline, breadcrumbs, "
         "workspace symbols, region navigation, inlay hints, lazy CodeLens, definitions, "
-        "usages, implementations, generated source, metadata signatures, "
+        "usages, implementations, generated source, metadata decompilation and signature fallback, "
         "exact-context syntax trees, symbol details, generated-source inspection, IL, "
         "document/selection/changed-span formatting, guarded paste and on-type formatting, "
         "import organization, unused-import cleanup, "

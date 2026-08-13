@@ -688,8 +688,8 @@ public sealed class WorkbenchCodeIntelligenceServiceTests
                     request.Snapshot.ContextId, request.Snapshot.SessionId,
                     request.Snapshot.Path, request.Snapshot.BufferVersion,
                     CodeIntelligenceResultState.Ready, request.Id,
-                    CodeIntelligenceVirtualDocumentKind.MetadataSignature,
-                    new("String · metadata"), new(virtualText),
+                    CodeIntelligenceVirtualDocumentKind.DecompiledSource,
+                    new("String · decompiled"), new(virtualText),
                     new(new(0, 20), new(0, 26)),
                     new(new("Sample"), new("project-version"), new("net10.0"),
                         new("Debug"), new("System.Runtime, Version=10.0.0.0"),
@@ -710,6 +710,7 @@ public sealed class WorkbenchCodeIntelligenceServiceTests
 
         Assert.Equal(id, destination.VirtualDocumentId!.Value);
         Assert.Equal(virtualText, document.Text!.Value);
+        Assert.Equal(WorkbenchCodeVirtualDocumentKind.DecompiledSource, document.Kind);
         Assert.True(document.IsReadOnly);
         Assert.Equal("net10.0", document.Origin!.TargetFramework.Value);
         Assert.Equal(new string('b', 64), document.Origin.Compilation.Value);

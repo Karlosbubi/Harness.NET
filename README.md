@@ -22,8 +22,8 @@ Delivered:
   monetary controls for remote inference;
 - stateless MCP 2.x connections with Settings management, read-only tool policy, and
   an explicit loopback Harness-to-Harness Lead delegation mode;
-- an optional authenticated loopback MCP 2.x server for typed dogfooding and isolated
-  evaluation, with one-time client enrollment, allowlists, audit, revocation,
+- an optional unauthenticated, loopback-only MCP 2.x server for typed dogfooding and isolated
+  evaluation, with client/tool allowlists, audit, revocation,
   disposable fixtures, accessibility state, and Harness-owned evaluation frames;
 - on-demand versioned documentation lookup through exact local, indexed, configured
   MCP, and web sources with citations and offline cache policy;
@@ -36,8 +36,9 @@ Delivered:
   signature help, semantic classification, occurrence highlighting, folding,
   outline, breadcrumbs, workspace-symbol search, parameter and inferred-type inlay
   hints, lazy CodeLens navigation, definitions, usages, implementations, and semantic
-  rename, region navigation, and labeled read-only generated-source and metadata-
-  signature documents, exact-context syntax-tree, symbol, generated-source, and IL
+  rename, region navigation, and labeled read-only generated and locally decompiled
+  metadata source with an explicit signature fallback, exact-context syntax-tree,
+  symbol, generated-source, and IL
   inspection views, plus Roslyn document, selection, changed-span, paste, and on-type
   formatting and import organization, contextual compiler fixes, local/selection and named
   cross-document refactorings,
@@ -84,15 +85,16 @@ continues with the editor and daily-use IDE slices.
   external sources. Offline mode uses local and cached evidence.
 - Dependency inspection and SBOM preview never restore packages, execute project
   targets, mutate project files, or export without an explicit developer action.
-- Inbound MCP is disabled by default, loopback-only, bearer-authenticated, individually
-  allowlisted, and audited. It exposes no shell, SQL, arbitrary command, generic
+- Inbound MCP is disabled by default, strictly loopback-only, client/tool allowlisted,
+  and audited. It intentionally has no authentication and exposes no shell, SQL, arbitrary command, generic
   click/type, desktop control, credential read, or natural-language authority.
 - Outbound Harness control is a separate directed controller→worker mode. It requires
-  exact tool allowlisting and a write-only Secret Service token, and is never exposed
+  a loopback worker, client attribution, and exact tool allowlisting, and is never exposed
   to Implementer or Reviewer. Arbitrary cyclic delegation is unsupported.
 
 See [architecture](docs/architecture.md), [framework](docs/framework.md), and
-[decision records](docs/decisions/README.md) for the exact rules.
+[decision records](docs/decisions/README.md) for the exact rules. Distributed
+third-party notices are in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 ## Requirements
 
@@ -123,12 +125,6 @@ SIGINT or SIGTERM. It is intended for lifecycle checks and service supervision.
 cache, logs, worktrees, credentials, and a deterministic fixture repository. Use it
 only with Settings → Harness control → IsolatedEvaluation. Normal repositories are
 unavailable in that process.
-
-Automated isolated evaluation may also pass
-`--mcp-evaluation-token-file /tmp/<dedicated-directory>/mcp.token`. The file must be
-an existing owner-only regular file containing one 48-byte Base64 token. Harness reads
-and deletes it before opening the listener; the option is rejected without
-`--mcp-evaluation-root`.
 
 Provider modules, default routes, and optional OTLP export are defined in
 `src/Harness.Host/harness.xml`. Private overrides use XDG configuration. See

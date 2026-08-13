@@ -199,8 +199,10 @@ internal sealed class AgentToolFactory(
                     codeIntelligenceService.FindDefinitionAsync(
                         goalId, Scope(role), new(relativePath), new(line, character), cancellationToken),
                 Options("find_symbol_definition",
-                    "Resolve the source definition of the symbol at a zero-based line and character " +
-                    "with Roslyn. Read the returned definition before editing dependent code.")),
+                    "Resolve the definition of the symbol at a zero-based line and character with " +
+                    "Roslyn. Generated and metadata results eagerly include bounded read-only source; " +
+                    "metadata source contains locally reconstructed method bodies when available. " +
+                    "Read it before editing dependent code.")),
             AgentToolKind.FindReferences => AIFunctionFactory.Create(
                 (string relativePath, int line, int character, CancellationToken cancellationToken) =>
                     codeIntelligenceService.FindReferencesAsync(

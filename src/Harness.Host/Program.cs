@@ -66,12 +66,6 @@ using OperationsBackupResult = Harness.BusinessLogic.Operations.ApplicationBacku
 
 HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
 string? evaluationRoot = ArgumentValue(args, "--mcp-evaluation-root");
-string? evaluationTokenFile = ArgumentValue(args, "--mcp-evaluation-token-file");
-if (evaluationTokenFile is not null && evaluationRoot is null)
-{
-    throw new ArgumentException(
-        "--mcp-evaluation-token-file requires --mcp-evaluation-root.");
-}
 XdgApplicationPaths applicationPaths = evaluationRoot is null
     ? new()
     : new(CreateEvaluationPaths(evaluationRoot));
@@ -131,9 +125,6 @@ builder.Services.AddSingleton(new McpConnectionConfigurationOptions(
             ? Harness.DataAccess.Mcp.McpConnectionAccess.HarnessControl
             : Harness.DataAccess.Mcp.McpConnectionAccess.ReadOnly,
         ClientId: connection.ClientId is null ? null : new(connection.ClientId),
-        BearerTokenReference: connection.BearerTokenReference is null
-            ? null
-            : new(connection.BearerTokenReference.Name),
         AllowedTools: connection.AllowedTools.Select(tool =>
             new Harness.DataAccess.Mcp.McpToolName(tool)).ToArray())).ToArray()));
 builder.Services.AddSingleton<IMcpConnectionConfigurationStore, XdgMcpConnectionConfigurationStore>();
@@ -392,15 +383,6 @@ try
     {
         throw new InvalidOperationException(
             $"Pending application restore failed safely: {restore.Error}");
-    }
-
-    if (evaluationRoot is not null && evaluationTokenFile is not null)
-    {
-        await EvaluationMcpTokenBootstrap.SeedAsync(
-            evaluationRoot,
-            evaluationTokenFile,
-            host.Services.GetRequiredService<ISecretStore>(),
-            shutdown.Token);
     }
 
     await host.StartAsync(shutdown.Token);

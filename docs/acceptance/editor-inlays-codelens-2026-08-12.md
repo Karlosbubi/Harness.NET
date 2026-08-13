@@ -46,7 +46,7 @@ lenses, and the normal exact-buffer health state in the real Dock workbench.
 The already-loaded `harness_live` MCP connector still returned HTTP 401 after the
 live process credential changed. This is the known cached-authorization restart issue
 recorded in the Morgania evaluation; visual and deterministic dogfood continued
-without weakening authentication.
+without weakening the loopback, allowlist, or typed-authority boundaries.
 
 ## Remaining Task 049 work
 

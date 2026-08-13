@@ -61,7 +61,6 @@ public sealed class StatelessHttpMcpToolClientTests
             RequiresRestart: false,
             McpConnectionAccess.HarnessControl,
             new("controller"),
-            new("worker-token"),
             [new("harness_application"), new("harness_create_goal")]);
 
         Assert.Equal(expected,

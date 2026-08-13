@@ -59,12 +59,13 @@ state. The UI does not present failed output as current.
 - `./eng/verify-avalonia-atspi.py` passes against the production Avalonia editor.
 - `./eng/verify-linux-x64-publish.sh` publishes and starts the Linux x64 artifact.
 
-## Remaining Task 049 work
+## Subsequent closure
 
 - configurable keybindings, conflict management, declarative import/export, and
   optional Vim mode;
 - project User Secrets with capture and model-context interlocks;
 - a real debugger adapter for Debug CodeLens in Task 052;
-- validated full metadata method-body decompilation;
+- validated metadata method-body decompilation is recorded in
+  [editor-decompilation-2026-08-13.md](editor-decompilation-2026-08-13.md);
 - completion of the broader latency, memory, cancellation, analyzer-failure, IME,
   accessibility, scaling, restoration, and Linux publication matrix.

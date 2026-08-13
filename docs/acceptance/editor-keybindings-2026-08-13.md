@@ -76,9 +76,10 @@ The page scrolls through all commands to validation, save/reset, and the bounded
 transfer controls. It uses the established Settings layout and accessible control
 names; no separate modal editor or fake state was introduced.
 
-## Remaining Task 049 work
+## Subsequent closure
 
 - project User Secrets with masked and separately authorized developer actions;
 - a real debugger adapter for Debug CodeLens;
 - final Task 049 performance, cancellation, large-solution, repeated-context,
-  keyboard-only, IME, Orca, scaling, restoration, and parity audit.
+  keyboard-only, IME, Orca, scaling, restoration, decompilation, and parity work was
+  delivered in later slices.

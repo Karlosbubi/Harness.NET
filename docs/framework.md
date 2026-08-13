@@ -88,6 +88,11 @@ platform types stay inside their owning adapters.
 - Closed cross-document actions report every affected path before apply. Apply
   recomputes the action and fingerprint, enforces every path grant and baseline,
   writes one atomic batch, and validates the complete persisted set.
+- Metadata navigation uses Roslyn-resolved symbols and exact local compilation
+  references. A bounded Data Access decompiler reconstructs the selected member when
+  an exact implementation assembly exists; reference-only or unavailable bodies fall
+  back to an explicitly labeled signature. It never downloads, restores, loads, or
+  executes an assembly.
 - Manual editor buffers remain permissive. Diagnostics do not block typing or save.
 
 ## Remote spending
@@ -137,7 +142,7 @@ New goals default to `Unlimited` remote spend. Users may select `Capped` or
 - Stdio, OAuth, resources, prompts, Apps, tasks, subscriptions, and mutating tools need
   separate feature decisions.
 - Inbound control uses the same official stateless Streamable HTTP SDK boundary. It is
-  disabled by default, loopback-only, bearer-authenticated, client/tool allowlisted,
+  disabled by default, strictly loopback-only, intentionally unauthenticated, client/tool allowlisted,
   bounded, and audited.
 - Inbound MCP adapts existing typed Business Logic commands. It does not grant trust,
   mutation, execution, spend, capture, disclosure, or desktop authority.

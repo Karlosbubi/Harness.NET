@@ -2,6 +2,8 @@ using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using Harness.DataAccess.CodeIntelligence;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Xunit.Abstractions;
 
 namespace Harness.DataAccess.Tests.CodeIntelligence;
@@ -1199,7 +1201,7 @@ public sealed class RoslynCodeIntelligenceEngineTests(ITestOutputHelper output) 
     }
 
     [Fact]
-    public async Task Metadata_definition_opens_a_version_bound_read_only_signature()
+    public async Task Metadata_definition_opens_version_bound_read_only_decompiled_source()
     {
         const string source = "class Sample { string Value = string.Empty; }\n";
         await CreateProjectAsync(source);
@@ -1219,9 +1221,9 @@ public sealed class RoslynCodeIntelligenceEngineTests(ITestOutputHelper output) 
             new(snapshot, destination.VirtualDocumentId!));
 
         Assert.Equal(CodeIntelligenceResultState.Ready, document.State);
-        Assert.Equal(CodeIntelligenceVirtualDocumentKind.MetadataSignature, document.Kind);
+        Assert.Equal(CodeIntelligenceVirtualDocumentKind.DecompiledSource, document.Kind);
         Assert.True(document.IsReadOnly);
-        Assert.Contains("Metadata signature generated locally", document.Text!.Value,
+        Assert.Contains("Decompiled locally by Harness.NET", document.Text!.Value,
             StringComparison.Ordinal);
         Assert.Contains("Empty", document.Text.Value, StringComparison.Ordinal);
         Assert.Equal("net10.0", document.Origin!.TargetFramework.Value);
@@ -1232,6 +1234,83 @@ public sealed class RoslynCodeIntelligenceEngineTests(ITestOutputHelper output) 
             snapshot with { BufferVersion = new(2) }, destination.VirtualDocumentId!));
         Assert.Equal(CodeIntelligenceResultState.Stale, stale.State);
         Assert.Equal("virtual_document_stale", Assert.Single(stale.Issues).Code.Value);
+    }
+
+    [Fact]
+    public async Task Metadata_method_navigation_reconstructs_the_local_implementation_body()
+    {
+        const string source =
+            "class Sample { int Run() => new External.Calculator().Double(21); }\n";
+        await CreateProjectAsync(source);
+        string dependencyPath = Path.Combine(root, "External.dll");
+        EmitMetadataDependency(dependencyPath, """
+            namespace External;
+            public sealed class Calculator
+            {
+                public int Double(int value) => value * 2;
+            }
+            """);
+        await File.WriteAllTextAsync(Path.Combine(root, "Sample.csproj"), """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+              <ItemGroup><Reference Include="External" HintPath="External.dll" /></ItemGroup>
+            </Project>
+            """);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("metadata-method-body-context");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+        int offset = source.IndexOf("Double", StringComparison.Ordinal) + 2;
+        CodeIntelligenceInteractiveSnapshot snapshot =
+            InteractiveSnapshot(contextId, session.SessionId!, source, offset);
+
+        CodeIntelligenceNavigationResult navigation = await engine.FindDefinitionAsync(snapshot);
+        CodeIntelligenceSymbolDestination destination = Assert.Single(navigation.Destinations);
+        CodeIntelligenceVirtualDocumentResult document = await engine.GetVirtualDocumentAsync(
+            new(snapshot, destination.VirtualDocumentId!));
+
+        Assert.Equal(CodeIntelligenceResultState.Ready, document.State);
+        Assert.Equal(CodeIntelligenceVirtualDocumentKind.DecompiledSource, document.Kind);
+        Assert.Contains("int Double(int value)", document.Text!.Value, StringComparison.Ordinal);
+        Assert.Contains("return value * 2;", document.Text.Value, StringComparison.Ordinal);
+        Assert.DoesNotContain(root, document.Text.Value, StringComparison.Ordinal);
+        Assert.Empty(document.Issues);
+    }
+
+    [Fact]
+    public async Task Reference_only_metadata_falls_back_to_an_explicit_signature_view()
+    {
+        const string source =
+            "class Sample { int Run() => new External.Calculator().Double(21); }\n";
+        await CreateProjectAsync(source);
+        string dependencyPath = Path.Combine(root, "External.dll");
+        EmitMetadataDependency(dependencyPath, """
+            namespace External;
+            public sealed class Calculator
+            {
+                public int Double(int value) => value * 2;
+            }
+            """, metadataOnly: true);
+        await File.WriteAllTextAsync(Path.Combine(root, "Sample.csproj"), """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+              <ItemGroup><Reference Include="External" HintPath="External.dll" /></ItemGroup>
+            </Project>
+            """);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("metadata-signature-fallback-context");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+        int offset = source.IndexOf("Double", StringComparison.Ordinal) + 2;
+        CodeIntelligenceInteractiveSnapshot snapshot =
+            InteractiveSnapshot(contextId, session.SessionId!, source, offset);
+
+        CodeIntelligenceNavigationResult navigation = await engine.FindDefinitionAsync(snapshot);
+        CodeIntelligenceVirtualDocumentResult document = await engine.GetVirtualDocumentAsync(
+            new(snapshot, Assert.Single(navigation.Destinations).VirtualDocumentId!));
+
+        Assert.Equal(CodeIntelligenceVirtualDocumentKind.MetadataSignature, document.Kind);
+        Assert.Contains("Method bodies are not decompiled", document.Text!.Value,
+            StringComparison.Ordinal);
+        Assert.Equal("decompilation_unavailable", Assert.Single(document.Issues).Code.Value);
     }
 
     [Fact]
@@ -1708,6 +1787,28 @@ public sealed class RoslynCodeIntelligenceEngineTests(ITestOutputHelper output) 
             Path.Combine(root, "Sample.cs"),
             source,
             Utf8WithoutBom);
+    }
+
+    private static void EmitMetadataDependency(
+        string path,
+        string source,
+        bool metadataOnly = false)
+    {
+        MetadataReference[] references = ((string)AppContext.GetData(
+                "TRUSTED_PLATFORM_ASSEMBLIES")!).Split(Path.PathSeparator)
+            .Select(path => MetadataReference.CreateFromFile(path)).ToArray();
+        CSharpCompilation compilation = CSharpCompilation.Create(
+            "External",
+            [CSharpSyntaxTree.ParseText(source)],
+            references,
+            new(OutputKind.DynamicallyLinkedLibrary));
+        using FileStream output = File.Create(path);
+        Microsoft.CodeAnalysis.Emit.EmitResult result = compilation.Emit(
+            output,
+            options: new Microsoft.CodeAnalysis.Emit.EmitOptions(
+                metadataOnly: metadataOnly,
+                includePrivateMembers: !metadataOnly));
+        Assert.True(result.Success, string.Join('\n', result.Diagnostics));
     }
 
     private async ValueTask CreateLinkedSolutionAsync(string shared)

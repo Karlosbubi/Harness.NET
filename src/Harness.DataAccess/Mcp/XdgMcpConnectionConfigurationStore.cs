@@ -62,8 +62,7 @@ internal sealed class XdgMcpConnectionConfigurationStore : IMcpConnectionConfigu
                 System.Globalization.CultureInfo.InvariantCulture));
             Set(connection, "Access", configuration.Access.ToString());
             Set(connection, "ClientId", configuration.ClientId?.Value ?? string.Empty);
-            Set(connection, "BearerTokenReference",
-                configuration.BearerTokenReference?.Value ?? string.Empty);
+            connection.Element("BearerTokenReference")?.Remove();
             Set(connection, "AllowedTools", string.Join(Environment.NewLine,
                 (configuration.AllowedTools ?? []).Select(tool => tool.Value)));
             await SaveAsync(document, cancellationToken);

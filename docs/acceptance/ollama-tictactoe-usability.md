@@ -1,7 +1,7 @@
 # Ollama Tic-Tac-Toe usability test
 
 `eng/verify-ollama-tictactoe-usability.py` drives an isolated Harness.NET instance
-through its authenticated stateless MCP surface and uses real Ollama models for
+through its loopback-only stateless MCP surface and uses real Ollama models for
 planning, implementation, review, and recovery. It is not part of the deterministic
 release gate.
 
@@ -23,7 +23,7 @@ validation, minimax solver, and generated tests.
 
 The script:
 
-1. starts an ephemeral loopback-only MCP server with an owner-only bearer token;
+1. starts an ephemeral loopback-only MCP server with a stable client ID;
 2. selects models and generates a plan;
 3. approves the plan;
 4. runs the real Implementer and Reviewer workflow;

@@ -68,8 +68,9 @@ Use small commits with one result. Do not mix unrelated cleanup into feature wor
 | 044 | Fingerprinted Roslyn rename for users and agents. | [Semantic rename](../acceptance/roslyn-deterministic-rename-2026-07-31.md). |
 | 045 | Controlled XDG-portal visual verification. | [Portal visual verification](../acceptance/portal-visual-verification-2026-08-10.md). |
 | 046 | Documentation research, dependency validation, and SBOM. | [Documentation and supply-chain evidence](../acceptance/documentation-dependency-sbom-2026-08-11.md). |
+| 049 | NetPad-level .NET editing and inspection. | [Parity matrix](../netpad-omnisharp-parity.md), [metadata decompilation](../acceptance/editor-decompilation-2026-08-13.md), and the linked editor acceptance records below. |
 
-## Open tasks
+## Detailed task records
 
 ### 038 — local-model quality regression
 
@@ -124,7 +125,7 @@ API would bypass the product's authority and privacy model.
 
 Acceptance criteria:
 
-1. An ADR defines inbound MCP ownership, stateless transport, authentication,
+1. An ADR defines inbound MCP ownership, stateless transport, loopback boundary,
    application-instance identity, normal and evaluation modes, tool policy, approval,
    privacy, persistence, audit, isolation, startup, and shutdown.
 2. Data Access owns the official MCP SDK and Streamable HTTP transport. Business Logic
@@ -132,10 +133,10 @@ Acceptance criteria:
    commands, authority, evidence, and result contracts. Presentation only reports
    status and adapts developer actions.
 3. Settings ships in the first slice with enablement, mode, loopback endpoint,
-   authentication status, token rotation, client/tool allowlists, per-tool approval,
+   client/tool allowlists, per-tool approval,
    timeouts, limits, retention, health, active clients, disconnect, and reset.
-4. Normal mode is disabled by default, binds only to loopback, requires an
-   authenticated client, shows a persistent active-control indicator, and supports
+4. Normal mode is disabled by default, binds only to loopback, records an optional
+   client ID for attribution and requires it when an allowlist is configured, shows a persistent active-control indicator, and supports
    immediate revocation without restarting Harness.
 5. Read-only tools inspect application/provider/MCP health, workspaces, active source
    context, open documents, Roslyn results, Git state, goals/runs/sessions, plans,
@@ -162,21 +163,21 @@ Acceptance criteria:
     session, document/baseline, operation, and continuation identities as applicable;
     stale or cross-instance calls fail without mutation.
 12. Deterministic fake-client and live local-client tests cover discovery, schema,
-    authentication, rotation, allowlists, approvals, stale identities, concurrency,
+    loopback confinement, client allowlists, approvals, stale identities, concurrency,
     cancellation, reconnect, malformed input, oversized output, reset, isolation,
     portal denial, accessibility, shutdown, restart, and Linux x64 publish.
-13. A distinct loopback-only outbound `HarnessControl` connection can authenticate to
+13. A distinct loopback-only outbound `HarnessControl` connection can connect to
     a worker Harness instance and expose an exact allowlist of lifecycle tools to Lead.
     Ordinary MCP connections, Implementer, and Reviewer remain read-only. Settings
-    owns the write-only token, client ID, allowlist, validation, status, and persistence.
+    owns the client ID, allowlist, validation, status, and persistence.
 
 Delivered in the Task 047/059 integration slice: accepted ADR 019; official SDK 2.x
-stateless Streamable HTTP; loopback bearer authentication and one-time enrollment;
+stateless Streamable HTTP; strict loopback confinement without inbound authentication;
 closed client/tool/approval policy; bounded audit and immediate revocation; typed
 workspace, project, Git, goal/plan/workflow/cost/evidence, Roslyn, document/UI,
 Build/Test, full asynchronous goal lifecycle, accepted-change/commit decision,
 capture, and evaluation operations; exact instance/source
-identities; volatile evaluation secrets; deterministic fixture snapshot/reset;
+identities; deterministic fixture snapshot/reset;
 Harness-owned evaluation frames and closed accessibility actions; Settings ownership;
 directed Harness-to-Harness Lead delegation; deterministic client/isolation tests; and
 Linux publish verification.
@@ -342,7 +343,7 @@ Acceptance criteria:
 
 ### 049 — NetPad-level .NET editing and inspection
 
-Status: `In progress — bounded cross-document refactorings delivered; full decompilation remains`
+Status: `Completed`
 
 Dependencies: 012, 043, 044, 047, 048.
 
@@ -382,12 +383,14 @@ path for models, writes one atomic batch, and validates the complete persisted s
 
 File and workspace-symbol search cover file, type, and symbol navigation. Regions are
 first-class outline entries without polluting lexical breadcrumbs. Definitions,
-usages, and implementations resolve source-generator output and metadata signatures
+usages, and implementations resolve source-generator output and metadata source
 through opaque handles bound to the exact live buffer. The desktop opens these as
 labeled read-only C# documents and excludes them from repository and layout
-persistence. Role and inbound MCP navigation results eagerly include successful
-virtual documents before their short-lived Roslyn session closes. Full method-body
-decompilation remains pending a maintained public dependency and supply-chain review.
+persistence. `ICSharpCode.Decompiler` reconstructs a selected metadata member from an
+exact local implementation assembly; reference-only or unavailable bodies retain an
+explicit signature fallback. Role and inbound MCP navigation results eagerly include
+successful virtual documents before their short-lived Roslyn session closes. See
+[editor-decompilation-2026-08-13.md](../acceptance/editor-decompilation-2026-08-13.md).
 
 The editor's Inspect menu now opens bounded read-only syntax-tree, symbol-detail,
 generated-source, and Intermediate Language views. Roslyn builds each view from the
@@ -433,11 +436,11 @@ eight consecutive Roslyn context replacements, keyboard-only use, IME, AT-SPI, s
 Orca speech, 200% scaling, Dock restoration, and self-contained Linux x64 publish.
 See [editor-resilience-2026-08-13.md](../acceptance/editor-resilience-2026-08-13.md).
 
-Problem: Harness.NET now has the core interactive Roslyn operations, semantic
-presentation and adornment slices, formatting, closed local and cross-document
-actions, bounded generated and metadata-signature navigation, and configurable
-keybindings. It still lacks full method-body decompilation. It also lacks
-the debugger needed for Debug CodeLens.
+Result: Harness.NET has the core interactive Roslyn operations, semantic presentation
+and adornment slices, formatting, closed local and cross-document actions, bounded
+generated and decompiled metadata navigation, configurable keybindings, and the full
+Task 049 Linux resilience evidence. Debug CodeLens remains correctly hidden because
+the debugger belongs to Task 052.
 OmniSharp implements many of the underlying Roslyn services, but adopting its server
 would duplicate the current workspace and add process, download, version, recovery,
 and transport costs.

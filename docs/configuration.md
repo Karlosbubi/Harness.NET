@@ -128,7 +128,6 @@ Its persisted shape is:
   <Enabled>true</Enabled>
   <Access>HarnessControl</Access>
   <ClientId>controller</ClientId>
-  <BearerTokenReference>harness-mcp-connection-worker-bearer</BearerTokenReference>
   <AllowedTools>harness_application
 harness_create_goal
 harness_goals
@@ -137,16 +136,15 @@ harness_start_planning</AllowedTools>
 </worker>
 ```
 
-The bearer value is never stored in XML. Paste the worker token in Settings; it is
-written to Secret Service under the reference. Control requires a loopback endpoint,
-an initialized server whose name is exactly `Harness.NET`, a valid client ID, and
+Control requires a loopback endpoint, an initialized server whose name is exactly
+`Harness.NET`, a valid client ID, and
 1–32 distinct exact `harness_` tool IDs. Only Lead receives those tools. The worker
 still applies every normal instance, workspace, goal, plan, spending, worktree, and
 approval check. Configure a directed controller→worker topology; automatic cycle
 detection and arbitrary mutual/self-control are not implemented.
 
 Settings → MCP connections can add, edit, enable, disable, remove, refresh, and show
-access mode, credential presence, exact allowlist, protocol, eligible/rejected counts,
+access mode, client ID, exact allowlist, protocol, eligible/rejected counts,
 and failures. Changes require restart because active clients and schemas are fixed for
 the process lifetime.
 
@@ -180,16 +178,11 @@ Only `http`, loopback hosts, ports 1024–65535, known closed tool IDs, client I
 1–128 characters, timeouts of 1–300 seconds, result limits of 1–5000, and audit
 retention of 0–100000 are accepted. An approval-held tool is omitted from discovery.
 
-For automated isolated evaluation only, start the host with both
-`--mcp-evaluation-root /tmp/<dedicated-directory>` and
-`--mcp-evaluation-token-file /tmp/<dedicated-directory>/mcp.token`. The token file
-must be a regular owner-only file directly inside the evaluation root and contain one
-48-byte Base64 token. Harness loads it into the volatile secret store and deletes the
-file before starting the listener. The token is not placed in process arguments,
-logs, normal configuration, SQLite, or Secret Service. Normal mode rejects this
-bootstrap option.
-The bearer token is never stored in XML. Normal mode uses Secret Service;
-IsolatedEvaluation uses process-local volatile storage.
+The server performs no authentication. It can bind only to loopback and must not be
+exposed through a proxy or port forward. `X-Harness-Client` is optional while the
+client allowlist is empty; missing values are audited as `local-anonymous`. A
+non-empty client allowlist requires an exact header match. The header is not proof of identity. Tool allowlists,
+typed authority, workspace trust, approvals, and bounds remain enforced.
 
 Mutating calls require the current `instanceId` returned by `harness_application`.
 Stale process identities fail before dispatch. Results include the applicable

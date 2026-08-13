@@ -120,6 +120,34 @@ Do not depend on Roslyn's internal metadata-as-source services. Full decompilati
 requires a separately reviewed maintained dependency, license and attribution review,
 package/SBOM evidence, tests, and an amendment to this decision.
 
+#### Amendment: bounded metadata decompilation
+
+Adopt `ICSharpCode.Decompiler` `10.1.1.8388` behind the Data Access boundary for
+metadata navigation. This is the stable ILSpy 10.1.1 engine release from upstream
+commit `1377eb6e7351b21112858c8c1df39848f40181ec`, published from
+`refs/heads/release/10.1`. The package and upstream project use the MIT license. The
+NuGet archive SHA-512 is
+`1512c9e2748b6745616110fbbc96726876264f39307b1d19405090abe03bbfb87f4aa5ba0490112160ef8ab6fbe996eb17e6cf02c0bda1311115f0cf2e1bea37`.
+Its declared .NET Standard 2.0 dependencies are `System.Collections.Immutable >=
+9.0.0` and `System.Reflection.Metadata >= 9.0.0`; the .NET 10 runtime already supplies
+both. The package contains an SPDX 2.2 manifest and a repository signature. No source
+is copied or vendored.
+
+The adapter receives only Roslyn-resolved metadata symbols and exact compilation
+references. It decompiles one containing type from an existing local managed assembly,
+never a user-supplied arbitrary path. Framework facade/reference assemblies may map to
+the matching loaded .NET runtime assembly by exact assembly identity. Resolution is
+local and bounded: no download, Restore, process launch, assembly load, reflection,
+or project-code execution. Output remains a session-bound, size-limited, read-only
+virtual document. If an implementation assembly or method body is unavailable, the
+existing signature view remains as an explicitly labeled fallback with a typed issue.
+
+`ICSharpCode.Decompiler` types stay in Data Access. Business Logic, Presentation,
+model tools, and inbound MCP continue to use the existing virtual-document contracts.
+Package upgrades require the normal dependency, license, integrity, API, publish, and
+SBOM review. Rollback removes the package and adapter and restores the existing
+signature renderer without changing those upper-layer contracts.
+
 Virtual documents are bounded, read-only, session-local, excluded from layout and
 ordinary document persistence, and never written into a user repository. Role tools
 resolve their text before closing a short-lived session so a model never receives an

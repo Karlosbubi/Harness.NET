@@ -3797,6 +3797,7 @@ internal sealed class WorkbenchDockHost
     {
         WorkbenchCodeVirtualDocumentKind.GeneratedSource => "Generated source",
         WorkbenchCodeVirtualDocumentKind.MetadataSignature => "Metadata signature",
+        WorkbenchCodeVirtualDocumentKind.DecompiledSource => "Decompiled source",
         _ => "Virtual source",
     };
 
@@ -4703,7 +4704,7 @@ internal sealed class WorkbenchDockHost
             int line = Destination.Range?.Start.Line + 1 ?? 0;
             string location = Destination.VirtualDocumentId is not null
                 ? Destination.Kind is WorkbenchCodeDestinationKind.Generated
-                    ? "generated source" : "metadata signature"
+                    ? "generated source" : "metadata source"
                 : $"{Destination.Path?.Value}:{line}";
             return $"{location}  {Destination.Display.Value}";
         }

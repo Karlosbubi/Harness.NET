@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-11
-- Amended: 2026-08-12
+- Amended: 2026-08-13
 - Extends: [ADR 005](005-isolated-goal-execution.md), [ADR 013](013-chat-first-desktop-workflow.md), [ADR 015](015-stateless-mcp-connections.md), [ADR 016](016-model-accessible-ide-capabilities.md), [ADR 017](017-portal-visual-verification.md)
 
 ## Context
@@ -17,19 +17,27 @@ control the developer's desktop or repositories.
 ### Ownership and transport
 
 Harness.NET exposes an optional stateless Streamable HTTP MCP server through the
-official C# SDK 2.x. Data Access owns SDK and HTTP types, transport, authentication
-adapter, connection accounting and protocol mapping. Business Logic owns the closed
+official C# SDK 2.x. Data Access owns SDK and HTTP types, transport, connection
+accounting and protocol mapping. Business Logic owns the closed
 tool catalog, exact application/source identities, eligibility, approvals, commands,
 audit records and result contracts. Presentation reports status and adapts explicit
 developer-visible focus actions. SDK types do not cross Data Access.
 
 The server is disabled by default, binds only to an IP loopback address, uses one
-configured endpoint path, and does not persist MCP session IDs. Each request requires
-a current bearer token. The token is generated with cryptographic randomness and stored
-through the Secret Service. Settings may copy a newly rotated token once, only after
-an explicit developer action; Harness does not retain a displayable copy or reveal an
-existing token. Rotation revokes existing clients immediately. Authentication is not
-authorization.
+configured endpoint path, and does not persist MCP session IDs. It intentionally has
+no bearer-token or other inbound authentication. This endpoint is a local development
+interface, like a local IDE integration, and is not suitable for exposure through a
+non-loopback proxy or port forward. Loopback validation is therefore a hard startup
+condition rather than a configurable default.
+
+Each request may carry a configured client identifier. When the client allowlist is
+empty, a missing identifier is recorded as `local-anonymous`; a non-empty allowlist
+requires an exact identifier match. The identifier provides audit attribution and
+selects a client allowlist entry; it is not an identity proof
+and another process running as the same OS user can spoof it. Tool allowlists,
+approvals, workspace trust, source-context checks, typed authority and bounded results
+remain the authorization boundaries. Harness must not describe the client identifier
+or its allowlist as authentication.
 
 An application-instance identifier is regenerated on process start. Results also
 identify the active workspace, source context, goal/run/session and data freshness
@@ -47,14 +55,6 @@ explicitly selected Ollama provider, and no stored credentials or normal workspa
 Reset destroys only that identified evaluation state. Evaluation snapshots may expose
 Harness-owned rendered frames and accessibility identities. Actions may activate only
 allowlisted Harness accessibility identities in that isolated instance.
-
-An automated evaluator may seed the isolated process with one bearer token through an
-explicit token file located directly inside the dedicated evaluation root. Harness
-accepts this bootstrap only with `--mcp-evaluation-root`, requires an existing regular
-owner-only file and a valid bounded token, reads it into the volatile secret store, and
-deletes the file before starting the MCP listener. The token is never accepted as a
-command-line value, copied to normal storage, or logged. Normal mode cannot use this
-bootstrap path.
 
 An evaluator may also pre-seed the disposable fixture repository inside that same
 evaluation root. Registration resolves exactly one tracked `.slnx` or `.sln` entry
@@ -105,13 +105,13 @@ dependency-injection service dispatch.
 ### Settings and lifecycle
 
 Settings ships with the first server slice. It owns enablement, mode, loopback
-endpoint, authentication status and rotation, client and tool allowlists, per-tool
+endpoint, client and tool allowlists, per-tool
 approval, request timeout and result limits, audit retention, health, active clients,
 disconnect, reset and restart state. Safe validation rejects non-loopback endpoints,
-unknown tools, missing authentication and normal paths in evaluation mode.
+unknown tools and normal paths in evaluation mode.
 
-Startup validates settings before binding. Disable, token rotation, client revocation
-and shutdown stop accepting new requests immediately and cancel bounded in-flight work.
+Startup validates settings before binding. Disable, client revocation and shutdown
+stop accepting new requests immediately and cancel bounded in-flight work.
 The workbench shows a persistent active-control indicator while the endpoint is live.
 
 ## Consequences
@@ -120,6 +120,9 @@ The workbench shows a persistent active-control indicator while the endpoint is 
   internal agents.
 - Evaluation is reproducible without exposing the developer environment.
 - MCP adds transport, observability and lifecycle work but grants no new authority.
+- Any local process can attempt to call the endpoint or spoof an allowlisted client
+  identifier. The feature is appropriate only for a single-user loopback development
+  environment; stronger multi-user or remote isolation requires a new decision.
 - Adding a tool requires its normal Business Logic slice, Settings policy, metadata,
   deterministic tests and audit mapping first.
 

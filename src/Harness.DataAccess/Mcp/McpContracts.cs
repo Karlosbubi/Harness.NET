@@ -16,8 +16,6 @@ public enum McpConnectionAccess
 
 public sealed record McpClientIdentifier(string Value);
 
-public sealed record McpBearerTokenReference(string Value);
-
 public sealed record McpConnectionConfiguration(
     McpConnectionName Name,
     McpConnectionEndpoint Endpoint,
@@ -26,7 +24,6 @@ public sealed record McpConnectionConfiguration(
     bool RequiresRestart,
     McpConnectionAccess Access = McpConnectionAccess.ReadOnly,
     McpClientIdentifier? ClientId = null,
-    McpBearerTokenReference? BearerTokenReference = null,
     IReadOnlyList<McpToolName>? AllowedTools = null);
 
 public sealed record McpConnectionConfigurationOptions(

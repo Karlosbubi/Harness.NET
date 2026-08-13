@@ -134,6 +134,7 @@ public enum CodeIntelligenceVirtualDocumentKind
 {
     GeneratedSource,
     MetadataSignature,
+    DecompiledSource,
 }
 
 public sealed record CodeIntelligenceProjectVersion(string Value);

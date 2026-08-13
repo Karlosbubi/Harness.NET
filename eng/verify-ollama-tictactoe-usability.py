@@ -2,21 +2,19 @@
 """Drive Harness.NET through a non-trivial, local-Ollama-only usability exercise.
 
 The script creates an isolated .NET repository, drives Harness.NET through its
-authenticated stateless MCP control surface, and independently validates the result.
+loopback-only stateless MCP control surface, and independently validates the result.
 It never configures or authorizes a remote model provider.
 """
 
 from __future__ import annotations
 
 import argparse
-import base64
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import html
 import json
 import os
 from pathlib import Path
-import secrets
 import shlex
 import sqlite3
 import socket
@@ -1249,15 +1247,11 @@ def main() -> int:
     database = evaluation_root / "data/harness.db"
     repository = evaluation_root / "data/evaluation-fixture"
     mcp_endpoint = available_loopback_endpoint()
-    token = base64.b64encode(secrets.token_bytes(48)).decode("ascii")
-    token_file = evaluation_root / "mcp-token"
-    token_file.write_text(token, encoding="utf-8")
-    token_file.chmod(0o600)
     report["evaluation_root"] = str(evaluation_root)
     report["mcp_endpoint"] = mcp_endpoint
     process: subprocess.Popen[str] | None = None
     process_log: Any | None = None
-    client = StatelessMcpClient(mcp_endpoint, token)
+    client = StatelessMcpClient(mcp_endpoint)
     peak_host_rss = 0
     peak_model_vram = 0
     selected_models: list[str] = []
@@ -1322,7 +1316,6 @@ def main() -> int:
             [
                 str(executable), "--ui=avalonia",
                 "--mcp-evaluation-root", str(evaluation_root),
-                "--mcp-evaluation-token-file", str(token_file),
             ],
             env=environment,
             text=True,

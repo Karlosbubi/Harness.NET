@@ -62,7 +62,7 @@ public sealed class HarnessConfigurationLoaderTests : IDisposable
     }
 
     [Fact]
-    public void Loads_harness_control_connection_without_loading_the_secret_value()
+    public void Loads_unauthenticated_loopback_harness_control_connection()
     {
         Directory.CreateDirectory(ConfigDirectory);
         File.WriteAllText(
@@ -77,7 +77,6 @@ public sealed class HarnessConfigurationLoaderTests : IDisposable
                   <Enabled>true</Enabled>
                   <Access>HarnessControl</Access>
                   <ClientId>controller</ClientId>
-                  <BearerTokenReference>harness-mcp-connection-worker-bearer</BearerTokenReference>
                   <AllowedTools>harness_application
                   harness_create_goal</AllowedTools>
                 </worker>
@@ -89,8 +88,6 @@ public sealed class HarnessConfigurationLoaderTests : IDisposable
 
         Assert.Equal(McpConnectionAccessKind.HarnessControl, connection.Access);
         Assert.Equal("controller", connection.ClientId);
-        Assert.Equal("harness-mcp-connection-worker-bearer",
-            connection.BearerTokenReference?.Name);
         Assert.Equal(["harness_application", "harness_create_goal"],
             connection.AllowedTools);
     }

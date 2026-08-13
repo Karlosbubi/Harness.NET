@@ -1,7 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
 using Harness.DataAccess.Mcp;
-using Harness.DataAccess.Secrets;
 using Microsoft.Extensions.Logging.Abstractions;
 using ModelContextProtocol.Client;
 
@@ -10,21 +9,26 @@ namespace Harness.DataAccess.Tests.Mcp;
 public sealed class InboundMcpServerTests
 {
     [Fact]
-    public async Task Stateless_server_requires_authentication_and_exposes_only_closed_tools()
+    public async Task Stateless_server_allows_unauthenticated_local_clients_and_exposes_only_closed_tools()
     {
         int port = FreePort();
         Uri endpoint = new($"http://127.0.0.1:{port}/mcp");
         StaticSettings settings = new(Settings(endpoint));
-        MemorySecrets secrets = new("test-token");
         RecordingApplication application = new();
         MemoryAuditStore audit = new();
-        await using InboundMcpServer server = new(settings, secrets, application,
+        await using InboundMcpServer server = new(settings, application,
             audit, NullLoggerFactory.Instance, TimeProvider.System);
         await server.ApplyAsync();
 
-        using HttpClient anonymous = new();
-        using HttpResponseMessage denied = await anonymous.GetAsync(endpoint);
-        Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
+        HttpClientTransport anonymousTransport = new(new HttpClientTransportOptions
+        {
+            Name = "anonymous-local",
+            Endpoint = endpoint,
+            TransportMode = HttpTransportMode.StreamableHttp,
+        }, NullLoggerFactory.Instance);
+        await using McpClient anonymous = await McpClient.CreateAsync(
+            anonymousTransport, loggerFactory: NullLoggerFactory.Instance);
+        Assert.NotEmpty(await anonymous.ListToolsAsync());
 
         HttpClientTransport transport = new(new HttpClientTransportOptions
         {
@@ -33,7 +37,6 @@ public sealed class InboundMcpServerTests
             TransportMode = HttpTransportMode.StreamableHttp,
             AdditionalHeaders = new Dictionary<string, string>
             {
-                ["Authorization"] = "Bearer test-token",
                 ["X-Harness-Client"] = "test-client",
             },
         }, NullLoggerFactory.Instance);
@@ -59,7 +62,9 @@ public sealed class InboundMcpServerTests
         string result = (await tools.Single(tool => tool.Name == "harness_application")
             .CallAsync()).Content.Single().ToString()!;
         Assert.Contains("instance", result, StringComparison.OrdinalIgnoreCase);
-        Assert.Single(server.Current.ActiveClients);
+        Assert.Equal(2, server.Current.ActiveClients.Count);
+        Assert.Contains(server.Current.ActiveClients,
+            item => item.Id.Value == "local-anonymous");
         Assert.Equal("test-client", application.LastContext?.ClientId.Value);
         var created = await tools.Single(tool => tool.Name == "harness_create_goal").CallAsync(
             new Dictionary<string, object?>
@@ -128,55 +133,50 @@ public sealed class InboundMcpServerTests
     }
 
     [Fact]
-    public async Task Disabled_server_does_not_bind_and_token_rotation_revokes_clients()
+    public async Task Disabled_server_does_not_bind()
     {
         int port = FreePort();
         StaticSettings settings = new(Settings(new($"http://127.0.0.1:{port}/mcp")) with
         { IsEnabled = false });
-        MemorySecrets secrets = new("old");
-        await using InboundMcpServer server = new(settings, secrets, new RecordingApplication(),
+        await using InboundMcpServer server = new(settings, new RecordingApplication(),
             new MemoryAuditStore(), NullLoggerFactory.Instance, TimeProvider.System);
 
         await server.ApplyAsync();
         Assert.False(server.Current.IsRunning);
-        InboundMcpBearerToken replacement = await server.RotateTokenAsync();
-        Assert.NotEqual("old", secrets.Value);
-        Assert.Equal(secrets.Value, replacement.Value);
     }
 
     [Fact]
-    public async Task Live_rotation_and_disconnect_revoke_authentication_immediately()
+    public async Task Disconnect_revokes_client_while_other_local_clients_remain_allowed()
     {
         int port = FreePort();
         Uri endpoint = new($"http://127.0.0.1:{port}/mcp");
-        StaticSettings settings = new(Settings(endpoint));
-        MemorySecrets secrets = new("old-token");
-        await using InboundMcpServer server = new(settings, secrets, new RecordingApplication(),
+        StaticSettings settings = new(Settings(endpoint) with
+        {
+            AllowedClients = [new("codex"), new("fresh-client")],
+        });
+        await using InboundMcpServer server = new(settings, new RecordingApplication(),
             new MemoryAuditStore(), NullLoggerFactory.Instance, TimeProvider.System);
         await server.ApplyAsync();
 
-        Assert.NotEqual(HttpStatusCode.Unauthorized,
-            (await SendAsync(endpoint, "old-token", "codex")).StatusCode);
+        Assert.NotEqual(HttpStatusCode.Forbidden,
+            (await SendAsync(endpoint, "codex")).StatusCode);
         await server.DisconnectAsync(new("codex"));
-        Assert.Equal(HttpStatusCode.Unauthorized,
-            (await SendAsync(endpoint, "old-token", "codex")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await SendAsync(endpoint, "codex")).StatusCode);
 
-        InboundMcpBearerToken replacement = await server.RotateTokenAsync();
-        Assert.Equal(HttpStatusCode.Unauthorized,
-            (await SendAsync(endpoint, "old-token", "fresh-client")).StatusCode);
-        Assert.NotEqual(HttpStatusCode.Unauthorized,
-            (await SendAsync(endpoint, replacement.Value, "fresh-client")).StatusCode);
+        Assert.NotEqual(HttpStatusCode.Forbidden,
+            (await SendAsync(endpoint, "fresh-client")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await SendAsync(endpoint, "unlisted-client")).StatusCode);
     }
 
     [Fact]
-    public async Task Harness_control_connection_authenticates_and_exposes_only_exact_allowlist()
+    public async Task Harness_control_connection_uses_client_id_and_exposes_only_exact_allowlist()
     {
         int port = FreePort();
         Uri endpoint = new($"http://127.0.0.1:{port}/mcp");
-        MemorySecrets secrets = new("worker-token");
         await using InboundMcpServer server = new(
             new StaticSettings(Settings(endpoint)),
-            secrets,
             new RecordingApplication(),
             new MemoryAuditStore(),
             NullLoggerFactory.Instance,
@@ -190,10 +190,9 @@ public sealed class InboundMcpServerTests
             RequiresRestart: false,
             McpConnectionAccess.HarnessControl,
             new("controller"),
-            new("worker-token-reference"),
             [new("harness_application"), new("harness_create_goal")]);
         await using StatelessHttpMcpToolClient client = new(
-            new([connection]), secrets, NullLoggerFactory.Instance);
+            new([connection]), NullLoggerFactory.Instance);
 
         McpConnectionDiscovery discovered = Assert.Single(
             (await client.DiscoverAsync()).Connections);
@@ -213,7 +212,7 @@ public sealed class InboundMcpServerTests
     }
 
     private static InboundMcpServerSettings Settings(Uri endpoint) => new(
-        true, InboundMcpMode.Normal, endpoint, new("token"), [],
+        true, InboundMcpMode.Normal, endpoint, [],
         [new("harness_application"), new("harness_workspace"), new("harness_tree"),
             new("harness_read_range"), new("harness_git"), new("harness_project_graph"),
             new("harness_goals"), new("harness_evidence"),
@@ -232,12 +231,10 @@ public sealed class InboundMcpServerTests
         return ((IPEndPoint)listener.LocalEndpoint).Port;
     }
 
-    private static async Task<HttpResponseMessage> SendAsync(
-        Uri endpoint, string token, string client)
+    private static async Task<HttpResponseMessage> SendAsync(Uri endpoint, string client)
     {
         HttpClient http = new();
         HttpRequestMessage request = new(HttpMethod.Get, endpoint);
-        request.Headers.Authorization = new("Bearer", token);
         request.Headers.Add("X-Harness-Client", client);
         HttpResponseMessage response = await http.SendAsync(request);
         http.Dispose();
@@ -251,16 +248,6 @@ public sealed class InboundMcpServerTests
         public ValueTask<InboundMcpServerSettings> SaveAsync(
             InboundMcpServerSettings settings, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(settings);
-    }
-
-    private sealed class MemorySecrets(string? value) : ISecretStore
-    {
-        public string? Value { get; private set; } = value;
-        public ValueTask<string?> GetAsync(SecretReference reference,
-            CancellationToken cancellationToken = default) => ValueTask.FromResult(Value);
-        public ValueTask SetAsync(SecretReference reference, string value,
-            CancellationToken cancellationToken = default)
-        { Value = value; return ValueTask.CompletedTask; }
     }
 
     private sealed class MemoryAuditStore : IInboundMcpAuditStore

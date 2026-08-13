@@ -1,6 +1,5 @@
 using Harness.BusinessLogic.Mcp;
 using Harness.DataAccess.Mcp;
-using Harness.DataAccess.Secrets;
 using DataConnectionName = Harness.DataAccess.Mcp.McpConnectionName;
 
 namespace Harness.BusinessLogic.Tests.Mcp;
@@ -12,7 +11,7 @@ public sealed class McpSettingsServiceTests
     {
         MemoryConfigurationStore configurations = new([]);
         FakeToolClient tools = new(new([]));
-        McpSettingsService service = new(configurations, tools, new MemorySecretStore());
+        McpSettingsService service = new(configurations, tools);
 
         McpSettingsResult result = await service.SaveAsync(new(
             new("docs"),
@@ -20,7 +19,6 @@ public sealed class McpSettingsServiceTests
             new(45),
             McpConnectionKind.ReadOnly,
             ClientId: null,
-            BearerToken: null,
             AllowedTools: [],
             IsEnabled: true));
 
@@ -38,12 +36,11 @@ public sealed class McpSettingsServiceTests
     {
         McpSettingsService service = new(
             new MemoryConfigurationStore([]),
-            new FakeToolClient(new([])),
-            new MemorySecretStore());
+            new FakeToolClient(new([])));
 
         McpSettingsResult result = await service.SaveAsync(new(
             new(name), new(endpoint), new(30), McpConnectionKind.ReadOnly,
-            ClientId: null, BearerToken: null, AllowedTools: [], IsEnabled: true));
+            ClientId: null, AllowedTools: [], IsEnabled: true));
 
         Assert.Equal("invalid_mcp_connection", result.ErrorCode);
     }
@@ -58,7 +55,7 @@ public sealed class McpSettingsServiceTests
             new(configuration, "2026-07-28", [eligible, rejected], null, null),
         ]));
         McpSettingsService service = new(
-            new MemoryConfigurationStore([configuration]), tools, new MemorySecretStore());
+            new MemoryConfigurationStore([configuration]), tools);
 
         McpSettingsSnapshot snapshot = await service.RefreshAsync();
 
@@ -71,12 +68,11 @@ public sealed class McpSettingsServiceTests
     }
 
     [Fact]
-    public async Task Harness_control_requires_loopback_identity_credentials_and_exact_tools()
+    public async Task Harness_control_requires_loopback_client_attribution_and_exact_tools()
     {
         MemoryConfigurationStore configurations = new([]);
-        MemorySecretStore secrets = new();
         McpSettingsService service = new(
-            configurations, new FakeToolClient(new([])), secrets);
+            configurations, new FakeToolClient(new([])));
 
         McpSettingsResult result = await service.SaveAsync(new(
             new("worker"),
@@ -84,16 +80,13 @@ public sealed class McpSettingsServiceTests
             new(60),
             McpConnectionKind.HarnessControl,
             new("controller"),
-            new("secret-token"),
             [new("harness_application"), new("harness_create_goal")],
             IsEnabled: true));
 
         McpConnectionSettingsView saved = Assert.Single(result.Snapshot!.Connections);
         Assert.Equal(McpConnectionKind.HarnessControl, saved.Kind);
-        Assert.True(saved.HasBearerToken);
         Assert.Equal("controller", saved.ClientId?.Value);
         Assert.Equal(2, saved.AllowedTools.Count);
-        Assert.Equal("secret-token", secrets.Values.Single().Value);
         Assert.Equal(McpConnectionAccess.HarnessControl,
             configurations.Values.Single().Access);
     }
@@ -151,25 +144,6 @@ public sealed class McpSettingsServiceTests
             DataConnectionName name,
             CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(values.Remove(name.Value));
-    }
-
-    private sealed class MemorySecretStore : ISecretStore
-    {
-        internal Dictionary<string, string> Values { get; } = new(StringComparer.Ordinal);
-
-        public ValueTask<string?> GetAsync(
-            SecretReference reference,
-            CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(Values.GetValueOrDefault(reference.Name));
-
-        public ValueTask SetAsync(
-            SecretReference reference,
-            string value,
-            CancellationToken cancellationToken = default)
-        {
-            Values[reference.Name] = value;
-            return ValueTask.CompletedTask;
-        }
     }
 
     private sealed class FakeToolClient(McpDiscoverySnapshot snapshot) : IMcpToolClient

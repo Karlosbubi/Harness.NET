@@ -70,7 +70,7 @@ class LocalModelRegressionTests(unittest.TestCase):
         self.assertIn("rewriteLines decreased by 3", comparison["improvements"])
 
     def test_stateless_client_records_success_and_failure(self) -> None:
-        client = StatelessMcpClient("http://localhost.invalid/mcp", "token")
+        client = StatelessMcpClient("http://localhost.invalid/mcp")
         responses = iter([
             {"jsonrpc": "2.0", "id": 1, "result": {}},
             {"jsonrpc": "2.0", "id": 2, "result": {

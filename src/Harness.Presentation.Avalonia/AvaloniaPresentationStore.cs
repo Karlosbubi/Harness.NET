@@ -319,21 +319,6 @@ internal sealed class AvaloniaPresentationStore(
         }
     }
 
-    internal async ValueTask<string?> RotateInboundMcpTokenAsync(CancellationToken cancellationToken)
-    {
-        if (inboundMcpSettingsService is null) return null;
-        InboundControlTokenRotation rotation = await inboundMcpSettingsService.RotateTokenAsync(cancellationToken);
-        Publish(Current with
-        {
-            Settings = Current.Settings with
-            {
-                InboundMcpSettings = rotation.Settings,
-                Status = "Bearer token rotated and copied once; existing clients were revoked."
-            }
-        });
-        return rotation.OneTimeBearerToken;
-    }
-
     internal async ValueTask DisconnectInboundMcpClientAsync(
         InboundControlClientId clientId,
         CancellationToken cancellationToken)

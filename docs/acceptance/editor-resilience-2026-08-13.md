@@ -1,7 +1,7 @@
 # Editor resilience acceptance — 2026-08-13
 
 This record covers the final Task 049 Linux resilience matrix. It does not add a
-debugger or full method-body decompiler.
+debugger. Metadata decompilation was delivered separately afterward.
 
 ## Behavior
 
@@ -65,12 +65,13 @@ Fixtures contain synthetic source only. The analyzer error exposed to callers is
 fixed message without exception text, paths, environment values, credentials, or
 source content. Temporary test results and publish output are not repository files.
 
-## Remaining Task 049 gaps
+## Subsequent closure
 
 - The closed catalog now includes bounded Add Parameter and Replace Property/Method
   cross-document actions plus semantic rename. Additional providers require explicit
   policy admission; there is no generic Roslyn action executor.
-- Metadata navigation provides bounded signatures. Full method-body decompilation
-  still needs a pinned, licensed, integrity-checked dependency and SBOM review.
+- Metadata method-body decompilation and its pinned dependency, license, integrity,
+  and SBOM review are recorded in
+  [editor-decompilation-2026-08-13.md](editor-decompilation-2026-08-13.md).
 - Debug CodeLens belongs to Task 052 and remains hidden until a real debugger adapter
   exists.

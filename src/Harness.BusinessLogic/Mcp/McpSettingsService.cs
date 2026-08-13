@@ -1,26 +1,22 @@
 using System.Text.RegularExpressions;
 using Harness.DataAccess.Mcp;
-using Harness.DataAccess.Secrets;
 using DataConnectionName = Harness.DataAccess.Mcp.McpConnectionName;
 
 namespace Harness.BusinessLogic.Mcp;
 
 internal sealed partial class McpSettingsService(
     IMcpConnectionConfigurationStore configurationStore,
-    IMcpToolClient toolClient,
-    ISecretStore secretStore) : IMcpSettingsService
+    IMcpToolClient toolClient) : IMcpSettingsService
 {
     public async ValueTask<McpSettingsSnapshot> GetAsync(
         CancellationToken cancellationToken = default) =>
-        await MapAsync(await configurationStore.ListAsync(cancellationToken), toolClient.Current,
-            cancellationToken);
+        Map(await configurationStore.ListAsync(cancellationToken), toolClient.Current);
 
     public async ValueTask<McpSettingsSnapshot> RefreshAsync(
         CancellationToken cancellationToken = default) =>
-        await MapAsync(
+        Map(
             await configurationStore.ListAsync(cancellationToken),
-            await toolClient.DiscoverAsync(cancellationToken),
-            cancellationToken);
+            await toolClient.DiscoverAsync(cancellationToken));
 
     public async ValueTask<McpSettingsResult> SaveAsync(
         McpConnectionSettingsUpdate request,
@@ -33,21 +29,6 @@ internal sealed partial class McpSettingsService(
         }
 
         Uri endpoint = new(request.Endpoint.Value, UriKind.Absolute);
-        SecretReference bearerReference = BearerReference(request.Name);
-        if (request.Kind is McpConnectionKind.HarnessControl)
-        {
-            if (request.BearerToken is not null)
-            {
-                await secretStore.SetAsync(
-                    bearerReference, request.BearerToken.Value, cancellationToken);
-            }
-            else if (string.IsNullOrWhiteSpace(
-                         await secretStore.GetAsync(bearerReference, cancellationToken)))
-            {
-                return new(null, "missing_mcp_control_token",
-                    "Harness control requires a bearer token. Paste the current token from the worker's Harness control Settings page.");
-            }
-        }
         await configurationStore.SaveAsync(new(
             new(request.Name.Value),
             new(endpoint),
@@ -58,9 +39,6 @@ internal sealed partial class McpSettingsService(
                 ? McpConnectionAccess.HarnessControl
                 : McpConnectionAccess.ReadOnly,
             ClientId: request.ClientId is null ? null : new(request.ClientId.Value),
-            BearerTokenReference: request.Kind is McpConnectionKind.HarnessControl
-                ? new(bearerReference.Name)
-                : null,
             AllowedTools: request.AllowedTools.Select(tool =>
                 new McpToolName(tool.Value)).ToArray()), cancellationToken);
         return new(await GetAsync(cancellationToken), null, null);
@@ -77,18 +55,15 @@ internal sealed partial class McpSettingsService(
 
         bool removed = await configurationStore.DeleteAsync(
             new DataConnectionName(name.Value), cancellationToken);
-        if (removed)
-            await secretStore.SetAsync(BearerReference(name), string.Empty, cancellationToken);
         return removed
             ? new(await GetAsync(cancellationToken), null, null)
             : new(await GetAsync(cancellationToken), "mcp_connection_not_found",
                 $"MCP connection '{name.Value}' was not found.");
     }
 
-    private async ValueTask<McpSettingsSnapshot> MapAsync(
+    private static McpSettingsSnapshot Map(
         IReadOnlyList<McpConnectionConfiguration> configurations,
-        McpDiscoverySnapshot discovery,
-        CancellationToken cancellationToken)
+        McpDiscoverySnapshot discovery)
     {
         List<McpConnectionSettingsView> views = [];
         foreach (McpConnectionConfiguration configuration in configurations)
@@ -107,9 +82,6 @@ internal sealed partial class McpSettingsService(
                         : found is null
                             ? McpConnectionState.Failed
                             : McpConnectionState.Ready;
-            bool hasBearerToken = configuration.BearerTokenReference is not null &&
-                !string.IsNullOrWhiteSpace(await secretStore.GetAsync(
-                    new(configuration.BearerTokenReference.Value), cancellationToken));
             views.Add(new McpConnectionSettingsView(
                 new(configuration.Name.Value),
                 new(configuration.Endpoint.Value.AbsoluteUri),
@@ -118,7 +90,6 @@ internal sealed partial class McpSettingsService(
                     ? McpConnectionKind.HarnessControl
                     : McpConnectionKind.ReadOnly,
                 configuration.ClientId is null ? null : new(configuration.ClientId.Value),
-                hasBearerToken,
                 (configuration.AllowedTools ?? []).Select(tool =>
                     new McpAllowedToolName(tool.Value)).ToArray(),
                 configuration.IsEnabled,
@@ -159,10 +130,6 @@ internal sealed partial class McpSettingsService(
                 return "Harness control connections are limited to loopback endpoints.";
             if (request.ClientId is null || !ValidClientId().IsMatch(request.ClientId.Value))
                 return "Harness control client ID must contain 1-128 letters, digits, dot, underscore, or hyphen characters.";
-            if (request.BearerToken is not null &&
-                (string.IsNullOrWhiteSpace(request.BearerToken.Value) ||
-                    request.BearerToken.Value.Length > 4096))
-                return "Harness control bearer token must contain 1-4096 non-whitespace characters when supplied.";
             if (request.AllowedTools.Count is < 1 or > 32 ||
                 request.AllowedTools.Any(tool =>
                     !ValidHarnessTool().IsMatch(tool.Value)) ||
@@ -170,8 +137,7 @@ internal sealed partial class McpSettingsService(
                     .Distinct(StringComparer.Ordinal).Count() != request.AllowedTools.Count)
                 return "Harness control requires 1-32 distinct harness_ tool IDs.";
         }
-        else if (request.ClientId is not null || request.BearerToken is not null ||
-                 request.AllowedTools.Count > 0)
+        else if (request.ClientId is not null || request.AllowedTools.Count > 0)
         {
             return "Read-only MCP connections cannot configure Harness control credentials or tool grants.";
         }
@@ -190,6 +156,4 @@ internal sealed partial class McpSettingsService(
     [GeneratedRegex("^harness_[a-z0-9_]{1,120}$", RegexOptions.CultureInvariant)]
     private static partial Regex ValidHarnessTool();
 
-    private static SecretReference BearerReference(McpConnectionName name) =>
-        new($"harness-mcp-connection-{name.Value.ToLowerInvariant()}-bearer");
 }

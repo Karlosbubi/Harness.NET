@@ -52,9 +52,9 @@ input-mode selector above the shared command catalog:
 
 ![Vim input setting](settings-vim-input-2026-08-13.png)
 
-## Remaining Task 049 work
+## Subsequent closure
 
 - The complete IME, accessibility, scaling, restoration, and Linux publication matrix
   is recorded in [editor-resilience-2026-08-13.md](editor-resilience-2026-08-13.md).
-  Cross-document refactorings and full decompilation remain Task 049 gaps; Debug is
-  Task 052.
+  Cross-document refactorings and metadata decompilation were delivered afterward.
+  Debug remains Task 052.

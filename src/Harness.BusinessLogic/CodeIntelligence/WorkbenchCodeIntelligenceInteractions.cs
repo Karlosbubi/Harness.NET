@@ -837,6 +837,8 @@ internal sealed partial class WorkbenchCodeIntelligenceService
                 WorkbenchCodeVirtualDocumentKind.GeneratedSource,
             CodeIntelligenceVirtualDocumentKind.MetadataSignature =>
                 WorkbenchCodeVirtualDocumentKind.MetadataSignature,
+            CodeIntelligenceVirtualDocumentKind.DecompiledSource =>
+                WorkbenchCodeVirtualDocumentKind.DecompiledSource,
             _ => throw new ArgumentOutOfRangeException(nameof(kind)),
         };
 

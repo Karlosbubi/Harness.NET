@@ -2,6 +2,7 @@
   <ItemGroup>
     <PackageReference Include="Ace4896.DBus.Services.Secrets" />
     <PackageReference Include="Dapper" />
+    <PackageReference Include="ICSharpCode.Decompiler" />
     <PackageReference Include="LibGit2Sharp" />
     <PackageReference Include="dbup-core" />
     <PackageReference Include="dbup-sqlite" />

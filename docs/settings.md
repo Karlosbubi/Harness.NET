@@ -111,8 +111,8 @@ schemas. The page does not provide arbitrary tool invocation. Catalog, descripti
 schema, and result limits prevent an endpoint from adding unbounded model context.
 
 `HarnessControl` is a separate loopback-only connection kind for a directed
-controller→worker Harness.NET topology. The page owns its stable client ID, write-only
-bearer token, Secret Service status, and exact `harness_` tool allowlist. Discovery
+controller→worker Harness.NET topology. The page owns its stable client ID and exact
+`harness_` tool allowlist. Discovery
 requires the worker to identify itself as `Harness.NET`. Only Lead receives eligible
 control tools; Implementer and Reviewer retain ordinary read-only MCP tools. The
 connection grants no plan, repository, spending, or commit approval, and cyclic
@@ -137,15 +137,18 @@ authority.
 This page owns the inbound MCP server from its first slice: enablement, Normal or
 IsolatedEvaluation mode, loopback endpoint, client and tool allowlists, explicit
 approval holds, request/result limits, audit retention, health, active clients,
-disconnect, token rotation, and isolated-fixture reset.
+disconnect and isolated-fixture reset.
 
-The server is disabled by default. “Rotate and copy token once” creates a new random
-token, revokes existing clients, and puts the new value on the clipboard only for that
-explicit action. Existing tokens cannot be displayed. Configure the client with:
+The server is disabled by default and cannot bind beyond loopback. It intentionally
+has no authentication. Configure the client with:
 
 - Streamable HTTP endpoint shown on the page;
-- `Authorization: Bearer <copied-token>`;
-- a stable `X-Harness-Client` value permitted by the client allowlist.
+- optionally, a stable `X-Harness-Client` value for clearer audit attribution.
+
+An empty client allowlist accepts a missing header and records it as
+`local-anonymous`; a non-empty allowlist requires an exact header match. The client
+value is attribution, not authentication; another process under the same local user
+can spoof it. Do not proxy or port-forward this endpoint.
 
 Tools listed under “Require explicit approval” are absent from discovery. Removing a
 tool from that hold and applying Settings is the explicit approval. Build, Test,

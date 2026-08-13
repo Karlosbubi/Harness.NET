@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-10
+- Amended: 2026-08-13
 - Extends: [ADR 003](003-agent-and-provider-architecture.md), [ADR 005](005-isolated-goal-execution.md), [ADR 013](013-chat-first-desktop-workflow.md)
 
 ## Context
@@ -45,8 +46,8 @@ configured as `HarnessControl` may expose selected tools that are not read-only 
 
 - the endpoint is loopback;
 - the initialized server identifies itself as `Harness.NET`;
-- a stable client ID and write-only bearer token are configured in Settings, with the
-  token stored through Secret Service rather than XML;
+- a stable client ID is configured in Settings for audit attribution and client
+  allowlisting; it is not authentication;
 - every exposed tool is in that connection's exact allowlist and starts with
   `harness_`;
 - destructive and mutating annotations remain visible to the model-facing adapter;
@@ -55,8 +56,9 @@ configured as `HarnessControl` may expose selected tools that are not read-only 
 - the remote Harness server still enforces application/source/goal/plan/run/operation,
   spending, trust, worktree, and approval identities for every action.
 
-This exception does not add a generic invocation function or treat the bearer token as
-repository, spending, plan, or commit approval. Cyclic delegation topologies are not a
+This exception does not add a generic invocation function or treat the client ID as
+repository, spending, plan, or commit approval. The worker's inbound endpoint remains
+strictly loopback-only and intentionally unauthenticated as defined by ADR 019. Cyclic delegation topologies are not a
 supported execution strategy; operators configure a directed controller-to-worker
 connection. A worker with no outbound control connection cannot recurse. Durable
 delegation-depth metadata and automatic cycle detection remain prerequisites for

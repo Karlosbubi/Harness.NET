@@ -108,9 +108,8 @@ def git_revision(repository: Path) -> str:
 class StatelessMcpClient:
     """One initialize request and one call request per operation; no session is retained."""
 
-    def __init__(self, endpoint: str, token: str, client_id: str = "local-regression"):
+    def __init__(self, endpoint: str, client_id: str = "local-regression"):
         self.endpoint = endpoint
-        self.token = token
         self.client_id = client_id
         self.trace: list[dict[str, Any]] = []
 
@@ -166,7 +165,6 @@ class StatelessMcpClient:
             headers={
                 "Content-Type": "application/json",
                 "Accept": "application/json, text/event-stream",
-                "Authorization": f"Bearer {self.token}",
                 "X-Harness-Client": self.client_id,
             },
         )

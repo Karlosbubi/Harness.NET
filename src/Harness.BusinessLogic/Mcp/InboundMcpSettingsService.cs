@@ -20,7 +20,7 @@ public sealed record InboundControlClientStatus(
     InboundControlClientId Id, DateTimeOffset LastSeenAt, int RequestCount);
 public sealed record InboundControlStatus(
     string InstanceId, bool IsRunning, Uri Endpoint, InboundControlMode Mode,
-    bool IsAuthenticated, IReadOnlyList<InboundControlClientStatus> ActiveClients,
+    IReadOnlyList<InboundControlClientStatus> ActiveClients,
     string? ErrorCode, string? Error);
 public sealed record InboundControlToolPolicy(
     InboundControlToolId Id,
@@ -34,9 +34,6 @@ public sealed record InboundMcpSettingsView(
     InboundControlSettings Settings,
     InboundControlStatus Status,
     IReadOnlyList<InboundControlToolPolicy> ToolPolicies);
-public sealed record InboundControlTokenRotation(
-    InboundMcpSettingsView Settings,
-    string OneTimeBearerToken);
 public sealed record InboundControlEvaluationReset(
     InboundMcpSettingsView Settings,
     string Head,
@@ -47,8 +44,6 @@ public interface IInboundMcpSettingsService
     ValueTask<InboundMcpSettingsView> GetAsync(CancellationToken cancellationToken = default);
     ValueTask<InboundMcpSettingsView> SaveAsync(
         InboundControlSettings settings, CancellationToken cancellationToken = default);
-    ValueTask<InboundControlTokenRotation> RotateTokenAsync(
-        CancellationToken cancellationToken = default);
     ValueTask<InboundMcpSettingsView> DisconnectAsync(
         InboundControlClientId clientId, CancellationToken cancellationToken = default);
     ValueTask<InboundControlEvaluationReset> ResetEvaluationAsync(
@@ -69,13 +64,11 @@ internal sealed class InboundMcpSettingsService(
     public async ValueTask<InboundMcpSettingsView> SaveAsync(
         InboundControlSettings settings, CancellationToken cancellationToken = default)
     {
-        InboundMcpServerSettings currentSettings = await settingsStore.GetAsync(cancellationToken);
         await settingsStore.SaveAsync(new(
             settings.IsEnabled,
             settings.Mode is InboundControlMode.IsolatedEvaluation
                 ? InboundMcpMode.IsolatedEvaluation : InboundMcpMode.Normal,
             settings.Endpoint,
-            currentSettings.TokenReference,
             settings.AllowedClients.Select(item => new InboundMcpClientId(item.Value)).ToArray(),
             settings.AllowedTools.Select(item => new InboundMcpToolId(item.Value)).ToArray(),
             settings.ApprovalRequiredTools.Select(item => new InboundMcpToolId(item.Value)).ToArray(),
@@ -84,13 +77,6 @@ internal sealed class InboundMcpSettingsService(
         await runtime.ApplyAsync(cancellationToken);
         InboundMcpServerSettings current = await settingsStore.GetAsync(cancellationToken);
         return View(current with { RequiresRestart = false }, runtime.Current);
-    }
-
-    public async ValueTask<InboundControlTokenRotation> RotateTokenAsync(
-        CancellationToken cancellationToken = default)
-    {
-        InboundMcpBearerToken token = await runtime.RotateTokenAsync(cancellationToken);
-        return new(await GetAsync(cancellationToken), token.Value);
     }
 
     public async ValueTask<InboundMcpSettingsView> DisconnectAsync(
@@ -124,7 +110,6 @@ internal sealed class InboundMcpSettingsService(
         new(status.InstanceId.Value, status.IsRunning, status.Endpoint,
             status.Mode is InboundMcpMode.IsolatedEvaluation
                 ? InboundControlMode.IsolatedEvaluation : InboundControlMode.Normal,
-            status.IsAuthenticated,
             status.ActiveClients.Select(item => new InboundControlClientStatus(
                 new(item.Id.Value), item.LastSeenAt, item.RequestCount)).ToArray(),
             status.ErrorCode, status.Error),

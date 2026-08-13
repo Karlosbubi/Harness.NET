@@ -99,6 +99,7 @@ public sealed class GoalCodeIntelligenceServiceTests
         Assert.NotNull(destination.VirtualDocumentId);
         WorkbenchCodeVirtualDocumentView document = Assert.Single(result.VirtualDocuments!);
         Assert.Equal("public class String { }", document.Text!.Value);
+        Assert.Equal(WorkbenchCodeVirtualDocumentKind.DecompiledSource, document.Kind);
         Assert.True(document.IsReadOnly);
         Assert.True(code.WasStopped);
     }
@@ -264,8 +265,8 @@ public sealed class GoalCodeIntelligenceServiceTests
                 WorkbenchCodeVirtualDocumentView(
                     request.Snapshot.SessionId, request.Snapshot.Path,
                     request.Snapshot.BufferVersion, WorkbenchCodeResultState.Ready,
-                    request.Id, WorkbenchCodeVirtualDocumentKind.MetadataSignature,
-                    new("String · metadata"), new("public class String { }"), null,
+                    request.Id, WorkbenchCodeVirtualDocumentKind.DecompiledSource,
+                    new("String · decompiled"), new("public class String { }"), null,
                     new(new("Sample"), new("version"), new("net10.0"), new("Debug"),
                         new("System.Runtime"), new(new string('b', 64))), true, []));
 

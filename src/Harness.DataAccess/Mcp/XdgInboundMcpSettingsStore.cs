@@ -30,7 +30,6 @@ internal sealed class XdgInboundMcpSettingsStore(IApplicationPaths applicationPa
         IsEnabled: false,
         InboundMcpMode.Normal,
         new("http://127.0.0.1:57431/mcp"),
-        new("inbound-mcp-bearer-token"),
         [],
         [new("harness_application"), new("harness_workspace"), new("harness_tree"),
             new("harness_read_range"), new("harness_git"), new("harness_project_graph"),

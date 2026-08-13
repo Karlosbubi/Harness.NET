@@ -439,8 +439,10 @@ public sealed class PresentationControlTests
                 Equals(button.Content, "Refresh active connections"));
             Assert.Contains(window.GetLogicalDescendants().OfType<Control>(), control =>
                 AutomationProperties.GetName(control) == "New MCP connection kind");
-            Assert.Contains(window.GetLogicalDescendants().OfType<Control>(), control =>
+            Assert.DoesNotContain(window.GetLogicalDescendants().OfType<Control>(), control =>
                 AutomationProperties.GetName(control) == "New Harness control bearer token");
+            Assert.Contains(window.GetLogicalDescendants().OfType<Control>(), control =>
+                AutomationProperties.GetName(control) == "New Harness control client ID");
             Assert.Contains(window.GetLogicalDescendants().OfType<Control>(), control =>
                 AutomationProperties.GetName(control) == "New Harness control allowed tool IDs");
             ComboBox kind = Assert.Single(window.GetLogicalDescendants().OfType<ComboBox>(),
@@ -2225,7 +2227,7 @@ public sealed class PresentationControlTests
     }
 
     [Fact]
-    public async Task F12_metadata_definition_opens_a_labeled_read_only_virtual_document()
+    public async Task F12_metadata_definition_opens_labeled_read_only_decompiled_source()
     {
         using HeadlessUnitTestSession testSession =
             HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
@@ -2245,9 +2247,9 @@ public sealed class PresentationControlTests
                     request.Snapshot.BufferVersion,
                     WorkbenchCodeResultState.Ready,
                     request.Id,
-                    WorkbenchCodeVirtualDocumentKind.MetadataSignature,
-                    new("String · metadata"),
-                    new("public sealed class String { public static string Empty; }"),
+                    WorkbenchCodeVirtualDocumentKind.DecompiledSource,
+                    new("String · decompiled"),
+                    new("public sealed class String { public int Length => 42; }"),
                     new(new(0, 20), new(0, 26)),
                     new(new("Sample"), new("version"), new("net10.0"), new("Debug"),
                         new("System.Runtime, Version=10.0.0.0"), new(new string('b', 64))),
@@ -2273,6 +2275,8 @@ public sealed class PresentationControlTests
             Assert.True(workbench.ActiveVirtualEditor!.IsReadOnly);
             Assert.Contains("public sealed class String", workbench.ActiveVirtualEditor.Text,
                 StringComparison.Ordinal);
+            Assert.Contains("Decompiled source", AutomationProperties.GetName(
+                workbench.ActiveVirtualEditor), StringComparison.Ordinal);
             Assert.Contains("read-only", workbench.Documents.ActiveDockable!.Title,
                 StringComparison.OrdinalIgnoreCase);
             Assert.Contains(Assert.IsAssignableFrom<Control>(
@@ -4046,7 +4050,6 @@ public sealed class PresentationControlTests
                 new(30),
                 McpConnectionKind.ReadOnly,
                 ClientId: null,
-                HasBearerToken: false,
                 AllowedTools: [],
                 IsEnabled: true,
                 State: McpConnectionState.Ready,

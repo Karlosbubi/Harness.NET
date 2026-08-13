@@ -22,8 +22,6 @@ public sealed record McpTimeoutSeconds(int Value);
 
 public sealed record McpConnectionClientId(string Value);
 
-public sealed record McpConnectionBearerToken(string Value);
-
 public sealed record McpAllowedToolName(string Value);
 
 public sealed record McpConnectionSettingsView(
@@ -32,7 +30,6 @@ public sealed record McpConnectionSettingsView(
     McpTimeoutSeconds RequestTimeout,
     McpConnectionKind Kind,
     McpConnectionClientId? ClientId,
-    bool HasBearerToken,
     IReadOnlyList<McpAllowedToolName> AllowedTools,
     bool IsEnabled,
     McpConnectionState State,
@@ -52,7 +49,6 @@ public sealed record McpConnectionSettingsUpdate(
     McpTimeoutSeconds RequestTimeout,
     McpConnectionKind Kind,
     McpConnectionClientId? ClientId,
-    McpConnectionBearerToken? BearerToken,
     IReadOnlyList<McpAllowedToolName> AllowedTools,
     bool IsEnabled);
 

@@ -110,9 +110,9 @@ The full deterministic solution regression passed 725 tests: 6 analyzer, 1
 architecture, 279 Business Logic, 246 Data Access, 22 Host, 147 Avalonia Presentation,
 22 terminal Presentation, and 2 Avalonia UI tests.
 
-## Remaining Task 049 work
+## Subsequent closure
 
-Full method-body decompilation remains Task 049 work. A real Debug CodeLens adapter is
+Full method-body decompilation was delivered afterward. A real Debug CodeLens adapter is
 Task 052. Later provider additions remain explicit policy changes rather than a generic
 action executor.
 

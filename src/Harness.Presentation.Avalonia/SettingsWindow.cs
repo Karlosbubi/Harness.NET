@@ -1045,7 +1045,7 @@ internal sealed class SettingsWindow : Window
 
         CheckBox enabled = new()
         {
-            Content = "Enable authenticated loopback MCP server",
+            Content = "Enable local loopback MCP server",
             IsChecked = configured.IsEnabled
         };
         AutomationProperties.SetName(enabled, "Enable inbound MCP server");
@@ -1063,7 +1063,7 @@ internal sealed class SettingsWindow : Window
             Text = string.Join(Environment.NewLine, configured.AllowedClients.Select(item => item.Value)),
             AcceptsReturn = true,
             Height = 70,
-            PlaceholderText = "One allowed client ID per line; empty allows any authenticated client",
+            PlaceholderText = "One allowed client ID per line; empty allows anonymous local clients",
         };
         AutomationProperties.SetName(clients, "Allowed inbound MCP client IDs");
         TextBox tools = new()
@@ -1134,13 +1134,6 @@ internal sealed class SettingsWindow : Window
                 AuditRetention = (int)(retention.Value ?? 1000),
             }, cancellationToken);
         };
-        Button rotate = new() { Content = "Rotate and copy token once" };
-        rotate.Click += async (_, _) =>
-        {
-            string? token = await store.RotateInboundMcpTokenAsync(cancellationToken);
-            if (token is not null && TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard)
-                await clipboard.SetTextAsync(token);
-        };
         Button resetEvaluation = new()
         {
             Content = "Reset isolated fixture",
@@ -1170,11 +1163,11 @@ internal sealed class SettingsWindow : Window
             });
         }
         if (activeClients.Children.Count == 0)
-            activeClients.Children.Add(new TextBlock { Text = "No authenticated clients.", Classes = { "muted" } });
+            activeClients.Children.Add(new TextBlock { Text = "No active clients.", Classes = { "muted" } });
 
         return Page(
             "Harness control",
-            "Expose typed Harness.NET inspection to local MCP clients. Authentication never replaces workspace trust, baselines, approvals, capture consent, or execution policy.",
+            "Expose typed Harness.NET inspection to local MCP clients. The server is unauthenticated and cannot bind beyond loopback; workspace trust, baselines, approvals, capture consent, and execution policy still apply.",
             new StackPanel
             {
                 Spacing = 12,
@@ -1184,7 +1177,7 @@ internal sealed class SettingsWindow : Window
                     {
                         Text = status is null ? "Runtime status unavailable." :
                             $"{(status.IsRunning ? "ACTIVE" : "INACTIVE")} · {status.Mode} · instance {status.InstanceId}\n" +
-                            $"{status.Endpoint} · authentication {(status.IsAuthenticated ? "ready" : "not ready")}" +
+                            $"{status.Endpoint} · local loopback · no authentication" +
                             (status.Error is null ? string.Empty : $"\n{status.Error}"),
                         TextWrapping = TextWrapping.Wrap,
                         Classes = { status?.IsRunning == true ? "status-success" : "muted" },
@@ -1192,7 +1185,7 @@ internal sealed class SettingsWindow : Window
                     enabled,
                     Labeled("Mode", mode, "Evaluation mode requires a dedicated temporary root supplied at process startup."),
                     Labeled("Loopback endpoint", endpoint, "Plain HTTP is accepted only on 127.0.0.1, ::1, or localhost."),
-                    Labeled("Allowed clients", clients, "Clients also need the current bearer token and X-Harness-Client header."),
+                    Labeled("Allowed clients", clients, "Empty accepts clients without a header as local-anonymous. Otherwise X-Harness-Client must match exactly. This identifier is not authentication."),
                     Labeled("Allowed tools", tools, "Closed typed tool IDs only. Unknown IDs expose nothing."),
                     Labeled("Require explicit approval", approvals,
                         "These tools stay out of discovery until the developer removes the approval requirement and applies settings."),
@@ -1206,7 +1199,7 @@ internal sealed class SettingsWindow : Window
                     Labeled("Maximum results", resultLimit),
                     Labeled("Audit records retained", retention),
                     new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8,
-                        Children = { save, rotate, resetEvaluation } },
+                        Children = { save, resetEvaluation } },
                     new TextBlock { Text = "Active clients", FontWeight = FontWeight.SemiBold },
                     activeClients,
                     new TextBlock
@@ -1253,12 +1246,6 @@ internal sealed class SettingsWindow : Window
         };
         AutomationProperties.SetName(kind, "New MCP connection kind");
         TextBox clientId = ProviderTextBox("harness-controller", "New Harness control client ID");
-        TextBox bearerToken = new()
-        {
-            PasswordChar = '●',
-            PlaceholderText = "Paste worker bearer token (write-only)",
-        };
-        AutomationProperties.SetName(bearerToken, "New Harness control bearer token");
         TextBox allowedTools = new()
         {
             Text = string.Empty,
@@ -1291,10 +1278,6 @@ internal sealed class SettingsWindow : Window
                 kind.SelectedItem is McpConnectionKind.HarnessControl
                     ? new(clientId.Text ?? string.Empty)
                     : null,
-                kind.SelectedItem is McpConnectionKind.HarnessControl &&
-                    !string.IsNullOrWhiteSpace(bearerToken.Text)
-                    ? new(bearerToken.Text)
-                    : null,
                 kind.SelectedItem is McpConnectionKind.HarnessControl
                     ? Lines(allowedTools.Text).Select(tool =>
                         new McpAllowedToolName(tool)).ToArray()
@@ -1305,7 +1288,6 @@ internal sealed class SettingsWindow : Window
             {
                 name.Text = string.Empty;
                 endpoint.Text = string.Empty;
-                bearerToken.Text = string.Empty;
                 allowedTools.Text = string.Empty;
             }
         };
@@ -1322,8 +1304,7 @@ internal sealed class SettingsWindow : Window
         AddProviderField(newFields, 1, 0, "Request timeout (seconds)", timeout);
         AddProviderField(newFields, 1, 1, "Connection kind", kind);
         AddProviderField(newFields, 2, 0, "Harness control client ID", clientId);
-        AddProviderField(newFields, 2, 1, "Harness control bearer token", bearerToken);
-        AddProviderField(newFields, 3, 0, "Harness control allowed tools", allowedTools);
+        AddProviderField(newFields, 2, 1, "Harness control allowed tools", allowedTools);
         Grid.SetRow(enabled, 3);
         Grid.SetColumn(enabled, 1);
         newFields.Children.Add(enabled);
@@ -1360,7 +1341,7 @@ internal sealed class SettingsWindow : Window
                         Classes = { "card", "attention" },
                         Child = new TextBlock
                         {
-                            Text = "Read-only connections fail closed on missing or unsafe annotations. Harness control additionally requires a Harness.NET server identity, stable client ID, write-only Secret Service bearer token, and exact harness_ tool allowlist. It is exposed only to Lead. Saved changes require restart.",
+                            Text = "Read-only connections fail closed on missing or unsafe annotations. Harness control additionally requires a loopback Harness.NET server identity, stable client ID, and exact harness_ tool allowlist. The local server is unauthenticated and the client ID is only attribution. Control tools are exposed only to Lead. Saved changes require restart.",
                             TextWrapping = TextWrapping.Wrap,
                         },
                     },
@@ -1925,15 +1906,6 @@ internal sealed class SettingsWindow : Window
         AutomationProperties.SetName(kind, $"{connection.Name.Value} MCP connection kind");
         TextBox clientId = ProviderTextBox(connection.ClientId?.Value ?? string.Empty,
             $"{connection.Name.Value} Harness control client ID");
-        TextBox bearerToken = new()
-        {
-            PasswordChar = '●',
-            PlaceholderText = connection.HasBearerToken
-                ? "Stored in Secret Service; paste to replace"
-                : "Paste worker bearer token",
-        };
-        AutomationProperties.SetName(bearerToken,
-            $"{connection.Name.Value} Harness control bearer token");
         TextBox allowedTools = new()
         {
             Text = string.Join(Environment.NewLine,
@@ -1959,10 +1931,6 @@ internal sealed class SettingsWindow : Window
             (McpConnectionKind)(kind.SelectedItem ?? McpConnectionKind.ReadOnly),
             kind.SelectedItem is McpConnectionKind.HarnessControl
                 ? new(clientId.Text ?? string.Empty)
-                : null,
-            kind.SelectedItem is McpConnectionKind.HarnessControl &&
-                !string.IsNullOrWhiteSpace(bearerToken.Text)
-                ? new(bearerToken.Text)
                 : null,
             kind.SelectedItem is McpConnectionKind.HarnessControl
                 ? Lines(allowedTools.Text).Select(tool =>
@@ -1990,10 +1958,8 @@ internal sealed class SettingsWindow : Window
         Grid.SetRow(clientId, 1);
         Grid.SetColumn(clientId, 1);
         fields.Children.Add(clientId);
-        Grid.SetRow(bearerToken, 2);
-        fields.Children.Add(bearerToken);
         Grid.SetRow(allowedTools, 2);
-        Grid.SetColumn(allowedTools, 1);
+        Grid.SetColumnSpan(allowedTools, 2);
         fields.Children.Add(allowedTools);
         StackPanel actions = new()
         {
@@ -2020,12 +1986,7 @@ internal sealed class SettingsWindow : Window
                     },
                     new TextBlock
                     {
-                        Text = $"{connection.State} · {connection.Kind} · {protocol} · {connection.DiscoveredTools} tool(s), {connection.AgentEligibleTools} eligible, {connection.RejectedTools} rejected" +
-                            (connection.Kind is McpConnectionKind.HarnessControl
-                                ? connection.HasBearerToken
-                                    ? " · bearer token stored"
-                                    : " · bearer token missing"
-                                : string.Empty),
+                        Text = $"{connection.State} · {connection.Kind} · {protocol} · {connection.DiscoveredTools} tool(s), {connection.AgentEligibleTools} eligible, {connection.RejectedTools} rejected",
                         Classes = { "muted" },
                         TextWrapping = TextWrapping.Wrap,
                     },

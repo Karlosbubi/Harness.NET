@@ -1,5 +1,4 @@
 using System.Text.Json;
-using Harness.DataAccess.Secrets;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
 using ModelContextProtocol.Client;
@@ -9,7 +8,6 @@ namespace Harness.DataAccess.Mcp;
 
 internal sealed class StatelessHttpMcpToolClient(
     McpConnectionConfigurationOptions options,
-    ISecretStore secretStore,
     ILoggerFactory loggerFactory) : IMcpToolClient, IAsyncDisposable
 {
     internal const int MaximumCatalogTools = 256;
@@ -135,22 +133,13 @@ internal sealed class StatelessHttpMcpToolClient(
             Dictionary<string, string>? headers = null;
             if (configuration.Access is McpConnectionAccess.HarnessControl)
             {
-                if (configuration.ClientId is null ||
-                    configuration.BearerTokenReference is null)
+                if (configuration.ClientId is null)
                 {
-                    return new(configuration, null, [], "mcp_control_authentication_missing",
-                        "Harness control requires a client ID and bearer-token reference.");
-                }
-                string? bearer = await secretStore.GetAsync(
-                    new(configuration.BearerTokenReference.Value), timeout.Token);
-                if (string.IsNullOrWhiteSpace(bearer))
-                {
-                    return new(configuration, null, [], "mcp_control_authentication_missing",
-                        "Harness control bearer token is missing from Secret Service.");
+                    return new(configuration, null, [], "mcp_control_client_missing",
+                        "Harness control requires a client ID for attribution and allowlisting.");
                 }
                 headers = new(StringComparer.Ordinal)
                 {
-                    ["Authorization"] = $"Bearer {bearer}",
                     ["X-Harness-Client"] = configuration.ClientId.Value,
                 };
             }

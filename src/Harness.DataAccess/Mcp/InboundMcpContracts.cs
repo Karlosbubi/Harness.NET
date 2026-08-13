@@ -9,8 +9,6 @@ public enum InboundMcpMode
 public sealed record InboundMcpApplicationInstanceId(string Value);
 public sealed record InboundMcpClientId(string Value);
 public sealed record InboundMcpToolId(string Value);
-public sealed record InboundMcpBearerTokenReference(string Value);
-public sealed record InboundMcpBearerToken(string Value);
 public sealed record InboundMcpRequestTimeout(TimeSpan Value);
 public sealed record InboundMcpResultLimit(int Value);
 public sealed record InboundMcpAuditRetention(int Value);
@@ -19,7 +17,6 @@ public sealed record InboundMcpServerSettings(
     bool IsEnabled,
     InboundMcpMode Mode,
     Uri Endpoint,
-    InboundMcpBearerTokenReference TokenReference,
     IReadOnlyList<InboundMcpClientId> AllowedClients,
     IReadOnlyList<InboundMcpToolId> AllowedTools,
     IReadOnlyList<InboundMcpToolId> ApprovalRequiredTools,
@@ -38,7 +35,6 @@ public sealed record InboundMcpServerStatus(
     bool IsRunning,
     Uri Endpoint,
     InboundMcpMode Mode,
-    bool IsAuthenticated,
     IReadOnlyList<InboundMcpClientStatus> ActiveClients,
     string? ErrorCode,
     string? Error);
@@ -336,6 +332,5 @@ public interface IInboundMcpRuntime
 {
     InboundMcpServerStatus Current { get; }
     ValueTask ApplyAsync(CancellationToken cancellationToken = default);
-    ValueTask<InboundMcpBearerToken> RotateTokenAsync(CancellationToken cancellationToken = default);
     ValueTask DisconnectAsync(InboundMcpClientId clientId, CancellationToken cancellationToken = default);
 }

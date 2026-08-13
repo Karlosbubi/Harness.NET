@@ -1,9 +1,6 @@
 using System.ComponentModel;
 using System.Reflection;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
-using Harness.DataAccess.Secrets;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -19,7 +16,6 @@ namespace Harness.DataAccess.Mcp;
 
 internal sealed class InboundMcpServer(
     IInboundMcpSettingsStore settingsStore,
-    ISecretStore secretStore,
     IInboundMcpApplication application,
     IInboundMcpAuditStore auditStore,
     ILoggerFactory loggerFactory,
@@ -33,10 +29,9 @@ internal sealed class InboundMcpServer(
     private readonly InboundMcpApplicationInstanceId instanceId = new(Guid.NewGuid().ToString("N"));
     private WebApplication? server;
     private InboundMcpServerSettings settings = XdgInboundMcpSettingsStore.Default;
-    private string? token;
     private InboundMcpServerStatus current = new(
         new(Guid.Empty.ToString("N")), false, XdgInboundMcpSettingsStore.Default.Endpoint,
-        InboundMcpMode.Normal, false, [], null, null);
+        InboundMcpMode.Normal, [], null, null);
     private int disposed;
 
     public InboundMcpServerStatus Current => current;
@@ -56,15 +51,8 @@ internal sealed class InboundMcpServer(
             XdgInboundMcpSettingsStore.Validate(settings);
             if (!settings.IsEnabled)
             {
-                Publish(false, false, null, null);
+                Publish(false, null, null);
                 return;
-            }
-
-            token = await secretStore.GetAsync(new(settings.TokenReference.Value), cancellationToken);
-            if (string.IsNullOrWhiteSpace(token))
-            {
-                token = CreateToken();
-                await secretStore.SetAsync(new(settings.TokenReference.Value), token, cancellationToken);
             }
 
             WebApplicationBuilder builder = WebApplication.CreateSlimBuilder(new WebApplicationOptions
@@ -109,11 +97,11 @@ internal sealed class InboundMcpServer(
             WebApplication app = builder.Build();
             app.Use(async (context, next) =>
             {
-                if (!Authenticate(context, out InboundMcpClientId clientId))
+                if (!ClientAllowed(context, out InboundMcpClientId clientId))
                 {
                     await RecordAuditAsync(clientId, null, InboundMcpAuditOutcome.Denied,
-                        "authentication_denied", context.RequestAborted);
-                    context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                        "client_denied", context.RequestAborted);
+                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
                     return;
                 }
 
@@ -131,35 +119,18 @@ internal sealed class InboundMcpServer(
             {
                 await app.StartAsync(cancellationToken);
                 server = app;
-                Publish(true, true, null, null);
+                Publish(true, null, null);
             }
             catch (Exception exception)
             {
                 await app.DisposeAsync();
-                Publish(false, true, "inbound_mcp_start_failed", exception.Message);
+                Publish(false, "inbound_mcp_start_failed", exception.Message);
             }
         }
         finally
         {
             gate.Release();
         }
-    }
-
-    public async ValueTask<InboundMcpBearerToken> RotateTokenAsync(
-        CancellationToken cancellationToken = default)
-    {
-        string replacement = CreateToken();
-        await secretStore.SetAsync(new(settings.TokenReference.Value), replacement, cancellationToken);
-        token = replacement;
-        RevokeInFlightRequests();
-        lock (clients)
-        {
-            disconnected.Clear();
-            clients.Clear();
-        }
-        RevokeInFlightRequests();
-        Publish(server is not null, true, current.ErrorCode, current.Error);
-        return new(replacement);
     }
 
     public ValueTask DisconnectAsync(
@@ -171,7 +142,7 @@ internal sealed class InboundMcpServer(
             disconnected.Add(clientId.Value);
             clients.Remove(clientId.Value);
         }
-        Publish(server is not null, token is not null, current.ErrorCode, current.Error);
+        Publish(server is not null, current.ErrorCode, current.Error);
         return ValueTask.CompletedTask;
     }
 
@@ -181,7 +152,7 @@ internal sealed class InboundMcpServer(
 
     internal InboundMcpCallContext Context(HttpContext httpContext) => new(
         instanceId,
-        new(httpContext.Request.Headers[ClientHeader].ToString()),
+        ClientId(httpContext),
         settings.Mode,
         timeProvider.GetUtcNow());
 
@@ -203,23 +174,23 @@ internal sealed class InboundMcpServer(
         int maximumResults, CancellationToken cancellationToken) =>
         auditStore.ListAsync(maximumResults, cancellationToken);
 
-    private bool Authenticate(HttpContext context, out InboundMcpClientId clientId)
+    private bool ClientAllowed(HttpContext context, out InboundMcpClientId clientId)
     {
-        string client = context.Request.Headers[ClientHeader].ToString().Trim();
-        clientId = new(client);
-        string authorization = context.Request.Headers.Authorization.ToString();
-        string supplied = authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
-            ? authorization[7..].Trim() : string.Empty;
-        bool tokenMatches = token is not null && supplied.Length == token.Length &&
-            CryptographicOperations.FixedTimeEquals(
-                Encoding.UTF8.GetBytes(supplied), Encoding.UTF8.GetBytes(token));
+        clientId = ClientId(context);
+        string client = clientId.Value;
         lock (clients)
         {
-            return tokenMatches && client.Length is > 0 and <= 128 &&
+            return client.Length is > 0 and <= 128 &&
                 !disconnected.Contains(client) &&
                 (settings.AllowedClients.Count == 0 ||
                  settings.AllowedClients.Any(item => item.Value.Equals(client, StringComparison.Ordinal)));
         }
+    }
+
+    private static InboundMcpClientId ClientId(HttpContext context)
+    {
+        string supplied = context.Request.Headers[ClientHeader].ToString().Trim();
+        return new(supplied.Length == 0 ? "local-anonymous" : supplied);
     }
 
     private void RecordClient(InboundMcpClientId clientId)
@@ -230,7 +201,7 @@ internal sealed class InboundMcpServer(
             clients[clientId.Value] = new(clientId, timeProvider.GetUtcNow(),
                 (existing?.RequestCount ?? 0) + 1);
         }
-        Publish(true, true, current.ErrorCode, current.Error);
+        Publish(true, current.ErrorCode, current.Error);
     }
 
     private CancellationToken RequestRevocationToken()
@@ -250,11 +221,11 @@ internal sealed class InboundMcpServer(
         previous.Dispose();
     }
 
-    private void Publish(bool running, bool authenticated, string? errorCode, string? error)
+    private void Publish(bool running, string? errorCode, string? error)
     {
         InboundMcpClientStatus[] snapshot;
         lock (clients) snapshot = clients.Values.OrderBy(item => item.Id.Value, StringComparer.Ordinal).ToArray();
-        current = new(instanceId, running, settings.Endpoint, settings.Mode, authenticated,
+        current = new(instanceId, running, settings.Endpoint, settings.Mode,
             snapshot, errorCode, error);
     }
 
@@ -269,7 +240,6 @@ internal sealed class InboundMcpServer(
     {
         WebApplication? active = server;
         server = null;
-        token = null;
         RevokeInFlightRequests();
         if (active is not null)
         {
@@ -277,7 +247,7 @@ internal sealed class InboundMcpServer(
             await active.DisposeAsync();
         }
         lock (clients) clients.Clear();
-        Publish(false, false, null, null);
+        Publish(false, null, null);
     }
 
     public async ValueTask DisposeAsync()
@@ -286,8 +256,6 @@ internal sealed class InboundMcpServer(
         await StopServerAsync(CancellationToken.None);
         lock (clients) requestRevocation.Dispose();
     }
-
-    private static string CreateToken() => Convert.ToBase64String(RandomNumberGenerator.GetBytes(48));
 
     private sealed class ForwardingLoggerProvider(ILoggerFactory factory) : ILoggerProvider
     {
@@ -592,13 +560,13 @@ internal sealed class InboundMcpTools(
 
     [McpServerTool(Name = "harness_audit", ReadOnly = true, Destructive = false,
         Idempotent = true, OpenWorld = false)]
-    [Description("List bounded recent inbound MCP authentication and tool-call audit records. Arguments and results are not repeated in this log.")]
+    [Description("List bounded recent inbound MCP client-policy and tool-call audit records. Arguments and results are not repeated in this log.")]
     public async ValueTask<string> AuditAsync(int maximumResults, CancellationToken cancellationToken)
     {
         HttpContext? http = contextAccessor.HttpContext;
         if (http is null || !runtime.ToolAllowed(new("harness_audit")))
             throw new McpException("inbound_mcp_tool_denied: The audit tool is unavailable.");
-        InboundMcpClientId client = new(http.Request.Headers["X-Harness-Client"].ToString());
+        InboundMcpClientId client = runtime.Context(http).ClientId;
         DateTimeOffset started = runtime.Context(http).RequestedAt;
         string result = JsonSerializer.Serialize(
             await runtime.ListAuditAsync(maximumResults, cancellationToken));
@@ -625,7 +593,7 @@ internal sealed class InboundMcpTools(
 
     [McpServerTool(Name = "harness_code_definition", ReadOnly = true, Destructive = false,
         Idempotent = true, OpenWorld = false)]
-    [Description("Resolve the Roslyn definition of the symbol at a zero-based source position.")]
+    [Description("Resolve the Roslyn definition at a zero-based source position, including bounded read-only generated or locally decompiled metadata source when available.")]
     public ValueTask<string> CodeDefinitionAsync(
         string goalId, string relativePath, int line, int character,
         CancellationToken cancellationToken) => CodePositionAsync(new("harness_code_definition"),
@@ -681,7 +649,7 @@ internal sealed class InboundMcpTools(
     {
         HttpContext? http = contextAccessor.HttpContext;
         if (http is null)
-            throw new McpException("inbound_mcp_context_missing: The authenticated HTTP context is unavailable.");
+            throw new McpException("inbound_mcp_context_missing: The local HTTP request context is unavailable.");
         InboundMcpClientId client = new(http.Request.Headers["X-Harness-Client"].ToString());
         if (expectedInstanceId is not null && !runtime.MatchesInstance(expectedInstanceId))
         {

@@ -45,7 +45,7 @@ public sealed class XdgMcpConnectionConfigurationStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task Persists_harness_control_policy_without_a_bearer_value()
+    public async Task Persists_harness_control_policy_without_credentials()
     {
         StubApplicationPaths paths = new(Paths());
         XdgMcpConnectionConfigurationStore store = new(paths, new([]));
@@ -58,7 +58,6 @@ public sealed class XdgMcpConnectionConfigurationStoreTests : IDisposable
             RequiresRestart: false,
             McpConnectionAccess.HarnessControl,
             new("controller"),
-            new("harness-mcp-connection-worker-bearer"),
             [new("harness_application"), new("harness_create_goal")]));
 
         XElement connection = Assert.IsType<XElement>(XDocument.Load(
@@ -66,8 +65,7 @@ public sealed class XdgMcpConnectionConfigurationStoreTests : IDisposable
             .Element("McpConnections")?.Element("worker"));
         Assert.Equal("HarnessControl", connection.Element("Access")?.Value);
         Assert.Equal("controller", connection.Element("ClientId")?.Value);
-        Assert.Equal("harness-mcp-connection-worker-bearer",
-            connection.Element("BearerTokenReference")?.Value);
+        Assert.Null(connection.Element("BearerTokenReference"));
         XElement allowedTools = Assert.IsType<XElement>(connection.Element("AllowedTools"));
         Assert.Equal(
             ["harness_application", "harness_create_goal"],

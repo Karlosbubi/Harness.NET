@@ -61,7 +61,6 @@ internal static class HarnessConfigurationLoader
             if (!Enum.TryParse(accessValue, true, out McpConnectionAccessKind access))
                 throw new InvalidOperationException(
                     $"MCP connection '{section.Key}' has unsupported access '{accessValue}'.");
-            string? bearerReference = Optional(section, "BearerTokenReference");
             return new McpConnectionConfiguration(
                 section.Key,
                 RequiredUri(section, "Endpoint"),
@@ -69,7 +68,6 @@ internal static class HarnessConfigurationLoader
                 ParseBoolean(section, "Enabled"),
                 access,
                 Optional(section, "ClientId"),
-                bearerReference is null ? null : new(bearerReference),
                 Lines(Optional(section, "AllowedTools")));
         })
         .ToArray();

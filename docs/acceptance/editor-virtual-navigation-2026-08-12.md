@@ -2,8 +2,8 @@
 
 ## Scope
 
-This record covers Task 049 navigation to regions, source-generator output, and
-metadata signatures. File search and workspace-symbol search already cover files,
+This record covers the original Task 049 navigation to regions, source-generator
+output, and metadata signatures. File search and workspace-symbol search already cover files,
 types, and source symbols.
 
 ## Delivered behavior
@@ -31,9 +31,9 @@ types, and source symbols.
 ## Architecture and safety
 
 The implementation uses public Roslyn APIs only. Roslyn's internal metadata-as-source
-service is not called. Full method-body decompilation remains open until a maintained
-public dependency passes license, provenance, package, SBOM, publication, and behavior
-review. This is recorded in ADR 012.
+service is not called. Full method-body decompilation was delivered later after a
+maintained public dependency passed license, provenance, package, SBOM, publication,
+and behavior review. This is recorded in ADR 012.
 
 No Roslyn type crosses Data Access. Business Logic exposes immutable semantic
 contracts. Presentation owns the read-only editor and Dock document. Layout capture
@@ -54,9 +54,10 @@ already drops all transient source and virtual documents.
   1 architecture, 253 Business Logic, 225 Data Access, 22 Host, 133 Avalonia
   presentation, 22 terminal presentation, and 2 Avalonia UI tests.
 
-## Remaining Task 049 work
+## Subsequent closure
 
-- validated full method-body decompilation;
+- validated method-body decompilation is recorded in
+  [editor-decompilation-2026-08-13.md](editor-decompilation-2026-08-13.md);
 - exact-context syntax-tree, symbol-detail, and IL inspection views;
 - configurable keybindings and optional Vim behavior;
 - project User Secrets;

@@ -17,7 +17,6 @@ internal readonly record struct McpConnectionConfiguration(
     bool IsEnabled,
     McpConnectionAccessKind Access,
     string? ClientId,
-    SecretReference? BearerTokenReference,
     IReadOnlyList<string> AllowedTools);
 
 internal enum McpConnectionAccessKind

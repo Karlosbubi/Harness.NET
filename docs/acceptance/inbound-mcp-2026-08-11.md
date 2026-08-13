@@ -2,6 +2,16 @@
 
 Scope: Task 047 semantic IDE completion and Task 059 inbound MCP control/evaluation.
 
+Amended 2026-08-13: inbound Harness control is now intentionally unauthenticated and
+strictly loopback-only. The client ID is optional with an empty allowlist and required
+for an exact configured allowlist match; it is not identity proof. Token rotation and evaluation token-file
+bootstrap were removed from runtime, Settings, tests, and scripts.
+
+The amended implementation passed a zero-warning solution build, all 724 deterministic
+tests, the complete editor-intelligence gate, the 10-test local-model regression driver
+suite, and the Linux x64 publish gate. A tracked-tree credential-pattern scan found only
+the source code that detects private-key markers; no credential value was added.
+
 ## Deterministic evidence
 
 - `dotnet build Harness.slnx --no-restore -m:1 -p:UseSharedCompilation=false`
@@ -9,9 +19,9 @@ Scope: Task 047 semantic IDE completion and Task 059 inbound MCP control/evaluat
 - `dotnet test Harness.slnx --no-restore -m:1 -p:UseSharedCompilation=false`
   passed all 594 deterministic tests.
 - Data Access tests use the official MCP 2.x client against a real loopback stateless
-  Streamable HTTP server. They verify bearer authentication, initialization
+  Streamable HTTP server. They verify unauthenticated calls with required client attribution, initialization
   instructions, closed discovery, read-only annotations, approval-held omission,
-  invocation, active-client attribution, disconnect, live token rotation, restart,
+  invocation, active-client attribution, disconnect, restart,
   audit retention, settings validation, and fixture confinement/reset.
 - Roslyn tests cover symbol search, incoming/outgoing calls, base/derived/override
   relationships, associated tests, paging, exact baseline sessions, and existing
@@ -25,7 +35,7 @@ Scope: Task 047 semantic IDE completion and Task 059 inbound MCP control/evaluat
 ## Isolation and authority checks
 
 - Evaluation roots must be dedicated descendants of the system temporary directory.
-- Evaluation provider and inbound bearer secrets are process-local and volatile.
+- Evaluation provider secrets are process-local and volatile.
 - Fixture reset validates its private root, performs a hard reset, removes only
   untracked files below that root, and leaves adjacent state unchanged.
 - Normal mode cannot use evaluation-only UI activation, owned-frame, snapshot, or
@@ -60,17 +70,16 @@ The Linux publish gate remains:
 
 It produced and validated the self-contained Linux x64 application successfully.
 
-## Client enrollment
+## Client configuration
 
 1. Open Settings → Harness control.
 2. Set a loopback endpoint, client/tool allowlists, and approval holds.
 3. Enable the server and apply.
-4. Select **Rotate and copy token once**.
-5. Configure Streamable HTTP with the shown endpoint, the copied bearer token, and a
-   stable `X-Harness-Client` header.
+4. Configure Streamable HTTP with the shown endpoint and a stable
+   `X-Harness-Client` header.
 
-The token cannot be read again. Rotate it to enroll a replacement client or revoke
-all existing clients.
+The server accepts no non-loopback bind. Do not proxy or port-forward it. The client
+header is a policy label and another same-user local process can spoof it.
 
 ## Normal-mode dogfood follow-up
 
@@ -82,10 +91,12 @@ UI-inspection tools. It did not receive shell or unrestricted process authority.
 The run found and fixed these defects:
 
 - The Git inspection adapter included the contents of untracked files in its bounded
-  diff. An untracked client configuration therefore exposed its bearer token through
+  diff. Before inbound authentication was removed, an untracked client configuration
+  therefore exposed its bearer token through
   `harness_git`. Git status still reports untracked paths, but the diff now contains
   tracked and staged changes only. A regression test proves that untracked content is
-  absent while tracked edits remain visible. The exposed token must be rotated.
+  absent while tracked edits remain visible. The token was rotated at the time; no
+  inbound token exists in the current design.
 - Roslyn workspace diagnostics reported `AnalyzerReleases.Unshipped.md` twice because
   the analyzer project explicitly included a file already supplied by the analyzer
   SDK. The duplicate item was removed. A repeated `harness_code_problems` call returned
@@ -144,10 +155,10 @@ Lead models with continuation `3`.
 
 Outbound MCP settings now distinguish ordinary `ReadOnly` tools from explicit
 `HarnessControl`. The latter is loopback-only, requires an initialized server named
-`Harness.NET`, sends a stable allowlisted client ID and Secret Service bearer token,
+`Harness.NET`, sends a stable allowlisted client ID,
 and exposes only exact configured `harness_` tools to Lead. Implementer and Reviewer do
 not receive control tools. A real stateless client/server integration test verifies
-authentication, server identity, exact allowlisting, rejection of an unlisted
+loopback confinement, server identity, exact allowlisting, rejection of an unlisted
 destructive goal tool, and successful application inspection. This supports a directed
 controller→worker arrangement. Cyclic/self-recursive configurations are unsupported
 and must not be enabled until durable delegation depth and cycle detection are designed.

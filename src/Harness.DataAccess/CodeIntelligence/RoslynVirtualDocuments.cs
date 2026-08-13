@@ -54,7 +54,7 @@ internal sealed partial class RoslynCodeIntelligenceEngine
                 CodeIntelligenceVirtualDocumentKind.GeneratedSource =>
                     await GeneratedDocumentAsync(request, project, target, origin, cancellationToken),
                 CodeIntelligenceVirtualDocumentKind.MetadataSignature =>
-                    MetadataDocument(request, project, target, origin),
+                    await MetadataDocumentAsync(request, project, target, origin, cancellationToken),
                 _ => throw new ArgumentOutOfRangeException(nameof(target.Kind)),
             };
         }
@@ -185,12 +185,30 @@ internal sealed partial class RoslynCodeIntelligenceEngine
             IsReadOnly: true, []);
     }
 
-    private static CodeIntelligenceVirtualDocumentResult MetadataDocument(
+    private static async ValueTask<CodeIntelligenceVirtualDocumentResult> MetadataDocumentAsync(
         CodeIntelligenceVirtualDocumentRequest request,
         Project project,
         VirtualDocumentTarget target,
-        CodeIntelligenceVirtualDocumentOrigin origin)
+        CodeIntelligenceVirtualDocumentOrigin origin,
+        CancellationToken cancellationToken)
     {
+        MetadataDecompilation? decompiled = await TryDecompileMetadataAsync(
+            project, target.Symbol, origin, cancellationToken);
+        if (decompiled is not null)
+        {
+            SourceText decompiledText = SourceText.From(decompiled.Text, Encoding.UTF8);
+            int selectedOffset = decompiled.Text.IndexOf(target.Symbol.Name, StringComparison.Ordinal);
+            CodeIntelligenceRange? decompiledSelection = selectedOffset >= 0
+                ? Range(decompiledText, new TextSpan(selectedOffset, target.Symbol.Name.Length))
+                : null;
+            return new(request.Snapshot.ContextId, request.Snapshot.SessionId,
+                request.Snapshot.Path, request.Snapshot.BufferVersion,
+                CodeIntelligenceResultState.Ready, request.Id,
+                CodeIntelligenceVirtualDocumentKind.DecompiledSource,
+                new(target.Title.Replace(" · metadata", " · decompiled", StringComparison.Ordinal)),
+                new(decompiled.Text), decompiledSelection, origin, IsReadOnly: true, []);
+        }
+
         SyntaxGenerator generator = SyntaxGenerator.GetGenerator(project);
         ISymbol selected = target.Symbol;
         INamedTypeSymbol? type = selected as INamedTypeSymbol ?? selected.ContainingType;
@@ -229,7 +247,9 @@ internal sealed partial class RoslynCodeIntelligenceEngine
         return new(request.Snapshot.ContextId, request.Snapshot.SessionId,
             request.Snapshot.Path, request.Snapshot.BufferVersion, CodeIntelligenceResultState.Ready,
             request.Id, target.Kind, new(target.Title), new(content), selection, origin,
-            IsReadOnly: true, []);
+            IsReadOnly: true,
+            [new(new("decompilation_unavailable"), new(
+                "No local implementation body was available; showing metadata signatures instead."))]);
     }
 
     private static bool IsVisibleMetadataMember(ISymbol symbol) =>
