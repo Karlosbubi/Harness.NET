@@ -79,7 +79,7 @@ internal sealed partial class WorkspaceMutationService
                 await codeIntelligenceService!.PreviewDocumentTransformationAsync(
                     ToWorkbenchRequest(previewRequest, context.SessionId!), cancellationToken);
             if (preview.Disposition is not WorkbenchCodeTransformationDisposition.Ready ||
-                preview.Fingerprint is null || preview.Edit is null)
+                preview.Fingerprint is null || preview.Edits.Count == 0)
             {
                 view = DocumentTransformationFailure(request, "document_transformation_not_ready",
                     preview.Issues.FirstOrDefault()?.Message.Value ??
@@ -100,10 +100,10 @@ internal sealed partial class WorkspaceMutationService
             {
                 WorkspaceFileBatchEditResult batch = await fileEditor.ApplyBatchAsync(
                     context.WorktreePath!,
-                    new([new WorkspaceFileEdit(
-                        preview.Edit.Path.Value,
-                        preview.Edit.BaselineHash.Value,
-                        preview.Edit.Text.Value)]),
+                    new(preview.Edits.Select(edit => new WorkspaceFileEdit(
+                        edit.Path.Value,
+                        edit.BaselineHash.Value,
+                        edit.Text.Value)).ToArray()),
                     cancellationToken);
                 IReadOnlyList<FileEditView> files = batch.Files.Select(file => new FileEditView(
                     previewRequest.GoalId,
@@ -118,15 +118,23 @@ internal sealed partial class WorkspaceMutationService
                 WorkbenchCodeValidationView? applied = null;
                 string? errorCode = batch.ErrorCode;
                 string? error = batch.Error;
-                if (errorCode is null && batch.Files.SingleOrDefault()?.NewSha256 is { } newHash)
+                if (errorCode is null && (batch.Files.Count != preview.Edits.Count ||
+                    batch.Files.Any(file => file.NewSha256 is null)))
                 {
+                    errorCode = "incomplete_atomic_apply";
+                    error = "The atomic file boundary did not confirm every previewed transformation edit.";
+                }
+                else if (errorCode is null)
+                {
+                    Dictionary<string, WorkbenchCodeDocumentTransformationEdit> editsByPath =
+                        preview.Edits.ToDictionary(edit => edit.Path.Value, StringComparer.Ordinal);
                     applied = await codeIntelligenceService.ValidateAsync(new(
                         context.SessionId!,
                         WorkbenchCodeValidationPhase.Applied,
-                        [new(
-                            preview.Edit.Path,
-                            new(newHash),
-                            preview.Edit.Text)]), CancellationToken.None);
+                        batch.Files.Select(file => new WorkbenchCodeCandidateEdit(
+                            new(file.Path),
+                            new(file.NewSha256!),
+                            editsByPath[file.Path].Text)).ToArray()), CancellationToken.None);
                     if (applied.Disposition is not WorkbenchCodeValidationDisposition.Validated)
                     {
                         errorCode = "post_apply_validation_failed";
@@ -296,21 +304,24 @@ internal sealed partial class WorkspaceMutationService
             return "The Implementer's delegated file areas are malformed.";
         }
 
-        if (preview.Edit is null)
+        if (preview.Edits.Count == 0)
         {
             return null;
         }
 
-        string path = preview.Edit.Path.Value.Replace('\\', '/').Trim('/');
-        bool allowed = request.AllowedFileAreas.Any(area =>
+        bool allAllowed = preview.Edits.All(edit =>
         {
-            string grant = area.Value.Replace('\\', '/').Trim('/');
-            return path.Equals(grant, StringComparison.Ordinal) ||
-                path.StartsWith(grant + "/", StringComparison.Ordinal);
+            string path = edit.Path.Value.Replace('\\', '/').Trim('/');
+            return request.AllowedFileAreas.Any(area =>
+            {
+                string grant = area.Value.Replace('\\', '/').Trim('/');
+                return path.Equals(grant, StringComparison.Ordinal) ||
+                    path.StartsWith(grant + "/", StringComparison.Ordinal);
+            });
         });
-        return allowed
+        return allAllowed
             ? null
-            : "The transformation affects a path outside the Implementer's delegated file areas.";
+            : "The transformation affects one or more paths outside the Implementer's delegated file areas.";
     }
 
     private static DocumentTransformationApplyView DocumentTransformationFailure(

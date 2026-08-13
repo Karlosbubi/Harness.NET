@@ -2438,12 +2438,12 @@ public sealed class PresentationControlTests
                     WorkbenchCodeTransformationDisposition.Ready,
                     request.Kind,
                     request.Range,
-                    new(
+                    [new(
                         request.Snapshot.Path,
                         request.Snapshot.BaselineHash,
                         request.Snapshot.Text,
                         new("namespace Example;\n"),
-                        1),
+                        1)],
                     [],
                     [],
                     new("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
@@ -2493,12 +2493,12 @@ public sealed class PresentationControlTests
                         WorkbenchCodeTransformationDisposition.Ready,
                         request.Kind,
                         request.Range,
-                        new(
+                        [new(
                             request.Snapshot.Path,
                             request.Snapshot.BaselineHash,
                             request.Snapshot.Text,
                             new("namespace Example;\n"),
-                            1),
+                            1)],
                         [],
                         [],
                         new("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
@@ -2602,9 +2602,9 @@ public sealed class PresentationControlTests
                         WorkbenchCodeTransformationDisposition.Ready,
                         request.Kind,
                         request.Range,
-                        new(request.Snapshot.Path, request.Snapshot.BaselineHash,
+                        [new(request.Snapshot.Path, request.Snapshot.BaselineHash,
                             request.Snapshot.Text,
-                            new(request.Snapshot.Text.Value + "void Run() { }\n"), 1),
+                            new(request.Snapshot.Text.Value + "void Run() { }\n"), 1)],
                         [], [], new(actionId), [],
                         CodeActionId: request.CodeActionId,
                         CodeActionScope: request.CodeActionScope);
@@ -2632,6 +2632,128 @@ public sealed class PresentationControlTests
             Assert.Contains("void Run()", editor.Text, StringComparison.Ordinal);
             editor.Document.UndoStack.Undo();
             Assert.Equal(original, editor.Text);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Editor_routes_a_cross_document_code_action_through_atomic_goal_mutation()
+    {
+        using HeadlessUnitTestSession testSession =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await testSession.Dispatch(() =>
+        {
+            const string actionId =
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+            MutationService mutations = new();
+            CodeIntelligenceService codeIntelligence = new()
+            {
+                DocumentTransformations = request => new(
+                    request.Snapshot.SessionId,
+                    request.Snapshot.Path,
+                    request.Snapshot.BufferVersion,
+                    WorkbenchCodeResultState.Ready,
+                    WorkbenchCodeTransformationDisposition.Ready,
+                    request.Kind,
+                    request.Range,
+                    [
+                        new(request.Snapshot.Path, request.Snapshot.BaselineHash,
+                            request.Snapshot.Text,
+                            new(request.Snapshot.Text.Value + "// transformed\n"), 1),
+                        new(new("src/Other.cs"), request.Snapshot.BaselineHash,
+                            new("class Other { }\n"),
+                            new("class Other { void Changed() { } }\n"), 1),
+                    ],
+                    [],
+                    [],
+                    new(actionId),
+                    [],
+                    CodeActionId: request.CodeActionId,
+                    CodeActionScope: request.CodeActionScope),
+            };
+            WorkbenchDockHost workbench = CreateWorkbench(
+                ApprovedGoalShell(), new(), new() { Editable = true },
+                codeIntelligence: codeIntelligence,
+                mutationService: mutations);
+            Window window = new() { Width = 1280, Height = 800, Content = workbench.Control };
+            window.Show();
+            workbench.OpenFileAsync("src/App.cs").AsTask().GetAwaiter().GetResult();
+
+            workbench.ApplyActiveCodeActionAsync(new(
+                new(actionId),
+                WorkbenchClosedCodeActionKind.ReplaceMemberKind,
+                WorkbenchCodeActionScope.Occurrence,
+                new("Replace property with methods"),
+                DiagnosticId: null,
+                new(new(0, 0), new(0, 7)))).AsTask().GetAwaiter().GetResult();
+
+            Assert.Equal(1, mutations.DocumentApplyCallCount);
+            Assert.Equal(WorkbenchCodeDocumentTransformationKind.ApplyCodeAction,
+                mutations.DocumentApplyRequest?.PreviewRequest.Kind);
+            Assert.Contains("// transformed", workbench.ActiveSourceEditor?.Text,
+                StringComparison.Ordinal);
+            Assert.False(workbench.ActiveSourceDocumentIsDirty);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Editor_blocks_cross_document_action_when_an_affected_open_file_is_dirty()
+    {
+        using HeadlessUnitTestSession testSession =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await testSession.Dispatch(() =>
+        {
+            const string actionId =
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+            MutationService mutations = new();
+            CodeIntelligenceService codeIntelligence = new()
+            {
+                DocumentTransformations = request => new(
+                    request.Snapshot.SessionId,
+                    request.Snapshot.Path,
+                    request.Snapshot.BufferVersion,
+                    WorkbenchCodeResultState.Ready,
+                    WorkbenchCodeTransformationDisposition.Ready,
+                    request.Kind,
+                    request.Range,
+                    [
+                        new(request.Snapshot.Path, request.Snapshot.BaselineHash,
+                            request.Snapshot.Text,
+                            new(request.Snapshot.Text.Value + "// transformed\n"), 1),
+                        new(new("src/Other.cs"), request.Snapshot.BaselineHash,
+                            new("namespace Example;"),
+                            new("namespace Changed;"), 1),
+                    ],
+                    [], [], new(actionId), [],
+                    CodeActionId: request.CodeActionId,
+                    CodeActionScope: request.CodeActionScope),
+            };
+            WorkbenchDockHost workbench = CreateWorkbench(
+                ApprovedGoalShell(), new(), new() { Editable = true },
+                codeIntelligence: codeIntelligence,
+                mutationService: mutations);
+            Window window = new() { Width = 1280, Height = 800, Content = workbench.Control };
+            window.Show();
+            workbench.OpenFileAsync("src/Other.cs").AsTask().GetAwaiter().GetResult();
+            workbench.ActiveSourceEditor!.Text = "namespace Unsaved;";
+            workbench.OpenFileAsync("src/App.cs").AsTask().GetAwaiter().GetResult();
+            string activeBefore = workbench.ActiveSourceEditor!.Text;
+
+            workbench.ApplyActiveCodeActionAsync(new(
+                new(actionId), WorkbenchClosedCodeActionKind.ReplaceMemberKind,
+                WorkbenchCodeActionScope.Occurrence,
+                new("Replace property with methods"), DiagnosticId: null,
+                new(new(0, 0), new(0, 7)), AffectedFileCount: 2))
+                .AsTask().GetAwaiter().GetResult();
+
+            Assert.Equal(0, mutations.DocumentApplyCallCount);
+            Assert.Equal(activeBefore, workbench.ActiveSourceEditor.Text);
+            Control sourceContent = Assert.IsAssignableFrom<Control>(
+                workbench.Documents.ActiveDockable?.Context);
+            Assert.Contains(sourceContent.GetLogicalDescendants().OfType<TextBlock>(), block =>
+                block.Text?.Contains("Save or revert unsaved changes in src/Other.cs",
+                    StringComparison.Ordinal) is true);
             window.Close();
         }, CancellationToken.None);
     }
@@ -3747,7 +3869,7 @@ public sealed class PresentationControlTests
                     WorkbenchCodeTransformationDisposition.Rejected,
                     request.Kind,
                     request.Range,
-                    Edit: null,
+                    Edits: [],
                     [],
                     [],
                     Fingerprint: null,
@@ -3790,6 +3912,8 @@ public sealed class PresentationControlTests
 
         internal RenameSymbolPreviewRequest? PreviewRequest { get; private set; }
         internal int ApplyCallCount { get; private set; }
+        internal DocumentTransformationApplyRequest? DocumentApplyRequest { get; private set; }
+        internal int DocumentApplyCallCount { get; private set; }
 
         public ValueTask<RenameSymbolPreviewView> PreviewRenameAsync(
             RenameSymbolPreviewRequest request,
@@ -3837,6 +3961,57 @@ public sealed class PresentationControlTests
         public ValueTask<FileEditView> ApplyFileEditAsync(
             FileEditRequest request,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public ValueTask<DocumentTransformationApplyView> ApplyDocumentTransformationAsync(
+            DocumentTransformationApplyRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            DocumentApplyRequest = request;
+            DocumentApplyCallCount++;
+            DocumentTransformationPreviewRequest source = request.PreviewRequest;
+            WorkbenchCodeDocumentTransformationPreviewView preview = new(
+                new("session-1"),
+                source.Path,
+                source.BufferVersion,
+                WorkbenchCodeResultState.Ready,
+                WorkbenchCodeTransformationDisposition.Ready,
+                source.Kind,
+                source.Range,
+                [
+                    new(source.Path, source.BaselineHash, source.Text,
+                        new(source.Text.Value + "// transformed\n"), 1),
+                    new(new("src/Other.cs"), new(Fingerprint), new("class Other { }\n"),
+                        new("class Other { void Changed() { } }\n"), 1),
+                ],
+                [],
+                [],
+                new(Fingerprint),
+                [],
+                source.ImportNamespace,
+                source.FormattingTrigger,
+                source.CodeActionId,
+                source.CodeActionScope);
+            return ValueTask.FromResult(new DocumentTransformationApplyView(
+                source.GoalId,
+                request.CorrelationId,
+                preview,
+                preview.Edits.Select(edit => new FileEditView(
+                    source.GoalId,
+                    request.CorrelationId,
+                    edit.Path.Value,
+                    edit.BaselineHash.Value,
+                    NewHash,
+                    edit.Text.Value.Length,
+                    WasCreated: false,
+                    ErrorCode: null,
+                    Error: null)).ToArray(),
+                WasRolledBack: false,
+                WasCancelled: false,
+                new(new("session-1"), WorkbenchCodeResultState.Ready,
+                    WorkbenchCodeValidationDisposition.Validated, [], []),
+                ErrorCode: null,
+                Error: null));
+        }
 
         public ValueTask<DotNetOperationView> RunDotNetAsync(
             DotNetOperationRequest request,

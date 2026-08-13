@@ -392,8 +392,8 @@ public sealed class WorkbenchCodeIntelligenceServiceTests
                 CodeIntelligenceTransformationDisposition.Ready,
                 request.Kind,
                 request.Range,
-                new(request.Snapshot.Path, request.Snapshot.BaselineHash,
-                    request.Snapshot.Text, new(formatted), 1),
+                [new(request.Snapshot.Path, request.Snapshot.BaselineHash,
+                    request.Snapshot.Text, new(formatted), 1)],
                 [],
                 [],
                 new(Baseline),
@@ -418,6 +418,58 @@ public sealed class WorkbenchCodeIntelligenceServiceTests
     }
 
     [Fact]
+    public async Task Cross_document_transformation_maps_all_bounded_edits()
+    {
+        const string source = "class C { int Value { get; set; } }";
+        DeterministicCodeIntelligenceEngine engine = new()
+        {
+            DocumentTransformations = (request, _) => ValueTask.FromResult(
+                new CodeIntelligenceDocumentTransformationPreviewResult(
+                    request.Snapshot.ContextId,
+                    request.Snapshot.SessionId,
+                    request.Snapshot.Path,
+                    request.Snapshot.BufferVersion,
+                    CodeIntelligenceResultState.Ready,
+                    CodeIntelligenceTransformationDisposition.Ready,
+                    request.Kind,
+                    request.Range,
+                    [
+                        new(request.Snapshot.Path, request.Snapshot.BaselineHash,
+                            request.Snapshot.Text, new("class C { int GetValue() => 0; }"), 1),
+                        new(new("src/Use.cs"), request.Snapshot.BaselineHash,
+                            new("class Use { int Read(C value) => value.Value; }"),
+                            new("class Use { int Read(C value) => value.GetValue(); }"), 1),
+                    ],
+                    [],
+                    [],
+                    new(Baseline),
+                    [],
+                    CodeActionId: request.CodeActionId,
+                    CodeActionScope: request.CodeActionScope)),
+        };
+        WorkbenchCodeIntelligenceService service = new(
+            new ContextResolver(ApprovedResolution()), engine);
+        WorkbenchCodeSessionId sessionId = (await service.StartAsync(new(
+            new("workspace-id"), new("goal-id"), new("Harness.slnx")))).SessionId!;
+        WorkbenchCodeInteractiveSnapshot snapshot = new(
+            sessionId, new("src/App.cs"), new(Baseline), new(1),
+            new(source), new(0, 14));
+
+        WorkbenchCodeDocumentTransformationPreviewView result =
+            await service.PreviewDocumentTransformationAsync(new(
+                snapshot,
+                WorkbenchCodeDocumentTransformationKind.ApplyCodeAction,
+                Range: null,
+                CodeActionId: new(Baseline),
+                CodeActionScope: WorkbenchCodeActionScope.Occurrence));
+
+        Assert.Equal(WorkbenchCodeTransformationDisposition.Ready, result.Disposition);
+        Assert.Equal(["src/App.cs", "src/Use.cs"],
+            result.Edits.Select(edit => edit.Path.Value).ToArray());
+        Assert.Null(result.Edit);
+    }
+
+    [Fact]
     public async Task Triggered_formatting_preserves_the_typed_trigger_across_the_boundary()
     {
         CodeIntelligenceFormattingTrigger? observed = null;
@@ -435,8 +487,8 @@ public sealed class WorkbenchCodeIntelligenceServiceTests
                     CodeIntelligenceTransformationDisposition.Ready,
                     request.Kind,
                     request.Range,
-                    new(request.Snapshot.Path, request.Snapshot.BaselineHash,
-                        request.Snapshot.Text, new("class C { int Value = 1; }"), 1),
+                    [new(request.Snapshot.Path, request.Snapshot.BaselineHash,
+                        request.Snapshot.Text, new("class C { int Value = 1; }"), 1)],
                     [],
                     [],
                     new(Baseline),
@@ -511,7 +563,9 @@ public sealed class WorkbenchCodeIntelligenceServiceTests
                     [new(actionId, CodeIntelligenceClosedCodeActionKind.ImplementInterface,
                         CodeIntelligenceCodeActionScope.Occurrence,
                         new("Implement interface"), new("CS0535"),
-                        new(new(0, 39), new(0, 40)))], [])),
+                        new(new(0, 39), new(0, 40)),
+                        AffectedFileCount: 2,
+                        ChangesActiveDocument: false)], [])),
             DocumentTransformations = (request, _) => ValueTask.FromResult(new
                 CodeIntelligenceDocumentTransformationPreviewResult(
                     request.Snapshot.ContextId, request.Snapshot.SessionId,
@@ -519,8 +573,8 @@ public sealed class WorkbenchCodeIntelligenceServiceTests
                     CodeIntelligenceResultState.Ready,
                     CodeIntelligenceTransformationDisposition.Ready, request.Kind,
                     request.Range,
-                    new(request.Snapshot.Path, request.Snapshot.BaselineHash,
-                        request.Snapshot.Text, new(source + " void Run() { }"), 1),
+                    [new(request.Snapshot.Path, request.Snapshot.BaselineHash,
+                        request.Snapshot.Text, new(source + " void Run() { }"), 1)],
                     [], [], new(Baseline), [],
                     CodeActionId: request.CodeActionId,
                     CodeActionScope: request.CodeActionScope)),
@@ -544,6 +598,8 @@ public sealed class WorkbenchCodeIntelligenceServiceTests
         Assert.Equal(WorkbenchClosedCodeActionKind.ImplementInterface, candidate.Kind);
         Assert.Equal(Baseline, candidate.Id.Value);
         Assert.Equal(WorkbenchCodeActionScope.Occurrence, candidate.Scope);
+        Assert.Equal(2, candidate.AffectedFileCount);
+        Assert.False(candidate.ChangesActiveDocument);
         Assert.Equal(candidate.Id, preview.CodeActionId);
         Assert.Equal(candidate.Scope, preview.CodeActionScope);
         Assert.Equal(WorkbenchCodeTransformationDisposition.Ready, preview.Disposition);
@@ -567,8 +623,8 @@ public sealed class WorkbenchCodeIntelligenceServiceTests
                     CodeIntelligenceTransformationDisposition.Ready,
                     request.Kind,
                     request.Range,
-                    new(request.Snapshot.Path, request.Snapshot.BaselineHash,
-                        request.Snapshot.Text, new("using System.Text;\nclass C { StringBuilder Value; }"), 1),
+                    [new(request.Snapshot.Path, request.Snapshot.BaselineHash,
+                        request.Snapshot.Text, new("using System.Text;\nclass C { StringBuilder Value; }"), 1)],
                     [],
                     [],
                     new(Baseline),

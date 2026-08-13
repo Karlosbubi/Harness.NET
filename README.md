@@ -38,8 +38,9 @@ Delivered:
   hints, lazy CodeLens navigation, definitions, usages, implementations, and semantic
   rename, region navigation, and labeled read-only generated-source and metadata-
   signature documents, exact-context syntax-tree, symbol, generated-source, and IL
-  inspection views, plus Roslyn document, selection, changed-span, paste, and on-type formatting
-  and import organization, contextual compiler fixes, local/selection refactorings,
+  inspection views, plus Roslyn document, selection, changed-span, paste, and on-type
+  formatting and import organization, contextual compiler fixes, local/selection and named
+  cross-document refactorings,
   labeled document fix-all choices, and typed project-entry-point Run actions with
   cancellation and transient output;
 - typed configurable workbench and editor keybindings with conflict validation,

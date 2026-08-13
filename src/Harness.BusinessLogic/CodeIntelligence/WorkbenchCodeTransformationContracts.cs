@@ -137,13 +137,17 @@ public enum WorkbenchCodeDocumentTransformationConflictKind
 {
     Semantic,
     Generated,
+    OutsideSourceContext,
     Uneditable,
+    InconsistentLinkedFile,
+    TooManyFiles,
     TooLarge,
 }
 
 public sealed record WorkbenchCodeDocumentTransformationConflict(
     WorkbenchCodeDocumentTransformationConflictKind Kind,
-    WorkbenchCodeMessage Message);
+    WorkbenchCodeMessage Message,
+    WorkbenchCodeDocumentPath? Path = null);
 
 public sealed record WorkbenchCodeDocumentTransformationEdit(
     WorkbenchCodeDocumentPath Path,
@@ -169,7 +173,7 @@ public sealed record WorkbenchCodeDocumentTransformationPreviewView(
     WorkbenchCodeTransformationDisposition Disposition,
     WorkbenchCodeDocumentTransformationKind Kind,
     WorkbenchCodeRange? Range,
-    WorkbenchCodeDocumentTransformationEdit? Edit,
+    IReadOnlyList<WorkbenchCodeDocumentTransformationEdit> Edits,
     IReadOnlyList<WorkbenchCodeDocumentTransformationConflict> Conflicts,
     IReadOnlyList<WorkbenchCodeValidationDiagnostic> Diagnostics,
     WorkbenchCodeTransformationFingerprint? Fingerprint,
@@ -177,7 +181,11 @@ public sealed record WorkbenchCodeDocumentTransformationPreviewView(
     WorkbenchCodeImportNamespace? ImportNamespace = null,
     WorkbenchCodeFormattingTrigger? FormattingTrigger = null,
     WorkbenchCodeActionId? CodeActionId = null,
-    WorkbenchCodeActionScope? CodeActionScope = null);
+    WorkbenchCodeActionScope? CodeActionScope = null)
+{
+    public WorkbenchCodeDocumentTransformationEdit? Edit =>
+        Edits.Count == 1 ? Edits[0] : null;
+}
 
 public sealed record WorkbenchCodeActionCandidate(
     WorkbenchCodeActionId Id,
@@ -185,7 +193,9 @@ public sealed record WorkbenchCodeActionCandidate(
     WorkbenchCodeActionScope Scope,
     WorkbenchCodeActionTitle Title,
     WorkbenchCodeDiagnosticId? DiagnosticId,
-    WorkbenchCodeRange Range);
+    WorkbenchCodeRange Range,
+    int AffectedFileCount = 1,
+    bool ChangesActiveDocument = true);
 
 public sealed record WorkbenchCodeActionRequest(
     WorkbenchCodeInteractiveSnapshot Snapshot,

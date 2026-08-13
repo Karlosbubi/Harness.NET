@@ -163,7 +163,7 @@ public interface ICodeIntelligenceEngine
             CodeIntelligenceTransformationDisposition.Rejected,
             request.Kind,
             request.Range,
-            Edit: null,
+            Edits: [],
             [],
             [],
             Fingerprint: null,

@@ -67,9 +67,9 @@ source content. Temporary test results and publish output are not repository fil
 
 ## Remaining Task 049 gaps
 
-- The closed code-action catalog remains single-document except for named operations
-  such as semantic rename. Additional cross-document refactorings need explicit typed
-  preview and apply contracts.
+- The closed catalog now includes bounded Add Parameter and Replace Property/Method
+  cross-document actions plus semantic rename. Additional providers require explicit
+  policy admission; there is no generic Roslyn action executor.
 - Metadata navigation provides bounded signatures. Full method-body decompilation
   still needs a pinned, licensed, integrity-checked dependency and SBOM review.
 - Debug CodeLens belongs to Task 052 and remains hidden until a real debugger adapter

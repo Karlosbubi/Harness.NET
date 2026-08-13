@@ -341,12 +341,12 @@ internal sealed class AgentToolFactory(
                 Options("preview_document_transformation",
                     "Preview one closed Roslyn operation: FormatDocument, FormatSelection, " +
                     "FormatChangedSpans, FormatPaste, FormatOnType, OrganizeImports, " +
-                    "RemoveUnusedImports, or AddMissingImport. Pass all four zero-based coordinates " +
+                    "RemoveUnusedImports, AddMissingImport, or ApplyCodeAction. Pass all four zero-based coordinates " +
                     "for selection, paste, or on-type formatting. Paste and on-type also require their " +
                     "matching typed trigger. For AddMissingImport, " +
                     "pass a namespace returned by find_missing_imports. ApplyCodeAction requires a " +
                     "zero-based line and character plus the ID and scope from find_code_actions. " +
-                    "Returns exact edit evidence " +
+                    "Approved cross-document actions return every affected file. Returns exact edit evidence " +
                     "and a fingerprint; it changes nothing.")),
             AgentToolKind.ApplyDocumentTransformation => AIFunctionFactory.Create(
                 (string correlationId, string fingerprint, string relativePath,
@@ -369,7 +369,7 @@ internal sealed class AgentToolFactory(
                         new ToolCorrelationId(correlationId),
                         new(fingerprint)), cancellationToken),
                 Options("apply_document_transformation",
-                    "Recompute and atomically apply an accepted closed formatting or import preview " +
+                    "Recompute and atomically apply every file in an accepted closed Roslyn preview " +
                     "by exact fingerprint, then run Roslyn post-validation.")),
             AgentToolKind.Build => AIFunctionFactory.Create(
                 (string correlationId, CancellationToken cancellationToken) =>

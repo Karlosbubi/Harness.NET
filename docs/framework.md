@@ -85,6 +85,9 @@ platform types stay inside their owning adapters.
 - Unsupported files are `NotApplicable`, not compiler-valid.
 - Semantic rename is a Roslyn-resolved preview/fingerprint/apply operation. Agents do
   not emulate rename with text replacement.
+- Closed cross-document actions report every affected path before apply. Apply
+  recomputes the action and fingerprint, enforces every path grant and baseline,
+  writes one atomic batch, and validates the complete persisted set.
 - Manual editor buffers remain permissive. Diagnostics do not block typing or save.
 
 ## Remote spending

@@ -342,7 +342,7 @@ Acceptance criteria:
 
 ### 049 — NetPad-level .NET editing and inspection
 
-Status: `In progress — Linux resilience matrix delivered; cross-document refactorings and full decompilation remain`
+Status: `In progress — bounded cross-document refactorings delivered; full decompilation remains`
 
 Dependencies: 012, 043, 044, 047, 048.
 
@@ -372,6 +372,13 @@ Caret and exact-selection discovery returns only preflighted current-document ed
 safe providers also expose a bounded document-wide fix-all. Opaque action IDs and
 typed scopes are required for preview/apply in the editor and model tools, and the
 read-only catalog is available through opt-in inbound MCP.
+
+Explicitly admitted cross-document providers now report affected-file count and
+whether the active document changes during discovery. Add Parameter and Replace
+Property/Method previews carry every physical source edit and persisted baseline in
+one fingerprint. Human and model apply re-resolves the action, rejects generated,
+external, structural, oversized, or inconsistent changes, enforces every delegated
+path for models, writes one atomic batch, and validates the complete persisted set.
 
 File and workspace-symbol search cover file, type, and symbol navigation. Regions are
 first-class outline entries without polluting lexical breadcrumbs. Definitions,
@@ -427,9 +434,9 @@ Orca speech, 200% scaling, Dock restoration, and self-contained Linux x64 publis
 See [editor-resilience-2026-08-13.md](../acceptance/editor-resilience-2026-08-13.md).
 
 Problem: Harness.NET now has the core interactive Roslyn operations, semantic
-presentation and adornment slices, formatting, closed actions, bounded generated and
-metadata-signature navigation, and configurable keybindings. It still lacks explicit
-cross-document refactoring contracts and full method-body decompilation. It also lacks
+presentation and adornment slices, formatting, closed local and cross-document
+actions, bounded generated and metadata-signature navigation, and configurable
+keybindings. It still lacks full method-body decompilation. It also lacks
 the debugger needed for Debug CodeLens.
 OmniSharp implements many of the underlying Roslyn services, but adopting its server
 would duplicate the current workspace and add process, download, version, recovery,

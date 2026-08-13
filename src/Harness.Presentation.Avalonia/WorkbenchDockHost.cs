@@ -2685,7 +2685,7 @@ internal sealed class WorkbenchDockHost
             }
 
             if (preview.Disposition is not WorkbenchCodeTransformationDisposition.Ready ||
-                preview.Fingerprint is null || preview.Edit is null)
+                preview.Fingerprint is null || preview.Edits.Count == 0)
             {
                 session.SetStatus(preview.Conflicts.FirstOrDefault()?.Message.Value ??
                     preview.Issues.FirstOrDefault()?.Message.Value ??
@@ -2693,14 +2693,32 @@ internal sealed class WorkbenchDockHost
                 return;
             }
 
-            if (!string.Equals(session.Editor.Text, preview.Edit.OriginalText.Value,
+            if (preview.Edits.Count != 1 ||
+                !preview.Edits[0].Path.Value.Equals(session.View.Path.Value, StringComparison.Ordinal))
+            {
+                await ApplyAtomicDocumentTransformationAsync(
+                    session,
+                    version,
+                    kind,
+                    range,
+                    importNamespace,
+                    formattingTrigger,
+                    codeActionId,
+                    codeActionScope,
+                    preview,
+                    token);
+                return;
+            }
+
+            WorkbenchCodeDocumentTransformationEdit edit = preview.Edits[0];
+            if (!string.Equals(session.Editor.Text, edit.OriginalText.Value,
                 StringComparison.Ordinal))
             {
                 session.SetStatus("The buffer changed before the transformation could be applied.");
                 return;
             }
 
-            if (preview.Edit.ReplacementCount == 0)
+            if (edit.ReplacementCount == 0)
             {
                 session.SetStatus(kind switch
                 {
@@ -2723,34 +2741,34 @@ internal sealed class WorkbenchDockHost
             }
 
             int caret = session.Editor.CaretOffset;
-            session.Editor.Replace(0, session.Editor.TextLength, preview.Edit.Text.Value);
+            session.Editor.Replace(0, session.Editor.TextLength, edit.Text.Value);
             session.Editor.CaretOffset = MapTransformedOffset(
-                preview.Edit.OriginalText.Value,
-                preview.Edit.Text.Value,
+                edit.OriginalText.Value,
+                edit.Text.Value,
                 caret);
             session.Editor.Focus();
             session.SetStatus(kind switch
             {
                 WorkbenchCodeDocumentTransformationKind.FormatDocument =>
-                    $"Formatted document · {preview.Edit.ReplacementCount:N0} Roslyn edit(s) · undo available.",
+                    $"Formatted document · {edit.ReplacementCount:N0} Roslyn edit(s) · undo available.",
                 WorkbenchCodeDocumentTransformationKind.FormatSelection =>
-                    $"Formatted selection · {preview.Edit.ReplacementCount:N0} Roslyn edit(s) · undo available.",
+                    $"Formatted selection · {edit.ReplacementCount:N0} Roslyn edit(s) · undo available.",
                 WorkbenchCodeDocumentTransformationKind.FormatChangedSpans =>
-                    $"Formatted changed code · {preview.Edit.ReplacementCount:N0} Roslyn edit(s) · undo available.",
+                    $"Formatted changed code · {edit.ReplacementCount:N0} Roslyn edit(s) · undo available.",
                 WorkbenchCodeDocumentTransformationKind.FormatPaste =>
                     "Formatted pasted code with Roslyn · undo available.",
                 WorkbenchCodeDocumentTransformationKind.FormatOnType =>
                     "Formatted current code with Roslyn · undo available.",
                 WorkbenchCodeDocumentTransformationKind.OrganizeImports =>
-                    $"Organized imports · {preview.Edit.ReplacementCount:N0} Roslyn edit(s) · undo available.",
+                    $"Organized imports · {edit.ReplacementCount:N0} Roslyn edit(s) · undo available.",
                 WorkbenchCodeDocumentTransformationKind.RemoveUnusedImports =>
-                    $"Removed unused imports · {preview.Edit.ReplacementCount:N0} Roslyn edit(s) · undo available.",
+                    $"Removed unused imports · {edit.ReplacementCount:N0} Roslyn edit(s) · undo available.",
                 WorkbenchCodeDocumentTransformationKind.AddMissingImport =>
                     $"Added using {importNamespace?.Value} · undo available.",
                 WorkbenchCodeDocumentTransformationKind.ApplyCodeAction =>
                     codeActionScope is WorkbenchCodeActionScope.Document
-                        ? $"Applied Roslyn fix to this document · {preview.Edit.ReplacementCount:N0} edit(s) · undo available."
-                        : $"Applied Roslyn quick fix · {preview.Edit.ReplacementCount:N0} edit(s) · undo available.",
+                        ? $"Applied Roslyn fix to this document · {edit.ReplacementCount:N0} edit(s) · undo available."
+                        : $"Applied Roslyn quick fix · {edit.ReplacementCount:N0} edit(s) · undo available.",
                 _ => "Applied deterministic Roslyn transformation to the live buffer.",
             });
             ScheduleDiagnostics(session, immediate: true);
@@ -2767,6 +2785,93 @@ internal sealed class WorkbenchDockHost
                 session.SetBusy(false);
             }
         }
+    }
+
+    private async ValueTask ApplyAtomicDocumentTransformationAsync(
+        SourceDocumentSession session,
+        WorkbenchCodeBufferVersion version,
+        WorkbenchCodeDocumentTransformationKind kind,
+        WorkbenchCodeRange? range,
+        WorkbenchCodeImportNamespace? importNamespace,
+        WorkbenchCodeFormattingTrigger? formattingTrigger,
+        WorkbenchCodeActionId? codeActionId,
+        WorkbenchCodeActionScope? codeActionScope,
+        WorkbenchCodeDocumentTransformationPreviewView preview,
+        CancellationToken token)
+    {
+        if (mutationService is null || session.View.GoalId is null ||
+            session.View.Sha256 is null)
+        {
+            session.SetStatus(
+                "This refactoring changes another file and requires an approved goal worktree.");
+            return;
+        }
+
+        WorkbenchCodeDocumentTransformationEdit? dirtyAffected = preview.Edits
+            .FirstOrDefault(edit => sourceDocuments.Values.Any(open =>
+                open.View.GoalId == session.View.GoalId &&
+                open.View.Path.Value.Equals(edit.Path.Value, StringComparison.Ordinal) &&
+                !open.Editor.Text.Equals(edit.OriginalText.Value, StringComparison.Ordinal)));
+        if (dirtyAffected is not null)
+        {
+            session.SetStatus(
+                $"Save or revert unsaved changes in {dirtyAffected.Path.Value} before applying this refactoring.");
+            return;
+        }
+
+        DocumentTransformationPreviewRequest request = new(
+            session.View.GoalId.Value,
+            new(session.View.Path.Value),
+            new(session.View.Sha256.Value),
+            version,
+            new(session.Editor.Text),
+            session.Editor.CaretPosition,
+            kind,
+            range,
+            DocumentTransformationOrigin.Human,
+            [],
+            importNamespace,
+            formattingTrigger,
+            codeActionId,
+            codeActionScope);
+        session.SetStatus(
+            $"Applying Roslyn refactoring atomically to {preview.Edits.Count:N0} file(s)…");
+        DocumentTransformationApplyView result =
+            await mutationService.ApplyDocumentTransformationAsync(new(
+                request,
+                NewEditCorrelation(),
+                preview.Fingerprint!), token);
+        if (result.ErrorCode is not null || result.Preview is null)
+        {
+            session.SetStatus(result.Error ?? "The multi-file refactoring was not applied.");
+            return;
+        }
+
+        foreach (WorkbenchCodeDocumentTransformationEdit appliedEdit in result.Preview.Edits)
+        {
+            SourceDocumentSession? open = sourceDocuments.Values.FirstOrDefault(candidate =>
+                candidate.View.GoalId == session.View.GoalId &&
+                candidate.View.Path.Value.Equals(appliedEdit.Path.Value, StringComparison.Ordinal));
+            FileEditView? evidence = result.Files.FirstOrDefault(file =>
+                file.Path.Equals(appliedEdit.Path.Value, StringComparison.Ordinal));
+            if (open is null || evidence?.NewSha256 is null)
+            {
+                continue;
+            }
+
+            open.ReplaceWith(open.View with
+            {
+                Content = new(appliedEdit.Text.Value),
+                Sha256 = new(evidence.NewSha256),
+                Size = new(evidence.BytesWritten),
+            });
+            open.SetStatus("Applied compiler-verified atomic Roslyn refactoring.");
+        }
+
+        session.SetStatus(
+            $"Applied Roslyn refactoring atomically to {result.Files.Count:N0} file(s).");
+        await InvalidateCodeIntelligenceAsync();
+        ScheduleDiagnostics(session, immediate: true);
     }
 
     private static WorkbenchCodeFormattingTrigger? FormattingTrigger(char value) => value switch
@@ -2877,7 +2982,9 @@ internal sealed class WorkbenchDockHost
             {
                 string suffix = candidate.Scope is WorkbenchCodeActionScope.Document
                     ? "  ·  Fix all in document"
-                    : string.Empty;
+                    : candidate.AffectedFileCount > 1 || !candidate.ChangesActiveDocument
+                        ? $"  ·  {candidate.AffectedFileCount:N0} files · atomic"
+                        : string.Empty;
                 Button action = new()
                 {
                     Content = candidate.Title.Value + suffix,
@@ -2886,6 +2993,8 @@ internal sealed class WorkbenchDockHost
                 AutomationProperties.SetName(action,
                     candidate.Scope is WorkbenchCodeActionScope.Document
                         ? $"{candidate.Title.Value}, fix all in document"
+                        : candidate.AffectedFileCount > 1 || !candidate.ChangesActiveDocument
+                            ? $"{candidate.Title.Value}, affects {candidate.AffectedFileCount:N0} files, atomic apply"
                         : candidate.Title.Value);
                 action.Click += async (_, _) =>
                 {

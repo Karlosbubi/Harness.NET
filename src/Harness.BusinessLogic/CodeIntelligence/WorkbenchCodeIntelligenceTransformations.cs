@@ -89,12 +89,14 @@ internal sealed partial class WorkbenchCodeIntelligenceService
                 StringComparison.Ordinal) ||
             (result.CodeActionScope is null ? null : Map(result.CodeActionScope.Value)) !=
                 request.CodeActionScope ||
-            (result.Edit is not null &&
-                (!IsConfinedRelativePath(result.Edit.Path.Value) ||
-                 !IsSha256(result.Edit.BaselineHash.Value) || result.Edit.ReplacementCount < 0)) ||
+            result.Edits.Count > MaximumCandidateEdits ||
+            result.Edits.Select(edit => edit.Path.Value).Distinct(StringComparer.Ordinal).Count() !=
+                result.Edits.Count ||
+            result.Edits.Any(edit => !IsConfinedRelativePath(edit.Path.Value) ||
+                !IsSha256(edit.BaselineHash.Value) || edit.ReplacementCount < 0) ||
             (result.Disposition is CodeIntelligenceTransformationDisposition.Ready &&
                 (result.Fingerprint is null || !IsSha256(result.Fingerprint.Value) ||
-                 result.Edit is null || result.Conflicts.Count != 0));
+                 result.Edits.Count == 0 || result.Conflicts.Count != 0));
         if (malformed)
         {
             return DocumentTransformationFailure(request, Issue(
@@ -110,15 +112,16 @@ internal sealed partial class WorkbenchCodeIntelligenceService
             Map(result.Disposition),
             request.Kind,
             result.Range is null ? null : Map(result.Range),
-            result.Edit is null ? null : new(
-                new(result.Edit.Path.Value),
-                new(result.Edit.BaselineHash.Value),
-                new(result.Edit.OriginalText.Value),
-                new(result.Edit.Text.Value),
-                result.Edit.ReplacementCount),
+            result.Edits.Select(edit => new WorkbenchCodeDocumentTransformationEdit(
+                new(edit.Path.Value),
+                new(edit.BaselineHash.Value),
+                new(edit.OriginalText.Value),
+                new(edit.Text.Value),
+                edit.ReplacementCount)).ToArray(),
             result.Conflicts.Take(MaximumIssues).Select(conflict =>
                 new WorkbenchCodeDocumentTransformationConflict(
-                    Map(conflict.Kind), new(conflict.Message.Value))).ToArray(),
+                    Map(conflict.Kind), new(conflict.Message.Value),
+                    conflict.Path is null ? null : new(conflict.Path.Value))).ToArray(),
             result.Diagnostics.Where(item => IsValidDiagnostic(item.Diagnostic))
                 .Take(MaximumDiagnostics)
                 .Select(item => new WorkbenchCodeValidationDiagnostic(
@@ -291,8 +294,14 @@ internal sealed partial class WorkbenchCodeIntelligenceService
                 WorkbenchCodeDocumentTransformationConflictKind.Semantic,
             CodeIntelligenceDocumentTransformationConflictKind.Generated =>
                 WorkbenchCodeDocumentTransformationConflictKind.Generated,
+            CodeIntelligenceDocumentTransformationConflictKind.OutsideSourceContext =>
+                WorkbenchCodeDocumentTransformationConflictKind.OutsideSourceContext,
             CodeIntelligenceDocumentTransformationConflictKind.Uneditable =>
                 WorkbenchCodeDocumentTransformationConflictKind.Uneditable,
+            CodeIntelligenceDocumentTransformationConflictKind.InconsistentLinkedFile =>
+                WorkbenchCodeDocumentTransformationConflictKind.InconsistentLinkedFile,
+            CodeIntelligenceDocumentTransformationConflictKind.TooManyFiles =>
+                WorkbenchCodeDocumentTransformationConflictKind.TooManyFiles,
             CodeIntelligenceDocumentTransformationConflictKind.TooLarge =>
                 WorkbenchCodeDocumentTransformationConflictKind.TooLarge,
             _ => throw new ArgumentOutOfRangeException(nameof(kind)),
@@ -425,6 +434,7 @@ internal sealed partial class WorkbenchCodeIntelligenceService
         bool malformed = result.Candidates.Count > MaximumInteractiveItems ||
             result.Candidates.Any(item => !IsSha256(item.Id.Value) ||
                 !Enum.IsDefined(item.Kind) || !Enum.IsDefined(item.Scope) ||
+                item.AffectedFileCount is < 1 or > MaximumCandidateEdits ||
                 string.IsNullOrWhiteSpace(item.Title.Value) || item.Title.Value.Length > 2_048 ||
                 item.DiagnosticId is { Value: var diagnosticId } &&
                     (string.IsNullOrWhiteSpace(diagnosticId) || diagnosticId.Length > 128));
@@ -443,7 +453,7 @@ internal sealed partial class WorkbenchCodeIntelligenceService
             result.Candidates.Select(item => new WorkbenchCodeActionCandidate(
                 new(item.Id.Value), Map(item.Kind), Map(item.Scope), new(item.Title.Value),
                 item.DiagnosticId is null ? null : new(item.DiagnosticId.Value),
-                Map(item.Range))).ToArray(),
+                Map(item.Range), item.AffectedFileCount, item.ChangesActiveDocument)).ToArray(),
             MapIssues(result.Issues));
     }
 
@@ -526,7 +536,7 @@ internal sealed partial class WorkbenchCodeIntelligenceService
             WorkbenchCodeTransformationDisposition.Rejected,
             request.Kind,
             request.Range,
-            Edit: null,
+            Edits: [],
             [],
             [],
             Fingerprint: null,

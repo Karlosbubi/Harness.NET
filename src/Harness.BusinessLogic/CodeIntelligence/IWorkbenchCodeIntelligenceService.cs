@@ -153,7 +153,7 @@ public interface IWorkbenchCodeIntelligenceService
             WorkbenchCodeTransformationDisposition.Rejected,
             request.Kind,
             request.Range,
-            Edit: null,
+            Edits: [],
             [],
             [],
             Fingerprint: null,

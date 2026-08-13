@@ -138,13 +138,17 @@ public enum CodeIntelligenceDocumentTransformationConflictKind
 {
     Semantic,
     Generated,
+    OutsideSourceContext,
     Uneditable,
+    InconsistentLinkedFile,
+    TooManyFiles,
     TooLarge,
 }
 
 public sealed record CodeIntelligenceDocumentTransformationConflict(
     CodeIntelligenceDocumentTransformationConflictKind Kind,
-    CodeIntelligenceMessage Message);
+    CodeIntelligenceMessage Message,
+    CodeIntelligenceDocumentPath? Path = null);
 
 public sealed record CodeIntelligenceDocumentTransformationEdit(
     CodeIntelligenceDocumentPath Path,
@@ -171,7 +175,7 @@ public sealed record CodeIntelligenceDocumentTransformationPreviewResult(
     CodeIntelligenceTransformationDisposition Disposition,
     CodeIntelligenceDocumentTransformationKind Kind,
     CodeIntelligenceRange? Range,
-    CodeIntelligenceDocumentTransformationEdit? Edit,
+    IReadOnlyList<CodeIntelligenceDocumentTransformationEdit> Edits,
     IReadOnlyList<CodeIntelligenceDocumentTransformationConflict> Conflicts,
     IReadOnlyList<CodeIntelligenceValidationDiagnostic> Diagnostics,
     CodeIntelligenceTransformationFingerprint? Fingerprint,
@@ -179,7 +183,11 @@ public sealed record CodeIntelligenceDocumentTransformationPreviewResult(
     CodeIntelligenceImportNamespace? ImportNamespace = null,
     CodeIntelligenceFormattingTrigger? FormattingTrigger = null,
     CodeIntelligenceCodeActionId? CodeActionId = null,
-    CodeIntelligenceCodeActionScope? CodeActionScope = null);
+    CodeIntelligenceCodeActionScope? CodeActionScope = null)
+{
+    public CodeIntelligenceDocumentTransformationEdit? Edit =>
+        Edits.Count == 1 ? Edits[0] : null;
+}
 
 public sealed record CodeIntelligenceCodeActionCandidate(
     CodeIntelligenceCodeActionId Id,
@@ -187,7 +195,9 @@ public sealed record CodeIntelligenceCodeActionCandidate(
     CodeIntelligenceCodeActionScope Scope,
     CodeIntelligenceCodeActionTitle Title,
     CodeIntelligenceDiagnosticId? DiagnosticId,
-    CodeIntelligenceRange Range);
+    CodeIntelligenceRange Range,
+    int AffectedFileCount = 1,
+    bool ChangesActiveDocument = true);
 
 public sealed record CodeIntelligenceCodeActionRequest(
     CodeIntelligenceInteractiveSnapshot Snapshot,

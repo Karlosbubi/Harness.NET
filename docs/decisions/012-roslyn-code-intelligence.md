@@ -94,6 +94,14 @@ returns a namespace only after an in-memory insertion binds the unresolved type 
 caret. Apply recomputes context, grants, baselines, and fingerprint, then writes all
 files atomically or none. Record the applied diff and diagnostics.
 
+The closed catalog may admit a provider's cross-document result only by explicit
+policy. The preview reports every physical source file, whether the active document
+changes, exact persisted baselines, complete replacement text, diagnostic deltas, and
+one fingerprint. Added or removed documents, project/reference changes, generated or
+external targets, inconsistent linked files, more than 100 files, and previews over
+10 MiB fail closed. Add Parameter and Replace Property/Method are the first admitted
+cross-document providers; all other providers remain document-confined.
+
 Do not provide generic “execute Roslyn action” or model-authored text-search rename.
 
 ### Virtual source navigation

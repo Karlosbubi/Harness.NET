@@ -319,17 +319,19 @@ The Quick fix path now also composes an explicit allowlist from the pinned Rosly
 feature assemblies: 20 compiler/style fix providers and 25 local refactoring
 providers, including exact-selection extract-method and introduce-variable
 operations. Discovery preflights every choice and omits added or removed documents,
-project/reference changes, custom host operations, and edits outside the current
-document. Occurrence and safe document-wide scopes use opaque action IDs through the
-same preview/fingerprint/apply path. The editor, role tools, and opt-in
+project/reference changes, and custom host operations. Add Parameter and Replace
+Property/Method are explicitly admitted cross-document providers. Discovery labels
+their physical affected-file count; preview includes every baseline and edit; apply
+enforces every model path grant, writes one atomic batch, and validates the complete
+persisted set. Other providers remain document-confined. Occurrence and safe
+document-wide scopes use opaque action IDs through the same preview/fingerprint/apply
+path. The editor, role tools, and opt-in
 `harness_code_actions` MCP tool share the typed read result; no arbitrary Roslyn
 action is callable.
 Models use the same closed preview/fingerprint/apply path with delegated paths, atomic
-persistence, durable evidence, and post-apply diagnostics. Cross-document
-refactorings remain outside this deliberately single-document catalog until they
-receive named multi-file contracts. Item 4 now includes file and workspace-symbol
-search, region outline navigation, and exact-buffer generated-source and metadata-
-signature virtual documents. Opaque handles are session-local and stale-safe; the
+persistence, durable evidence, and post-apply diagnostics. Item 4 now includes file
+and workspace-symbol search, region outline navigation, and exact-buffer generated-
+source and metadata-signature virtual documents. Opaque handles are session-local and stale-safe; the
 desktop labels them read-only and layout capture drops them. Role and inbound MCP
 navigation results eagerly include resolved virtual text before closing their Roslyn session.
 Metadata views intentionally contain signatures rather than invented method bodies;

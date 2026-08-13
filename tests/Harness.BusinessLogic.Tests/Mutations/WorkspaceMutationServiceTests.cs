@@ -429,6 +429,114 @@ public sealed class WorkspaceMutationServiceTests
     }
 
     [Fact]
+    public async Task Cross_document_transformation_applies_one_batch_and_validates_every_file()
+    {
+        FakeFileEditor editor = new();
+        FakeCodeIntelligenceService codeIntelligence = new()
+        {
+            DocumentTransformationFingerprint = Baseline,
+            DocumentTransformationEdits =
+            [
+                new(new("src/First.cs"), new(Baseline), new("class First { }"),
+                    new("class First { void Run(int value) { } }"), 1),
+                new(new("tests/Use.cs"), new(Baseline), new("class Use { }"),
+                    new("class Use { void Go() { new First().Run(1); } }"), 1),
+            ],
+        };
+        WorkspaceMutationService service = new(
+            new FakeGoalStore(CreateGoal("Approved"), CreateWorktree()),
+            new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)),
+            editor,
+            new FakeDotNetToolRunner(),
+            new FakeToolEvidenceStore(),
+            new FakeCapabilityApprovalStore(),
+            codeIntelligence);
+
+        DocumentTransformationApplyView result =
+            await service.ApplyDocumentTransformationAsync(new(
+                DocumentTransformationRequest(DocumentTransformationOrigin.Human, []),
+                new("cross-document-apply"),
+                new(Baseline)));
+
+        Assert.Null(result.ErrorCode);
+        Assert.Equal(1, editor.BatchCallCount);
+        Assert.Equal(2, editor.LastBatch?.Edits.Count);
+        Assert.Equal(2, result.Files.Count);
+        Assert.Equal(2, codeIntelligence.LastValidationRequest?.Edits.Count);
+        Assert.Equal(
+            ["src/First.cs", "tests/Use.cs"],
+            codeIntelligence.LastValidationRequest!.Edits.Select(edit => edit.Path.Value).ToArray());
+    }
+
+    [Fact]
+    public async Task Model_cross_document_transformation_checks_every_affected_file_grant()
+    {
+        FakeFileEditor editor = new();
+        FakeCodeIntelligenceService codeIntelligence = new()
+        {
+            DocumentTransformationEdits =
+            [
+                new(new("src/First.cs"), new(Baseline), new("class First { }"),
+                    new("class First { void Run() { } }"), 1),
+                new(new("tests/Use.cs"), new(Baseline), new("class Use { }"),
+                    new("class Use { First value = new(); }"), 1),
+            ],
+        };
+        WorkspaceMutationService service = new(
+            new FakeGoalStore(CreateGoal("Approved"), CreateWorktree()),
+            new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)),
+            editor,
+            new FakeDotNetToolRunner(),
+            new FakeToolEvidenceStore(),
+            new FakeCapabilityApprovalStore(),
+            codeIntelligence);
+
+        DocumentTransformationApplyView result =
+            await service.ApplyDocumentTransformationAsync(new(
+                DocumentTransformationRequest(
+                    DocumentTransformationOrigin.Model, [new("src")]),
+                new("cross-document-denied"),
+                new(Baseline)));
+
+        Assert.Equal("task_file_area_denied", result.ErrorCode);
+        Assert.Equal(0, editor.BatchCallCount);
+    }
+
+    [Fact]
+    public async Task Incomplete_atomic_transformation_result_fails_closed_before_post_validation()
+    {
+        FakeFileEditor editor = new() { OmitLastBatchResult = true };
+        FakeCodeIntelligenceService codeIntelligence = new()
+        {
+            DocumentTransformationEdits =
+            [
+                new(new("src/First.cs"), new(Baseline), new("class First { }"),
+                    new("class First { void Run() { } }"), 1),
+                new(new("src/Second.cs"), new(Baseline), new("class Second { }"),
+                    new("class Second { void Run() { } }"), 1),
+            ],
+        };
+        WorkspaceMutationService service = new(
+            new FakeGoalStore(CreateGoal("Approved"), CreateWorktree()),
+            new FakeWorkspaceStore(CreateWorkspace(isTrusted: true)),
+            editor,
+            new FakeDotNetToolRunner(),
+            new FakeToolEvidenceStore(),
+            new FakeCapabilityApprovalStore(),
+            codeIntelligence);
+
+        DocumentTransformationApplyView result =
+            await service.ApplyDocumentTransformationAsync(new(
+                DocumentTransformationRequest(DocumentTransformationOrigin.Human, []),
+                new("incomplete-cross-document-apply"),
+                new(Baseline)));
+
+        Assert.Equal("incomplete_atomic_apply", result.ErrorCode);
+        Assert.Null(result.AppliedCodeValidation);
+        Assert.Null(codeIntelligence.LastValidationRequest);
+    }
+
+    [Fact]
     public async Task Model_document_transformation_fails_closed_outside_its_file_grant()
     {
         FakeFileEditor editor = new();
@@ -777,7 +885,9 @@ public sealed class WorkspaceMutationServiceTests
         internal int CallCount { get; private set; }
         internal int BatchCallCount { get; private set; }
         internal string? Root { get; private set; }
+        internal WorkspaceFileBatchEdit? LastBatch { get; private set; }
         internal Exception? Exception { get; init; }
+        internal bool OmitLastBatchResult { get; init; }
 
         public ValueTask<WorkspaceFileEditResult> ApplyAsync(
             string worktreeRoot,
@@ -808,8 +918,12 @@ public sealed class WorkspaceMutationServiceTests
         {
             BatchCallCount++;
             Root = worktreeRoot;
+            LastBatch = batch;
+            IReadOnlyList<WorkspaceFileEdit> confirmed = OmitLastBatchResult
+                ? batch.Edits.SkipLast(1).ToArray()
+                : batch.Edits;
             return ValueTask.FromResult(new WorkspaceFileBatchEditResult(
-                batch.Edits.Select(edit => new WorkspaceFileEditResult(
+                confirmed.Select(edit => new WorkspaceFileEditResult(
                     edit.Path,
                     edit.ExpectedSha256,
                     Baseline,
@@ -944,6 +1058,10 @@ public sealed class WorkspaceMutationServiceTests
         internal IReadOnlyList<WorkbenchCodeValidationDiagnostic> AppliedDiagnostics { get; init; } = [];
         internal string RenameFingerprint { get; init; } = Baseline;
         internal string DocumentTransformationFingerprint { get; init; } = Baseline;
+        internal IReadOnlyList<WorkbenchCodeDocumentTransformationEdit>?
+            DocumentTransformationEdits
+        { get; init; }
+        internal WorkbenchCodeValidationRequest? LastValidationRequest { get; private set; }
 
         public ValueTask<WorkbenchCodeSessionView> StartAsync(
             WorkbenchCodeSessionRequest request,
@@ -963,6 +1081,7 @@ public sealed class WorkspaceMutationServiceTests
             CancellationToken cancellationToken = default)
         {
             Phases.Add(request.Phase);
+            LastValidationRequest = request;
             WorkbenchCodeValidationDisposition disposition =
                 request.Phase is WorkbenchCodeValidationPhase.Candidate
                     ? CandidateDisposition
@@ -1035,12 +1154,12 @@ public sealed class WorkspaceMutationServiceTests
                 WorkbenchCodeTransformationDisposition.Ready,
                 request.Kind,
                 request.Range,
-                new(
+                DocumentTransformationEdits ?? [new(
                     request.Snapshot.Path,
                     request.Snapshot.BaselineHash,
                     request.Snapshot.Text,
                     new("class First { }"),
-                    1),
+                    1)],
                 [],
                 [],
                 new(DocumentTransformationFingerprint),

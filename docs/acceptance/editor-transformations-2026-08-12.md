@@ -2,8 +2,8 @@
 
 Task 049 now has one shared closed transformation path for document, selection,
 changed-span, paste, and supported on-type formatting, import organization,
-unused-import cleanup, missing-type import fixes, and a closed single-document
-quick-fix/refactoring catalog.
+unused-import cleanup, missing-type import fixes, and a closed local and bounded
+cross-document quick-fix/refactoring catalog.
 
 ## Behavior
 
@@ -27,6 +27,19 @@ quick-fix/refactoring catalog.
   and shortcuts. It
   applies the candidate to the live buffer as one undoable replacement, preserves the
   caret where possible, and leaves saving under developer control.
+- Add Parameter and Replace Property/Method are explicitly admitted cross-document
+  providers. Discovery reports physical affected-file count and whether the active
+  document changes. Preview returns every confined persisted path, baseline, original
+  and candidate text, replacement count, diagnostics, and one fingerprint. Added,
+  removed, generated, external, structural, inconsistent-linked, over-100-file, and
+  over-10-MiB results fail closed.
+- A developer cross-document choice uses the approved goal mutation boundary rather
+  than replacing only the active buffer. Apply re-resolves the action and fingerprint,
+  writes all files as one exact-baseline batch, validates the complete persisted set,
+  and refreshes every affected open editor. Model apply also checks every affected
+  path against its delegated file areas. An affected open editor with unsaved text
+  blocks the developer action, and incomplete batch confirmation fails before
+  post-validation.
 - Implementer tools expose missing-import discovery plus separate preview and apply
   calls. Apply recomputes the
   preview, compares the exact fingerprint, checks the delegated path, writes one
@@ -36,11 +49,12 @@ quick-fix/refactoring catalog.
   `FormatDocument`, `FormatSelection`, `FormatChangedSpans`, `FormatPaste`,
   `FormatOnType`, `OrganizeImports`, `RemoveUnusedImports`, `AddMissingImport`, and
   `ApplyCodeAction`. Code-action discovery composes only explicitly allowlisted pinned
-  Roslyn providers. It preflights each choice as exactly one current-document change,
-  omitting custom host operations, project/reference changes, added files, and
-  cross-document edits. Exact selections enable extract-method and introduce-variable
-  refactorings. Safe providers expose a bounded document scope that repeats the exact
-  action identity until no matching diagnostic remains.
+  Roslyn providers. It preflights each choice as either a confined document change or
+  one of the explicitly admitted cross-document providers, while omitting custom host
+  operations, project/reference changes, and added files. Exact selections enable
+  extract-method and introduce-variable refactorings. Safe providers expose a bounded
+  document scope that repeats the exact action identity until no matching diagnostic
+  remains.
 - The editor merges imports, compiler fixes, local refactorings, and labeled
   “Fix all in document” choices behind Quick fix / `Ctrl+.`. An applied choice is one
   undoable unsaved buffer replacement. Lead, Implementer, and Reviewer can discover
@@ -58,8 +72,10 @@ mapping, accessible editor discovery, atomic fingerprinted apply, delegated-path
 rejection, evidence, and post-apply validation.
 They also cover provider composition, interface implementation, stale or unknown
 action IDs, bounded document fix-all, auto-property and exact-selection refactoring,
-cross-document omission, Data Access/Business Logic identity mapping, role and model
-schemas, accessible editor discovery, and single-step undo.
+cross-document Add Parameter and Replace Property/Method previews, complete edit-set
+mapping, atomic batch apply, all-path grant rejection, Data Access/Business Logic
+identity mapping, role and model schemas, accessible editor discovery, and single-step
+undo.
 
 Verification result:
 
@@ -81,13 +97,25 @@ Verification result:
 - Linux x64 self-contained publish: passed;
 - repository formatting verification: passed.
 
+The 2026-08-13 cross-document extension passed a zero-warning solution build and the
+complete deterministic editor verifier: 52 Roslyn adapter, 23 semantic-boundary, 45
+transformation-authority, and 78 editor/Vim control tests, plus the existing settings,
+Run, Project User Secrets, capture-policy, and theme suites. The focused real-Roslyn
+fixtures prove one declaration-only Add Parameter action and one two-file Replace
+Property/Method action without writing during preview. Business Logic tests prove one
+batch for the complete edit set, post-validation of every persisted file, and rejection
+when any model path is outside its grant. The Avalonia test proves a multi-file choice
+routes through atomic goal mutation instead of replacing only the active buffer.
+The full deterministic solution regression passed 725 tests: 6 analyzer, 1
+architecture, 279 Business Logic, 246 Data Access, 22 Host, 147 Avalonia Presentation,
+22 terminal Presentation, and 2 Avalonia UI tests.
+
 ## Remaining Task 049 work
 
-Explicit multi-file refactor contracts; virtual source navigation; inspection views;
-keybindings/Vim; User Secrets; a real Debug CodeLens adapter; and the full editor
-performance, IME, Orca, scaling, and restoration matrix remain open.
+Full method-body decompilation remains Task 049 work. A real Debug CodeLens adapter is
+Task 052. Later provider additions remain explicit policy changes rather than a generic
+action executor.
 
-The current named AvaloniaEdit automation peer exposes the editor as a panel, but not
-the AT-SPI Text interface. This slice proves accessible commands and the real initial
-caret workflow; accessible arbitrary caret/text navigation remains part of that open
-Orca matrix.
+The complete keyboard, IME, AT-SPI, strict Orca, scaling, restoration, and Linux
+publication matrix is recorded in
+[editor-resilience-2026-08-13.md](editor-resilience-2026-08-13.md).

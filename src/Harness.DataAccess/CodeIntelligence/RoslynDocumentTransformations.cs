@@ -8,6 +8,7 @@ namespace Harness.DataAccess.CodeIntelligence;
 
 internal sealed partial class RoslynCodeIntelligenceEngine
 {
+    private const int MaximumDocumentTransformationFiles = 100;
     private const int MaximumDocumentTransformationPreviewBytes = 10 * 1024 * 1024;
 
     public async ValueTask<CodeIntelligenceDocumentTransformationPreviewResult>
@@ -88,6 +89,7 @@ internal sealed partial class RoslynCodeIntelligenceEngine
             }
 
             Document candidateDocument;
+            Solution? transformedSolution = null;
             TextSpan? requestedSpan = null;
             switch (request.Kind)
             {
@@ -157,70 +159,145 @@ internal sealed partial class RoslynCodeIntelligenceEngine
                             "invalid_code_action_range",
                             "The code-action range is outside the document.");
                     }
-                    candidateDocument = await ApplyClosedCodeActionAsync(
+                    transformedSolution = await ApplyClosedCodeActionAsync(
                         baselineDocument,
                         codeActionSpan,
                         request.CodeActionId!,
                         request.CodeActionScope!.Value,
-                        cancellationToken) ?? baselineDocument;
-                    if (candidateDocument == baselineDocument)
+                        cancellationToken);
+                    if (transformedSolution is null)
                     {
                         return DocumentTransformationFailure(request,
                             CodeIntelligenceResultState.Stale,
                             "code_action_changed",
-                            "The selected code action is no longer available or exceeded its closed document scope.");
+                            "The selected code action is no longer available or exceeded its closed scope.");
                     }
+                    candidateDocument = transformedSolution.GetDocument(baselineDocument.Id) ??
+                        baselineDocument;
                     break;
                 default:
                     throw new ArgumentOutOfRangeException(nameof(request));
             }
 
-            SourceText originalText = prepared.Text!;
-            SourceText candidateText = await candidateDocument.GetTextAsync(cancellationToken);
-            string original = originalText.ToString();
-            string candidate = candidateText.ToString();
-            int replacements = candidateText.GetTextChanges(originalText).Count;
-            if ((long)Utf8WithoutBom.GetByteCount(original) +
-                Utf8WithoutBom.GetByteCount(candidate) > MaximumDocumentTransformationPreviewBytes)
+            Solution baseline = baselineDocument.Project.Solution;
+            Solution transformed = transformedSolution ?? candidateDocument.Project.Solution;
+            IReadOnlyList<DocumentId> changedDocuments = transformedSolution is null
+                ? [baselineDocument.Id]
+                : transformed.GetChanges(baseline).GetProjectChanges()
+                    .SelectMany(change => change.GetChangedDocuments())
+                    .Distinct()
+                    .ToArray();
+            List<CodeIntelligenceDocumentTransformationConflict> mutableConflicts = [];
+            Dictionary<string, CodeIntelligenceDocumentTransformationEdit> editsByPath =
+                new(StringComparer.Ordinal);
+            foreach (DocumentId documentId in changedDocuments)
             {
-                return DocumentTransformationConflictResult(request, session,
-                    DocumentTransformationConflict(
-                        CodeIntelligenceDocumentTransformationConflictKind.TooLarge,
-                        "The complete transformation preview exceeds 10 MiB."));
+                Document? oldDocument = baseline.GetDocument(documentId);
+                Document? newDocument = transformed.GetDocument(documentId);
+                if (oldDocument?.FilePath is null || newDocument is null)
+                {
+                    mutableConflicts.Add(DocumentTransformationConflict(
+                        CodeIntelligenceDocumentTransformationConflictKind.Generated,
+                        "A generated document cannot be changed atomically."));
+                    continue;
+                }
+
+                string fullPath = Path.GetFullPath(oldDocument.FilePath);
+                string relative = Path.GetRelativePath(session.RootPath, fullPath).Replace('\\', '/');
+                if (relative == ".." || relative.StartsWith("../", StringComparison.Ordinal))
+                {
+                    mutableConflicts.Add(DocumentTransformationConflict(
+                        CodeIntelligenceDocumentTransformationConflictKind.OutsideSourceContext,
+                        "A transformation target is outside the active source context."));
+                    continue;
+                }
+                if (!File.Exists(fullPath))
+                {
+                    mutableConflicts.Add(DocumentTransformationConflict(
+                        CodeIntelligenceDocumentTransformationConflictKind.Generated,
+                        "A generated or missing source document is not editable.",
+                        new(relative)));
+                    continue;
+                }
+                if (!IsWritable(fullPath))
+                {
+                    mutableConflicts.Add(DocumentTransformationConflict(
+                        CodeIntelligenceDocumentTransformationConflictKind.Uneditable,
+                        "A source document affected by the transformation is not writable.",
+                        new(relative)));
+                    continue;
+                }
+
+                SourceText oldText = await oldDocument.GetTextAsync(cancellationToken);
+                SourceText newText = await newDocument.GetTextAsync(cancellationToken);
+                string original = oldText.ToString();
+                string candidate = newText.ToString();
+                string persisted = await File.ReadAllTextAsync(
+                    fullPath, Utf8WithoutBom, cancellationToken);
+                CodeIntelligenceDocumentTransformationEdit edit = new(
+                    new(relative),
+                    new(Hash(persisted)),
+                    new(original),
+                    new(candidate),
+                    newText.GetTextChanges(oldText).Count);
+                if (editsByPath.TryGetValue(relative, out var linked) &&
+                    !linked.Text.Value.Equals(candidate, StringComparison.Ordinal))
+                {
+                    mutableConflicts.Add(DocumentTransformationConflict(
+                        CodeIntelligenceDocumentTransformationConflictKind.InconsistentLinkedFile,
+                        "Linked documents produced different edits for the same physical file.",
+                        new(relative)));
+                    continue;
+                }
+                editsByPath[relative] = edit;
             }
 
-            Solution baseline = baselineDocument.Project.Solution;
-            Solution transformed = candidateDocument.Project.Solution;
-            HashSet<ProjectId> affectedProjects = [baselineDocument.Project.Id];
+            if (editsByPath.Count > MaximumDocumentTransformationFiles)
+            {
+                mutableConflicts.Add(DocumentTransformationConflict(
+                    CodeIntelligenceDocumentTransformationConflictKind.TooManyFiles,
+                    $"The transformation affects more than {MaximumDocumentTransformationFiles} files."));
+            }
+            if (editsByPath.Values.Sum(edit =>
+                    (long)Utf8WithoutBom.GetByteCount(edit.OriginalText.Value) +
+                    Utf8WithoutBom.GetByteCount(edit.Text.Value)) >
+                MaximumDocumentTransformationPreviewBytes)
+            {
+                mutableConflicts.Add(DocumentTransformationConflict(
+                    CodeIntelligenceDocumentTransformationConflictKind.TooLarge,
+                    "The complete transformation preview exceeds 10 MiB."));
+            }
+
+            IReadOnlyList<CodeIntelligenceDocumentTransformationEdit> edits = editsByPath.Values
+                .OrderBy(edit => edit.Path.Value, StringComparer.Ordinal)
+                .ToArray();
+            HashSet<ProjectId> affectedProjects = changedDocuments
+                .Select(id => id.ProjectId)
+                .ToHashSet();
             IReadOnlyList<CollectedDiagnostic> baselineDiagnostics =
                 await CollectDiagnosticsAsync(baseline, affectedProjects, session.RootPath, cancellationToken);
             IReadOnlyList<CollectedDiagnostic> candidateDiagnostics =
                 await CollectDiagnosticsAsync(transformed, affectedProjects, session.RootPath, cancellationToken);
             IReadOnlyList<CodeIntelligenceValidationDiagnostic> delta = CompareDiagnostics(
                 baselineDiagnostics, candidateDiagnostics);
-            IReadOnlyList<CodeIntelligenceDocumentTransformationConflict> conflicts = delta
+            mutableConflicts.AddRange(delta
                 .Where(item => item.Kind is CodeIntelligenceDiagnosticDeltaKind.Introduced &&
                     item.Diagnostic.Severity is CodeIntelligenceDiagnosticSeverity.Error)
                 .Select(item => DocumentTransformationConflict(
                     CodeIntelligenceDocumentTransformationConflictKind.Semantic,
                     $"{item.Diagnostic.Id.Value}: {item.Diagnostic.Message.Value}"))
-                .Take(MaximumIssues)
-                .ToArray();
+                .Take(MaximumIssues));
+            IReadOnlyList<CodeIntelligenceDocumentTransformationConflict> conflicts =
+                mutableConflicts.Take(MaximumIssues).ToArray();
             CodeIntelligenceTransformationDisposition disposition = conflicts.Count == 0
                 ? CodeIntelligenceTransformationDisposition.Ready
                 : CodeIntelligenceTransformationDisposition.Conflicted;
-            CodeIntelligenceDocumentTransformationEdit edit = new(
-                snapshot.Path,
-                snapshot.BaselineHash,
-                new(original),
-                new(candidate),
-                replacements);
             CodeIntelligenceTransformationFingerprint? fingerprint = disposition is
                 CodeIntelligenceTransformationDisposition.Ready
                     ? new(DocumentTransformationFingerprint(
                         snapshot, request.Kind, request.Range, request.ImportNamespace,
                         request.FormattingTrigger, request.CodeActionId,
-                        request.CodeActionScope, edit, delta))
+                        request.CodeActionScope, edits, delta))
                     : null;
             return new(
                 snapshot.ContextId,
@@ -230,8 +307,8 @@ internal sealed partial class RoslynCodeIntelligenceEngine
                 SessionState(session),
                 disposition,
                 request.Kind,
-                requestedSpan is null ? null : Range(originalText, requestedSpan.Value),
-                edit,
+                requestedSpan is null ? null : Range(prepared.Text!, requestedSpan.Value),
+                edits,
                 conflicts,
                 delta.Take(MaximumDiagnostics).ToArray(),
                 fingerprint,
@@ -266,7 +343,7 @@ internal sealed partial class RoslynCodeIntelligenceEngine
         CodeIntelligenceFormattingTrigger? formattingTrigger,
         CodeIntelligenceCodeActionId? codeActionId,
         CodeIntelligenceCodeActionScope? codeActionScope,
-        CodeIntelligenceDocumentTransformationEdit edit,
+        IReadOnlyList<CodeIntelligenceDocumentTransformationEdit> edits,
         IReadOnlyList<CodeIntelligenceValidationDiagnostic> diagnostics)
     {
         StringBuilder value = new();
@@ -280,10 +357,15 @@ internal sealed partial class RoslynCodeIntelligenceEngine
             .Append(importNamespace?.Value).Append('\n')
             .Append(formattingTrigger).Append('\n')
             .Append(codeActionId?.Value).Append('\n')
-            .Append(codeActionScope).Append('\n')
-            .Append(Hash(edit.OriginalText.Value)).Append('\n')
-            .Append(Hash(edit.Text.Value)).Append('\n')
-            .Append(edit.ReplacementCount).Append('\n');
+            .Append(codeActionScope).Append('\n');
+        foreach (CodeIntelligenceDocumentTransformationEdit edit in edits)
+        {
+            _ = value.Append(edit.Path.Value).Append('\0')
+                .Append(edit.BaselineHash.Value).Append('\0')
+                .Append(Hash(edit.OriginalText.Value)).Append('\0')
+                .Append(Hash(edit.Text.Value)).Append('\0')
+                .Append(edit.ReplacementCount).Append('\n');
+        }
         foreach (CodeIntelligenceValidationDiagnostic item in diagnostics)
         {
             _ = value.Append(item.Kind).Append('\0')
@@ -301,7 +383,9 @@ internal sealed partial class RoslynCodeIntelligenceEngine
 
     private static CodeIntelligenceDocumentTransformationConflict DocumentTransformationConflict(
         CodeIntelligenceDocumentTransformationConflictKind kind,
-        string message) => new(kind, new(Bound(message, MaximumIssueLength)));
+        string message,
+        CodeIntelligenceDocumentPath? path = null) =>
+        new(kind, new(Bound(message, MaximumIssueLength)), path);
 
     private static CodeIntelligenceDocumentTransformationPreviewResult
         DocumentTransformationFailure(
@@ -317,7 +401,7 @@ internal sealed partial class RoslynCodeIntelligenceEngine
             CodeIntelligenceTransformationDisposition.Rejected,
             request.Kind,
             request.Range,
-            Edit: null,
+            Edits: [],
             [],
             [],
             Fingerprint: null,
@@ -340,7 +424,7 @@ internal sealed partial class RoslynCodeIntelligenceEngine
             CodeIntelligenceTransformationDisposition.Conflicted,
             request.Kind,
             request.Range,
-            Edit: null,
+            Edits: [],
             [conflict],
             [],
             Fingerprint: null,

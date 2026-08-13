@@ -951,7 +951,7 @@ public sealed class RoslynCodeIntelligenceEngineTests(ITestOutputHelper output) 
     }
 
     [Fact]
-    public async Task Closed_code_action_rejects_a_change_to_another_document()
+    public async Task Closed_add_parameter_action_previews_its_cross_document_edit_without_writing()
     {
         const string target = "public class Target { public void Run(int value) { } }\n";
         const string use = "class Use { void Go() { new Target().Run(1, 2); } }\n";
@@ -965,8 +965,66 @@ public sealed class RoslynCodeIntelligenceEngineTests(ITestOutputHelper output) 
             contextId, session.SessionId!, use, use, offset, "Use.cs");
 
         CodeIntelligenceCodeActionResult discovery = await engine.GetCodeActionsAsync(new(snapshot));
-        Assert.DoesNotContain(discovery.Candidates,
+        CodeIntelligenceCodeActionCandidate candidate = Assert.Single(
+            discovery.Candidates,
             item => item.Kind is CodeIntelligenceClosedCodeActionKind.AddParameter);
+        Assert.Equal(1, candidate.AffectedFileCount);
+        Assert.False(candidate.ChangesActiveDocument);
+        CodeIntelligenceDocumentTransformationPreviewResult preview =
+            await engine.PreviewDocumentTransformationAsync(new(
+                snapshot,
+                CodeIntelligenceDocumentTransformationKind.ApplyCodeAction,
+                Range: null,
+                CodeActionId: candidate.Id,
+                CodeActionScope: candidate.Scope));
+
+        Assert.Equal(CodeIntelligenceTransformationDisposition.Ready, preview.Disposition);
+        CodeIntelligenceDocumentTransformationEdit edit = Assert.Single(preview.Edits);
+        Assert.Equal("Sample.cs", edit.Path.Value);
+        Assert.Equal(target, edit.OriginalText.Value);
+        Assert.Contains("Run(int value, int", edit.Text.Value, StringComparison.Ordinal);
+        Assert.NotNull(preview.Fingerprint);
+        Assert.Equal(target, await File.ReadAllTextAsync(Path.Combine(root, "Sample.cs")));
+        Assert.Equal(use, await File.ReadAllTextAsync(Path.Combine(root, "Use.cs")));
+    }
+
+    [Fact]
+    public async Task Closed_member_replacement_previews_every_affected_document()
+    {
+        const string target =
+            "public class Target { public int Value { get; set; } }\n";
+        const string use =
+            "class Use { int Read(Target target) { target.Value = 3; return target.Value; } }\n";
+        await CreateProjectAsync(target);
+        await File.WriteAllTextAsync(Path.Combine(root, "Use.cs"), use, Utf8WithoutBom);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("multi-document-refactoring-context");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+        int offset = target.IndexOf("Value", StringComparison.Ordinal) + 1;
+        CodeIntelligenceInteractiveSnapshot snapshot =
+            InteractiveSnapshot(contextId, session.SessionId!, target, offset);
+
+        CodeIntelligenceCodeActionResult discovery = await engine.GetCodeActionsAsync(new(snapshot));
+        CodeIntelligenceCodeActionCandidate candidate = Assert.Single(
+            discovery.Candidates,
+            item => item.Kind is CodeIntelligenceClosedCodeActionKind.ReplaceMemberKind);
+        Assert.Equal(2, candidate.AffectedFileCount);
+        Assert.True(candidate.ChangesActiveDocument);
+        CodeIntelligenceDocumentTransformationPreviewResult preview =
+            await engine.PreviewDocumentTransformationAsync(new(
+                snapshot,
+                CodeIntelligenceDocumentTransformationKind.ApplyCodeAction,
+                Range: null,
+                CodeActionId: candidate.Id,
+                CodeActionScope: candidate.Scope));
+
+        Assert.Equal(CodeIntelligenceTransformationDisposition.Ready, preview.Disposition);
+        Assert.Equal(["Sample.cs", "Use.cs"],
+            preview.Edits.Select(edit => edit.Path.Value).ToArray());
+        Assert.All(preview.Edits, edit => Assert.True(edit.ReplacementCount > 0));
+        Assert.Contains("GetValue", preview.Edits[0].Text.Value, StringComparison.Ordinal);
+        Assert.Contains("SetValue", preview.Edits[1].Text.Value, StringComparison.Ordinal);
+        Assert.NotNull(preview.Fingerprint);
         Assert.Equal(target, await File.ReadAllTextAsync(Path.Combine(root, "Sample.cs")));
         Assert.Equal(use, await File.ReadAllTextAsync(Path.Combine(root, "Use.cs")));
     }

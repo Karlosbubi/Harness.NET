@@ -70,7 +70,9 @@ internal sealed partial class RoslynCodeIntelligenceEngine
                     action.Scope,
                     new(Bound(action.Action.Title, MaximumIssueLength)),
                     action.Diagnostic is null ? null : new(action.Diagnostic.Id),
-                    Range(prepared.Text!, action.ContextSpan))).ToArray(),
+                    Range(prepared.Text!, action.ContextSpan),
+                    action.AffectedFileCount,
+                    action.ChangesActiveDocument)).ToArray(),
                 session.Issues.ToArray());
         }
         catch (OperationCanceledException)
@@ -112,7 +114,9 @@ internal sealed partial class RoslynCodeIntelligenceEngine
                     provider.FixProvider!, document, diagnostic, cancellationToken);
                 foreach (CodeAction action in actions)
                 {
-                    if (await ChangedCurrentDocumentAsync(document, action, cancellationToken) is null)
+                    Solution? changed = await ChangedClosedSolutionAsync(
+                        document, action, provider.AllowCrossDocument, cancellationToken);
+                    if (changed is null)
                     {
                         continue;
                     }
@@ -124,7 +128,9 @@ internal sealed partial class RoslynCodeIntelligenceEngine
                         diagnostic,
                         action,
                         CodeIntelligenceCodeActionScope.Occurrence,
-                        diagnostic.Location.SourceSpan));
+                        diagnostic.Location.SourceSpan,
+                        ChangedDocumentCount(document.Project.Solution, changed),
+                        ChangesDocument(document.Project.Solution, changed, document.Id)));
                     if (provider.AllowDocumentScope)
                     {
                         result.Add(new(
@@ -134,7 +140,9 @@ internal sealed partial class RoslynCodeIntelligenceEngine
                             diagnostic,
                             action,
                             CodeIntelligenceCodeActionScope.Document,
-                            diagnostic.Location.SourceSpan));
+                            diagnostic.Location.SourceSpan,
+                            AffectedFileCount: 1,
+                            ChangesActiveDocument: true));
                     }
                 }
             }
@@ -146,7 +154,9 @@ internal sealed partial class RoslynCodeIntelligenceEngine
                 provider.RefactoringProvider!, document, actionSpan, cancellationToken);
             foreach (CodeAction action in actions)
             {
-                if (await ChangedCurrentDocumentAsync(document, action, cancellationToken) is null)
+                Solution? changed = await ChangedClosedSolutionAsync(
+                    document, action, provider.AllowCrossDocument, cancellationToken);
+                if (changed is null)
                 {
                     continue;
                 }
@@ -158,7 +168,9 @@ internal sealed partial class RoslynCodeIntelligenceEngine
                     Diagnostic: null,
                     action,
                     CodeIntelligenceCodeActionScope.Occurrence,
-                    actionSpan));
+                    actionSpan,
+                    ChangedDocumentCount(document.Project.Solution, changed),
+                    ChangesDocument(document.Project.Solution, changed, document.Id)));
             }
         }
 
@@ -171,7 +183,7 @@ internal sealed partial class RoslynCodeIntelligenceEngine
             .ToArray();
     }
 
-    private static async ValueTask<Document?> ApplyClosedCodeActionAsync(
+    private static async ValueTask<Solution?> ApplyClosedCodeActionAsync(
         Document baselineDocument,
         TextSpan actionSpan,
         CodeIntelligenceCodeActionId requestedId,
@@ -188,13 +200,21 @@ internal sealed partial class RoslynCodeIntelligenceEngine
             return null;
         }
 
-        Document? first = await ChangedCurrentDocumentAsync(
-            baselineDocument, selected.Action, cancellationToken);
-        if (first is null || requestedScope is CodeIntelligenceCodeActionScope.Occurrence)
+        Solution? firstSolution = await ChangedClosedSolutionAsync(
+            baselineDocument,
+            selected.Action,
+            selected.Descriptor.AllowCrossDocument,
+            cancellationToken);
+        if (firstSolution is null || requestedScope is CodeIntelligenceCodeActionScope.Occurrence)
         {
-            return first;
+            return firstSolution;
         }
 
+        Document? first = firstSolution.GetDocument(baselineDocument.Id);
+        if (first is null)
+        {
+            return null;
+        }
         string previous = (await first.GetTextAsync(cancellationToken)).ToString();
         Document current = first;
         for (int applied = 1; applied < MaximumDocumentCodeActionApplications; applied++)
@@ -203,11 +223,12 @@ internal sealed partial class RoslynCodeIntelligenceEngine
                 current, selected, cancellationToken);
             if (next is null)
             {
-                return current;
+                return current.Project.Solution;
             }
 
-            Document? changed = await ChangedCurrentDocumentAsync(
-                current, next.Action, cancellationToken);
+            Solution? changedSolution = await ChangedClosedSolutionAsync(
+                current, next.Action, allowCrossDocument: false, cancellationToken);
+            Document? changed = changedSolution?.GetDocument(current.Id);
             if (changed is null)
             {
                 return null;
@@ -224,7 +245,7 @@ internal sealed partial class RoslynCodeIntelligenceEngine
         }
 
         return await FindMatchingDocumentActionAsync(current, selected, cancellationToken) is null
-            ? current
+            ? current.Project.Solution
             : null;
     }
 
@@ -250,7 +271,9 @@ internal sealed partial class RoslynCodeIntelligenceEngine
             {
                 return new(selected.Id, selected.Descriptor, diagnostic, action,
                     CodeIntelligenceCodeActionScope.Document,
-                    diagnostic.Location.SourceSpan);
+                    diagnostic.Location.SourceSpan,
+                    AffectedFileCount: 1,
+                    ChangesActiveDocument: true);
             }
         }
 
@@ -353,9 +376,10 @@ internal sealed partial class RoslynCodeIntelligenceEngine
         actions.Add(action);
     }
 
-    private static async ValueTask<Document?> ChangedCurrentDocumentAsync(
+    private static async ValueTask<Solution?> ChangedClosedSolutionAsync(
         Document document,
         CodeAction action,
+        bool allowCrossDocument,
         CancellationToken cancellationToken)
     {
         Solution before = document.Project.Solution;
@@ -378,28 +402,34 @@ internal sealed partial class RoslynCodeIntelligenceEngine
         Solution after = apply.ChangedSolution;
         SolutionChanges solutionChanges = after.GetChanges(before);
         ProjectChanges[] projects = solutionChanges.GetProjectChanges().ToArray();
-        if (projects.Length != 1 || projects[0].ProjectId != document.Project.Id)
+        if (projects.Length is 0 or > MaximumCodeActions ||
+            !projects.Any(project => project.ProjectId == document.Project.Id) ||
+            solutionChanges.GetAddedProjects().Any() || solutionChanges.GetRemovedProjects().Any())
         {
             return null;
         }
 
-        ProjectChanges changes = projects[0];
-        DocumentId[] changed = changes.GetChangedDocuments().ToArray();
-        bool documentOnly = changed.Length == 1 && changed[0] == document.Id &&
-            !changes.GetAddedDocuments().Any() && !changes.GetRemovedDocuments().Any() &&
-            !changes.GetAddedAdditionalDocuments().Any() &&
-            !changes.GetRemovedAdditionalDocuments().Any() &&
-            !changes.GetChangedAdditionalDocuments().Any() &&
-            !changes.GetAddedAnalyzerConfigDocuments().Any() &&
-            !changes.GetRemovedAnalyzerConfigDocuments().Any() &&
-            !changes.GetChangedAnalyzerConfigDocuments().Any() &&
-            !changes.GetAddedMetadataReferences().Any() &&
-            !changes.GetRemovedMetadataReferences().Any() &&
-            !changes.GetAddedProjectReferences().Any() &&
-            !changes.GetRemovedProjectReferences().Any() &&
-            !changes.GetAddedAnalyzerReferences().Any() &&
-            !changes.GetRemovedAnalyzerReferences().Any();
-        return documentOnly ? after.GetDocument(document.Id) : null;
+        DocumentId[] changed = projects
+            .SelectMany(project => project.GetChangedDocuments())
+            .ToArray();
+        bool sourceOnly = changed.Length is > 0 and <= MaximumCodeActions &&
+            projects.All(changes =>
+                !changes.GetAddedDocuments().Any() && !changes.GetRemovedDocuments().Any() &&
+                !changes.GetAddedAdditionalDocuments().Any() &&
+                !changes.GetRemovedAdditionalDocuments().Any() &&
+                !changes.GetChangedAdditionalDocuments().Any() &&
+                !changes.GetAddedAnalyzerConfigDocuments().Any() &&
+                !changes.GetRemovedAnalyzerConfigDocuments().Any() &&
+                !changes.GetChangedAnalyzerConfigDocuments().Any() &&
+                !changes.GetAddedMetadataReferences().Any() &&
+                !changes.GetRemovedMetadataReferences().Any() &&
+                !changes.GetAddedProjectReferences().Any() &&
+                !changes.GetRemovedProjectReferences().Any() &&
+                !changes.GetAddedAnalyzerReferences().Any() &&
+                !changes.GetRemovedAnalyzerReferences().Any());
+        bool allowedScope = projects.Length == 1 && changed.Length == 1 &&
+            changed[0] == document.Id || allowCrossDocument;
+        return sourceOnly && allowedScope ? after : null;
     }
 
     private static bool SameAction(CodeAction candidate, CodeAction selected) =>
@@ -407,6 +437,21 @@ internal sealed partial class RoslynCodeIntelligenceEngine
             ? string.Equals(candidate.EquivalenceKey, selected.EquivalenceKey,
                 StringComparison.Ordinal)
             : candidate.Title.Equals(selected.Title, StringComparison.Ordinal);
+
+    private static int ChangedDocumentCount(Solution before, Solution after) =>
+        after.GetChanges(before).GetProjectChanges()
+            .SelectMany(project => project.GetChangedDocuments())
+            .Select(document => before.GetDocument(document)?.FilePath ?? document.Id.ToString())
+            .Distinct(StringComparer.Ordinal)
+            .Count();
+
+    private static bool ChangesDocument(
+        Solution before,
+        Solution changed,
+        DocumentId documentId) =>
+        changed.GetChanges(before).GetProjectChanges()
+            .SelectMany(project => project.GetChangedDocuments())
+            .Contains(documentId);
 
     private static bool Touches(TextSpan span, int offset) =>
         span.Start <= offset && offset <= span.End;
@@ -467,14 +512,17 @@ internal sealed partial class RoslynCodeIntelligenceEngine
         Diagnostic? Diagnostic,
         CodeAction Action,
         CodeIntelligenceCodeActionScope Scope,
-        TextSpan ContextSpan);
+        TextSpan ContextSpan,
+        int AffectedFileCount,
+        bool ChangesActiveDocument);
 
     private sealed record ClosedCodeActionProvider(
         string Name,
         CodeFixProvider? FixProvider,
         CodeRefactoringProvider? RefactoringProvider,
         CodeIntelligenceClosedCodeActionKind Kind,
-        bool AllowDocumentScope);
+        bool AllowDocumentScope,
+        bool AllowCrossDocument);
 
     private sealed class ClosedCodeFixCatalog : IDisposable
     {
@@ -496,7 +544,7 @@ internal sealed partial class RoslynCodeIntelligenceEngine
                 ["CSharpGenerateVariableCodeFixProvider"] = new(
                     CodeIntelligenceClosedCodeActionKind.GenerateVariable, false),
                 ["CSharpAddParameterCodeFixProvider"] = new(
-                    CodeIntelligenceClosedCodeActionKind.AddParameter, false),
+                    CodeIntelligenceClosedCodeActionKind.AddParameter, false, true),
                 ["CSharpFixReturnTypeCodeFixProvider"] = new(
                     CodeIntelligenceClosedCodeActionKind.FixReturnType, false),
                 ["CSharpMakeMemberStaticCodeFixProvider"] = new(
@@ -573,9 +621,9 @@ internal sealed partial class RoslynCodeIntelligenceEngine
                 ["GenerateOverridesCodeRefactoringProvider"] = new(
                     CodeIntelligenceClosedCodeActionKind.GenerateOverrides, false),
                 ["ReplaceMethodWithPropertyCodeRefactoringProvider"] = new(
-                    CodeIntelligenceClosedCodeActionKind.ReplaceMemberKind, false),
+                    CodeIntelligenceClosedCodeActionKind.ReplaceMemberKind, false, true),
                 ["ReplacePropertyWithMethodsCodeRefactoringProvider"] = new(
-                    CodeIntelligenceClosedCodeActionKind.ReplaceMemberKind, false),
+                    CodeIntelligenceClosedCodeActionKind.ReplaceMemberKind, false, true),
             };
 
         private readonly CompositionHost composition;
@@ -600,7 +648,8 @@ internal sealed partial class RoslynCodeIntelligenceEngine
                 .Where(item => item.Policy is not null)
                 .Select(item => new ClosedCodeActionProvider(
                     item.Provider.GetType().Name, item.Provider, RefactoringProvider: null,
-                    item.Policy!.Kind, item.Policy.AllowDocumentScope))
+                    item.Policy!.Kind, item.Policy.AllowDocumentScope,
+                    item.Policy.AllowCrossDocument))
                 .OrderBy(item => item.Name, StringComparer.Ordinal)
                 .ToArray();
             RefactoringProviderNames = refactoringExports
@@ -614,7 +663,8 @@ internal sealed partial class RoslynCodeIntelligenceEngine
                 .Where(item => item.Policy is not null)
                 .Select(item => new ClosedCodeActionProvider(
                     item.Provider.GetType().Name, FixProvider: null, item.Provider,
-                    item.Policy!.Kind, AllowDocumentScope: false))
+                    item.Policy!.Kind, AllowDocumentScope: false,
+                    item.Policy.AllowCrossDocument))
                 .OrderBy(item => item.Name, StringComparer.Ordinal)
                 .ToArray();
         }
@@ -634,5 +684,6 @@ internal sealed partial class RoslynCodeIntelligenceEngine
 
     private sealed record ClosedProviderPolicy(
         CodeIntelligenceClosedCodeActionKind Kind,
-        bool AllowDocumentScope);
+        bool AllowDocumentScope,
+        bool AllowCrossDocument = false);
 }
