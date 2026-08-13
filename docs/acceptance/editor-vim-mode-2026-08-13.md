@@ -54,6 +54,6 @@ input-mode selector above the shared command catalog:
 
 ## Remaining Task 049 work
 
-- Task 052-backed typed Run/Debug CodeLens targets;
+- a real debugger adapter for Debug CodeLens;
 - final correctness, latency, memory, cancellation, large-solution, repeated-context,
   IME, Orca, scaling, restoration, and Linux publication audit.

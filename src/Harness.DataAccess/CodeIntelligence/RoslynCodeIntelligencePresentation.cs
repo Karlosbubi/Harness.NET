@@ -1,8 +1,10 @@
 using System.Collections.Immutable;
+using Harness.DataAccess.Inspection;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Classification;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Diagnostics;
 using Microsoft.CodeAnalysis.FindSymbols;
 using Microsoft.CodeAnalysis.Text;
 
@@ -106,7 +108,8 @@ internal sealed partial class RoslynCodeIntelligenceEngine
             List<CodeIntelligenceCodeLens> codeLenses = semanticModel is null ||
                 request.CodeLens is null
                 ? []
-                : BuildCodeLenses(root, text, visibleSpan, semanticModel,
+                : BuildCodeLenses(root, text, semanticModel,
+                    document.Project, session.RootPath, request.Snapshot,
                     request.CodeLens, cancellationToken);
             truncated |= inlayHints.Count > MaximumInlayHints ||
                          codeLenses.Count > MaximumCodeLenses;
@@ -648,13 +651,18 @@ internal sealed partial class RoslynCodeIntelligenceEngine
     private static List<CodeIntelligenceCodeLens> BuildCodeLenses(
         SyntaxNode root,
         SourceText text,
-        TextSpan visibleSpan,
         SemanticModel semanticModel,
+        Project project,
+        string rootPath,
+        CodeIntelligenceInteractiveSnapshot snapshot,
         CodeIntelligenceCodeLensOptions options,
         CancellationToken cancellationToken)
     {
         List<CodeIntelligenceCodeLens> result = [];
-        IEnumerable<SyntaxNode> declarations = root.DescendantNodes(visibleSpan).Where(node =>
+        IMethodSymbol? entryPoint = semanticModel.Compilation.GetEntryPoint(cancellationToken);
+        CodeIntelligenceExecutionTarget? executionTarget = EntryPointTarget(
+            project, rootPath, entryPoint, snapshot);
+        IEnumerable<SyntaxNode> declarations = root.DescendantNodes().Where(node =>
             node is BaseTypeDeclarationSyntax or DelegateDeclarationSyntax or
                 BaseMethodDeclarationSyntax or PropertyDeclarationSyntax or
                 IndexerDeclarationSyntax or EventDeclarationSyntax);
@@ -685,6 +693,20 @@ internal sealed partial class RoslynCodeIntelligenceEngine
                 result.Add(new(position, target, CodeIntelligenceCodeLensKind.Tests,
                     new("Find tests"), IsResolved: false));
             }
+            if (executionTarget is not null && symbol is IMethodSymbol method &&
+                SymbolEqualityComparer.Default.Equals(method, entryPoint))
+            {
+                if (options.ShowRun)
+                {
+                    result.Add(new(position, target, CodeIntelligenceCodeLensKind.Run,
+                        new("Run project"), IsResolved: true, executionTarget));
+                }
+                if (options.ShowDebug)
+                {
+                    result.Add(new(position, target, CodeIntelligenceCodeLensKind.Debug,
+                        new("Debug project"), IsResolved: true, executionTarget));
+                }
+            }
         }
 
         return result
@@ -692,6 +714,39 @@ internal sealed partial class RoslynCodeIntelligenceEngine
             .OrderBy(item => item.Position.Line)
             .ThenBy(item => item.Kind)
             .ToList();
+    }
+
+    private static CodeIntelligenceExecutionTarget? EntryPointTarget(
+        Project project,
+        string rootPath,
+        IMethodSymbol? entryPoint,
+        CodeIntelligenceInteractiveSnapshot snapshot)
+    {
+        if (entryPoint is null || string.IsNullOrWhiteSpace(project.FilePath))
+        {
+            return null;
+        }
+        string relative = Path.GetRelativePath(rootPath, project.FilePath);
+        if (!WorkspacePathPolicy.TryResolve(
+                rootPath, relative, out _, out string confinedProject, out _,
+                out _, out _))
+        {
+            return null;
+        }
+
+        AnalyzerConfigOptions options =
+            project.AnalyzerOptions.AnalyzerConfigOptionsProvider.GlobalOptions;
+        _ = options.TryGetValue("build_property.TargetFramework", out string? framework);
+        string declaration = entryPoint.GetDocumentationCommentId() ??
+                             entryPoint.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        return new(
+            CodeIntelligenceExecutionTargetKind.ProjectEntryPoint,
+            new(confinedProject.Replace(Path.DirectorySeparatorChar, '/')),
+            new(string.IsNullOrWhiteSpace(framework) ? "unknown" : framework),
+            new(Bound(declaration, MaximumIssueLength)),
+            snapshot.Path,
+            snapshot.BaselineHash,
+            snapshot.BufferVersion);
     }
 
     private static bool IsObviousArgument(ExpressionSyntax expression, string parameterName)

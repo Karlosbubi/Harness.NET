@@ -37,15 +37,18 @@ immediately.
 
 The page persists separate switches for parameter-name hints, inferred-type hints,
 reference, implementation, and associated-test CodeLens actions, format-on-paste,
-and supported format-on-type triggers. Defaults are on.
+project Run and future Debug CodeLens actions, and supported format-on-type triggers.
+Defaults are on.
 Changes apply to open trusted C# editors without restarting Harness.NET.
 
 Roslyn computes hints only for the exact visible live buffer. Results carry the
 session, path, baseline, and buffer version and are discarded when stale. CodeLens
-discovery is bounded to visible declarations. Reference, implementation, and test
+discovery is document-wide and bounded. Reference, implementation, and test
 queries run only when the developer selects the corresponding lens. Run and Debug
-lenses remain absent unless a typed execution service reports a valid target; Settings
-cannot create execution authority.
+lenses remain absent unless a typed execution service reports a valid target and
+capability; Settings cannot create execution authority. Run is available for a
+Roslyn-proven project entry point. Debug remains unavailable until a real debugger
+adapter is delivered.
 
 Use the Transform menu or command palette to format the document, a selection, or only
 syntax changed since the persisted baseline. `Ctrl+Alt+L` formats the document,

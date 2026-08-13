@@ -9,10 +9,12 @@ public sealed record EditorIntelligencePreferences(
     bool ShowImplementationCodeLens,
     bool ShowTestCodeLens,
     bool FormatOnPaste,
-    bool FormatOnType)
+    bool FormatOnType,
+    bool ShowRunCodeLens = true,
+    bool ShowDebugCodeLens = true)
 {
     public static EditorIntelligencePreferences Default { get; } = new(
-        true, true, true, true, true, true, true);
+        true, true, true, true, true, true, true, true, true);
 }
 
 public sealed record EditorIntelligenceSettingsSnapshot(
@@ -48,7 +50,9 @@ internal sealed class EditorIntelligenceSettingsService(
             preferences.ShowImplementationCodeLens,
             preferences.ShowTestCodeLens,
             preferences.FormatOnPaste,
-            preferences.FormatOnType), cancellationToken);
+            preferences.FormatOnType,
+            preferences.ShowRunCodeLens,
+            preferences.ShowDebugCodeLens), cancellationToken);
         return Snapshot(saved);
     }
 
@@ -61,6 +65,8 @@ internal sealed class EditorIntelligenceSettingsService(
             preferences.ShowImplementationCodeLens,
             preferences.ShowTestCodeLens,
             preferences.FormatOnPaste,
-            preferences.FormatOnType),
+            preferences.FormatOnType,
+            preferences.ShowRunCodeLens,
+            preferences.ShowDebugCodeLens),
         "Roslyn editor hints and guarded live-buffer formatting are available for trusted C# source buffers.");
 }

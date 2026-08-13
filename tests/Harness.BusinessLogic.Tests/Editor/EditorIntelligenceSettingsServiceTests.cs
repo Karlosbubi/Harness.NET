@@ -8,16 +8,16 @@ public sealed class EditorIntelligenceSettingsServiceTests
     [Fact]
     public async Task Maps_private_preferences_and_saves_each_independent_switch()
     {
-        PreferenceStore store = new(new(true, false, true, false, true, false, true));
+        PreferenceStore store = new(new(true, false, true, false, true, false, true, true, false));
         EditorIntelligenceSettingsService service = new(store);
 
         EditorIntelligenceSettingsSnapshot initial = await service.GetAsync();
         EditorIntelligenceSettingsSnapshot saved = await service.SaveAsync(new(
-            false, true, false, true, false, true, false));
+            false, true, false, true, false, true, false, false, true));
 
-        Assert.Equal(new(true, false, true, false, true, false, true), initial.Preferences);
-        Assert.Equal(new(false, true, false, true, false, true, false), saved.Preferences);
-        Assert.Equal(new(false, true, false, true, false, true, false), store.Current);
+        Assert.Equal(new(true, false, true, false, true, false, true, true, false), initial.Preferences);
+        Assert.Equal(new(false, true, false, true, false, true, false, false, true), saved.Preferences);
+        Assert.Equal(new(false, true, false, true, false, true, false, false, true), store.Current);
         Assert.Contains("trusted C#", saved.Status, StringComparison.Ordinal);
     }
 

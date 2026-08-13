@@ -79,6 +79,6 @@ names; no separate modal editor or fake state was introduced.
 ## Remaining Task 049 work
 
 - project User Secrets with masked and separately authorized developer actions;
-- Task 052-backed typed Run/Debug CodeLens targets;
+- a real debugger adapter for Debug CodeLens;
 - final Task 049 performance, cancellation, large-solution, repeated-context,
   keyboard-only, IME, Orca, scaling, restoration, and parity audit.

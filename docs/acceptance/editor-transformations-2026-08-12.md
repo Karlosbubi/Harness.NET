@@ -84,7 +84,7 @@ Verification result:
 ## Remaining Task 049 work
 
 Explicit multi-file refactor contracts; virtual source navigation; inspection views;
-keybindings/Vim; User Secrets; typed Run/Debug CodeLens targets; and the full editor
+keybindings/Vim; User Secrets; a real Debug CodeLens adapter; and the full editor
 performance, IME, Orca, scaling, and restoration matrix remain open.
 
 The current named AvaloniaEdit automation peer exposes the editor as a panel, but not

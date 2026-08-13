@@ -541,6 +541,43 @@ public sealed class RoslynCodeIntelligenceEngineTests(ITestOutputHelper output) 
     }
 
     [Fact]
+    public async Task Entry_point_lenses_carry_a_confined_typed_execution_target()
+    {
+        const string source = "class Program\n{\n    public static void Main() { }\n}\n";
+        await CreateProjectAsync(source);
+        string projectPath = Path.Combine(root, "Sample.csproj");
+        string project = await File.ReadAllTextAsync(projectPath);
+        await File.WriteAllTextAsync(projectPath, project.Replace(
+            "<TargetFramework>net10.0</TargetFramework>",
+            "<OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework>",
+            StringComparison.Ordinal));
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("entry-point-lens-context");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+        CodeIntelligenceInteractiveSnapshot snapshot = InteractiveSnapshot(
+            contextId, session.SessionId!, source, source.IndexOf("Main", StringComparison.Ordinal));
+
+        CodeIntelligenceDocumentPresentationResult presentation =
+            await engine.GetDocumentPresentationAsync(new(
+                snapshot,
+                VisibleRange: new(new(0, 0), new(0, 5)),
+                CodeLens: new(false, false, false, ShowRun: true, ShowDebug: true)));
+
+        CodeIntelligenceCodeLens run = Assert.Single(presentation.CodeLenses,
+            item => item.Kind is CodeIntelligenceCodeLensKind.Run);
+        CodeIntelligenceCodeLens debug = Assert.Single(presentation.CodeLenses,
+            item => item.Kind is CodeIntelligenceCodeLensKind.Debug);
+        Assert.True(run.IsResolved);
+        Assert.Equal(run.ExecutionTarget, debug.ExecutionTarget);
+        Assert.Equal(CodeIntelligenceExecutionTargetKind.ProjectEntryPoint,
+            run.ExecutionTarget?.Kind);
+        Assert.Equal("Sample.csproj", run.ExecutionTarget?.ProjectPath.Value);
+        Assert.Equal("net10.0", run.ExecutionTarget?.TargetFramework.Value);
+        Assert.Contains("Program.Main", run.ExecutionTarget?.DeclarationId.Value,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Rename_preview_resolves_a_partial_type_across_files_without_writing()
     {
         const string declaration = "public partial class Widget { public void Run() { } }\n";

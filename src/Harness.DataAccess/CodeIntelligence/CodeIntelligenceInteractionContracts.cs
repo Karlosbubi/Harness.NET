@@ -333,6 +333,20 @@ public enum CodeIntelligenceCodeLensKind
     Debug,
 }
 
+public enum CodeIntelligenceExecutionTargetKind
+{
+    ProjectEntryPoint,
+}
+
+public sealed record CodeIntelligenceExecutionTarget(
+    CodeIntelligenceExecutionTargetKind Kind,
+    CodeIntelligenceDocumentPath ProjectPath,
+    CodeIntelligenceTargetFramework TargetFramework,
+    CodeIntelligenceMessage DeclarationId,
+    CodeIntelligenceDocumentPath SourcePath,
+    CodeIntelligenceBaselineHash SourceBaseline,
+    CodeIntelligenceBufferVersion BufferVersion);
+
 public sealed record CodeIntelligenceInlayHintOptions(
     bool ShowParameterNames,
     bool ShowInferredTypes);
@@ -340,7 +354,9 @@ public sealed record CodeIntelligenceInlayHintOptions(
 public sealed record CodeIntelligenceCodeLensOptions(
     bool ShowReferences,
     bool ShowImplementations,
-    bool ShowTests);
+    bool ShowTests,
+    bool ShowRun = false,
+    bool ShowDebug = false);
 
 public sealed record CodeIntelligenceInlayHint(
     CodeIntelligencePosition Position,
@@ -353,7 +369,8 @@ public sealed record CodeIntelligenceCodeLens(
     CodeIntelligencePosition Target,
     CodeIntelligenceCodeLensKind Kind,
     CodeIntelligenceMessage Display,
-    bool IsResolved);
+    bool IsResolved,
+    CodeIntelligenceExecutionTarget? ExecutionTarget = null);
 
 public sealed record CodeIntelligenceDocumentPresentationRequest(
     CodeIntelligenceInteractiveSnapshot Snapshot,

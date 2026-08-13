@@ -270,7 +270,9 @@ internal sealed partial class WorkbenchCodeIntelligenceService
                 request.CodeLens is null ? null : new(
                     request.CodeLens.ShowReferences,
                     request.CodeLens.ShowImplementations,
-                    request.CodeLens.ShowTests)),
+                    request.CodeLens.ShowTests,
+                    request.CodeLens.ShowRun,
+                    request.CodeLens.ShowDebug)),
                 cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -310,7 +312,15 @@ internal sealed partial class WorkbenchCodeIntelligenceService
             result.CodeLenses.Select(item => new WorkbenchCodeLens(
                 new(item.Position.Line, item.Position.Character),
                 new(item.Target.Line, item.Target.Character),
-                Map(item.Kind), new(item.Display.Value), item.IsResolved)).ToArray(),
+                Map(item.Kind), new(item.Display.Value), item.IsResolved,
+                item.ExecutionTarget is null ? null : new(
+                    Map(item.ExecutionTarget.Kind),
+                    new(item.ExecutionTarget.ProjectPath.Value),
+                    new(item.ExecutionTarget.TargetFramework.Value),
+                    new(item.ExecutionTarget.DeclarationId.Value),
+                    new(item.ExecutionTarget.SourcePath.Value),
+                    new(item.ExecutionTarget.SourceBaseline.Value),
+                    new(item.ExecutionTarget.BufferVersion.Value)))).ToArray(),
             result.IsTruncated,
             MapIssues(result.Issues));
     }
@@ -800,6 +810,15 @@ internal sealed partial class WorkbenchCodeIntelligenceService
         CodeIntelligenceCodeLensKind.Debug => WorkbenchCodeLensKind.Debug,
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
+
+    private static WorkbenchExecutionTargetKind Map(
+        CodeIntelligenceExecutionTargetKind kind) =>
+        kind switch
+        {
+            CodeIntelligenceExecutionTargetKind.ProjectEntryPoint =>
+                WorkbenchExecutionTargetKind.ProjectEntryPoint,
+            _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+        };
 
     private static WorkbenchCodeDestinationKind Map(CodeIntelligenceDestinationKind kind) =>
         kind switch

@@ -53,6 +53,6 @@ This record covers Task 049 criterion 8 and
 
 ## Remaining Task 049 work
 
-- Task 052-backed typed Run/Debug CodeLens targets;
+- a real debugger adapter for Debug CodeLens;
 - final correctness, latency, memory, cancellation, large-solution, repeated-context,
   IME, Orca, scaling, restoration, and Linux publication audit.

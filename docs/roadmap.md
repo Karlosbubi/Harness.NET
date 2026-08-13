@@ -299,12 +299,14 @@ Add the missing capabilities in this order:
    must exceed NetPad: the user and models share one live semantic state, while model
    authority remains narrower than user editing authority.
 
-Progress on 2026-08-12: items 1 and 2 are delivered through the shared exact-buffer
+Progress through 2026-08-13: items 1 and 2 are delivered through the shared exact-buffer
 Roslyn session. Viewport-only refresh no longer rebuilds document structure, and
 occurrence lookup is confined to the active document. Typed SQLite-backed Editor
 settings control visible-buffer parameter and inferred-type hints plus bounded lazy
-reference, implementation, and associated-test CodeLens actions. Run and Debug lenses
-remain hidden until Task 052 provides a valid typed per-declaration target. See the
+reference, implementation, associated-test, and project-entry-point Run CodeLens
+actions. Run uses a typed project/framework/declaration/source target and direct
+no-shell `dotnet` execution. Debug remains hidden until Task 052 provides a debugger.
+See the
 maintained [NetPad and OmniSharp parity matrix](netpad-omnisharp-parity.md). Item 3 now
 also has closed document/selection/changed-span formatting, guarded paste and on-type
 formatting, import organization, compiler-proven unused-import cleanup, and missing-type
@@ -413,13 +415,20 @@ trust requirement, presentation, and cancellation policy; it never stores a shel
 string as an agent capability. Agents continue to use closed typed operations rather
 than the developer terminal.
 
-### Planned: Task 052 — .NET project, Run, Test, and Debug experience
+### In progress: Task 052 — .NET project, Run, Test, and Debug experience
 
 Add a semantic Solution view for projects, target frameworks, configurations,
 dependencies, SDK/workload health, startup projects, and launch profiles. Add Test
 Explorer discovery, hierarchy, filtering, run/debug, duration and failure history,
 and coverage navigation. Add typed asynchronous Build/Rebuild, Run, Test, Debug, Hot
 Reload, structured output, cancellation, and process lifecycle.
+
+Delivered first slice: a Roslyn-proven project entry point can be run from CodeLens
+in a trusted original workspace or approved goal worktree. Harness revalidates the
+project, target framework, source path, and saved source hash, starts `dotnet`
+without a shell, Restore, or launch profile, supports process-tree cancellation,
+persists bounded lifecycle metadata, and keeps stdout/stderr process-local. Solution,
+Build/Rebuild, Test Explorer, launch profiles, Hot Reload, and Debug remain planned.
 
 Use the existing trust and Restore boundaries. Selecting a launch profile does not
 authorize execution; debug attach, expression evaluation, mutation, dumps, network

@@ -294,6 +294,17 @@ public enum WorkbenchCodeInlayHintKind { ParameterName, InferredType }
 
 public enum WorkbenchCodeLensKind { References, Implementations, Tests, Run, Debug }
 
+public enum WorkbenchExecutionTargetKind { ProjectEntryPoint }
+
+public sealed record WorkbenchExecutionTarget(
+    WorkbenchExecutionTargetKind Kind,
+    WorkbenchCodeDocumentPath ProjectPath,
+    WorkbenchCodeTargetFramework TargetFramework,
+    WorkbenchCodeMessage DeclarationId,
+    WorkbenchCodeDocumentPath SourcePath,
+    WorkbenchCodeBaselineHash SourceBaseline,
+    WorkbenchCodeBufferVersion BufferVersion);
+
 public sealed record WorkbenchCodeInlayHintOptions(
     bool ShowParameterNames,
     bool ShowInferredTypes);
@@ -301,7 +312,9 @@ public sealed record WorkbenchCodeInlayHintOptions(
 public sealed record WorkbenchCodeLensOptions(
     bool ShowReferences,
     bool ShowImplementations,
-    bool ShowTests);
+    bool ShowTests,
+    bool ShowRun = false,
+    bool ShowDebug = false);
 
 public sealed record WorkbenchCodeInlayHint(
     WorkbenchCodePosition Position,
@@ -314,7 +327,8 @@ public sealed record WorkbenchCodeLens(
     WorkbenchCodePosition Target,
     WorkbenchCodeLensKind Kind,
     WorkbenchCodeMessage Display,
-    bool IsResolved);
+    bool IsResolved,
+    WorkbenchExecutionTarget? ExecutionTarget = null);
 
 public sealed record WorkbenchCodeDocumentPresentationRequest(
     WorkbenchCodeInteractiveSnapshot Snapshot,

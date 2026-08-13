@@ -289,6 +289,43 @@ public sealed class WorkbenchCodeIntelligenceServiceTests
     }
 
     [Fact]
+    public async Task Typed_execution_target_crosses_the_code_intelligence_boundary()
+    {
+        DeterministicCodeIntelligenceEngine engine = new()
+        {
+            Presentations = (request, _) => ValueTask.FromResult(new
+                CodeIntelligenceDocumentPresentationResult(
+                    request.Snapshot.ContextId, request.Snapshot.SessionId,
+                    request.Snapshot.Path, request.Snapshot.BufferVersion,
+                    CodeIntelligenceResultState.Ready, [], [], [], [], [],
+                    [new(new(0, 0), new(0, 20), CodeIntelligenceCodeLensKind.Run,
+                        new("Run project"), true,
+                        new(CodeIntelligenceExecutionTargetKind.ProjectEntryPoint,
+                            new("src/App/App.csproj"), new("net10.0"),
+                            new("M:Program.Main"), request.Snapshot.Path,
+                            request.Snapshot.BaselineHash, request.Snapshot.BufferVersion))],
+                    false, [])),
+        };
+        WorkbenchCodeIntelligenceService service = new(
+            new ContextResolver(ApprovedResolution()), engine);
+        WorkbenchCodeSessionId sessionId = (await service.StartAsync(new(
+            new("workspace-id"), new("goal-id"), new("Harness.slnx")))).SessionId!;
+        WorkbenchCodeInteractiveSnapshot snapshot = new(
+            sessionId, new("src/App.cs"), new(Baseline), new(1),
+            new("class Program { static void Main() { } }"), new(0, 28));
+
+        WorkbenchCodeDocumentPresentationView result =
+            await service.GetDocumentPresentationAsync(new(snapshot, null,
+                CodeLens: new(false, false, false, true, false)));
+
+        WorkbenchCodeLens lens = Assert.Single(result.CodeLenses);
+        Assert.Equal(WorkbenchCodeLensKind.Run, lens.Kind);
+        Assert.Equal("src/App/App.csproj", lens.ExecutionTarget?.ProjectPath.Value);
+        Assert.Equal("M:Program.Main", lens.ExecutionTarget?.DeclarationId.Value);
+        Assert.Equal(Baseline, lens.ExecutionTarget?.SourceBaseline.Value);
+    }
+
+    [Fact]
     public async Task Newer_buffer_discards_an_in_flight_rename_preview()
     {
         TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);

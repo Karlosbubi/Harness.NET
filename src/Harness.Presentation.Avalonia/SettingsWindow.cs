@@ -343,6 +343,20 @@ internal sealed class SettingsWindow : Window
             IsEnabled = !settingsState.IsBusy,
         };
         AutomationProperties.SetName(tests, "Show associated test CodeLens actions");
+        CheckBox run = new()
+        {
+            Content = "Show Run CodeLens for valid project entry points",
+            IsChecked = current.ShowRunCodeLens,
+            IsEnabled = !settingsState.IsBusy,
+        };
+        AutomationProperties.SetName(run, "Show project Run CodeLens actions");
+        CheckBox debug = new()
+        {
+            Content = "Show Debug CodeLens when a debugger is available",
+            IsChecked = current.ShowDebugCodeLens,
+            IsEnabled = !settingsState.IsBusy,
+        };
+        AutomationProperties.SetName(debug, "Show project Debug CodeLens actions");
         CheckBox formatOnPaste = new()
         {
             Content = "Format pasted C# code with Roslyn",
@@ -371,7 +385,9 @@ internal sealed class SettingsWindow : Window
             implementations.IsChecked is true,
             tests.IsChecked is true,
             formatOnPaste.IsChecked is true,
-            formatOnType.IsChecked is true), cancellationToken);
+            formatOnType.IsChecked is true,
+            run.IsChecked is true,
+            debug.IsChecked is true), cancellationToken);
 
         return Page(
             "Editor",
@@ -403,6 +419,8 @@ internal sealed class SettingsWindow : Window
                     references,
                     implementations,
                     tests,
+                    run,
+                    debug,
                     new TextBlock
                     {
                         Text = "CodeLens actions resolve only when selected. Run and Debug appear only after a valid typed execution target is available.",

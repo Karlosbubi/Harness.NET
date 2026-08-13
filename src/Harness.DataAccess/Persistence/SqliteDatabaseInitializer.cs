@@ -7,7 +7,7 @@ namespace Harness.DataAccess.Persistence;
 
 internal sealed class SqliteDatabaseInitializer : IDatabaseInitializer
 {
-    internal const int CurrentSchemaVersion = 29;
+    internal const int CurrentSchemaVersion = 30;
     private readonly IApplicationPaths applicationPaths;
     private readonly TimeProvider timeProvider;
 

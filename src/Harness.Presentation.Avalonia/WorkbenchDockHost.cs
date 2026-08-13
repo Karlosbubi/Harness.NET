@@ -18,6 +18,7 @@ using Harness.BusinessLogic.CodeIntelligence;
 using Harness.BusinessLogic.Documents;
 using Harness.BusinessLogic.Editor;
 using Harness.BusinessLogic.Evidence;
+using Harness.BusinessLogic.Execution;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Layouts;
@@ -44,6 +45,7 @@ internal sealed class WorkbenchDockHost
     private readonly Func<AvaloniaShellState> state;
     private readonly Func<bool, Task> manageWorkspace;
     private readonly Func<Task> manageProjectSecrets;
+    private readonly IDeveloperProjectExecutionService? developerExecutionService;
     private readonly CancellationToken cancellationToken;
     private readonly Factory factory = new();
     private readonly WorkbenchDockLayoutCodec layoutCodec;
@@ -95,6 +97,7 @@ internal sealed class WorkbenchDockHost
     private readonly TextBlock gitStatus = new() { TextWrapping = TextWrapping.Wrap };
     private readonly ListBox runOutputs = new();
     private readonly TextBlock runOutputStatus = new() { TextWrapping = TextWrapping.Wrap };
+    private readonly Button cancelDeveloperRun = new() { Content = "Stop", IsEnabled = false };
     private readonly TextEditor runOutputDetails = CodeEditorView.Create(
         string.Empty,
         isReadOnly: true,
@@ -172,7 +175,8 @@ internal sealed class WorkbenchDockHost
         CancellationToken cancellationToken,
         Func<bool, Task>? manageWorkspace = null,
         IWorkspaceMutationService? mutationService = null,
-        Func<Task>? manageProjectSecrets = null)
+        Func<Task>? manageProjectSecrets = null,
+        IDeveloperProjectExecutionService? developerExecutionService = null)
     {
         this.runOutputService = runOutputService;
         this.inspectionService = inspectionService;
@@ -184,6 +188,7 @@ internal sealed class WorkbenchDockHost
         this.state = state;
         this.manageWorkspace = manageWorkspace ?? (_ => Task.CompletedTask);
         this.manageProjectSecrets = manageProjectSecrets ?? (() => Task.CompletedTask);
+        this.developerExecutionService = developerExecutionService;
         this.cancellationToken = cancellationToken;
         factory.HideToolsOnClose = true;
         layoutCodec = new(factory);
@@ -1405,23 +1410,27 @@ internal sealed class WorkbenchDockHost
             Margin = new Thickness(10),
             RowSpacing = 8,
         };
-        Grid heading = new() { ColumnDefinitions = new("*,Auto"), ColumnSpacing = 8 };
-        AutomationProperties.SetName(runOutputStatus, "Durable run output status");
-        runOutputStatus.Text = "Select a goal to inspect durable Build, Test, and Restore output.";
+        Grid heading = new() { ColumnDefinitions = new("*,Auto,Auto"), ColumnSpacing = 8 };
+        AutomationProperties.SetName(runOutputStatus, "Run output status");
+        runOutputStatus.Text = "Open a trusted workspace to inspect project and goal runs.";
         heading.Children.Add(runOutputStatus);
         Button refresh = new() { Content = "Refresh" };
-        AutomationProperties.SetName(refresh, "Refresh durable run output");
+        AutomationProperties.SetName(refresh, "Refresh run output");
         refresh.Click += async (_, _) => await RefreshRunOutputAsync();
         Grid.SetColumn(refresh, 1);
         heading.Children.Add(refresh);
+        AutomationProperties.SetName(cancelDeveloperRun, "Stop selected project run");
+        cancelDeveloperRun.Click += async (_, _) => await CancelSelectedDeveloperRunAsync();
+        Grid.SetColumn(cancelDeveloperRun, 2);
+        heading.Children.Add(cancelDeveloperRun);
         grid.Children.Add(heading);
 
-        AutomationProperties.SetName(runOutputs, "Durable Build, Test, and Restore runs");
+        AutomationProperties.SetName(runOutputs, "Project and goal runs");
         runOutputs.SelectionChanged += (_, _) => ShowSelectedRunOutput();
         Grid.SetRow(runOutputs, 1);
         grid.Children.Add(runOutputs);
 
-        AutomationProperties.SetName(runOutputDetails, "Selected durable run output");
+        AutomationProperties.SetName(runOutputDetails, "Selected run output");
         Grid.SetRow(runOutputDetails, 2);
         grid.Children.Add(runOutputDetails);
         return grid;
@@ -1589,8 +1598,10 @@ internal sealed class WorkbenchDockHost
             }
 
             WorkbenchCodeBufferVersion version = new(Math.Max(1, session.CurrentBufferVersion));
-            WorkbenchCodeDocumentPresentationView result =
-                await codeIntelligenceService.GetDocumentPresentationAsync(
+            WorkbenchCodeDocumentPresentationView? result = null;
+            for (int attempt = 0; attempt < 4; attempt++)
+            {
+                result = await codeIntelligenceService.GetDocumentPresentationAsync(
                     new(
                         InteractiveSnapshot(session, sessionId, version),
                         session.Editor.GetVisibleRange(),
@@ -1603,12 +1614,41 @@ internal sealed class WorkbenchDockHost
                         new(
                             editorIntelligencePreferences.ShowReferenceCodeLens,
                             editorIntelligencePreferences.ShowImplementationCodeLens,
-                            editorIntelligencePreferences.ShowTestCodeLens)),
+                            editorIntelligencePreferences.ShowTestCodeLens,
+                            ShowRun: editorIntelligencePreferences.ShowRunCodeLens &&
+                                developerExecutionService?.Capabilities
+                                    .CanRunProjectEntryPoint is true,
+                            ShowDebug: editorIntelligencePreferences.ShowDebugCodeLens &&
+                                developerExecutionService?.Capabilities
+                                    .CanDebugProjectEntryPoint is true)),
                     requestCancellation);
-            if (!session.IsCurrentPresentation(requestCancellation) ||
-                result.State is WorkbenchCodeResultState.Stale or
-                    WorkbenchCodeResultState.Cancelled or WorkbenchCodeResultState.Failed)
+                if (!session.IsCurrentPresentation(requestCancellation) ||
+                    result.State is WorkbenchCodeResultState.Cancelled)
+                {
+                    return;
+                }
+                if (result.State is not (WorkbenchCodeResultState.Stale or
+                    WorkbenchCodeResultState.Failed))
+                {
+                    break;
+                }
+                if (attempt < 3)
+                {
+                    await Task.Delay(TimeSpan.FromMilliseconds(250), requestCancellation);
+                }
+            }
+            if (result is null || !session.IsCurrentPresentation(requestCancellation))
             {
+                return;
+            }
+
+            if (result.State is WorkbenchCodeResultState.Stale or
+                WorkbenchCodeResultState.Failed)
+            {
+                string detail = result.Issues.FirstOrDefault()?.Message.Value ??
+                                "Roslyn did not return a current presentation.";
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                    session.SetStatus($"Semantic presentation unavailable · {detail}"));
                 return;
             }
 
@@ -1855,39 +1895,55 @@ internal sealed class WorkbenchDockHost
 
     internal async ValueTask RefreshRunOutputAsync()
     {
+        WorkspaceView? workspace = ActiveWorkspace();
         GoalView? goal = state().Goals.SelectedGoal;
         if (runOutputBusy)
         {
             return;
         }
 
-        if (goal is null)
+        if (workspace is null || !workspace.IsTrusted)
         {
-            runOutputs.ItemsSource = Array.Empty<RunOutputChoice>();
+            runOutputs.ItemsSource = Array.Empty<RunOutputChoiceBase>();
             runOutputDetails.Text = string.Empty;
-            runOutputStatus.Text = "Select a goal to inspect durable Build, Test, and Restore output.";
+            runOutputStatus.Text = workspace is null
+                ? "Open a workspace to inspect project and goal runs."
+                : "Trust the workspace before inspecting run output.";
             return;
         }
 
         runOutputBusy = true;
-        runOutputStatus.Text = $"Loading durable run output for {goal.Title}…";
+        runOutputStatus.Text = "Loading project and goal runs…";
         try
         {
-            RunOutputSnapshot result = await runOutputService.ListAsync(goal.Id, cancellationToken);
-            if (result.Error is not null)
+            DeveloperExecutionListResult developer = developerExecutionService is null
+                ? new([], false, null, null)
+                : await developerExecutionService.ListAsync(
+                    WorkbenchRequest(workspace), cancellationToken);
+            RunOutputSnapshot? goalRuns = goal is null
+                ? null
+                : await runOutputService.ListAsync(goal.Id, cancellationToken);
+            if (developer.Error is not null || goalRuns?.Error is not null)
             {
-                runOutputs.ItemsSource = Array.Empty<RunOutputChoice>();
+                runOutputs.ItemsSource = Array.Empty<RunOutputChoiceBase>();
                 runOutputDetails.Text = string.Empty;
-                runOutputStatus.Text = result.Error;
+                runOutputStatus.Text = developer.Error ?? goalRuns?.Error;
                 return;
             }
 
-            RunOutputChoice[] choices = result.Items.Select(item => new RunOutputChoice(item)).ToArray();
+            RunOutputChoiceBase[] choices = developer.Executions
+                .Select(item => (RunOutputChoiceBase)new DeveloperRunOutputChoice(item))
+                .Concat(goalRuns?.Items.Select(item =>
+                    (RunOutputChoiceBase)new GoalRunOutputChoice(item)) ?? [])
+                .OrderByDescending(item => item.StartedAt)
+                .ToArray();
             runOutputs.ItemsSource = choices;
             runOutputStatus.Text = choices.Length == 0
-                ? $"No Build, Test, or Restore runs are recorded for {goal.Title}."
-                : $"{choices.Length} durable run(s) for {goal.Title}." +
-                  (result.IsTruncated ? " Showing the latest 200 runs." : string.Empty);
+                ? "No project, Build, Test, or Restore runs are recorded for this source context."
+                : $"{choices.Length} project and goal run(s)." +
+                  (developer.IsTruncated || goalRuns?.IsTruncated is true
+                      ? " Showing the latest bounded results."
+                      : string.Empty);
             runOutputs.SelectedIndex = choices.Length == 0 ? -1 : 0;
             if (choices.Length == 0)
             {
@@ -1900,7 +1956,7 @@ internal sealed class WorkbenchDockHost
         }
         catch (Exception exception)
         {
-            runOutputs.ItemsSource = Array.Empty<RunOutputChoice>();
+            runOutputs.ItemsSource = Array.Empty<RunOutputChoiceBase>();
             runOutputDetails.Text = string.Empty;
             runOutputStatus.Text = $"Run output unavailable: {exception.Message}";
         }
@@ -1912,9 +1968,64 @@ internal sealed class WorkbenchDockHost
 
     private void ShowSelectedRunOutput()
     {
-        runOutputDetails.Text = runOutputs.SelectedItem is RunOutputChoice choice
-            ? FormatRunOutput(choice.Output)
-            : string.Empty;
+        runOutputDetails.Text = runOutputs.SelectedItem switch
+        {
+            GoalRunOutputChoice choice => FormatRunOutput(choice.Output),
+            DeveloperRunOutputChoice choice => FormatDeveloperRunOutput(choice.Output),
+            _ => string.Empty,
+        };
+        cancelDeveloperRun.IsEnabled = runOutputs.SelectedItem is DeveloperRunOutputChoice
+        {
+            Output.State: DeveloperExecutionState.Running,
+        };
+    }
+
+    private async ValueTask CancelSelectedDeveloperRunAsync()
+    {
+        if (developerExecutionService is null ||
+            runOutputs.SelectedItem is not DeveloperRunOutputChoice choice ||
+            choice.Output.State is not DeveloperExecutionState.Running)
+        {
+            return;
+        }
+        DeveloperExecutionCancelResult cancelled = await developerExecutionService.CancelAsync(
+            choice.Output.Id, cancellationToken);
+        runOutputStatus.Text = cancelled.CancellationRequested
+            ? "Stopping the selected project run…"
+            : cancelled.Error ?? "The selected project run could not be stopped.";
+    }
+
+    private static string FormatDeveloperRunOutput(DeveloperExecutionView output)
+    {
+        List<string> lines =
+        [
+            $"Run · {output.State}",
+            $"Project: {output.Target.ProjectPath.Value}",
+            $"Framework: {output.Target.TargetFramework.Value}",
+            $"Source: {output.SourceDescription}",
+            $"Started: {output.StartedAt:O}",
+            $"Completed: {(output.CompletedAt is null ? "not completed" : output.CompletedAt.Value.ToString("O"))}",
+            $"Exit code: {(output.ExitCode?.ToString() ?? "not reported")}",
+            $"Duration: {output.DurationMilliseconds:N0} ms",
+        ];
+        if (output.Error is not null)
+        {
+            lines.Add($"Run error: {output.Error}");
+        }
+        lines.Add(string.Empty);
+        if (!output.IsOutputAvailable)
+        {
+            lines.Add(output.State is DeveloperExecutionState.Running
+                ? "Output becomes available when this bounded run completes."
+                : "Raw output is no longer available. Harness.NET persists run metadata, not potentially sensitive application output.");
+            return string.Join(Environment.NewLine, lines);
+        }
+        lines.Add(output.IsOutputTruncated ? "Standard output · truncated" : "Standard output");
+        lines.Add(output.StandardOutput?.Value ?? string.Empty);
+        lines.Add(string.Empty);
+        lines.Add(output.IsErrorTruncated ? "Standard error · truncated" : "Standard error");
+        lines.Add(output.StandardError?.Value ?? string.Empty);
+        return string.Join(Environment.NewLine, lines);
     }
 
     private static string FormatRunOutput(RunOutputView output)
@@ -2066,6 +2177,8 @@ internal sealed class WorkbenchDockHost
         };
         editor.CaretChanged += (_, _) => ScheduleOccurrences(session);
         editor.CodeLensInvoked += async (_, args) =>
+            await InvokeCodeLensAsync(session, args.Lens);
+        surface.CodeLensInvoked += async (_, args) =>
             await InvokeCodeLensAsync(session, args.Lens);
         editor.ViewportChanged += (_, _) => SchedulePresentation(
             session,
@@ -3222,11 +3335,86 @@ internal sealed class WorkbenchDockHost
                 await ShowAssociatedTestsAsync(session);
                 break;
             case WorkbenchCodeLensKind.Run:
+                await RunCodeLensTargetAsync(session, lens);
+                break;
             case WorkbenchCodeLensKind.Debug:
-                session.SetStatus("No typed execution target is available for this declaration.");
+                session.SetStatus(developerExecutionService?.Capabilities.DebugStatus ??
+                    "No typed debugger capability is available.");
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(lens));
+        }
+    }
+
+    private async ValueTask RunCodeLensTargetAsync(
+        SourceDocumentSession session,
+        WorkbenchCodeLens lens)
+    {
+        WorkspaceView? workspace = ActiveWorkspace();
+        if (developerExecutionService is null || workspace is null || !workspace.IsTrusted ||
+            lens.ExecutionTarget is null)
+        {
+            session.SetStatus("No validated project execution target is available.");
+            return;
+        }
+        if (session.IsDirty)
+        {
+            session.SetStatus("Save this document before running its entry point.");
+            return;
+        }
+
+        session.SetBusy(true, $"Starting {lens.ExecutionTarget.ProjectPath.Value}…");
+        try
+        {
+            DeveloperExecutionStartResult started =
+                await developerExecutionService.StartRunAsync(new(
+                    WorkbenchRequest(workspace), lens.ExecutionTarget), cancellationToken);
+            if (started.Execution is null)
+            {
+                session.SetStatus(started.Error ?? "The project run could not start.");
+                return;
+            }
+            session.SetStatus($"Run {started.Execution.Id.Value[..8]} started for " +
+                              $"{started.Execution.Target.ProjectPath.Value}.");
+            ShowRunOutput();
+            await RefreshRunOutputAsync();
+            _ = PollDeveloperRunAsync(started.Execution.Id);
+        }
+        finally
+        {
+            session.SetBusy(false);
+        }
+    }
+
+    private async Task PollDeveloperRunAsync(DeveloperExecutionId id)
+    {
+        if (developerExecutionService is null)
+        {
+            return;
+        }
+        try
+        {
+            for (int attempt = 0; attempt < 1200; attempt++)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(250), cancellationToken);
+                WorkspaceView? workspace = ActiveWorkspace();
+                if (workspace is null)
+                {
+                    return;
+                }
+                DeveloperExecutionListResult listed = await developerExecutionService.ListAsync(
+                    WorkbenchRequest(workspace), cancellationToken);
+                DeveloperExecutionView? execution = listed.Executions.FirstOrDefault(item =>
+                    item.Id == id);
+                if (execution is null || execution.State is not DeveloperExecutionState.Running)
+                {
+                    await RefreshRunOutputAsync();
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
         }
     }
 
@@ -4348,12 +4536,26 @@ internal sealed class WorkbenchDockHost
         public override string ToString() => $"{Change.Status}  {Change.Path}";
     }
 
-    private sealed record RunOutputChoice(RunOutputView Output)
+    private abstract record RunOutputChoiceBase(DateTimeOffset StartedAt);
+
+    private sealed record GoalRunOutputChoice(RunOutputView Output)
+        : RunOutputChoiceBase(Output.StartedAt)
     {
         public override string ToString()
         {
             string exit = Output.Result?.ExitCode is { } code ? $" · exit {code}" : string.Empty;
             return $"{Output.Operation} · {Output.State}{exit} · {Output.StartedAt.LocalDateTime:g}";
+        }
+    }
+
+    private sealed record DeveloperRunOutputChoice(DeveloperExecutionView Output)
+        : RunOutputChoiceBase(Output.StartedAt)
+    {
+        public override string ToString()
+        {
+            string exit = Output.ExitCode is { } code ? $" · exit {code}" : string.Empty;
+            return $"Run {Output.Target.ProjectPath.Value} · {Output.State}{exit} · " +
+                   $"{Output.StartedAt.LocalDateTime:g}";
         }
     }
 

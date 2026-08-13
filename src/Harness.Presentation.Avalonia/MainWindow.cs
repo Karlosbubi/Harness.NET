@@ -17,6 +17,7 @@ using Harness.BusinessLogic.Dashboard;
 using Harness.BusinessLogic.Documents;
 using Harness.BusinessLogic.Editor;
 using Harness.BusinessLogic.Evidence;
+using Harness.BusinessLogic.Execution;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Layouts;
@@ -40,6 +41,7 @@ internal sealed class MainWindow : Window
     private readonly IWorkspaceMutationService mutationService;
     private readonly IWorkbenchLayoutService layoutService;
     private readonly IProjectUserSecretsService projectUserSecretsService;
+    private readonly IDeveloperProjectExecutionService developerExecutionService;
     private readonly CancellationToken cancellationToken;
     private readonly CompositeDisposable subscriptions = new();
     private readonly ItemsControl activities = new();
@@ -122,6 +124,7 @@ internal sealed class MainWindow : Window
         IWorkspaceMutationService mutationService,
         IWorkbenchLayoutService layoutService,
         IProjectUserSecretsService projectUserSecretsService,
+        IDeveloperProjectExecutionService developerExecutionService,
         CancellationToken cancellationToken)
     {
         this.store = store;
@@ -133,6 +136,7 @@ internal sealed class MainWindow : Window
         this.mutationService = mutationService;
         this.layoutService = layoutService;
         this.projectUserSecretsService = projectUserSecretsService;
+        this.developerExecutionService = developerExecutionService;
         this.cancellationToken = cancellationToken;
         Title = "Harness.NET";
         Width = 1280;
@@ -183,7 +187,8 @@ internal sealed class MainWindow : Window
             cancellationToken,
             ShowWorkspaceDialogAsync,
             mutationService,
-            ShowProjectUserSecretsAsync);
+            ShowProjectUserSecretsAsync,
+            developerExecutionService);
         Border documentActions = new()
         {
             Child = workbench.DocumentActions,

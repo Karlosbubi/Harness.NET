@@ -7,7 +7,9 @@ public sealed record StoredEditorIntelligencePreferences(
     bool ShowImplementationCodeLens,
     bool ShowTestCodeLens,
     bool FormatOnPaste,
-    bool FormatOnType);
+    bool FormatOnType,
+    bool ShowRunCodeLens = true,
+    bool ShowDebugCodeLens = true);
 
 public interface IEditorIntelligencePreferenceStore
 {

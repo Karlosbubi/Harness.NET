@@ -298,6 +298,8 @@ public sealed class PresentationControlTests
                 "Show reference CodeLens actions",
                 "Show implementation CodeLens actions",
                 "Show associated test CodeLens actions",
+                "Show project Run CodeLens actions",
+                "Show project Debug CodeLens actions",
                 "Format C# code on paste",
                 "Format C# code on supported typing triggers",
                 "Save editor intelligence settings",
@@ -957,6 +959,73 @@ public sealed class PresentationControlTests
         }, CancellationToken.None);
     }
 
+    [Fact]
+    public async Task Source_editor_exposes_presented_code_lenses_as_accessible_actions()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            WorkbenchDocumentView view = new(
+                new("workspace"),
+                null,
+                null,
+                new("src/Program.cs"),
+                new("internal static class Program { public static void Main() { } }"),
+                null,
+                new(62),
+                IsTruncated: false,
+                WorkbenchDocumentAccess.Editable,
+                "Editing the active trusted workspace.",
+                ErrorCode: null,
+                Error: null);
+            using SourceEditorSurface surface = SourceEditorSurface.Create(
+                view,
+                KeybindingSettingsSnapshot.Default);
+            WorkbenchCodeLens expected = new(
+                new(0, 0),
+                new(0, 47),
+                WorkbenchCodeLensKind.Run,
+                new("Run project"),
+                true);
+            WorkbenchCodeLens? invoked = null;
+            surface.CodeLensInvoked += (_, args) => invoked = args.Lens;
+            Window window = new() { Width = 1280, Height = 800, Content = surface.Control };
+            window.Show();
+
+            surface.UpdateDocumentPresentation(new(
+                new("session"),
+                new("src/Program.cs"),
+                new(1),
+                WorkbenchCodeResultState.Ready,
+                [],
+                [],
+                [],
+                [],
+                [],
+                [expected],
+                false,
+                []));
+
+            Button action = Assert.Single(surface.Control.GetVisualDescendants().OfType<Button>(),
+                button => AutomationProperties.GetName(button) == "Run project at line 1");
+            Assert.Equal("Run project · L1", action.Content);
+            action.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.Equal(expected, invoked);
+
+            surface.UpdateDocumentPresentation(new(
+                new("session"),
+                new("src/Program.cs"),
+                new(1),
+                WorkbenchCodeResultState.Ready,
+                [], [], [], [], [], [], false, []));
+            Assert.DoesNotContain(surface.Control.GetVisualDescendants().OfType<Button>(),
+                button => AutomationProperties.GetName(button)?.StartsWith(
+                    "Run project at line", StringComparison.Ordinal) is true);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
     [Theory]
     [InlineData("Comment", UiThemeColorToken.CodeComment)]
     [InlineData("StringInterpolation", UiThemeColorToken.CodeString)]
@@ -1518,7 +1587,7 @@ public sealed class PresentationControlTests
     }
 
     [Fact]
-    public async Task Run_output_tool_renders_only_typed_durable_execution_evidence()
+    public async Task Run_output_tool_renders_typed_goal_execution_evidence()
     {
         using HeadlessUnitTestSession session =
             HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
@@ -1579,8 +1648,9 @@ public sealed class PresentationControlTests
             output.Result = new([], false, null, null);
             workbench.RefreshRunOutputAsync().AsTask().GetAwaiter().GetResult();
             TextBlock status = Assert.Single(content.GetVisualDescendants().OfType<TextBlock>(),
-                item => AutomationProperties.GetName(item) == "Durable run output status");
-            Assert.Contains("No Build, Test, or Restore runs", status.Text, StringComparison.Ordinal);
+                item => AutomationProperties.GetName(item) == "Run output status");
+            Assert.Contains("No project, Build, Test, or Restore runs", status.Text,
+                StringComparison.Ordinal);
             Assert.Equal(string.Empty, details.Text);
             window.Close();
         }, CancellationToken.None);

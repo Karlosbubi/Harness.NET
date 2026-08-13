@@ -111,6 +111,23 @@ def main() -> int:
     ))
     durations.append(run(
         root,
+        "developer-run-storage",
+        test_command(
+            "tests/Harness.DataAccess.Tests/Harness.DataAccess.Tests.csproj",
+            "FullyQualifiedName~DotNetProjectRunnerTests|"
+            "FullyQualifiedName~SqliteDeveloperDotNetExecutionStoreTests",
+        ),
+    ))
+    durations.append(run(
+        root,
+        "developer-run-policy",
+        test_command(
+            "tests/Harness.BusinessLogic.Tests/Harness.BusinessLogic.Tests.csproj",
+            "FullyQualifiedName~DeveloperProjectExecutionServiceTests",
+        ),
+    ))
+    durations.append(run(
+        root,
         "editor-controls",
         test_command(
             "tests/Harness.Presentation.Avalonia.Tests/Harness.Presentation.Avalonia.Tests.csproj",
@@ -167,6 +184,7 @@ def main() -> int:
         "import organization, unused-import cleanup, "
         "proven missing-import choices, closed quick fixes, local/selection refactorings, "
         "document fix-all, fingerprinted model apply, "
+        "typed project-entry-point Run, no-shell execution, cancellation, transient output, "
         "settings persistence, typed keybinding dispatch, conflict validation, safe import/export, "
         "optional Vim modes, counted motions/operators, IME suspension, "
         "masked Project User Secrets actions, atomic standard-store writes, capture interlock, "

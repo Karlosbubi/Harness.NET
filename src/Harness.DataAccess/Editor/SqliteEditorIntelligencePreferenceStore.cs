@@ -17,6 +17,8 @@ internal sealed class SqliteEditorIntelligencePreferenceStore(
                    show_reference_code_lens AS ShowReferenceCodeLens,
                    show_implementation_code_lens AS ShowImplementationCodeLens,
                    show_test_code_lens AS ShowTestCodeLens,
+                   show_run_code_lens AS ShowRunCodeLens,
+                   show_debug_code_lens AS ShowDebugCodeLens,
                    format_on_paste AS FormatOnPaste,
                    format_on_type AS FormatOnType
             FROM editor_intelligence_preferences
@@ -38,6 +40,8 @@ internal sealed class SqliteEditorIntelligencePreferenceStore(
                 show_reference_code_lens = @references,
                 show_implementation_code_lens = @implementations,
                 show_test_code_lens = @tests,
+                show_run_code_lens = @run,
+                show_debug_code_lens = @debug,
                 format_on_paste = @formatOnPaste,
                 format_on_type = @formatOnType
             WHERE id = 1;
@@ -48,6 +52,8 @@ internal sealed class SqliteEditorIntelligencePreferenceStore(
             references = preferences.ShowReferenceCodeLens ? 1 : 0,
             implementations = preferences.ShowImplementationCodeLens ? 1 : 0,
             tests = preferences.ShowTestCodeLens ? 1 : 0,
+            run = preferences.ShowRunCodeLens ? 1 : 0,
+            debug = preferences.ShowDebugCodeLens ? 1 : 0,
             formatOnPaste = preferences.FormatOnPaste ? 1 : 0,
             formatOnType = preferences.FormatOnType ? 1 : 0,
         }, cancellationToken: cancellationToken));
@@ -74,6 +80,8 @@ internal sealed class SqliteEditorIntelligencePreferenceStore(
         public long ShowReferenceCodeLens { get; init; }
         public long ShowImplementationCodeLens { get; init; }
         public long ShowTestCodeLens { get; init; }
+        public long ShowRunCodeLens { get; init; }
+        public long ShowDebugCodeLens { get; init; }
         public long FormatOnPaste { get; init; }
         public long FormatOnType { get; init; }
 
@@ -84,6 +92,8 @@ internal sealed class SqliteEditorIntelligencePreferenceStore(
             ShowImplementationCodeLens == 1,
             ShowTestCodeLens == 1,
             FormatOnPaste == 1,
-            FormatOnType == 1);
+            FormatOnType == 1,
+            ShowRunCodeLens == 1,
+            ShowDebugCodeLens == 1);
     }
 }

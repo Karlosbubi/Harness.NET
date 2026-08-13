@@ -37,6 +37,12 @@ internal sealed class SourceEditorSurface : IDisposable
         Orientation = Orientation.Horizontal,
         VerticalAlignment = VerticalAlignment.Center,
     };
+    private readonly WrapPanel codeLensActions = new()
+    {
+        Orientation = Orientation.Horizontal,
+        VerticalAlignment = VerticalAlignment.Center,
+        IsVisible = false,
+    };
     private readonly ListBox outlineItems = new() { MaxHeight = 420, MinWidth = 360 };
     private IReadOnlyList<WorkbenchCodeOutlineItem> outline = [];
 
@@ -106,6 +112,7 @@ internal sealed class SourceEditorSurface : IDisposable
     internal Button QuickFix { get; }
     internal event Action<WorkbenchCodePosition>? NavigationRequested;
     internal event Action<WorkbenchCodeInspectionKind>? InspectionRequested;
+    internal event EventHandler<WorkbenchCodeLensInvokedEventArgs>? CodeLensInvoked;
 
     internal static SourceEditorSurface Create(
         WorkbenchDocumentView view,
@@ -330,6 +337,7 @@ internal sealed class SourceEditorSurface : IDisposable
     internal void UpdateDocumentPresentation(WorkbenchCodeDocumentPresentationView presentation)
     {
         Editor.SetDocumentPresentation(presentation);
+        UpdateCodeLensActions(presentation.CodeLenses);
         if (presentation.FoldingRanges.Count == 0 && presentation.Outline.Count == 0)
         {
             return;
@@ -419,16 +427,61 @@ internal sealed class SourceEditorSurface : IDisposable
 
         Grid content = new()
         {
+            RowDefinitions = new("Auto,Auto"),
             ColumnDefinitions = new("*,Auto"),
             ColumnSpacing = 8,
             Children = { breadcrumbs },
         };
         Grid.SetColumn(commands, 1);
         content.Children.Add(commands);
+        Grid.SetRow(codeLensActions, 1);
+        Grid.SetColumnSpan(codeLensActions, 2);
+        content.Children.Add(codeLensActions);
+        AutomationProperties.SetName(codeLensActions, "CodeLens actions for this document");
         Border surface = new() { Child = content };
         surface.Classes.Add("editor-assistance-toolbar");
         Grid.SetRow(surface, 1);
         ((Grid)Control).Children.Add(surface);
+    }
+
+    private void UpdateCodeLensActions(IReadOnlyList<WorkbenchCodeLens> lenses)
+    {
+        const int maximumAccessibleActions = 12;
+        codeLensActions.Children.Clear();
+        WorkbenchCodeLens[] actions = lenses
+            .DistinctBy(lens => (lens.Kind, lens.Target, lens.Display.Value))
+            .OrderBy(lens => lens.Target.Line)
+            .ThenBy(lens => lens.Target.Character)
+            .ThenBy(lens => lens.Kind)
+            .Take(maximumAccessibleActions)
+            .ToArray();
+        foreach (WorkbenchCodeLens lens in actions)
+        {
+            string accessibleName = $"{lens.Display.Value} at line {lens.Target.Line + 1}";
+            Button action = Action(
+                $"{lens.Display.Value} · L{lens.Target.Line + 1}",
+                accessibleName,
+                accessibleName);
+            action.Classes.Add("editor-codelens-action");
+            action.Click += (_, _) => CodeLensInvoked?.Invoke(
+                this,
+                new WorkbenchCodeLensInvokedEventArgs(lens));
+            codeLensActions.Children.Add(action);
+        }
+
+        int hidden = lenses.Count - actions.Length;
+        if (hidden > 0)
+        {
+            TextBlock overflow = new()
+            {
+                Text = $"+{hidden:N0} more CodeLens action(s)",
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            AutomationProperties.SetName(overflow,
+                $"{hidden:N0} more CodeLens actions are available inline");
+            codeLensActions.Children.Add(overflow);
+        }
+        codeLensActions.IsVisible = codeLensActions.Children.Count > 0;
     }
 
     private void ConfigureOutline(Button button)

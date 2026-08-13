@@ -6,6 +6,7 @@ using Dock.Avalonia.Themes.Fluent;
 using Harness.BusinessLogic.CodeIntelligence;
 using Harness.BusinessLogic.Documents;
 using Harness.BusinessLogic.Evidence;
+using Harness.BusinessLogic.Execution;
 using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Layouts;
 using Harness.BusinessLogic.Mutations;
@@ -24,6 +25,7 @@ internal sealed class HarnessApplication(
     IWorkspaceMutationService mutationService,
     IWorkbenchLayoutService layoutService,
     IProjectUserSecretsService projectUserSecretsService,
+    IDeveloperProjectExecutionService developerExecutionService,
     AvaloniaInboundMcpUiBridge inboundMcpUiBridge,
     CancellationToken cancellationToken) : Application
 {
@@ -58,6 +60,7 @@ internal sealed class HarnessApplication(
                 mutationService,
                 layoutService,
                 projectUserSecretsService,
+                developerExecutionService,
                 cancellationToken);
             inboundMcpUiBridge.Attach(MainWindow);
             MainWindow.Closed += (_, _) => inboundMcpUiBridge.Detach(MainWindow);

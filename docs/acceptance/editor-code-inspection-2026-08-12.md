@@ -64,7 +64,7 @@ state. The UI does not present failed output as current.
 - configurable keybindings, conflict management, declarative import/export, and
   optional Vim mode;
 - project User Secrets with capture and model-context interlocks;
-- typed Run/Debug CodeLens targets in Task 052;
+- a real debugger adapter for Debug CodeLens in Task 052;
 - validated full metadata method-body decompilation;
 - completion of the broader latency, memory, cancellation, analyzer-failure, IME,
   accessibility, scaling, restoration, and Linux publication matrix.

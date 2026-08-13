@@ -342,7 +342,7 @@ Acceptance criteria:
 
 ### 049 — NetPad-level .NET editing and inspection
 
-Status: `In progress — presentation, transformations, navigation, inspections, keybindings, Vim input, and Project User Secrets delivered`
+Status: `In progress — presentation, transformations, navigation, inspections, keybindings, Vim input, Project User Secrets, and typed Run CodeLens delivered`
 
 Dependencies: 012, 043, 044, 047, 048.
 
@@ -410,11 +410,21 @@ capture and reveal mutually exclusive. Evidence is recorded in
 [project-user-secrets-2026-08-13.md](../acceptance/project-user-secrets-2026-08-13.md)
 and [ADR 022](../decisions/022-project-user-secrets.md).
 
+Roslyn now attaches a typed project, target framework, declaration, source path,
+baseline, and buffer version only to the real project entry point. Run revalidates
+that target in the trusted source context and starts `dotnet` directly with no shell,
+implicit Restore, or launch profile. The Run Output tool supports lifecycle display
+and cancellation. Lifecycle metadata survives restart; potentially sensitive stdout
+and stderr do not. The same bounded actions are accessible in the editor toolbar.
+Debug remains absent until a debugger adapter exists. See
+[ADR 023](../decisions/023-typed-developer-dotnet-execution.md) and
+[editor-run-codelens-2026-08-13.md](../acceptance/editor-run-codelens-2026-08-13.md).
+
 Problem: Harness.NET now has the core interactive Roslyn operations, semantic
 presentation and adornment slices, formatting, closed actions, bounded generated and
 metadata-signature navigation, and configurable keybindings. It still lacks explicit
 cross-document refactoring contracts and full method-body decompilation. It also lacks
-typed execution targets for Run/Debug CodeLens.
+the debugger needed for Debug CodeLens.
 OmniSharp implements many of the underlying Roslyn services, but adopting its server
 would duplicate the current workspace and add process, download, version, recovery,
 and transport costs.
@@ -534,12 +544,17 @@ Acceptance criteria:
 
 ### 052 — .NET project, Run, Test, and Debug experience
 
-Status: `Planned`
+Status: `In progress — typed project-entry-point Run delivered`
 
 Dependencies: 018, 042, 047, 049, 051.
 
 Problem: Harness can Build and Test through goal tools but lacks the project system,
 execution controls, Test Explorer, and debugger needed for ordinary .NET work.
+
+Progress: the first developer execution slice provides typed project-entry-point Run,
+process-tree cancellation, transient bounded output, and durable lifecycle metadata.
+It does not yet provide the Solution view, Build/Rebuild UI, Test Explorer, launch
+profiles, Hot Reload, or Debug.
 
 Acceptance criteria:
 

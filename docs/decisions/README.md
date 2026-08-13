@@ -39,3 +39,4 @@ records in both directions.
 | [020](020-editor-platform-boundary-and-morgania-evaluation.md) | Accepted | Editor platform boundary and Morgania evaluation |
 | [021](021-typed-keybindings-and-modal-input.md) | Accepted | Typed keybindings and modal input boundary |
 | [022](022-project-user-secrets.md) | Accepted | Project User Secrets management |
+| [023](023-typed-developer-dotnet-execution.md) | Accepted | Typed developer .NET execution |

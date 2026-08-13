@@ -15,8 +15,8 @@ adding another language service or workspace.
   version.
 - Visible declarations expose bounded reference, applicable implementation, and
   associated-test actions. The solution queries run only after the developer selects
-  a lens. Run and Debug remain hidden because no typed per-declaration execution
-  target exists yet.
+  a lens. A later slice added typed Run for the Roslyn-proven project entry point;
+  Debug remains hidden until a real debugger adapter exists.
 - Viewport-only classification requests no longer rebuild document folding and
   outline data. Document occurrence lookup now confines Roslyn reference search to
   the active document.
@@ -52,5 +52,5 @@ without weakening authentication.
 
 Formatting, usings, code actions and refactorings; generated and metadata virtual
 documents; compiler inspection views; configurable keybindings and optional Vim;
-User Secrets; typed per-declaration Run/Debug integration; and the broader large
+User Secrets; a real debugger adapter; and the broader large
 solution, latency, memory, IME, Orca, and scaling matrix remain open.

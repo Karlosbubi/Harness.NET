@@ -40,7 +40,8 @@ Delivered:
   signature documents, exact-context syntax-tree, symbol, generated-source, and IL
   inspection views, plus Roslyn document, selection, changed-span, paste, and on-type formatting
   and import organization, contextual compiler fixes, local/selection refactorings,
-  and labeled document fix-all choices;
+  labeled document fix-all choices, and typed project-entry-point Run actions with
+  cancellation and transient output;
 - typed configurable workbench and editor keybindings with conflict validation,
   command discovery, reset, bounded declarative import/export, and optional Vim
   Normal, Insert, Visual, and Visual Line behavior;

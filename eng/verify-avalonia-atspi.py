@@ -99,8 +99,13 @@ class AtSpiApplication:
             raise AssertionError(f"AT-SPI did not expose{qualifier} containing {text!r}")
         return matches[-1]
 
-    def wait_for(self, predicate: Callable[[list[AccessibleNode]], bool], message: str) -> None:
-        deadline = time.monotonic() + 10
+    def wait_for(
+        self,
+        predicate: Callable[[list[AccessibleNode]], bool],
+        message: str,
+        timeout: float = 10,
+    ) -> None:
+        deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             if predicate(self.nodes()):
                 return
@@ -116,13 +121,19 @@ class AtSpiApplication:
             f"AT-SPI did not expose {role or 'control'} {name!r}",
         )
 
-    def wait_for_name_containing(self, text: str, role: str | None = None) -> None:
+    def wait_for_name_containing(
+        self,
+        text: str,
+        role: str | None = None,
+        timeout: float = 10,
+    ) -> None:
         self.wait_for(
             lambda nodes: any(
                 text in node.name and (role is None or node.role == role)
                 for node in nodes
             ),
             f"AT-SPI did not expose {role or 'control'} containing {text!r}",
+            timeout,
         )
 
     def invoke(self, name: str, role: str = "push button") -> None:
@@ -184,7 +195,6 @@ class AtSpiApplication:
             raise AssertionError(f"{role} {name!r} does not expose AT-SPI text")
         text = dbus.Interface(self.bus.get_object(self.destination, node.path), TEXT)
         return str(text.GetText(0, -1))
-
 
 def run(command: list[str], cwd: Path, quiet: bool = False) -> None:
     output = subprocess.DEVNULL if quiet else None
@@ -453,6 +463,32 @@ def create_and_approve_goal(application: AtSpiApplication) -> None:
 def verify_documents_and_search(
     application: AtSpiApplication, repository: Path
 ) -> None:
+    worktree_lines = subprocess.check_output(
+        ["git", "-C", str(repository), "worktree", "list", "--porcelain"],
+        text=True,
+    ).splitlines()
+    worktrees = [
+        Path(line.removeprefix("worktree "))
+        for line in worktree_lines
+        if line.startswith("worktree ")
+    ]
+    goal_worktrees = [path for path in worktrees if path.resolve() != repository.resolve()]
+    if len(goal_worktrees) != 1:
+        raise AssertionError(f"expected one isolated goal worktree, found {goal_worktrees}")
+    goal_worktree = goal_worktrees[0]
+    run(
+        [
+            "dotnet",
+            "restore",
+            str(goal_worktree / "Representative.csproj"),
+            "--nologo",
+            "--verbosity",
+            "quiet",
+        ],
+        goal_worktree,
+        quiet=True,
+    )
+
     application.invoke("Files", "page tab")
     for path in ("Program.cs", "Representative.csproj"):
         application.wait_for_name(path, "push button")
@@ -483,25 +519,63 @@ def verify_documents_and_search(
     ):
         application.wait_for_name(action, "push button")
     application.invoke("Focus the active editor document")
-    worktree_lines = subprocess.check_output(
-        ["git", "-C", str(repository), "worktree", "list", "--porcelain"],
-        text=True,
-    ).splitlines()
-    worktrees = [
-        Path(line.removeprefix("worktree "))
-        for line in worktree_lines
-        if line.startswith("worktree ")
-    ]
-    goal_worktrees = [path for path in worktrees if path.resolve() != repository.resolve()]
-    if len(goal_worktrees) != 1:
-        raise AssertionError(f"expected one isolated goal worktree, found {goal_worktrees}")
-    if not (goal_worktrees[0] / "Program.cs").is_file():
+    try:
+        application.wait_for_name_containing(
+            "Run project at line", "push button", timeout=30
+        )
+    except AssertionError as error:
+        nodes = application.nodes()
+        code_lens_buttons = [
+            node.name
+            for node in nodes
+            if node.role == "push button"
+            and any(term in node.name for term in ("line", "reference", "test", "Run"))
+        ]
+        intelligence_status = [
+            node.name
+            for node in nodes
+            if node.role == "label"
+            and any(
+                term in node.name.lower()
+                for term in (
+                    "code intelligence",
+                    "problem",
+                    "semantic",
+                    "roslyn",
+                    "stale",
+                    "unavailable",
+                )
+            )
+        ]
+        editor_status: list[str] = []
+        for node in nodes:
+            if node.name not in (
+                "Editing status for Program.cs",
+                "Caret and format for Program.cs",
+                "Code intelligence status",
+            ) or TEXT not in node.interfaces:
+                continue
+            text = dbus.Interface(
+                application.bus.get_object(application.destination, node.path), TEXT
+            )
+            editor_status.append(f"{node.role}: {text.GetText(0, -1)}")
+        raise AssertionError(
+            f"{error}; related buttons={code_lens_buttons}; "
+            f"code intelligence status={intelligence_status}; "
+            f"editor status={editor_status}"
+        ) from error
+    application.invoke_containing("Run project at line", "push button")
+    application.wait_for_name_containing("Run Representative.csproj", "list item")
+    if not (goal_worktree / "Program.cs").is_file():
         raise AssertionError("the approved goal worktree does not contain Program.cs")
 
     application.invoke("Files", "page tab")
     application.wait_for_name("Missing.cs", "push button")
     application.invoke("Missing.cs")
     application.wait_for_name("Editable source editor for Missing.cs", "panel")
+    application.invoke("Problems", "page tab")
+    application.wait_for_name_containing("CS0246", "list item", timeout=30)
+    application.invoke_containing("CS0246", "list item")
     application.invoke("Show quick fixes for Missing.cs")
     application.wait_for_name(
         "Add using System.Text for System.Text.StringBuilder", "push button"
@@ -514,7 +588,7 @@ def verify_documents_and_search(
     application.wait_for_name_containing("Changed code is already formatted", "label")
     application.invoke("Save Missing.cs")
     application.wait_for_name_containing("bytes to harness/goal-", "label")
-    saved_missing = (goal_worktrees[0] / "Missing.cs").read_text(encoding="utf-8")
+    saved_missing = (goal_worktree / "Missing.cs").read_text(encoding="utf-8")
     if not saved_missing.startswith("using System.Text;"):
         raise AssertionError("the missing-import quick fix was not saved to the goal worktree")
 
@@ -603,9 +677,25 @@ def main() -> int:
                 repository_root,
                 quiet=True,
             )
+            (repository / "Program.cs").write_text(
+                "internal static class Program\n"
+                "{\n"
+                "    public static void Main()\n"
+                "    {\n"
+                "        Console.WriteLine(\"Harness run acceptance\");\n"
+                "    }\n"
+                "}\n",
+                encoding="utf-8",
+            )
             (repository / "Missing.cs").write_text(
-                "StringBuilder value = new();\n"
-                "Console.WriteLine(value.Capacity);\n",
+                "internal sealed class Missing\n"
+                "{\n"
+                "    public int Capacity()\n"
+                "    {\n"
+                "        StringBuilder value = new();\n"
+                "        return value.Capacity;\n"
+                "    }\n"
+                "}\n",
                 encoding="utf-8",
             )
             project_file = repository / "Representative.csproj"
@@ -618,6 +708,11 @@ def main() -> int:
                     "</Project>",
                 ),
                 encoding="utf-8",
+            )
+            run(
+                ["dotnet", "restore", str(project_file), "--nologo", "--verbosity", "quiet"],
+                repository_root,
+                quiet=True,
             )
             run(["git", "init", "-q"], repository)
             run(["git", "config", "user.name", "Harness Acceptance"], repository)

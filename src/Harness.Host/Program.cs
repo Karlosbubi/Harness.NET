@@ -8,6 +8,7 @@ using Harness.BusinessLogic.Dashboard;
 using Harness.BusinessLogic.Documents;
 using Harness.BusinessLogic.Editor;
 using Harness.BusinessLogic.Evidence;
+using Harness.BusinessLogic.Execution;
 using Harness.BusinessLogic.Framework;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Inspection;
@@ -199,6 +200,11 @@ builder.Services.AddSingleton<IVisualCaptureImageSourceReader, PortalFileImageSo
 builder.Services.AddSingleton<IVisualCaptureArtifactStore, FileVisualCaptureArtifactStore>();
 builder.Services.AddSingleton<IVisualCaptureService, VisualCaptureService>();
 builder.Services.AddSingleton<IRunOutputService, RunOutputService>();
+builder.Services.AddSingleton<IDotNetProjectRunner, DotNetProjectRunner>();
+builder.Services.AddSingleton<IDeveloperDotNetExecutionStore,
+    SqliteDeveloperDotNetExecutionStore>();
+builder.Services.AddSingleton<IDeveloperProjectExecutionService,
+    DeveloperProjectExecutionService>();
 builder.Services.AddSingleton<IGoalService, GoalService>();
 builder.Services.AddSingleton<IGoalWorktreeManager, GitGoalWorktreeManager>();
 builder.Services.AddSingleton<IWorkspaceFileEditor, AtomicWorkspaceFileEditor>();
