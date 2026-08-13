@@ -10,6 +10,7 @@ namespace Harness.Presentation.Avalonia;
 
 internal static class AccessibilityTreeSemantics
 {
+    private const string AnonymousAutomationName = "\u2063";
     private static readonly ConditionalWeakTable<Window, WindowState> WindowStates = new();
     private static bool registered;
 
@@ -21,6 +22,7 @@ internal static class AccessibilityTreeSemantics
         }
 
         registered = true;
+        Control.LoadedEvent.AddClassHandler<Control>(OnControlLoaded);
         Window.WindowOpenedEvent.AddClassHandler<Window>(OnWindowOpened);
     }
 
@@ -38,6 +40,9 @@ internal static class AccessibilityTreeSemantics
         WindowState state = WindowStates.GetValue(window, static item => new(item));
         state.ApplyNow();
     }
+
+    private static void OnControlLoaded(Control control, RoutedEventArgs _) =>
+        ApplyControl(control);
 
     private static void ApplyControl(Control control)
     {
@@ -57,6 +62,7 @@ internal static class AccessibilityTreeSemantics
         // class name, causing visual-only Grid, Panel, presenter, and Dock wrappers
         // to be spoken. Keep their descendants in the tree while making the wrapper
         // itself anonymous and role-neutral.
+        AutomationProperties.SetName(control, AnonymousAutomationName);
         if (AutomationProperties.GetClassNameOverride(control) is null)
         {
             AutomationProperties.SetClassNameOverride(control, string.Empty);

@@ -2886,6 +2886,7 @@ public sealed class PresentationControlTests
 
             Assert.All(implementationContainers, item =>
             {
+                Assert.Equal("\u2063", AutomationProperties.GetName(item));
                 Assert.Equal(string.Empty, AutomationProperties.GetClassNameOverride(item));
                 Assert.Equal(
                     AutomationControlType.Custom,

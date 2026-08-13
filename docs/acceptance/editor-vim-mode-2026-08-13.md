@@ -54,6 +54,7 @@ input-mode selector above the shared command catalog:
 
 ## Remaining Task 049 work
 
-- a real debugger adapter for Debug CodeLens;
-- final correctness, latency, memory, cancellation, large-solution, repeated-context,
-  IME, Orca, scaling, restoration, and Linux publication audit.
+- The complete IME, accessibility, scaling, restoration, and Linux publication matrix
+  is recorded in [editor-resilience-2026-08-13.md](editor-resilience-2026-08-13.md).
+  Cross-document refactorings and full decompilation remain Task 049 gaps; Debug is
+  Task 052.

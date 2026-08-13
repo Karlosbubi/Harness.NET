@@ -211,16 +211,27 @@ internal sealed partial class RoslynCodeIntelligenceEngine(IMSBuildRuntime msBui
                 : await compilation
                     .WithAnalyzers(analyzers, project.AnalyzerOptions)
                     .GetAllDiagnosticsAsync(cancellationToken);
+            bool analyzerFailed = diagnostics.Any(IsAnalyzerFailureDiagnostic);
+            CodeIntelligenceIssue[] issues = session.Issues
+                .Concat(analyzerFailed
+                    ? [Issue(
+                        "analyzer_failed",
+                        "One or more project analyzers failed. Compiler diagnostics remain available.")]
+                    : [])
+                .DistinctBy(issue => issue.Code)
+                .Take(MaximumIssues)
+                .ToArray();
             session.CurrentSolution = candidate;
             return new(
                 snapshot.ContextId,
                 snapshot.SessionId,
                 snapshot.Path,
                 snapshot.BufferVersion,
-                session.Issues.IsEmpty
+                issues.Length == 0
                     ? CodeIntelligenceResultState.Ready
                     : CodeIntelligenceResultState.Degraded,
                 diagnostics
+                    .Where(diagnostic => !IsAnalyzerFailureDiagnostic(diagnostic))
                     .Where(diagnostic => IsForDocument(diagnostic, path))
                     .Take(MaximumDiagnostics)
                     .Select(diagnostic => MapDiagnostic(
@@ -229,7 +240,7 @@ internal sealed partial class RoslynCodeIntelligenceEngine(IMSBuildRuntime msBui
                         session.RootPath,
                         snapshot.Path))
                     .ToArray(),
-                session.Issues.ToArray());
+                issues);
         }
         catch (OperationCanceledException)
         {
@@ -1285,6 +1296,9 @@ internal sealed partial class RoslynCodeIntelligenceEngine(IMSBuildRuntime msBui
         diagnostic.Location.IsInSource &&
         diagnostic.Location.SourceTree?.FilePath is { } diagnosticPath &&
         Path.GetFullPath(diagnosticPath).Equals(path, StringComparison.Ordinal);
+
+    private static bool IsAnalyzerFailureDiagnostic(Diagnostic diagnostic) =>
+        diagnostic.Id is "AD0001" or "AD0002";
 
     private ActiveSession? MatchingSession(CodeIntelligenceInteractiveSnapshot snapshot)
     {

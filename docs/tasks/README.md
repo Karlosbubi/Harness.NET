@@ -342,7 +342,7 @@ Acceptance criteria:
 
 ### 049 — NetPad-level .NET editing and inspection
 
-Status: `In progress — presentation, transformations, navigation, inspections, keybindings, Vim input, Project User Secrets, and typed Run CodeLens delivered`
+Status: `In progress — Linux resilience matrix delivered; cross-document refactorings and full decompilation remain`
 
 Dependencies: 012, 043, 044, 047, 048.
 
@@ -419,6 +419,12 @@ and stderr do not. The same bounded actions are accessible in the editor toolbar
 Debug remains absent until a debugger adapter exists. See
 [ADR 023](../decisions/023-typed-developer-dotnet-execution.md) and
 [editor-run-codelens-2026-08-13.md](../acceptance/editor-run-codelens-2026-08-13.md).
+
+The complete Linux editor gate now covers the current Harness.NET solution, measured
+cold and warm latency, retained memory, in-flight cancellation, analyzer failure,
+eight consecutive Roslyn context replacements, keyboard-only use, IME, AT-SPI, strict
+Orca speech, 200% scaling, Dock restoration, and self-contained Linux x64 publish.
+See [editor-resilience-2026-08-13.md](../acceptance/editor-resilience-2026-08-13.md).
 
 Problem: Harness.NET now has the core interactive Roslyn operations, semantic
 presentation and adornment slices, formatting, closed actions, bounded generated and

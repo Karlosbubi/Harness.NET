@@ -53,6 +53,6 @@ This record covers Task 049 criterion 8 and
 
 ## Remaining Task 049 work
 
-- a real debugger adapter for Debug CodeLens;
-- final correctness, latency, memory, cancellation, large-solution, repeated-context,
-  IME, Orca, scaling, restoration, and Linux publication audit.
+- Cross-document refactoring and full-decompilation gaps are tracked in
+  [editor-resilience-2026-08-13.md](editor-resilience-2026-08-13.md). A real debugger
+  adapter remains Task 052 work.

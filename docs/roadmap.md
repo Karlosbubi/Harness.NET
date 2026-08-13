@@ -351,9 +351,11 @@ standard nested or flattened string JSON shape and writes the standard flattened
 shape atomically. It requires a literal, unconditional project `UserSecretsId`; it
 never evaluates MSBuild or initializes the project. List results contain keys only.
 Reveal and portal capture hold mutually exclusive leases, values never enter shared
-presentation state, and no role or MCP secret-read tool exists. Item 8 remains.
-Deterministic
-evidence is recorded in
+presentation state, and no role or MCP secret-read tool exists.
+The complete Linux resilience matrix now covers measured large-solution latency and
+memory, in-flight cancellation, analyzer failure, repeated foreground-context
+replacement, keyboard-only use, IME, strict Orca speech, 200% scaling, Dock
+restoration, and self-contained publication. Deterministic evidence is recorded in
 [editor-transformations-2026-08-12.md](acceptance/editor-transformations-2026-08-12.md);
 virtual-navigation evidence is in
 [editor-virtual-navigation-2026-08-12.md](acceptance/editor-virtual-navigation-2026-08-12.md),
@@ -365,6 +367,8 @@ Vim evidence is in
 [editor-vim-mode-2026-08-13.md](acceptance/editor-vim-mode-2026-08-13.md),
 Project User Secrets evidence is in
 [project-user-secrets-2026-08-13.md](acceptance/project-user-secrets-2026-08-13.md),
+[editor-resilience-2026-08-13.md](acceptance/editor-resilience-2026-08-13.md) records
+the Linux resilience matrix,
 and prior visual evidence is in
 [editor-inlays-codelens-2026-08-12.md](acceptance/editor-inlays-codelens-2026-08-12.md).
 

@@ -53,10 +53,5 @@ isolated XDG home.
 
 - Solution and project views, Build/Rebuild UI, Test Explorer, launch profiles, Hot
   Reload, and a real debugger adapter remain Task 052 work.
-- Task 049 still needs its final large-solution, latency, memory, cancellation,
-  analyzer-failure, repeated-context, keyboard, IME, Orca, scaling, Dock restoration,
-  and Linux publication audit.
-- The Orca path completes its representative workflow and speaks named controls, but
-  Avalonia/Dock still exposes unnamed framework containers such as `Grid`, `Border`,
-  `ContentPresenter`, `ScrollContentPresenter`, and `VisualLayerManager`. The strict
-  speech-leak assertion remains failing until those peers are hidden or named.
+- Task 049's Linux resilience matrix and strict Orca speech gate are recorded in
+  [editor-resilience-2026-08-13.md](editor-resilience-2026-08-13.md).

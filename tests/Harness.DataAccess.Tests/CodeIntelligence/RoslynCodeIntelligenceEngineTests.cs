@@ -1394,6 +1394,121 @@ public sealed class RoslynCodeIntelligenceEngineTests(ITestOutputHelper output) 
     }
 
     [Fact]
+    public async Task Failing_analyzer_degrades_diagnostics_without_hiding_compiler_errors()
+    {
+        const string source = "// FAIL_ANALYZER\nclass Sample { void Run() { int value = ; } }\n";
+        await CreateProjectAsync(source);
+        string analyzer = typeof(HarnessFailingDiagnosticAnalyzer).Assembly.Location
+            .Replace("&", "&amp;", StringComparison.Ordinal)
+            .Replace("\"", "&quot;", StringComparison.Ordinal);
+        await File.WriteAllTextAsync(Path.Combine(root, "Sample.csproj"), $"""
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+              <ItemGroup><Analyzer Include="{analyzer}" /></ItemGroup>
+            </Project>
+            """);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("failing-analyzer-context");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+
+        CodeIntelligenceDiagnosticResult result = await engine.GetDiagnosticsAsync(new(
+            contextId,
+            session.SessionId!,
+            new("Sample.cs"),
+            new(Hash(source)),
+            new(1),
+            new(source)));
+
+        Assert.Equal(CodeIntelligenceResultState.Degraded, result.State);
+        Assert.Contains(result.Diagnostics, diagnostic =>
+            diagnostic.Id.Value.StartsWith("CS", StringComparison.Ordinal) &&
+            diagnostic.Severity is CodeIntelligenceDiagnosticSeverity.Error);
+        Assert.DoesNotContain(result.Diagnostics, diagnostic =>
+            diagnostic.Id.Value is "AD0001" or "AD0002");
+        CodeIntelligenceIssue issue = Assert.Single(result.Issues,
+            item => item.Code.Value == "analyzer_failed");
+        Assert.Equal(
+            "One or more project analyzers failed. Compiler diagnostics remain available.",
+            issue.Message.Value);
+    }
+
+    [Fact]
+    public async Task In_flight_analyzer_diagnostics_honor_cancellation_promptly()
+    {
+        const string source = "// SLOW_ANALYZER\nclass Sample { }\n";
+        await CreateProjectAsync(source);
+        string analyzer = typeof(HarnessSlowDiagnosticAnalyzer).Assembly.Location
+            .Replace("&", "&amp;", StringComparison.Ordinal)
+            .Replace("\"", "&quot;", StringComparison.Ordinal);
+        await File.WriteAllTextAsync(Path.Combine(root, "Sample.csproj"), $"""
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+              <ItemGroup><Analyzer Include="{analyzer}" /></ItemGroup>
+            </Project>
+            """);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("slow-analyzer-context");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+        using CancellationTokenSource cancellation = new(TimeSpan.FromMilliseconds(100));
+        Stopwatch elapsed = Stopwatch.StartNew();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            engine.GetDiagnosticsAsync(new(
+                contextId,
+                session.SessionId!,
+                new("Sample.cs"),
+                new(Hash(source)),
+                new(1),
+                new(source)),
+                cancellation.Token).AsTask());
+
+        elapsed.Stop();
+        Assert.True(elapsed.Elapsed < TimeSpan.FromSeconds(2),
+            $"In-flight analyzer cancellation took {elapsed.Elapsed}.");
+    }
+
+    [Fact]
+    public async Task Repeated_foreground_context_switches_keep_only_the_latest_session_usable()
+    {
+        const string source = "class Sample { int Value { get; } }\n";
+        await CreateProjectAsync(source);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId? previousContext = null;
+        CodeIntelligenceSessionId? previousSession = null;
+
+        for (int index = 0; index < 8; index++)
+        {
+            CodeIntelligenceContextId context = new($"repeated-context-{index}");
+            CodeIntelligenceSessionResult opened = await engine.OpenAsync(OpenRequest(context));
+            Assert.NotEqual(CodeIntelligenceResultState.Failed, opened.State);
+
+            if (previousContext is not null && previousSession is not null)
+            {
+                CodeIntelligenceDiagnosticResult stale = await engine.GetDiagnosticsAsync(new(
+                    previousContext,
+                    previousSession,
+                    new("Sample.cs"),
+                    new(Hash(source)),
+                    new(index),
+                    new(source)));
+                Assert.Equal(CodeIntelligenceResultState.Stale, stale.State);
+                Assert.Equal("session_unavailable", Assert.Single(stale.Issues).Code.Value);
+            }
+
+            CodeIntelligenceDiagnosticResult current = await engine.GetDiagnosticsAsync(new(
+                context,
+                opened.SessionId!,
+                new("Sample.cs"),
+                new(Hash(source)),
+                new(index + 1),
+                new(source)));
+            Assert.NotEqual(CodeIntelligenceResultState.Failed, current.State);
+            previousContext = context;
+            previousSession = opened.SessionId;
+        }
+    }
+
+    [Fact]
     public async Task Actual_harness_workspace_meets_the_bounded_foreground_session_budget()
     {
         string repository = FindRepositoryRoot();
@@ -1684,7 +1799,7 @@ public sealed class RoslynCodeIntelligenceEngineTests(ITestOutputHelper output) 
     }
 }
 
-#pragma warning disable RS1036, RS1038, RS1041 // Test-only in-process generator fixture.
+#pragma warning disable RS2008, RS1036, RS1038, RS1041 // Test-only in-process analyzer fixtures.
 [Microsoft.CodeAnalysis.Generator]
 public sealed class HarnessVirtualDocumentTestGenerator : Microsoft.CodeAnalysis.IIncrementalGenerator
 {
@@ -1693,4 +1808,74 @@ public sealed class HarnessVirtualDocumentTestGenerator : Microsoft.CodeAnalysis
             "GeneratedWidget.g.cs",
             "internal static class GeneratedWidget { internal const int Number = 42; }\n"));
 }
-#pragma warning restore RS1036, RS1038, RS1041
+
+[Microsoft.CodeAnalysis.Diagnostics.DiagnosticAnalyzer(Microsoft.CodeAnalysis.LanguageNames.CSharp)]
+public sealed class HarnessFailingDiagnosticAnalyzer
+    : Microsoft.CodeAnalysis.Diagnostics.DiagnosticAnalyzer
+{
+    private static readonly Microsoft.CodeAnalysis.DiagnosticDescriptor Rule = new(
+        "HARNESSFAIL001",
+        "Failing analyzer fixture",
+        "Failing analyzer fixture",
+        "Tests",
+        Microsoft.CodeAnalysis.DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    public override System.Collections.Immutable.ImmutableArray<Microsoft.CodeAnalysis.DiagnosticDescriptor>
+        SupportedDiagnostics => [Rule];
+
+    public override void Initialize(
+        Microsoft.CodeAnalysis.Diagnostics.AnalysisContext context)
+    {
+        context.ConfigureGeneratedCodeAnalysis(
+            Microsoft.CodeAnalysis.Diagnostics.GeneratedCodeAnalysisFlags.None);
+        context.EnableConcurrentExecution();
+        context.RegisterSyntaxTreeAction(analysis =>
+        {
+            if (analysis.Tree.GetText(analysis.CancellationToken).ToString()
+                .Contains("FAIL_ANALYZER", StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("Test-only analyzer failure.");
+            }
+        });
+    }
+}
+
+[Microsoft.CodeAnalysis.Diagnostics.DiagnosticAnalyzer(Microsoft.CodeAnalysis.LanguageNames.CSharp)]
+public sealed class HarnessSlowDiagnosticAnalyzer
+    : Microsoft.CodeAnalysis.Diagnostics.DiagnosticAnalyzer
+{
+    private static readonly Microsoft.CodeAnalysis.DiagnosticDescriptor Rule = new(
+        "HARNESSSLOW001",
+        "Slow analyzer fixture",
+        "Slow analyzer fixture",
+        "Tests",
+        Microsoft.CodeAnalysis.DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    public override System.Collections.Immutable.ImmutableArray<Microsoft.CodeAnalysis.DiagnosticDescriptor>
+        SupportedDiagnostics => [Rule];
+
+    public override void Initialize(
+        Microsoft.CodeAnalysis.Diagnostics.AnalysisContext context)
+    {
+        context.ConfigureGeneratedCodeAnalysis(
+            Microsoft.CodeAnalysis.Diagnostics.GeneratedCodeAnalysisFlags.None);
+        context.EnableConcurrentExecution();
+        context.RegisterSyntaxTreeAction(analysis =>
+        {
+            if (!analysis.Tree.GetText(analysis.CancellationToken).ToString()
+                .Contains("SLOW_ANALYZER", StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            while (true)
+            {
+                analysis.CancellationToken.ThrowIfCancellationRequested();
+                Thread.Sleep(10);
+            }
+        });
+    }
+}
+#pragma warning restore RS2008, RS1036, RS1038, RS1041

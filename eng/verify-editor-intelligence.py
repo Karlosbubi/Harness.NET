@@ -52,6 +52,11 @@ def main() -> int:
         action="store_true",
         help="reuse an existing build before running the focused tests",
     )
+    parser.add_argument(
+        "--complete-linux",
+        action="store_true",
+        help="also require production AT-SPI, Orca speech, and Linux x64 publication",
+    )
     arguments = parser.parse_args()
     root = Path(__file__).resolve().parent.parent
     durations: list[float] = []
@@ -168,10 +173,18 @@ def main() -> int:
         ),
     ))
 
-    if arguments.atspi:
-        durations.append(run(root, "production-atspi", [
+    if arguments.atspi or arguments.complete_linux:
+        accessibility_command = [
             sys.executable,
             "eng/verify-avalonia-atspi.py",
+        ]
+        if arguments.complete_linux:
+            accessibility_command.append("--with-orca")
+        durations.append(run(root, "production-accessibility", accessibility_command))
+
+    if arguments.complete_linux:
+        durations.append(run(root, "linux-x64-publish", [
+            "./eng/verify-linux-x64-publish.sh",
         ]))
 
     print(
@@ -188,7 +201,9 @@ def main() -> int:
         "settings persistence, typed keybinding dispatch, conflict validation, safe import/export, "
         "optional Vim modes, counted motions/operators, IME suspension, "
         "masked Project User Secrets actions, atomic standard-store writes, capture interlock, "
-        "stale-result handling, "
+        "stale-result handling, analyzer-failure degradation, in-flight cancellation, "
+        "large-workspace latency and memory budgets, repeated source-context switching, "
+        "keyboard-only editing, IME composition, 200% scaling, and Dock restoration, "
         f"accessible production controls, and theme contracts ({sum(durations):.1f}s)."
     )
     return 0
