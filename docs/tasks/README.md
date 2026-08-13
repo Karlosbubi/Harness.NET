@@ -342,7 +342,7 @@ Acceptance criteria:
 
 ### 049 — NetPad-level .NET editing and inspection
 
-Status: `In progress — presentation, transformations, navigation, inspections, keybindings, and Vim input delivered`
+Status: `In progress — presentation, transformations, navigation, inspections, keybindings, Vim input, and Project User Secrets delivered`
 
 Dependencies: 012, 043, 044, 047, 048.
 
@@ -400,11 +400,21 @@ platform shortcuts through. Evidence is recorded in
 [editor-keybindings-2026-08-13.md](../acceptance/editor-keybindings-2026-08-13.md) and
 [editor-vim-mode-2026-08-13.md](../acceptance/editor-vim-mode-2026-08-13.md).
 
+Project User Secrets now use a separate developer-only Business Logic service and the
+standard per-user .NET store. The command palette and trusted-workspace overview open
+a masked dialog with distinct list, reveal, copy, add, change, and delete actions.
+Only projects with one literal unconditional `UserSecretsId` are accepted; Harness.NET
+does not run MSBuild or mutate a project to initialize it. Values never enter shared
+presentation state or model surfaces. A singleton disclosure guard makes portal
+capture and reveal mutually exclusive. Evidence is recorded in
+[project-user-secrets-2026-08-13.md](../acceptance/project-user-secrets-2026-08-13.md)
+and [ADR 022](../decisions/022-project-user-secrets.md).
+
 Problem: Harness.NET now has the core interactive Roslyn operations, semantic
 presentation and adornment slices, formatting, closed actions, bounded generated and
 metadata-signature navigation, and configurable keybindings. It still lacks explicit
 cross-document refactoring contracts and full method-body decompilation. It also lacks
-project User Secrets management, and typed execution targets for Run/Debug CodeLens.
+typed execution targets for Run/Debug CodeLens.
 OmniSharp implements many of the underlying Roslyn services, but adopting its server
 would duplicate the current workspace and add process, download, version, recovery,
 and transport costs.

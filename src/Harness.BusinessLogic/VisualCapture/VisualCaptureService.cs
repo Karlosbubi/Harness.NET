@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Harness.BusinessLogic.Goals;
+using Harness.BusinessLogic.Privacy;
 using Harness.DataAccess.Evidence;
 using Harness.DataAccess.Goals;
 using Harness.DataAccess.Tools;
@@ -19,6 +20,7 @@ internal sealed class VisualCaptureService(
     IVisualCaptureArtifactStore artifactStore,
     IVisualCapturePreferenceStore preferenceStore,
     IToolEvidenceStore evidenceStore,
+    ISensitiveDisplayGuard sensitiveDisplayGuard,
     TimeProvider timeProvider) : IVisualCaptureService
 {
     private const long MinimumBytes = 1024 * 1024;
@@ -84,6 +86,14 @@ internal sealed class VisualCaptureService(
             return Failure(VisualCaptureOutcome.Disabled, "capture_disabled",
                 "Visual capture is disabled in Settings.");
         }
+
+        if (!sensitiveDisplayGuard.TryBeginVisualCapture(out ISensitiveDisplayLease? captureLease))
+        {
+            return Failure(VisualCaptureOutcome.PolicyRejected,
+                "sensitive_content_visible",
+                "Hide the revealed sensitive value before requesting visual capture.");
+        }
+        using ISensitiveDisplayLease activeCapture = captureLease!;
 
         (StoredGoal? goal, RegisteredWorkspace? workspace, string? scopeError) =
             await ResolveScopeAsync(request.GoalId, cancellationToken);

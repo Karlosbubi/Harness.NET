@@ -15,6 +15,8 @@ using Harness.BusinessLogic.Layouts;
 using Harness.BusinessLogic.Mcp;
 using Harness.BusinessLogic.Mutations;
 using Harness.BusinessLogic.Operations;
+using Harness.BusinessLogic.Privacy;
+using Harness.BusinessLogic.ProjectSecrets;
 using Harness.BusinessLogic.Research;
 using Harness.BusinessLogic.Retrieval;
 using Harness.BusinessLogic.VisualCapture;
@@ -42,6 +44,7 @@ using Harness.DataAccess.Models.OpenRouter;
 using Harness.DataAccess.Mutations;
 using Harness.DataAccess.Observability;
 using Harness.DataAccess.Persistence;
+using Harness.DataAccess.ProjectSecrets;
 using Harness.DataAccess.Research;
 using Harness.DataAccess.Secrets;
 using Harness.DataAccess.SemanticIndex;
@@ -189,6 +192,7 @@ builder.Services.AddSingleton<ICapabilityApprovalService, CapabilityApprovalServ
 builder.Services.AddSingleton<IToolEvidenceStore, SqliteToolEvidenceStore>();
 builder.Services.AddSingleton<IToolEvidenceService, ToolEvidenceService>();
 builder.Services.AddSingleton<IAgentToolActivationService, AgentToolActivationService>();
+builder.Services.AddSingleton<ISensitiveDisplayGuard, SensitiveDisplayGuard>();
 builder.Services.AddSingleton<IVisualCapturePreferenceStore, SqliteVisualCapturePreferenceStore>();
 builder.Services.AddSingleton<IVisualCapturePortal, XdgDesktopPortalVisualCapture>();
 builder.Services.AddSingleton<IVisualCaptureImageSourceReader, PortalFileImageSourceReader>();
@@ -206,6 +210,10 @@ builder.Services.AddSingleton<IWorkspaceTextSearcher, GitWorkspaceTextSearcher>(
 builder.Services.AddSingleton<IWorkspaceAdvancedInspector, GitWorkspaceAdvancedInspector>();
 builder.Services.AddSingleton<IWorkspaceGitInspector, LibGitWorkspaceGitInspector>();
 builder.Services.AddSingleton<IWorkspaceDotNetInspector, WorkspaceDotNetInspector>();
+builder.Services.AddSingleton<IProjectUserSecretsPathResolver,
+    PlatformProjectUserSecretsPathResolver>();
+builder.Services.AddSingleton<IProjectUserSecretStore, ProjectUserSecretStore>();
+builder.Services.AddSingleton<IProjectUserSecretsService, ProjectUserSecretsService>();
 builder.Services.AddSingleton<IDotNetProcess, DotNetProcess>();
 builder.Services.AddSingleton<DotNetSdkSelector>();
 builder.Services.AddSingleton<IMSBuildRuntime, MSBuildRuntime>();

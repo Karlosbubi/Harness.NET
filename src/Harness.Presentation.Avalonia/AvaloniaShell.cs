@@ -8,6 +8,7 @@ using Harness.BusinessLogic.Evidence;
 using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Layouts;
 using Harness.BusinessLogic.Mutations;
+using Harness.BusinessLogic.ProjectSecrets;
 using Harness.UI.Avalonia;
 
 namespace Harness.Presentation.Avalonia;
@@ -21,6 +22,7 @@ internal sealed class AvaloniaShell(
     IWorkbenchCodeIntelligenceService codeIntelligenceService,
     IWorkspaceMutationService mutationService,
     IWorkbenchLayoutService layoutService,
+    IProjectUserSecretsService projectUserSecretsService,
     AvaloniaInboundMcpUiBridge inboundMcpUiBridge) : IAvaloniaShell
 {
     public ValueTask RunAsync(CancellationToken cancellationToken = default)
@@ -35,6 +37,7 @@ internal sealed class AvaloniaShell(
                 codeIntelligenceService,
                 mutationService,
                 layoutService,
+                projectUserSecretsService,
                 inboundMcpUiBridge,
                 cancellationToken))
             .UsePlatformDetect()

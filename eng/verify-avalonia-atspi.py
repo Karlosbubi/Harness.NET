@@ -321,6 +321,29 @@ def verify_visual_settings_accessibility(application: AtSpiApplication) -> None:
     time.sleep(1)
 
 
+def verify_project_user_secrets_accessibility(application: AtSpiApplication) -> None:
+    application.invoke("Open the command palette")
+    application.wait_for_name("Command palette filter", "entry")
+    application.set_text("Command palette filter", "project user secrets")
+    application.wait_for_name("Manage project User Secrets…", "push button")
+    application.invoke("Manage project User Secrets…")
+    application.wait_for_name("Project User Secrets", "frame")
+    for name in (
+        "Project User Secrets project",
+        "Project User Secret keys",
+        "Selected project secret value",
+        "Reveal selected project secret",
+        "Copy selected project secret",
+        "Add project secret",
+        "Change selected project secret",
+        "Delete selected project secret",
+        "Refresh Project User Secrets",
+    ):
+        application.wait_for_name(name)
+    application.invoke("Close")
+    time.sleep(1)
+
+
 def verify_orca_speech(debug_log: Path) -> None:
     speech_lines = [
         line for line in debug_log.read_text(encoding="utf-8").splitlines()
@@ -585,6 +608,17 @@ def main() -> int:
                 "Console.WriteLine(value.Capacity);\n",
                 encoding="utf-8",
             )
+            project_file = repository / "Representative.csproj"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    "</Project>",
+                    "  <PropertyGroup>\n"
+                    f"    <UserSecretsId>harness-atspi-{root.name}</UserSecretsId>\n"
+                    "  </PropertyGroup>\n"
+                    "</Project>",
+                ),
+                encoding="utf-8",
+            )
             run(["git", "init", "-q"], repository)
             run(["git", "config", "user.name", "Harness Acceptance"], repository)
             run(
@@ -620,6 +654,7 @@ def main() -> int:
             if arguments.with_orca:
                 exercise_orca_speech(application)
             register_workspace(application, repository)
+            verify_project_user_secrets_accessibility(application)
             create_and_approve_goal(application)
             verify_documents_and_search(application, repository)
             application.invoke("Open the command palette")

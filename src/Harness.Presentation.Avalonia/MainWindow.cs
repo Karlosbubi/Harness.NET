@@ -22,6 +22,7 @@ using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Layouts;
 using Harness.BusinessLogic.Mcp;
 using Harness.BusinessLogic.Mutations;
+using Harness.BusinessLogic.ProjectSecrets;
 using Harness.BusinessLogic.Workflows;
 using Harness.BusinessLogic.Workspaces;
 using Harness.UI.Avalonia;
@@ -38,6 +39,7 @@ internal sealed class MainWindow : Window
     private readonly IWorkbenchCodeIntelligenceService codeIntelligenceService;
     private readonly IWorkspaceMutationService mutationService;
     private readonly IWorkbenchLayoutService layoutService;
+    private readonly IProjectUserSecretsService projectUserSecretsService;
     private readonly CancellationToken cancellationToken;
     private readonly CompositeDisposable subscriptions = new();
     private readonly ItemsControl activities = new();
@@ -119,6 +121,7 @@ internal sealed class MainWindow : Window
         IWorkbenchCodeIntelligenceService codeIntelligenceService,
         IWorkspaceMutationService mutationService,
         IWorkbenchLayoutService layoutService,
+        IProjectUserSecretsService projectUserSecretsService,
         CancellationToken cancellationToken)
     {
         this.store = store;
@@ -129,6 +132,7 @@ internal sealed class MainWindow : Window
         this.codeIntelligenceService = codeIntelligenceService;
         this.mutationService = mutationService;
         this.layoutService = layoutService;
+        this.projectUserSecretsService = projectUserSecretsService;
         this.cancellationToken = cancellationToken;
         Title = "Harness.NET";
         Width = 1280;
@@ -178,7 +182,8 @@ internal sealed class MainWindow : Window
             utility,
             cancellationToken,
             ShowWorkspaceDialogAsync,
-            mutationService);
+            mutationService,
+            ShowProjectUserSecretsAsync);
         Border documentActions = new()
         {
             Child = workbench.DocumentActions,
@@ -596,6 +601,10 @@ internal sealed class MainWindow : Window
                 () => new(ShowWorkspaceDialogAsync(true))),
             new("workspace.manage", "Workspace", "Manage workspaces…",
                 () => new(ShowWorkspaceDialogAsync(false))),
+            new("workspace.user-secrets", "Workspace", "Manage project User Secrets…",
+                () => new(ShowProjectUserSecretsAsync()),
+                UnavailableReason: needsTrust,
+                MatchText: "Workspace Project User Secrets credentials development dotnet"),
             new("workspace.quick.open", "Workspace", "Go to file…",
                 () => new(ShowQuickOpenAsync()),
                 bindings.DisplayFor(KeybindingCommand.QuickOpen),
@@ -727,6 +736,25 @@ internal sealed class MainWindow : Window
 
     private async Task ShowSettingsAsync() =>
         await new SettingsWindow(store, cancellationToken).ShowDialog(this);
+
+    private async Task ShowProjectUserSecretsAsync()
+    {
+        WorkspaceView? active = store.Current.Workspaces.Registered
+            .FirstOrDefault(workspace => workspace.IsActive);
+        if (active is null || !active.IsTrusted)
+        {
+            status.Severity = StatusSeverity.Warning;
+            status.Message = active is null
+                ? "Open a workspace before managing project User Secrets."
+                : "Trust the workspace before managing project User Secrets.";
+            return;
+        }
+
+        await new ProjectUserSecretsDialog(
+            projectUserSecretsService,
+            new WorkspaceId(active.Id),
+            cancellationToken).ShowDialog(this);
+    }
 
     internal async ValueTask<InboundUiActionResult> ActivateInboundUiAsync(InboundUiActionId action)
     {

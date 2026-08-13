@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using Harness.BusinessLogic.Goals;
+using Harness.BusinessLogic.Privacy;
 using Harness.BusinessLogic.Tools;
 using Harness.BusinessLogic.VisualCapture;
 using Harness.DataAccess.Evidence;
@@ -84,14 +85,38 @@ public sealed class VisualCaptureServiceTests
         Assert.Contains(VisualCaptureTarget.ActiveWindow, settings.Availability.AvailableTargets);
     }
 
+    [Fact]
+    public async Task Rejects_capture_while_sensitive_content_is_revealed()
+    {
+        Portal portal = new(PortalCaptureState.Succeeded);
+        SensitiveDisplayGuard guard = new();
+        Assert.True(guard.TryBeginSensitiveDisplay(
+            SensitiveDisplayKind.ProjectUserSecret, out ISensitiveDisplayLease? disclosure));
+        VisualCaptureService service = CreateService(portal, new Artifacts(), guard);
+
+        VisualCaptureResult blocked = await service.CaptureAsync(Request());
+
+        Assert.Equal(VisualCaptureOutcome.PolicyRejected, blocked.Outcome);
+        Assert.Equal("sensitive_content_visible", blocked.ErrorCode);
+        Assert.Equal(0, portal.CaptureCalls);
+
+        disclosure!.Dispose();
+        VisualCaptureResult captured = await service.CaptureAsync(Request());
+        Assert.Equal(VisualCaptureOutcome.Succeeded, captured.Outcome);
+    }
+
     private static VisualCaptureRequest Request() => new(
         new("goal-a"), new ToolCorrelationId(Guid.NewGuid().ToString("N")),
         VisualCaptureInitiator.Developer, new("Verify rendered board"), new("Harness.NET"),
         VisualCaptureTarget.UserSelection, Now);
 
-    private static VisualCaptureService CreateService(Portal portal, Artifacts artifacts) => new(
+    private static VisualCaptureService CreateService(
+        Portal portal,
+        Artifacts artifacts,
+        SensitiveDisplayGuard? guard = null) => new(
         new Goals(), new Workspaces(), portal, new Images(), artifacts,
-        new Preferences(), new Evidence(), new FixedTimeProvider());
+        new Preferences(), new Evidence(), guard ?? new SensitiveDisplayGuard(),
+        new FixedTimeProvider());
 
     private static byte[] Png()
     {

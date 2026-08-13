@@ -43,6 +43,7 @@ internal sealed class WorkbenchDockHost
     private readonly IWorkbenchDocumentPrompt documentPrompt;
     private readonly Func<AvaloniaShellState> state;
     private readonly Func<bool, Task> manageWorkspace;
+    private readonly Func<Task> manageProjectSecrets;
     private readonly CancellationToken cancellationToken;
     private readonly Factory factory = new();
     private readonly WorkbenchDockLayoutCodec layoutCodec;
@@ -79,6 +80,11 @@ internal sealed class WorkbenchDockHost
     };
     private readonly TextBlock overviewDetails = new() { TextWrapping = TextWrapping.Wrap };
     private readonly Button overviewAction = new() { Content = "Open workspace" };
+    private readonly Button overviewSecretsAction = new()
+    {
+        Content = "Project User Secrets",
+        IsVisible = false,
+    };
     private readonly TextBox fileFilter = new();
     private readonly TreeView fileTree = new();
     private readonly TextBox query = new();
@@ -165,7 +171,8 @@ internal sealed class WorkbenchDockHost
         Control goalContext,
         CancellationToken cancellationToken,
         Func<bool, Task>? manageWorkspace = null,
-        IWorkspaceMutationService? mutationService = null)
+        IWorkspaceMutationService? mutationService = null,
+        Func<Task>? manageProjectSecrets = null)
     {
         this.runOutputService = runOutputService;
         this.inspectionService = inspectionService;
@@ -176,6 +183,7 @@ internal sealed class WorkbenchDockHost
         this.documentPrompt = documentPrompt;
         this.state = state;
         this.manageWorkspace = manageWorkspace ?? (_ => Task.CompletedTask);
+        this.manageProjectSecrets = manageProjectSecrets ?? (() => Task.CompletedTask);
         this.cancellationToken = cancellationToken;
         factory.HideToolsOnClose = true;
         layoutCodec = new(factory);
@@ -608,6 +616,7 @@ internal sealed class WorkbenchDockHost
             overviewAction.Content = "Open workspace";
             overviewAction.Classes.Remove("command");
             overviewAction.Classes.Add("primary");
+            overviewSecretsAction.IsVisible = false;
             return;
         }
 
@@ -621,6 +630,7 @@ internal sealed class WorkbenchDockHost
         overviewAction.Content = "Workspace settings";
         overviewAction.Classes.Remove("primary");
         overviewAction.Classes.Add("command");
+        overviewSecretsAction.IsVisible = active.IsTrusted;
     }
 
     internal ValueTask OpenFileAsync(string relativePath) =>
@@ -1954,6 +1964,16 @@ internal sealed class WorkbenchDockHost
         overviewAction.HorizontalAlignment = HorizontalAlignment.Left;
         AutomationProperties.SetName(overviewAction, "Open or manage workspace");
         overviewAction.Click += async (_, _) => await manageWorkspace(ActiveWorkspace() is null);
+        overviewSecretsAction.Classes.Add("command");
+        overviewSecretsAction.HorizontalAlignment = HorizontalAlignment.Left;
+        AutomationProperties.SetName(overviewSecretsAction, "Manage project User Secrets");
+        overviewSecretsAction.Click += async (_, _) => await manageProjectSecrets();
+        StackPanel actions = new()
+        {
+            Orientation = global::Avalonia.Layout.Orientation.Horizontal,
+            Spacing = 8,
+            Children = { overviewAction, overviewSecretsAction },
+        };
         return new Grid
         {
             Children =
@@ -1972,7 +1992,7 @@ internal sealed class WorkbenchDockHost
                             new TextBlock { Text = "HARNESS.NET WORKSPACE", Classes = { "eyebrow" } },
                             overviewHeading,
                             overviewDetails,
-                            overviewAction,
+                            actions,
                         },
                     },
                 },

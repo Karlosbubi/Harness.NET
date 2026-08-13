@@ -343,7 +343,14 @@ set, shows conflicts, resets defaults, and imports or exports only bounded
 header hints, and command-palette labels. Item 6 is now complete: the same persistent
 settings select optional Vim input over the live buffer, with explicit modal state,
 counted core motions/operators, clipboard synchronization, IME-preedit suspension,
-and platform-shortcut pass-through. Items 7 and 8 remain. Deterministic
+and platform-shortcut pass-through. Item 7 is delivered through a developer-only
+Project User Secrets service and masked dialog. The Data Access adapter accepts the
+standard nested or flattened string JSON shape and writes the standard flattened
+shape atomically. It requires a literal, unconditional project `UserSecretsId`; it
+never evaluates MSBuild or initializes the project. List results contain keys only.
+Reveal and portal capture hold mutually exclusive leases, values never enter shared
+presentation state, and no role or MCP secret-read tool exists. Item 8 remains.
+Deterministic
 evidence is recorded in
 [editor-transformations-2026-08-12.md](acceptance/editor-transformations-2026-08-12.md);
 virtual-navigation evidence is in
@@ -354,6 +361,8 @@ keybinding evidence is in
 [editor-keybindings-2026-08-13.md](acceptance/editor-keybindings-2026-08-13.md),
 Vim evidence is in
 [editor-vim-mode-2026-08-13.md](acceptance/editor-vim-mode-2026-08-13.md),
+Project User Secrets evidence is in
+[project-user-secrets-2026-08-13.md](acceptance/project-user-secrets-2026-08-13.md),
 and prior visual evidence is in
 [editor-inlays-codelens-2026-08-12.md](acceptance/editor-inlays-codelens-2026-08-12.md).
 

@@ -54,7 +54,6 @@ input-mode selector above the shared command catalog:
 
 ## Remaining Task 049 work
 
-- project User Secrets with masked and separately authorized developer actions;
 - Task 052-backed typed Run/Debug CodeLens targets;
 - final correctness, latency, memory, cancellation, large-solution, repeated-context,
   IME, Orca, scaling, restoration, and Linux publication audit.

@@ -119,6 +119,31 @@ def main() -> int:
     ))
     durations.append(run(
         root,
+        "project-user-secrets-storage",
+        test_command(
+            "tests/Harness.DataAccess.Tests/Harness.DataAccess.Tests.csproj",
+            "FullyQualifiedName~ProjectUserSecretStoreTests",
+        ),
+    ))
+    durations.append(run(
+        root,
+        "project-user-secrets-policy",
+        test_command(
+            "tests/Harness.BusinessLogic.Tests/Harness.BusinessLogic.Tests.csproj",
+            "FullyQualifiedName~ProjectUserSecretsServiceTests|"
+            "FullyQualifiedName~VisualCaptureServiceTests",
+        ),
+    ))
+    durations.append(run(
+        root,
+        "project-user-secrets-controls",
+        test_command(
+            "tests/Harness.Presentation.Avalonia.Tests/Harness.Presentation.Avalonia.Tests.csproj",
+            "FullyQualifiedName~ProjectUserSecretsDialogTests",
+        ),
+    ))
+    durations.append(run(
+        root,
         "theme-contract",
         test_command(
             "tests/Harness.UI.Avalonia.Tests/Harness.UI.Avalonia.Tests.csproj",
@@ -144,6 +169,7 @@ def main() -> int:
         "document fix-all, fingerprinted model apply, "
         "settings persistence, typed keybinding dispatch, conflict validation, safe import/export, "
         "optional Vim modes, counted motions/operators, IME suspension, "
+        "masked Project User Secrets actions, atomic standard-store writes, capture interlock, "
         "stale-result handling, "
         f"accessible production controls, and theme contracts ({sum(durations):.1f}s)."
     )

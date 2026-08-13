@@ -15,6 +15,13 @@ namespace Harness.BusinessLogic.Tests.Agents;
 public sealed class AgentToolPolicyTests
 {
     [Fact]
+    public void Agent_tool_catalog_has_no_project_secret_read_capability()
+    {
+        Assert.DoesNotContain(Enum.GetNames<AgentToolKind>(), name =>
+            name.Contains("Secret", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void Lead_is_read_only()
     {
         IReadOnlyList<AgentToolKind> tools = AgentToolPolicy.AllowedFor(AgentRole.Lead);

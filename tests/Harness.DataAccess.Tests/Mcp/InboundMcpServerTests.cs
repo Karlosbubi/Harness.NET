@@ -44,6 +44,8 @@ public sealed class InboundMcpServerTests
         Assert.Equal(16, tools.Count);
         Assert.Contains("no shell", client.ServerInstructions, StringComparison.OrdinalIgnoreCase);
         Assert.All(tools, tool => Assert.StartsWith("harness_", tool.Name, StringComparison.Ordinal));
+        Assert.DoesNotContain(tools, tool =>
+            tool.Name.Contains("secret", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(tools, tool => tool.Name == "harness_code_inspection");
         Assert.All(tools.Where(tool => tool.Name is not "harness_open_document" and
                 not "harness_create_goal" and not "harness_select_goal_model" and
