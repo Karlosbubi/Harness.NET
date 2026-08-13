@@ -50,7 +50,7 @@ internal sealed class InboundMcpApplicationService(
         Read("harness_audit", sensitive: true), Read("harness_code_problems"),
         Read("harness_code_symbol"), Read("harness_code_definition"),
         Read("harness_code_references"), Read("harness_code_implementations"),
-        Read("harness_code_actions"),
+        Read("harness_code_inspection"), Read("harness_code_actions"),
         Read("harness_inspect_capture", sensitive: true),
         Read("harness_evaluation_snapshot", sensitive: true),
         Action("harness_create_goal", idempotent: false),
@@ -848,6 +848,30 @@ internal sealed class InboundMcpApplicationService(
         CancellationToken cancellationToken = default) => CodePositionAsync(context, request,
             (goal, path, position, token) => codeIntelligenceService.FindImplementationsAsync(
                 goal, GoalWorkspaceScope.Original, path, position, token), cancellationToken);
+
+    public ValueTask<InboundMcpApplicationResult> InspectCodeAsync(
+        InboundMcpCallContext context, InboundMcpCodeInspectionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (!Enum.IsDefined(request.Kind))
+            return ValueTask.FromResult(Failure(
+                "invalid_code_inspection_kind", "A closed code inspection kind is required."));
+        return CodePositionAsync(context,
+            new(request.GoalId, request.RelativePath, request.Line, request.Character),
+            (goal, path, position, token) => codeIntelligenceService.InspectAsync(
+                goal, GoalWorkspaceScope.Original, path, position,
+                request.Kind switch
+                {
+                    InboundMcpCodeInspectionKind.SyntaxTree =>
+                        WorkbenchCodeInspectionKind.SyntaxTree,
+                    InboundMcpCodeInspectionKind.Symbol => WorkbenchCodeInspectionKind.Symbol,
+                    InboundMcpCodeInspectionKind.GeneratedSource =>
+                        WorkbenchCodeInspectionKind.GeneratedSource,
+                    InboundMcpCodeInspectionKind.IntermediateLanguage =>
+                        WorkbenchCodeInspectionKind.IntermediateLanguage,
+                    _ => throw new ArgumentOutOfRangeException(nameof(request.Kind)),
+                }, token), cancellationToken);
+    }
 
     public ValueTask<InboundMcpApplicationResult> FindCodeActionsAsync(
         InboundMcpCallContext context, InboundMcpCodePositionRequest request,

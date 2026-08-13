@@ -117,6 +117,20 @@ ordinary document persistence, and never written into a user repository. Role to
 resolve their text before closing a short-lived session so a model never receives an
 unusable handle. Stale handles fail closed.
 
+### Exact-context inspection
+
+Expose syntax tree, semantic symbol details, generated-source inventory, and
+Intermediate Language through four named read-only operations on one typed request.
+Each result carries the exact source path, buffer version, project version, target
+framework, configuration, assembly, and compilation identity. Bound item counts and
+text size; cancellation and stale buffers fail closed.
+
+Build IL by emitting the exact Roslyn compilation to memory and reading ECMA-335
+metadata. Do not execute project code, restore, write an assembly, invoke an arbitrary
+disassembler, or accept a free-form Roslyn query. Presentation, role tools, and
+inbound MCP use the same Business Logic contract. Transient developer views are
+read-only and excluded from normal layout persistence.
+
 ### Trust and privacy
 
 Workspace trust covers project evaluation and configured analyzer/generator loading.

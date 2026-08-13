@@ -53,7 +53,7 @@ Status meanings:
 | Unity profiler overview/frame/analyze | Optional Unity/.NET profiling module | Planned | Module availability, bounded artifacts, no ambient context |
 | memory dump and mixed/native attach | Post-mortem and advanced debugger modules | Planned | Sensitive artifact/process approval and retention |
 | notebook execution | .NET Interactive notebook/cell discovery and bounded execution | Planned | Trusted repository execution; output/artifact limits |
-| inspection-KTS/PSI generator tools | Typed Roslyn analyzer/code-fix authoring examples, syntax trees and validation fixtures | Planned | Local docs plus deterministic compile/test harness |
+| inspection-KTS/PSI generator tools | Typed Roslyn syntax, symbol, generated-source, and IL inspection | Partial | Closed exact-buffer inspection views are delivered to the editor, roles, and inbound MCP. Analyzer/code-fix authoring examples and fixture generation remain planned |
 | engine/editor screenshots | XDG-portal approved visual evidence | Delivered | Portal consent, privacy, goal binding; no input control |
 | `execute_tool` router | On-demand typed toolset activation for the next bounded role turn | Delivered | Catalog/role/policy validation; never dynamic invoke-by-name |
 | `ue_*` and Unreal-specific asset/Blueprint/actor/viewport tools | No Harness.NET equivalent | Excluded | Explicit product exclusion |

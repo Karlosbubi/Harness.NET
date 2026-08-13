@@ -37,7 +37,8 @@ Delivered:
   outline, breadcrumbs, workspace-symbol search, parameter and inferred-type inlay
   hints, lazy CodeLens navigation, definitions, usages, implementations, and semantic
   rename, region navigation, and labeled read-only generated-source and metadata-
-  signature documents, plus Roslyn document, selection, changed-span, paste, and on-type formatting
+  signature documents, exact-context syntax-tree, symbol, generated-source, and IL
+  inspection views, plus Roslyn document, selection, changed-span, paste, and on-type formatting
   and import organization, contextual compiler fixes, local/selection refactorings,
   and labeled document fix-all choices;
 - Roslyn validation before model-authored source writes;

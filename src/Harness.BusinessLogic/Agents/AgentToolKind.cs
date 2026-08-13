@@ -23,6 +23,7 @@ internal enum AgentToolKind
     FindDefinition,
     FindReferences,
     FindImplementations,
+    InspectCode,
     SearchSymbols,
     AnalyzeCalls,
     GetTypeHierarchy,

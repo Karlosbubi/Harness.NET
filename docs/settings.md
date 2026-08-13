@@ -134,6 +134,12 @@ recovery, and model evidence are separate so clients request only the context ne
 Model discovery can filter by provider, role, and text before paging, so a full remote
 catalog is available without injecting it all into one agent response.
 
+`harness_code_inspection` exposes the same exact-context read-only SyntaxTree, Symbol,
+GeneratedSource, and IntermediateLanguage views as the editor. It is enabled in the
+default catalog but remains subject to the client and exact-tool allowlists. Results
+are bounded and carry project, target, configuration, document, and compilation
+identity; the tool grants no repository mutation or execution authority.
+
 IsolatedEvaluation also requires process startup with
 `--mcp-evaluation-root /tmp/<dedicated-directory>`. The process uses separate XDG-like
 paths, a separate SQLite database, volatile secrets, and a deterministic disposable

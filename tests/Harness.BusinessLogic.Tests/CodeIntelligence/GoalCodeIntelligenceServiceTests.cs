@@ -103,6 +103,22 @@ public sealed class GoalCodeIntelligenceServiceTests
         Assert.True(code.WasStopped);
     }
 
+    [Fact]
+    public async Task Goal_inspection_returns_exact_compilation_view_before_closing_session()
+    {
+        CapturingCodeIntelligence code = new();
+        GoalCodeIntelligenceService service = CreateService(code, GoalWorkspaceScope.Original);
+
+        GoalCodeInspectionView result = await service.InspectAsync(
+            new("goal-1"), GoalWorkspaceScope.Original, new("src/Program.cs"), new(0, 6),
+            WorkbenchCodeInspectionKind.IntermediateLanguage);
+
+        Assert.Equal(WorkbenchCodeInspectionKind.IntermediateLanguage, result.Kind);
+        Assert.Equal("IL_0000: ret", result.Text!.Value);
+        Assert.Equal(new string('c', 64), result.Origin!.Compilation.Value);
+        Assert.True(code.WasStopped);
+    }
+
     private static GoalCodeIntelligenceService CreateService(
         CapturingCodeIntelligence code,
         GoalWorkspaceScope expectedScope,
@@ -252,6 +268,16 @@ public sealed class GoalCodeIntelligenceServiceTests
                     new("String · metadata"), new("public class String { }"), null,
                     new(new("Sample"), new("version"), new("net10.0"), new("Debug"),
                         new("System.Runtime"), new(new string('b', 64))), true, []));
+
+        public ValueTask<WorkbenchCodeInspectionView> InspectAsync(
+            WorkbenchCodeInspectionRequest request,
+            CancellationToken cancellationToken = default) => ValueTask.FromResult(new
+                WorkbenchCodeInspectionView(
+                    request.Snapshot.SessionId, request.Snapshot.Path,
+                    request.Snapshot.BufferVersion, WorkbenchCodeResultState.Ready,
+                    request.Kind, new("IL · Main"), new("IL_0000: ret"),
+                    new(new("Sample"), new("version"), new("net10.0"), new("Debug"),
+                        new("Sample"), new(new string('c', 64))), true, false, []));
     }
 
     private sealed class StubGoalStore : IGoalStore

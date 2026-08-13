@@ -52,6 +52,7 @@ internal sealed class SourceEditorSurface : IDisposable
         Button definition,
         Button references,
         Button implementations,
+        Button inspect,
         Button formatDocument,
         Button formatSelection,
         Button formatChangedSpans,
@@ -72,6 +73,7 @@ internal sealed class SourceEditorSurface : IDisposable
         Definition = definition;
         References = references;
         Implementations = implementations;
+        Inspect = inspect;
         FormatDocument = formatDocument;
         FormatSelection = formatSelection;
         FormatChangedSpans = formatChangedSpans;
@@ -93,6 +95,7 @@ internal sealed class SourceEditorSurface : IDisposable
     internal Button Definition { get; }
     internal Button References { get; }
     internal Button Implementations { get; }
+    internal Button Inspect { get; }
     internal Button FormatDocument { get; }
     internal Button FormatSelection { get; }
     internal Button FormatChangedSpans { get; }
@@ -100,6 +103,7 @@ internal sealed class SourceEditorSurface : IDisposable
     internal Button RemoveUnusedImports { get; }
     internal Button QuickFix { get; }
     internal event Action<WorkbenchCodePosition>? NavigationRequested;
+    internal event Action<WorkbenchCodeInspectionKind>? InspectionRequested;
 
     internal static SourceEditorSurface Create(WorkbenchDocumentView view)
     {
@@ -130,6 +134,26 @@ internal sealed class SourceEditorSurface : IDisposable
         Button implementations = Action("Implementations",
             $"Go to implementation in {view.Path.Value}",
             "Go to implementation · Ctrl+F12 or Ctrl+Alt+B");
+        Button syntaxTree = Action("Syntax tree", $"Inspect syntax tree for {view.Path.Value}",
+            "Read-only exact-buffer Roslyn syntax tree");
+        Button symbolDetails = Action("Symbol details", $"Inspect symbol in {view.Path.Value}",
+            "Read-only semantic symbol details at the caret");
+        Button generatedSource = Action("Generated source",
+            $"Inspect generated source for {view.Path.Value}",
+            "Read-only source-generator output for the exact project");
+        Button intermediateLanguage = Action("IL", $"Inspect IL for {view.Path.Value}",
+            "Emit and disassemble the exact method at the caret");
+        Button inspect = Action("Inspect", $"Inspect compiled context for {view.Path.Value}",
+            "Syntax tree, symbol, generated source, and Intermediate Language");
+        inspect.Flyout = new Flyout
+        {
+            Content = new StackPanel
+            {
+                Spacing = 4,
+                Margin = new Thickness(4),
+                Children = { syntaxTree, symbolDetails, generatedSource, intermediateLanguage },
+            },
+        };
         Button formatDocument = Action("Format document",
             $"Format document {view.Path.Value}", "Format document · Ctrl+Alt+L");
         Button formatSelection = Action("Format selection",
@@ -177,6 +201,7 @@ internal sealed class SourceEditorSurface : IDisposable
             definition,
             references,
             implementations,
+            inspect,
             formatDocument,
             formatSelection,
             formatChangedSpans,
@@ -187,7 +212,15 @@ internal sealed class SourceEditorSurface : IDisposable
         surface.accessBadge.Classes.Add("editor-access");
         surface.BuildHeader(save, reload, close);
         surface.BuildAssistanceBar(outline, workspaceSymbols, completion, symbolInfo, definition,
-            references, implementations, quickFix, transform);
+            references, implementations, inspect, quickFix, transform);
+        syntaxTree.Click += (_, _) =>
+            surface.InspectionRequested?.Invoke(WorkbenchCodeInspectionKind.SyntaxTree);
+        symbolDetails.Click += (_, _) =>
+            surface.InspectionRequested?.Invoke(WorkbenchCodeInspectionKind.Symbol);
+        generatedSource.Click += (_, _) =>
+            surface.InspectionRequested?.Invoke(WorkbenchCodeInspectionKind.GeneratedSource);
+        intermediateLanguage.Click += (_, _) =>
+            surface.InspectionRequested?.Invoke(WorkbenchCodeInspectionKind.IntermediateLanguage);
         surface.ConfigureOutline(outline);
         surface.UpdateView(view);
         surface.UpdateMetrics();
@@ -217,6 +250,7 @@ internal sealed class SourceEditorSurface : IDisposable
         Definition.IsEnabled = semanticAssistance;
         References.IsEnabled = semanticAssistance;
         Implementations.IsEnabled = semanticAssistance;
+        Inspect.IsEnabled = semanticAssistance;
         FormatDocument.IsEnabled = semanticAssistance &&
             view.Access is WorkbenchDocumentAccess.Editable;
         OrganizeImports.IsEnabled = FormatDocument.IsEnabled;

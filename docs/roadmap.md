@@ -332,11 +332,17 @@ desktop labels them read-only and layout capture drops them. Role and inbound MC
 navigation results eagerly include resolved virtual text before closing their Roslyn session.
 Metadata views intentionally contain signatures rather than invented method bodies;
 full decompilation still needs a maintained public dependency and supply-chain review.
-Items 5–8 remain. Deterministic
+Item 5 is delivered through one closed exact-buffer inspection contract covering
+syntax tree, semantic symbol details, generated-source inventory, and locally emitted
+IL. The developer menu, role tool, and opt-in inbound MCP use the same bounded read-
+only result and exact project/version/TFM/configuration/assembly/compilation identity.
+IL emission is in memory and never executes project code. Items 6–8 remain. Deterministic
 evidence is recorded in
 [editor-transformations-2026-08-12.md](acceptance/editor-transformations-2026-08-12.md);
 virtual-navigation evidence is in
 [editor-virtual-navigation-2026-08-12.md](acceptance/editor-virtual-navigation-2026-08-12.md),
+inspection evidence is in
+[editor-code-inspection-2026-08-12.md](acceptance/editor-code-inspection-2026-08-12.md),
 and prior visual evidence is in
 [editor-inlays-codelens-2026-08-12.md](acceptance/editor-inlays-codelens-2026-08-12.md).
 

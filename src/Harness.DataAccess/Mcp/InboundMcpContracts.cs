@@ -149,6 +149,19 @@ public sealed record InboundMcpCaptureInspectionRequest(string GoalId, string Ca
 public sealed record InboundMcpCodeRequest(string GoalId, string RelativePath);
 public sealed record InboundMcpCodePositionRequest(
     string GoalId, string RelativePath, int Line, int Character);
+public enum InboundMcpCodeInspectionKind
+{
+    SyntaxTree,
+    Symbol,
+    GeneratedSource,
+    IntermediateLanguage,
+}
+public sealed record InboundMcpCodeInspectionRequest(
+    string GoalId,
+    string RelativePath,
+    int Line,
+    int Character,
+    InboundMcpCodeInspectionKind Kind);
 
 public sealed record InboundMcpApplicationResult(string Json, bool IsError, string? ErrorCode, string? Error);
 public sealed record InboundMcpToolPolicy(
@@ -298,6 +311,12 @@ public interface IInboundMcpApplication
     ValueTask<InboundMcpApplicationResult> FindCodeImplementationsAsync(
         InboundMcpCallContext context, InboundMcpCodePositionRequest request,
         CancellationToken cancellationToken = default);
+    ValueTask<InboundMcpApplicationResult> InspectCodeAsync(
+        InboundMcpCallContext context, InboundMcpCodeInspectionRequest request,
+        CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult(new InboundMcpApplicationResult(
+            "{}", true, "code_inspection_not_supported",
+            "Exact-context code inspection is unavailable."));
     ValueTask<InboundMcpApplicationResult> FindCodeActionsAsync(
         InboundMcpCallContext context, InboundMcpCodePositionRequest request,
         CancellationToken cancellationToken = default) =>

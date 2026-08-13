@@ -135,6 +135,7 @@ def main() -> int:
         "diagnostics, semantic classification, occurrences, folding, outline, breadcrumbs, "
         "workspace symbols, region navigation, inlay hints, lazy CodeLens, definitions, "
         "usages, implementations, generated source, metadata signatures, "
+        "exact-context syntax trees, symbol details, generated-source inspection, IL, "
         "document/selection/changed-span formatting, guarded paste and on-type formatting, "
         "import organization, unused-import cleanup, "
         "proven missing-import choices, closed quick fixes, local/selection refactorings, "

@@ -38,6 +38,19 @@ public sealed record GoalCodeNavigationView(
     GoalCodeResultIdentity? Identity = null,
     IReadOnlyList<WorkbenchCodeVirtualDocumentView>? VirtualDocuments = null);
 
+public sealed record GoalCodeInspectionView(
+    WorkbenchCodeDocumentPath Path,
+    WorkbenchCodePosition Position,
+    WorkbenchCodeResultState State,
+    WorkbenchCodeInspectionKind Kind,
+    WorkbenchCodeMessage? Title,
+    WorkbenchCodeText? Text,
+    WorkbenchCodeVirtualDocumentOrigin? Origin,
+    bool IsReadOnly,
+    bool IsTruncated,
+    WorkbenchCodeIssue? Issue,
+    GoalCodeResultIdentity? Identity = null);
+
 public sealed record GoalMissingImportView(
     WorkbenchCodeDocumentPath Path,
     WorkbenchCodePosition Position,

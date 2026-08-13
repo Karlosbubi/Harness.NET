@@ -183,6 +183,51 @@ internal sealed partial class WorkbenchCodeIntelligenceService
             result.IsReadOnly, MapIssues(result.Issues));
     }
 
+    public async ValueTask<WorkbenchCodeInspectionView> InspectAsync(
+        WorkbenchCodeInspectionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (!TryInteractive(request.Snapshot, out ActiveSession? session,
+                out WorkbenchCodeIssue? issue) || !Enum.IsDefined(request.Kind))
+        {
+            return InspectionFailure(request, issue ??
+                Issue("invalid_inspection", "A valid closed inspection kind is required."));
+        }
+
+        CodeIntelligenceInspectionResult result;
+        try
+        {
+            result = await engine.InspectAsync(new(
+                ToDataSnapshot(request.Snapshot, session!), Map(request.Kind)), cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return InspectionFailure(request,
+                Issue("cancelled", "Code inspection was cancelled."),
+                WorkbenchCodeResultState.Cancelled);
+        }
+        if (!IsFresh(session!, request.Snapshot) || !Matches(result, session!, request.Snapshot))
+        {
+            return InspectionFailure(request,
+                Issue("stale_buffer", "A newer document buffer superseded this inspection."),
+                WorkbenchCodeResultState.Stale);
+        }
+
+        return new(request.Snapshot.SessionId, request.Snapshot.Path,
+            request.Snapshot.BufferVersion, Map(result.State), Map(result.Kind),
+            result.Title is null ? null : new(result.Title.Value),
+            result.Text is null ? null : new(result.Text.Value),
+            result.Origin is null ? null : new(
+                new(result.Origin.Project.Value),
+                new(result.Origin.ProjectVersion.Value),
+                new(result.Origin.TargetFramework.Value),
+                new(result.Origin.Configuration.Value),
+                new(result.Origin.Assembly.Value),
+                new(result.Origin.Compilation.Value)),
+            result.IsReadOnly, result.IsTruncated, MapIssues(result.Issues));
+    }
+
     public ValueTask<WorkbenchCodeSemanticView> SearchSymbolsAsync(
         WorkbenchCodeSemanticQuery query, CancellationToken cancellationToken = default) =>
         SemanticAsync(query, SemanticKind.Symbols, cancellationToken);
@@ -619,6 +664,13 @@ internal sealed partial class WorkbenchCodeIntelligenceService
             session, snapshot);
 
     private static bool Matches(
+        CodeIntelligenceInspectionResult result,
+        ActiveSession session,
+        WorkbenchCodeInteractiveSnapshot snapshot) =>
+        Matches(result.ContextId, result.SessionId, result.Path, result.BufferVersion,
+            session, snapshot);
+
+    private static bool Matches(
         CodeIntelligenceDocumentPresentationResult result,
         ActiveSession session,
         WorkbenchCodeInteractiveSnapshot snapshot) =>
@@ -769,6 +821,30 @@ internal sealed partial class WorkbenchCodeIntelligenceService
             _ => throw new ArgumentOutOfRangeException(nameof(kind)),
         };
 
+    private static CodeIntelligenceInspectionKind Map(WorkbenchCodeInspectionKind kind) =>
+        kind switch
+        {
+            WorkbenchCodeInspectionKind.SyntaxTree => CodeIntelligenceInspectionKind.SyntaxTree,
+            WorkbenchCodeInspectionKind.Symbol => CodeIntelligenceInspectionKind.Symbol,
+            WorkbenchCodeInspectionKind.GeneratedSource =>
+                CodeIntelligenceInspectionKind.GeneratedSource,
+            WorkbenchCodeInspectionKind.IntermediateLanguage =>
+                CodeIntelligenceInspectionKind.IntermediateLanguage,
+            _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+        };
+
+    private static WorkbenchCodeInspectionKind Map(CodeIntelligenceInspectionKind kind) =>
+        kind switch
+        {
+            CodeIntelligenceInspectionKind.SyntaxTree => WorkbenchCodeInspectionKind.SyntaxTree,
+            CodeIntelligenceInspectionKind.Symbol => WorkbenchCodeInspectionKind.Symbol,
+            CodeIntelligenceInspectionKind.GeneratedSource =>
+                WorkbenchCodeInspectionKind.GeneratedSource,
+            CodeIntelligenceInspectionKind.IntermediateLanguage =>
+                WorkbenchCodeInspectionKind.IntermediateLanguage,
+            _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+        };
+
     private static WorkbenchCodeVirtualDocumentView VirtualDocumentFailure(
         WorkbenchCodeVirtualDocumentRequest request,
         WorkbenchCodeIssue issue,
@@ -776,6 +852,14 @@ internal sealed partial class WorkbenchCodeIntelligenceService
             request.Snapshot.SessionId, request.Snapshot.Path, request.Snapshot.BufferVersion,
             state, request.Id, Kind: null, Title: null, Text: null, SelectionRange: null,
             Origin: null, IsReadOnly: true, [issue]);
+
+    private static WorkbenchCodeInspectionView InspectionFailure(
+        WorkbenchCodeInspectionRequest request,
+        WorkbenchCodeIssue issue,
+        WorkbenchCodeResultState state = WorkbenchCodeResultState.Failed) => new(
+            request.Snapshot.SessionId, request.Snapshot.Path, request.Snapshot.BufferVersion,
+            state, request.Kind, Title: null, Text: null, Origin: null, IsReadOnly: true,
+            IsTruncated: false, [issue]);
 
     private static WorkbenchCodeCompletionView CompletionFailure(
         WorkbenchCodeInteractiveSnapshot snapshot,

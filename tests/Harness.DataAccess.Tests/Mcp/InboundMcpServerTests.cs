@@ -41,9 +41,10 @@ public sealed class InboundMcpServerTests
             transport, loggerFactory: NullLoggerFactory.Instance);
         IList<McpClientTool> tools = await client.ListToolsAsync();
 
-        Assert.Equal(15, tools.Count);
+        Assert.Equal(16, tools.Count);
         Assert.Contains("no shell", client.ServerInstructions, StringComparison.OrdinalIgnoreCase);
         Assert.All(tools, tool => Assert.StartsWith("harness_", tool.Name, StringComparison.Ordinal));
+        Assert.Contains(tools, tool => tool.Name == "harness_code_inspection");
         Assert.All(tools.Where(tool => tool.Name is not "harness_open_document" and
                 not "harness_create_goal" and not "harness_select_goal_model" and
                 not "harness_abort_goal"),
@@ -218,7 +219,7 @@ public sealed class InboundMcpServerTests
             new("harness_build"), new("harness_open_document"), new("harness_create_goal"),
             new("harness_goal_models"), new("harness_select_goal_model"),
             new("harness_start_planning"), new("harness_abort_goal"),
-            new("harness_commit_preview")],
+            new("harness_commit_preview"), new("harness_code_inspection")],
         [new("harness_build"), new("harness_start_planning")],
         new(TimeSpan.FromSeconds(10)), new(100), new(100), false);
 

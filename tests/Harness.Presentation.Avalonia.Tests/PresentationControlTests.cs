@@ -1128,7 +1128,7 @@ public sealed class PresentationControlTests
                 .ToArray();
             Assert.Equal(
                 ["Save", "Reload", "Close", "Outline", "Symbols", "IntelliSense", "Symbol info", "Definition",
-                    "Usages", "Implementations", "Quick fix…", "Transform"],
+                    "Usages", "Implementations", "Inspect", "Quick fix…", "Transform"],
                 documentActions.Select(item => item.Content?.ToString() ?? string.Empty).ToArray());
             Assert.All(documentActions, item => Assert.False(
                 string.IsNullOrWhiteSpace(AutomationProperties.GetName(item))));
@@ -1944,6 +1944,46 @@ public sealed class PresentationControlTests
             Assert.DoesNotContain("virtual:", layouts.Stored, StringComparison.Ordinal);
             Assert.DoesNotContain("public sealed class String", layouts.Stored,
                 StringComparison.Ordinal);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Exact_context_inspection_opens_a_transient_read_only_document()
+    {
+        using HeadlessUnitTestSession testSession =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await testSession.Dispatch(() =>
+        {
+            CodeIntelligenceService codeIntelligence = new()
+            {
+                Inspection = request => new(
+                    request.Snapshot.SessionId, request.Snapshot.Path,
+                    request.Snapshot.BufferVersion, WorkbenchCodeResultState.Ready,
+                    request.Kind, new("Symbol · Run"), new("Kind: Method\nDisplay: void C.Run()"),
+                    new(new("Sample"), new("project-version"), new("net10.0"), new("Debug"),
+                        new("Sample, Version=1.0.0.0"), new(new string('c', 64))),
+                    IsReadOnly: true, IsTruncated: false, []),
+            };
+            LayoutService layouts = new();
+            WorkbenchDockHost workbench = CreateWorkbench(
+                TrustedShell(), layouts, codeIntelligence: codeIntelligence);
+            Window window = new() { Width = 1280, Height = 800, Content = workbench.Control };
+            window.Show();
+            workbench.OpenFileAsync("src/App.cs").AsTask().GetAwaiter().GetResult();
+
+            workbench.InspectActiveDocumentAsync(WorkbenchCodeInspectionKind.Symbol)
+                .AsTask().GetAwaiter().GetResult();
+
+            TextEditor editor = Assert.IsType<TextEditor>(workbench.Documents.ActiveDockable!.Context);
+            Assert.True(editor.IsReadOnly);
+            Assert.Contains("Kind: Method", editor.Text, StringComparison.Ordinal);
+            Assert.Contains("read-only", workbench.Documents.ActiveDockable.Title,
+                StringComparison.OrdinalIgnoreCase);
+            workbench.SaveLayoutAsync().AsTask().GetAwaiter().GetResult();
+            Assert.NotNull(layouts.Stored);
+            Assert.DoesNotContain("inspection:", layouts.Stored, StringComparison.Ordinal);
+            Assert.DoesNotContain("Kind: Method", layouts.Stored, StringComparison.Ordinal);
             window.Close();
         }, CancellationToken.None);
     }
@@ -3195,6 +3235,8 @@ public sealed class PresentationControlTests
         internal Func<WorkbenchCodeVirtualDocumentRequest, WorkbenchCodeVirtualDocumentView>?
             VirtualDocument
         { get; init; }
+        internal Func<WorkbenchCodeInspectionRequest, WorkbenchCodeInspectionView>? Inspection
+        { get; init; }
         internal Func<
             WorkbenchCodeDocumentPresentationRequest,
             WorkbenchCodeDocumentPresentationView>? Presentation
@@ -3317,6 +3359,16 @@ public sealed class PresentationControlTests
                     request.Id, null, null, null, null, null, true,
                     [new(new("virtual_document_unavailable"),
                         new("Virtual source is unavailable."))]));
+
+        public ValueTask<WorkbenchCodeInspectionView> InspectAsync(
+            WorkbenchCodeInspectionRequest request,
+            CancellationToken cancellationToken = default) => ValueTask.FromResult(
+                Inspection?.Invoke(request) ?? new(
+                    request.Snapshot.SessionId, request.Snapshot.Path,
+                    request.Snapshot.BufferVersion, WorkbenchCodeResultState.Failed,
+                    request.Kind, null, null, null, true, false,
+                    [new(new("inspection_unavailable"),
+                        new("Code inspection is unavailable."))]));
 
         public ValueTask<WorkbenchCodeDocumentPresentationView> GetDocumentPresentationAsync(
             WorkbenchCodeDocumentPresentationRequest request,

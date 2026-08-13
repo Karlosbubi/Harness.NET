@@ -71,6 +71,24 @@ public interface ICodeIntelligenceEngine
                 [new(new("virtual_document_not_supported"),
                     new("Virtual source documents are unavailable."))]));
 
+    ValueTask<CodeIntelligenceInspectionResult> InspectAsync(
+        CodeIntelligenceInspectionRequest request,
+        CancellationToken cancellationToken = default) => ValueTask.FromResult(
+            new CodeIntelligenceInspectionResult(
+                request.Snapshot.ContextId,
+                request.Snapshot.SessionId,
+                request.Snapshot.Path,
+                request.Snapshot.BufferVersion,
+                CodeIntelligenceResultState.Failed,
+                request.Kind,
+                Title: null,
+                Text: null,
+                Origin: null,
+                IsReadOnly: true,
+                IsTruncated: false,
+                [new(new("inspection_not_supported"),
+                    new("Code inspection views are unavailable."))]));
+
     ValueTask<CodeIntelligenceSemanticResult> SearchSymbolsAsync(
         CodeIntelligenceSemanticQuery query,
         CancellationToken cancellationToken = default) => SemanticUnavailable(query, "symbol_search_not_supported");

@@ -342,7 +342,7 @@ Acceptance criteria:
 
 ### 049 — NetPad-level .NET editing and inspection
 
-Status: `In progress — presentation, transformations, closed actions, and virtual-source navigation delivered`
+Status: `In progress — presentation, transformations, navigation, and exact-context inspections delivered`
 
 Dependencies: 012, 043, 044, 047, 048.
 
@@ -382,11 +382,19 @@ persistence. Role and inbound MCP navigation results eagerly include successful
 virtual documents before their short-lived Roslyn session closes. Full method-body
 decompilation remains pending a maintained public dependency and supply-chain review.
 
+The editor's Inspect menu now opens bounded read-only syntax-tree, symbol-detail,
+generated-source, and Intermediate Language views. Roslyn builds each view from the
+exact live buffer. Every result includes project version, target framework,
+configuration, assembly, buffer version, and compilation identity. IL uses an in-
+memory emit and metadata reader; it neither executes the project nor writes build
+output. Roles and opt-in inbound MCP receive the same closed contract through
+`inspect_code` and `harness_code_inspection`.
+
 Problem: Harness.NET now has the core interactive Roslyn operations, semantic
 presentation and adornment slices, formatting, closed actions, and bounded generated
 and metadata-signature navigation. It still lacks explicit cross-document refactoring
-contracts, full method-body decompilation, syntax/symbol/IL inspection views,
-configurable keybindings, optional Vim behavior,
+contracts and full method-body decompilation. It also lacks configurable keybindings,
+optional Vim behavior,
 project User Secrets management, and typed execution targets for Run/Debug CodeLens.
 OmniSharp implements many of the underlying Roslyn services, but adopting its server
 would duplicate the current workspace and add process, download, version, recovery,

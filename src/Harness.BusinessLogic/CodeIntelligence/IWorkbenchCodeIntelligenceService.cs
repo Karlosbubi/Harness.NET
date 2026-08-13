@@ -69,6 +69,23 @@ public interface IWorkbenchCodeIntelligenceService
                 [new(new("virtual_document_not_supported"),
                     new("Virtual source documents are unavailable."))]));
 
+    ValueTask<WorkbenchCodeInspectionView> InspectAsync(
+        WorkbenchCodeInspectionRequest request,
+        CancellationToken cancellationToken = default) => ValueTask.FromResult(
+            new WorkbenchCodeInspectionView(
+                request.Snapshot.SessionId,
+                request.Snapshot.Path,
+                request.Snapshot.BufferVersion,
+                WorkbenchCodeResultState.Failed,
+                request.Kind,
+                Title: null,
+                Text: null,
+                Origin: null,
+                IsReadOnly: true,
+                IsTruncated: false,
+                [new(new("inspection_not_supported"),
+                    new("Code inspection views are unavailable."))]));
+
     ValueTask<WorkbenchCodeSemanticView> SearchSymbolsAsync(
         WorkbenchCodeSemanticQuery query, CancellationToken cancellationToken = default) =>
         SemanticUnavailable(query, "symbol_search_not_supported");

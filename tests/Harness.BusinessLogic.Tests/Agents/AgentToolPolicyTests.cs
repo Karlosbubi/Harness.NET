@@ -24,6 +24,7 @@ public sealed class AgentToolPolicyTests
         Assert.Contains(AgentToolKind.SemanticContext, tools);
         Assert.Contains(AgentToolKind.GetSymbolInfo, tools);
         Assert.Contains(AgentToolKind.FindDefinition, tools);
+        Assert.Contains(AgentToolKind.InspectCode, tools);
         Assert.Contains(AgentToolKind.RequestVisualCapture, tools);
         Assert.Contains(AgentToolKind.InspectVisualCapture, tools);
         Assert.Contains(AgentToolKind.LookupDocumentation, tools);
@@ -54,6 +55,7 @@ public sealed class AgentToolPolicyTests
         Assert.Contains(AgentToolKind.InspectCodeProblems, tools);
         Assert.Contains(AgentToolKind.FindReferences, tools);
         Assert.Contains(AgentToolKind.FindImplementations, tools);
+        Assert.Contains(AgentToolKind.InspectCode, tools);
         Assert.Contains(AgentToolKind.RequestVisualCapture, tools);
         Assert.Contains(AgentToolKind.InspectVisualCapture, tools);
         Assert.Contains(AgentToolKind.LookupDocumentation, tools);
@@ -71,6 +73,7 @@ public sealed class AgentToolPolicyTests
         Assert.Contains(AgentToolKind.SemanticContext, tools);
         Assert.Contains(AgentToolKind.GetSymbolInfo, tools);
         Assert.Contains(AgentToolKind.FindReferences, tools);
+        Assert.Contains(AgentToolKind.InspectCode, tools);
         Assert.Contains(AgentToolKind.RequestVisualCapture, tools);
         Assert.Contains(AgentToolKind.InspectVisualCapture, tools);
         Assert.Contains(AgentToolKind.LookupDocumentation, tools);
@@ -82,11 +85,11 @@ public sealed class AgentToolPolicyTests
 
     [Theory]
     [InlineData(AgentRole.Lead,
-        "read_file,read_file_range,list_workspace_tree,search_text,search_regex,inspect_git,inspect_dotnet,inspect_project_graph,search_semantic_context,inspect_code_problems,inspect_project_problems,get_symbol_info,find_symbol_definition,find_symbol_references,find_symbol_implementations,search_symbols,analyze_calls,get_type_hierarchy,find_associated_tests,find_code_actions,discover_toolsets,request_toolset")]
+        "read_file,read_file_range,list_workspace_tree,search_text,search_regex,inspect_git,inspect_dotnet,inspect_project_graph,search_semantic_context,inspect_code_problems,inspect_project_problems,get_symbol_info,find_symbol_definition,find_symbol_references,find_symbol_implementations,inspect_code,search_symbols,analyze_calls,get_type_hierarchy,find_associated_tests,find_code_actions,discover_toolsets,request_toolset")]
     [InlineData(AgentRole.Implementer,
-        "read_file,read_file_range,list_workspace_tree,search_text,search_regex,inspect_git,inspect_dotnet,inspect_project_graph,search_semantic_context,inspect_code_problems,inspect_project_problems,get_symbol_info,find_symbol_definition,find_symbol_references,find_symbol_implementations,search_symbols,analyze_calls,get_type_hierarchy,find_associated_tests,apply_file_edit,preview_symbol_rename,apply_symbol_rename,find_missing_imports,find_code_actions,preview_document_transformation,apply_document_transformation,dotnet_build,dotnet_test,discover_toolsets,request_toolset")]
+        "read_file,read_file_range,list_workspace_tree,search_text,search_regex,inspect_git,inspect_dotnet,inspect_project_graph,search_semantic_context,inspect_code_problems,inspect_project_problems,get_symbol_info,find_symbol_definition,find_symbol_references,find_symbol_implementations,inspect_code,search_symbols,analyze_calls,get_type_hierarchy,find_associated_tests,apply_file_edit,preview_symbol_rename,apply_symbol_rename,find_missing_imports,find_code_actions,preview_document_transformation,apply_document_transformation,dotnet_build,dotnet_test,discover_toolsets,request_toolset")]
     [InlineData(AgentRole.Reviewer,
-        "read_file,read_file_range,list_workspace_tree,search_text,search_regex,inspect_git,inspect_dotnet,inspect_project_graph,search_semantic_context,inspect_code_problems,inspect_project_problems,get_symbol_info,find_symbol_definition,find_symbol_references,find_symbol_implementations,search_symbols,analyze_calls,get_type_hierarchy,find_associated_tests,find_code_actions,list_tool_evidence,discover_toolsets,request_toolset")]
+        "read_file,read_file_range,list_workspace_tree,search_text,search_regex,inspect_git,inspect_dotnet,inspect_project_graph,search_semantic_context,inspect_code_problems,inspect_project_problems,get_symbol_info,find_symbol_definition,find_symbol_references,find_symbol_implementations,inspect_code,search_symbols,analyze_calls,get_type_hierarchy,find_associated_tests,find_code_actions,list_tool_evidence,discover_toolsets,request_toolset")]
     public void Factory_exposes_only_the_closed_role_scope(
         AgentRole role,
         string expectedNames)

@@ -39,6 +39,14 @@ internal interface IGoalCodeIntelligenceService
         WorkbenchCodePosition position,
         CancellationToken cancellationToken = default);
 
+    ValueTask<GoalCodeInspectionView> InspectAsync(
+        GoalId goalId,
+        GoalWorkspaceScope scope,
+        WorkbenchCodeDocumentPath path,
+        WorkbenchCodePosition position,
+        WorkbenchCodeInspectionKind kind,
+        CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
     ValueTask<GoalMissingImportView> FindMissingImportsAsync(
         GoalId goalId,
         GoalWorkspaceScope scope,

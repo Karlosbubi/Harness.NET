@@ -196,6 +196,10 @@ Stale process identities fail before dispatch. Results include the applicable
 workspace, source, goal, document/baseline, freshness, truncation, and continuation
 identity rather than relying on endpoint continuity.
 
+The default read-only catalog includes `harness_code_inspection` for closed
+SyntaxTree, Symbol, GeneratedSource, and IntermediateLanguage views. Remove it from
+`AllowedTools` to hide the capability from inbound clients.
+
 Start a disposable evaluation instance with a dedicated child of the system temporary
 directory:
 

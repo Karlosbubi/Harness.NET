@@ -622,6 +622,37 @@ public sealed class WorkbenchCodeIntelligenceServiceTests
         Assert.Equal(new string('b', 64), document.Origin.Compilation.Value);
     }
 
+    [Fact]
+    public async Task Inspection_kind_text_and_exact_origin_cross_the_business_boundary()
+    {
+        DeterministicCodeIntelligenceEngine engine = new()
+        {
+            Inspections = (request, _) => ValueTask.FromResult(new CodeIntelligenceInspectionResult(
+                request.Snapshot.ContextId, request.Snapshot.SessionId, request.Snapshot.Path,
+                request.Snapshot.BufferVersion, CodeIntelligenceResultState.Ready, request.Kind,
+                new("IL · Run"), new("IL_0000: ret"),
+                new(new("Sample"), new("project-version"), new("net10.0"), new("Release"),
+                    new("Sample, Version=1.0.0.0"), new(new string('c', 64))),
+                IsReadOnly: true, IsTruncated: false, [])),
+        };
+        WorkbenchCodeIntelligenceService service = new(
+            new ContextResolver(ApprovedResolution()), engine);
+        WorkbenchCodeSessionId sessionId = (await service.StartAsync(new(
+            new("workspace-id"), new("goal-id"), new("Harness.slnx")))).SessionId!;
+        WorkbenchCodeInteractiveSnapshot snapshot = new(
+            sessionId, new("src/App.cs"), new(Baseline), new(1),
+            new("class C { void Run() { } }"), new(0, 18));
+
+        WorkbenchCodeInspectionView result = await service.InspectAsync(new(
+            snapshot, WorkbenchCodeInspectionKind.IntermediateLanguage));
+
+        Assert.Equal(WorkbenchCodeInspectionKind.IntermediateLanguage, result.Kind);
+        Assert.Equal("IL_0000: ret", result.Text!.Value);
+        Assert.True(result.IsReadOnly);
+        Assert.Equal("Release", result.Origin!.Configuration.Value);
+        Assert.Equal(new string('c', 64), result.Origin.Compilation.Value);
+    }
+
     private static WorkbenchCodeDocumentSnapshot Snapshot(
         WorkbenchCodeSessionId sessionId,
         long version,
@@ -707,6 +738,9 @@ public sealed class WorkbenchCodeIntelligenceServiceTests
         internal Func<CodeIntelligenceVirtualDocumentRequest, CancellationToken,
             ValueTask<CodeIntelligenceVirtualDocumentResult>>? VirtualDocuments
         { get; init; }
+        internal Func<CodeIntelligenceInspectionRequest, CancellationToken,
+            ValueTask<CodeIntelligenceInspectionResult>>? Inspections
+        { get; init; }
         internal CodeIntelligenceOpenRequest? OpenRequest { get; private set; }
         internal CodeIntelligenceSessionId? ClosedSession { get; private set; }
         internal int OpenCallCount { get; private set; }
@@ -773,6 +807,10 @@ public sealed class WorkbenchCodeIntelligenceServiceTests
             CodeIntelligenceVirtualDocumentRequest request,
             CancellationToken cancellationToken = default) => VirtualDocuments is null
             ? throw new NotSupportedException() : VirtualDocuments(request, cancellationToken);
+        public ValueTask<CodeIntelligenceInspectionResult> InspectAsync(
+            CodeIntelligenceInspectionRequest request,
+            CancellationToken cancellationToken = default) => Inspections is null
+            ? throw new NotSupportedException() : Inspections(request, cancellationToken);
         public ValueTask<CodeIntelligenceDocumentPresentationResult> GetDocumentPresentationAsync(
             CodeIntelligenceDocumentPresentationRequest request,
             CancellationToken cancellationToken = default) => Presentations is null

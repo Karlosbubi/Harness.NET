@@ -23,6 +23,7 @@ internal sealed class XdgInboundMcpSettingsStore(IApplicationPaths applicationPa
         "harness_request_capture", "harness_inspect_capture", "harness_audit",
         "harness_code_problems", "harness_code_symbol", "harness_code_definition",
         "harness_code_references", "harness_code_implementations", "harness_code_actions",
+        "harness_code_inspection",
         "harness_evaluation_snapshot", "harness_evaluation_reset",
     };
     internal static readonly InboundMcpServerSettings Default = new(
@@ -40,7 +41,8 @@ internal sealed class XdgInboundMcpSettingsStore(IApplicationPaths applicationPa
             new("harness_evaluation_snapshot"),
             new("harness_code_problems"), new("harness_code_symbol"),
             new("harness_code_definition"), new("harness_code_references"),
-            new("harness_code_implementations"), new("harness_code_actions")],
+            new("harness_code_implementations"), new("harness_code_inspection"),
+            new("harness_code_actions")],
         // Build and Test are known but remain disabled until the user adds them explicitly.
         [],
         new(TimeSpan.FromSeconds(30)),

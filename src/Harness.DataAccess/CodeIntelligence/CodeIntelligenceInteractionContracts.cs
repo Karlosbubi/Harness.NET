@@ -185,6 +185,32 @@ public sealed record CodeIntelligenceVirtualDocumentResult(
     bool IsReadOnly,
     IReadOnlyList<CodeIntelligenceIssue> Issues);
 
+public enum CodeIntelligenceInspectionKind
+{
+    SyntaxTree,
+    Symbol,
+    GeneratedSource,
+    IntermediateLanguage,
+}
+
+public sealed record CodeIntelligenceInspectionRequest(
+    CodeIntelligenceInteractiveSnapshot Snapshot,
+    CodeIntelligenceInspectionKind Kind);
+
+public sealed record CodeIntelligenceInspectionResult(
+    CodeIntelligenceContextId ContextId,
+    CodeIntelligenceSessionId SessionId,
+    CodeIntelligenceDocumentPath Path,
+    CodeIntelligenceBufferVersion BufferVersion,
+    CodeIntelligenceResultState State,
+    CodeIntelligenceInspectionKind Kind,
+    CodeIntelligenceMessage? Title,
+    CodeIntelligenceText? Text,
+    CodeIntelligenceVirtualDocumentOrigin? Origin,
+    bool IsReadOnly,
+    bool IsTruncated,
+    IReadOnlyList<CodeIntelligenceIssue> Issues);
+
 public enum CodeIntelligenceSemanticRelation
 {
     Symbol,

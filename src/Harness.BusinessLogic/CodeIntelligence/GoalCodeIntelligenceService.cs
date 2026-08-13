@@ -75,6 +75,37 @@ internal sealed class GoalCodeIntelligenceService(
         NavigateAsync(goalId, scope, path, position, NavigationKind.Implementations,
             cancellationToken);
 
+    public async ValueTask<GoalCodeInspectionView> InspectAsync(
+        GoalId goalId,
+        GoalWorkspaceScope scope,
+        WorkbenchCodeDocumentPath path,
+        WorkbenchCodePosition position,
+        WorkbenchCodeInspectionKind kind,
+        CancellationToken cancellationToken = default)
+    {
+        PreparedQuery prepared = await PrepareAsync(
+            goalId, scope, path, position, cancellationToken);
+        if (prepared.Issue is not null || !Enum.IsDefined(kind))
+        {
+            return new(path, position, prepared.State, kind, null, null, null, true, false,
+                prepared.Issue ?? new(new("invalid_inspection_kind"),
+                    new("A closed inspection kind is required.")), prepared.Identity);
+        }
+
+        try
+        {
+            WorkbenchCodeInspectionView result = await codeIntelligenceService.InspectAsync(
+                new(prepared.Interactive!, kind), cancellationToken);
+            return new(path, position, result.State, result.Kind, result.Title, result.Text,
+                result.Origin, result.IsReadOnly, result.IsTruncated,
+                result.Issues.FirstOrDefault(), prepared.Identity);
+        }
+        finally
+        {
+            await codeIntelligenceService.StopAsync(prepared.SessionId!, CancellationToken.None);
+        }
+    }
+
     public async ValueTask<GoalMissingImportView> FindMissingImportsAsync(
         GoalId goalId,
         GoalWorkspaceScope scope,

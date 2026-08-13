@@ -331,7 +331,7 @@ internal sealed class WorkbenchDockHost
     internal TextEditor? ActiveVirtualEditor => activeDocument?.Id is { } id &&
                                                 virtualDocuments.TryGetValue(id, out TextEditor? editor)
         ? editor
-        : null;
+        : activeDocument?.Context as TextEditor;
     internal ListBox Problems => problems;
     internal string? ProblemsStatusText => problemsStatus.Text;
     internal bool ActiveSourceDocumentIsDirty => activeDocument?.Id is { } id &&
@@ -2129,6 +2129,7 @@ internal sealed class WorkbenchDockHost
             session, SemanticNavigationKind.References);
         surface.Implementations.Click += async (_, _) => await NavigateSymbolAsync(
             session, SemanticNavigationKind.Implementations);
+        surface.InspectionRequested += async kind => await ShowInspectionAsync(session, kind);
         surface.FormatDocument.Click += async (_, _) => await TransformDocumentAsync(
             session, WorkbenchCodeDocumentTransformationKind.FormatDocument);
         surface.FormatSelection.Click += async (_, _) => await TransformDocumentAsync(
@@ -2293,6 +2294,17 @@ internal sealed class WorkbenchDockHost
         }
 
         return TransformDocumentAsync(session, kind);
+    }
+
+    internal ValueTask InspectActiveDocumentAsync(WorkbenchCodeInspectionKind kind)
+    {
+        if (activeDocument?.Id is not { } id ||
+            !sourceDocuments.TryGetValue(id, out SourceDocumentSession? session))
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        return ShowInspectionAsync(session, kind);
     }
 
     internal ValueTask ShowActiveQuickFixesAsync()
@@ -3342,6 +3354,68 @@ internal sealed class WorkbenchDockHost
         source.SetStatus($"Opened read-only {VirtualKindLabel(virtualDocument.Kind).ToLowerInvariant()} " +
                          $"for {destination.Display.Value}.");
     }
+
+    private async ValueTask ShowInspectionAsync(
+        SourceDocumentSession source,
+        WorkbenchCodeInspectionKind kind)
+    {
+        if (!CanUseSemanticAssistance(source)) return;
+        source.CloseInteractiveWindows();
+        (WorkbenchCodeBufferVersion version, CancellationToken token) =
+            source.BeginInteraction(cancellationToken);
+        try
+        {
+            WorkbenchCodeSessionId? sessionId = await EnsureCodeSessionAsync(source, token);
+            if (sessionId is null || !source.IsCurrentInteraction(version)) return;
+            source.SetStatus($"Building {InspectionKindLabel(kind).ToLowerInvariant()} from the exact buffer…");
+            WorkbenchCodeInspectionView result = await codeIntelligenceService.InspectAsync(new(
+                InteractiveSnapshot(source, sessionId, version), kind), token);
+            if (!source.IsCurrentInteraction(version)) return;
+            if (result.Text is null || result.Title is null || result.Origin is null)
+            {
+                source.SetStatus(result.Issues.FirstOrDefault()?.Message.Value ??
+                    $"{InspectionKindLabel(kind)} is unavailable.");
+                return;
+            }
+
+            string id = $"inspection:{source.View.GoalId?.Value ?? "original"}:" +
+                        $"{source.View.Path.Value}:{kind}";
+            TextEditor editor = CodeEditorView.Create(
+                result.Text.Value,
+                isReadOnly: true,
+                wordWrap: false,
+                showLineNumbers: true,
+                path: InspectionPath(kind));
+            AutomationProperties.SetName(editor,
+                $"Read-only {InspectionKindLabel(kind)} for {source.View.Path.Value}");
+            OpenOrReplaceDocument(id,
+                result.Title.Value + (result.IsTruncated ? " · truncated" : string.Empty) +
+                " · read-only", editor);
+            editor.Focus();
+            source.SetStatus($"Opened {InspectionKindLabel(kind).ToLowerInvariant()} · " +
+                             $"compilation {result.Origin.Compilation.Value[..12]}…" +
+                             (result.IsTruncated ? " · bounded result" : string.Empty));
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+        }
+    }
+
+    private static string InspectionKindLabel(WorkbenchCodeInspectionKind kind) => kind switch
+    {
+        WorkbenchCodeInspectionKind.SyntaxTree => "Syntax tree",
+        WorkbenchCodeInspectionKind.Symbol => "Symbol details",
+        WorkbenchCodeInspectionKind.GeneratedSource => "Generated source",
+        WorkbenchCodeInspectionKind.IntermediateLanguage => "Intermediate Language",
+        _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+    };
+
+    private static string InspectionPath(WorkbenchCodeInspectionKind kind) => kind switch
+    {
+        WorkbenchCodeInspectionKind.GeneratedSource => "generated.cs",
+        WorkbenchCodeInspectionKind.IntermediateLanguage => "inspection.il",
+        _ => "inspection.txt",
+    };
 
     private static string VirtualKindLabel(WorkbenchCodeVirtualDocumentKind? kind) => kind switch
     {

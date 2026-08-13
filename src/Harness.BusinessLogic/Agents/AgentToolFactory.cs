@@ -215,6 +215,15 @@ internal sealed class AgentToolFactory(
                 Options("find_symbol_implementations",
                     "Find bounded source implementations and overrides of the symbol at a zero-based " +
                     "line and character with Roslyn. Inspect them before changing an abstraction.")),
+            AgentToolKind.InspectCode => AIFunctionFactory.Create(
+                (string relativePath, int line, int character, WorkbenchCodeInspectionKind kind,
+                        CancellationToken cancellationToken) => codeIntelligenceService.InspectAsync(
+                    goalId, Scope(role), new(relativePath), new(line, character), kind,
+                    cancellationToken),
+                Options("inspect_code",
+                    "Return one exact-context read-only SyntaxTree, Symbol, GeneratedSource, or " +
+                    "IntermediateLanguage view. Results name the project, target framework, " +
+                    "configuration, assembly, document version, and compilation identity.")),
             AgentToolKind.SearchSymbols => AIFunctionFactory.Create(
                 (string relativePath, string query, int maximumResults, int offset,
                         CancellationToken cancellationToken) => codeIntelligenceService.SearchSymbolsAsync(
@@ -463,6 +472,7 @@ internal sealed class AgentToolFactory(
         AgentToolKind.FindDefinition => "find_symbol_definition",
         AgentToolKind.FindReferences => "find_symbol_references",
         AgentToolKind.FindImplementations => "find_symbol_implementations",
+        AgentToolKind.InspectCode => "inspect_code",
         AgentToolKind.SearchSymbols => "search_symbols",
         AgentToolKind.AnalyzeCalls => "analyze_calls",
         AgentToolKind.GetTypeHierarchy => "get_type_hierarchy",

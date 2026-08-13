@@ -1177,6 +1177,86 @@ public sealed class RoslynCodeIntelligenceEngineTests(ITestOutputHelper output) 
     }
 
     [Fact]
+    public async Task Exact_buffer_inspections_return_syntax_symbol_and_method_il()
+    {
+        const string source = """
+            class Sample
+            {
+                string Add(string left, string right) => string.Concat(left, right);
+
+                int Add(int left, int right)
+                {
+                    return left + right;
+                }
+            }
+            """;
+        await CreateProjectAsync(source);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("inspection-context");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+        int offset = source.IndexOf("left +", StringComparison.Ordinal) + 2;
+        CodeIntelligenceInteractiveSnapshot snapshot =
+            InteractiveSnapshot(contextId, session.SessionId!, source, offset);
+
+        CodeIntelligenceInspectionResult syntax = await engine.InspectAsync(new(
+            snapshot, CodeIntelligenceInspectionKind.SyntaxTree));
+        CodeIntelligenceInspectionResult symbol = await engine.InspectAsync(new(
+            snapshot, CodeIntelligenceInspectionKind.Symbol));
+        CodeIntelligenceInspectionResult il = await engine.InspectAsync(new(
+            snapshot, CodeIntelligenceInspectionKind.IntermediateLanguage));
+
+        Assert.Equal(CodeIntelligenceResultState.Ready, syntax.State);
+        Assert.Contains("MethodDeclaration", syntax.Text!.Value, StringComparison.Ordinal);
+        Assert.Contains("ReturnStatement", syntax.Text.Value, StringComparison.Ordinal);
+        Assert.Equal(CodeIntelligenceResultState.Ready, symbol.State);
+        Assert.Contains("Kind: Parameter", symbol.Text!.Value, StringComparison.Ordinal);
+        Assert.Contains("Type: int", symbol.Text.Value, StringComparison.Ordinal);
+        Assert.Equal(CodeIntelligenceResultState.Ready, il.State);
+        Assert.Contains("Selected symbol:", il.Text!.Value, StringComparison.Ordinal);
+        Assert.Contains("Candidate bodies: 1", il.Text.Value, StringComparison.Ordinal);
+        Assert.Contains(": add", il.Text.Value, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(": ret", il.Text.Value, StringComparison.OrdinalIgnoreCase);
+        Assert.All(new[] { syntax, symbol, il }, result =>
+        {
+            Assert.True(result.IsReadOnly);
+            Assert.Equal(64, result.Origin!.Compilation.Value.Length);
+            Assert.Equal("net10.0", result.Origin.TargetFramework.Value);
+        });
+
+    }
+
+    [Fact]
+    public async Task Generated_source_inspection_lists_exact_generator_output_without_writing()
+    {
+        const string source = "class Sample { int Value = GeneratedWidget.Number; }\n";
+        await CreateProjectAsync(source);
+        string analyzer = typeof(HarnessVirtualDocumentTestGenerator).Assembly.Location
+            .Replace("&", "&amp;", StringComparison.Ordinal)
+            .Replace("\"", "&quot;", StringComparison.Ordinal);
+        await File.WriteAllTextAsync(Path.Combine(root, "Sample.csproj"), $"""
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+              <ItemGroup><Analyzer Include="{analyzer}" /></ItemGroup>
+            </Project>
+            """);
+        using RoslynCodeIntelligenceEngine engine = CreateEngine();
+        CodeIntelligenceContextId contextId = new("generated-inspection-context");
+        CodeIntelligenceSessionResult session = await engine.OpenAsync(OpenRequest(contextId));
+        CodeIntelligenceInteractiveSnapshot snapshot = InteractiveSnapshot(
+            contextId, session.SessionId!, source,
+            source.IndexOf("GeneratedWidget", StringComparison.Ordinal) + 2);
+
+        CodeIntelligenceInspectionResult result = await engine.InspectAsync(new(
+            snapshot, CodeIntelligenceInspectionKind.GeneratedSource));
+
+        Assert.Equal(CodeIntelligenceResultState.Ready, result.State);
+        Assert.Contains("GeneratedWidget.g.cs", result.Text!.Value, StringComparison.Ordinal);
+        Assert.Contains("Number = 42", result.Text.Value, StringComparison.Ordinal);
+        Assert.False(result.IsTruncated);
+        Assert.False(File.Exists(Path.Combine(root, "GeneratedWidget.g.cs")));
+    }
+
+    [Fact]
     public async Task Rename_preview_keeps_a_large_bounded_file_set_complete()
     {
         const string declaration = "public class Widget { }\n";

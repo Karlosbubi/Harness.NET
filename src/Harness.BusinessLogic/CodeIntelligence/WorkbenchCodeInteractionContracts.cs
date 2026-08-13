@@ -178,6 +178,31 @@ public sealed record WorkbenchCodeVirtualDocumentView(
     bool IsReadOnly,
     IReadOnlyList<WorkbenchCodeIssue> Issues);
 
+public enum WorkbenchCodeInspectionKind
+{
+    SyntaxTree,
+    Symbol,
+    GeneratedSource,
+    IntermediateLanguage,
+}
+
+public sealed record WorkbenchCodeInspectionRequest(
+    WorkbenchCodeInteractiveSnapshot Snapshot,
+    WorkbenchCodeInspectionKind Kind);
+
+public sealed record WorkbenchCodeInspectionView(
+    WorkbenchCodeSessionId SessionId,
+    WorkbenchCodeDocumentPath Path,
+    WorkbenchCodeBufferVersion BufferVersion,
+    WorkbenchCodeResultState State,
+    WorkbenchCodeInspectionKind Kind,
+    WorkbenchCodeMessage? Title,
+    WorkbenchCodeText? Text,
+    WorkbenchCodeVirtualDocumentOrigin? Origin,
+    bool IsReadOnly,
+    bool IsTruncated,
+    IReadOnlyList<WorkbenchCodeIssue> Issues);
+
 public enum WorkbenchCodeSemanticRelation
 {
     Symbol, IncomingCall, OutgoingCall, BaseType, DerivedType, Override, AssociatedTest,
