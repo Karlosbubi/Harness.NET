@@ -96,7 +96,8 @@ internal sealed class GoalWorkspaceInspectionService(
             result.Error,
             result.Fingerprint,
             result.StagedDiff,
-            result.UnstagedDiff);
+            result.UnstagedDiff,
+            DeveloperGitService.MapPatchUnits(result.PatchUnits));
     }
 
     public async ValueTask<WorkspaceDotNetInfoView> InspectDotNetAsync(

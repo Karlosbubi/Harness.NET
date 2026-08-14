@@ -3126,6 +3126,8 @@ public sealed class PresentationControlTests
                 AutomationProperties.GetName(button) == "Stage selected Git change");
             Assert.Contains(gitTool.GetLogicalDescendants().OfType<Button>(), button =>
                 AutomationProperties.GetName(button) == "Unstage selected Git change");
+            Assert.Contains(gitTool.GetLogicalDescendants().OfType<Button>(), button =>
+                AutomationProperties.GetName(button) == "Clear Git hunk or line selection");
             window.Close();
         }, CancellationToken.None);
     }
@@ -3144,7 +3146,8 @@ public sealed class PresentationControlTests
             workbench.RefreshGitAsync().AsTask().GetAwaiter().GetResult();
             Control gitTool = Assert.IsAssignableFrom<Control>(
                 Find<IDockable>(workbench.Root, WorkbenchDockIds.GitTool).Context);
-            ListBox changes = Assert.Single(gitTool.GetLogicalDescendants().OfType<ListBox>());
+            ListBox changes = Assert.Single(gitTool.GetLogicalDescendants().OfType<ListBox>(), list =>
+                AutomationProperties.GetName(list) == "Git working-tree changes");
             changes.SelectedIndex = 0;
 
             workbench.UpdateSelectedGitIndexAsync(DeveloperGitIndexAction.Stage)
@@ -3153,6 +3156,34 @@ public sealed class PresentationControlTests
             Assert.Equal("git-fingerprint", git.Command!.ExpectedFingerprint.Value);
             Assert.Equal("src/App.cs", Assert.Single(git.Command.Paths).Value);
             Assert.Equal(DeveloperGitIndexAction.Stage, git.Command.Action);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Git_tool_applies_selected_hunk_by_opaque_identity()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            DeveloperGitService git = new();
+            WorkbenchDockHost workbench = CreateWorkbench(
+                TrustedShell(), new(), inspection: new() { IncludePatchUnit = true }, developerGit: git);
+            Window window = new() { Content = workbench.Control };
+            window.Show();
+            workbench.RefreshGitAsync().AsTask().GetAwaiter().GetResult();
+            Control gitTool = Assert.IsAssignableFrom<Control>(
+                Find<IDockable>(workbench.Root, WorkbenchDockIds.GitTool).Context);
+            ListBox units = Assert.Single(gitTool.GetLogicalDescendants().OfType<ListBox>(), list =>
+                AutomationProperties.GetName(list) == "Git hunks and changed lines");
+            units.SelectedIndex = 0;
+
+            workbench.UpdateSelectedGitIndexAsync(DeveloperGitIndexAction.Stage)
+                .AsTask().GetAwaiter().GetResult();
+
+            Assert.Equal("patch-unit", git.PatchCommand!.PatchUnitId);
+            Assert.Equal("git-fingerprint", git.PatchCommand.ExpectedFingerprint.Value);
             window.Close();
         }, CancellationToken.None);
     }
@@ -3539,6 +3570,7 @@ public sealed class PresentationControlTests
         internal List<WorkbenchWorkspaceRequest> Requests { get; } = [];
         internal string Diff { get; set; } = "first diff";
         internal string Status { get; set; } = "modified";
+        internal bool IncludePatchUnit { get; set; }
 
         public ValueTask<WorkbenchFileCatalogResult> ListFilesAsync(
             WorkbenchWorkspaceRequest request,
@@ -3586,7 +3618,11 @@ public sealed class PresentationControlTests
                     IsTruncated: false,
                     ErrorCode: null,
                     Error: null,
-                    Fingerprint: "git-fingerprint")));
+                    Fingerprint: "git-fingerprint",
+                    PatchUnits: IncludePatchUnit
+                        ? [new("patch-unit", new("src/App.cs"), DeveloperGitIndexAction.Stage,
+                            DeveloperGitPatchKind.Hunk, "@@ -1 +1 @@", 1, 1, "-old +new")]
+                        : [])));
         }
 
         private static WorkbenchWorkspaceContext Context(WorkbenchWorkspaceRequest request) =>
@@ -3608,6 +3644,7 @@ public sealed class PresentationControlTests
     private sealed class DeveloperGitService : IDeveloperGitService
     {
         internal DeveloperGitIndexCommand? Command { get; private set; }
+        internal DeveloperGitPatchCommand? PatchCommand { get; private set; }
 
         public ValueTask<DeveloperGitIndexCommandResult> UpdateIndexAsync(
             DeveloperGitIndexCommand command,
@@ -3619,6 +3656,20 @@ public sealed class PresentationControlTests
                     WorkbenchWorkspaceScope.OriginalWorkspace, "Original workspace"),
                 null,
                 command.Paths,
+                null,
+                null));
+        }
+
+        public ValueTask<DeveloperGitIndexCommandResult> ApplyPatchAsync(
+            DeveloperGitPatchCommand command,
+            CancellationToken cancellationToken = default)
+        {
+            PatchCommand = command;
+            return ValueTask.FromResult(new DeveloperGitIndexCommandResult(
+                new(command.Workspace.WorkspaceId, command.Workspace.GoalId, new("main"),
+                    WorkbenchWorkspaceScope.OriginalWorkspace, "Original workspace"),
+                null,
+                [],
                 null,
                 null));
         }

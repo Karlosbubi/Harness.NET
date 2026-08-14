@@ -413,8 +413,9 @@ the existing exact goal-commit approval and post-commit handoff.
 ADR 024 and the first index slice are delivered: one active-context Git snapshot now
 separates index and working-tree state, carries an exact stale-state fingerprint,
 keeps untracked contents out of diffs, and supports file-level stage and unstage from
-the Git tool. Line/hunk operations and the remaining workbench capabilities follow
-on the same contracts.
+the Git tool. Exact hunk and changed-line stage/unstage are also delivered through
+opaque recomputed patch-unit identities and a closed stdin-only Git adapter. The
+remaining workbench capabilities follow on the same contracts.
 
 ### Planned: Task 051 — developer terminal and structured tasks
 

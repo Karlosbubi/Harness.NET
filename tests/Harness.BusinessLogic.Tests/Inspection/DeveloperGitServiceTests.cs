@@ -27,15 +27,40 @@ public sealed class DeveloperGitServiceTests
         Assert.Equal("src/App.cs", Assert.Single(repository.Request.Paths).Value);
     }
 
+    [Fact]
+    public async Task Patch_selection_preserves_opaque_unit_and_expected_fingerprint()
+    {
+        Repository repository = new();
+        DeveloperGitService service = new(new ContextResolver(), repository);
+
+        await service.ApplyPatchAsync(new(
+            new(new("workspace-id"), new("goal-id")),
+            new("displayed-fingerprint"),
+            new string('a', 64)));
+
+        Assert.Equal("/state/worktrees/goal-id", repository.PatchRequest!.RepositoryRoot);
+        Assert.Equal("displayed-fingerprint", repository.PatchRequest.ExpectedFingerprint.Value);
+        Assert.Equal(new string('a', 64), repository.PatchRequest.PatchUnitId);
+    }
+
     private sealed class Repository : IDeveloperGitRepository
     {
         internal DeveloperGitIndexRequest? Request { get; private set; }
+        internal DeveloperGitPatchRequest? PatchRequest { get; private set; }
 
         public ValueTask<DeveloperGitIndexResult> UpdateIndexAsync(
             DeveloperGitIndexRequest request,
             CancellationToken cancellationToken = default)
         {
             Request = request;
+            return ValueTask.FromResult(new DeveloperGitIndexResult(null, [], null, null));
+        }
+
+        public ValueTask<DeveloperGitIndexResult> ApplyPatchAsync(
+            DeveloperGitPatchRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            PatchRequest = request;
             return ValueTask.FromResult(new DeveloperGitIndexResult(null, [], null, null));
         }
     }

@@ -1,9 +1,11 @@
+using System.Diagnostics;
 using LibGit2Sharp;
 
 namespace Harness.DataAccess.Inspection;
 
 internal sealed class LibGitDeveloperGitRepository : IDeveloperGitRepository
 {
+    private const int PatchUnitIdLength = 64;
     public ValueTask<DeveloperGitIndexResult> UpdateIndexAsync(
         DeveloperGitIndexRequest request,
         CancellationToken cancellationToken = default)
@@ -69,6 +71,102 @@ internal sealed class LibGitDeveloperGitRepository : IDeveloperGitRepository
         }
     }
 
+    public async ValueTask<DeveloperGitIndexResult> ApplyPatchAsync(
+        DeveloperGitPatchRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!IsPatchUnitId(request.PatchUnitId))
+            return Failure("git_patch_invalid", "Select a current Git hunk or line.");
+
+        string? repositoryPath = Repository.Discover(request.RepositoryRoot);
+        if (repositoryPath is null)
+            return Failure("repository_missing", "No Git repository was found.");
+
+        try
+        {
+            WorkspaceGitState before;
+            DeveloperGitPatchUnit unit;
+            string root;
+            using (Repository repository = new(repositoryPath))
+            {
+                root = NormalizeRoot(repository.Info.WorkingDirectory);
+                if (!NormalizeRoot(request.RepositoryRoot).Equals(root, StringComparison.Ordinal))
+                    return Failure("repository_mismatch", "The workspace root must be the Git repository root.");
+                before = GitRepositoryStateReader.Read(repository, cancellationToken);
+                if (!CryptographicEquals(before.Fingerprint, request.ExpectedFingerprint.Value))
+                    return new(before, [], "git_state_stale",
+                        "Git state changed after it was displayed. Refresh and retry.");
+                unit = (before.PatchUnits ?? []).SingleOrDefault(candidate =>
+                           candidate.Id.Equals(request.PatchUnitId, StringComparison.Ordinal))
+                       ?? throw new GitPatchUnitUnavailableException();
+            }
+
+            ProcessStartInfo startInfo = CreatePatchStartInfo(root, unit.ApplyInReverse);
+            using Process process = new() { StartInfo = startInfo };
+            if (!process.Start()) return Failure("git_patch_failed", "Git could not start the patch operation.");
+            Task<string> standardError = process.StandardError.ReadToEndAsync(cancellationToken);
+            Task<string> standardOutput = process.StandardOutput.ReadToEndAsync(cancellationToken);
+            try
+            {
+                await process.StandardInput.WriteAsync(unit.Patch.AsMemory(), cancellationToken);
+                await process.StandardInput.DisposeAsync();
+                await process.WaitForExitAsync(cancellationToken);
+                await Task.WhenAll(standardError, standardOutput);
+            }
+            catch (OperationCanceledException)
+            {
+                if (!process.HasExited) process.Kill(entireProcessTree: true);
+                await process.WaitForExitAsync(CancellationToken.None);
+                throw;
+            }
+
+            using Repository afterRepository = new(repositoryPath);
+            WorkspaceGitState after = GitRepositoryStateReader.Read(afterRepository, CancellationToken.None);
+            if (process.ExitCode != 0)
+                return new(after, [], "git_patch_rejected",
+                    "Git could not apply that selection to the current index. Refresh and review the surrounding changes.");
+            return new(after, [unit.Path], null, null);
+        }
+        catch (GitPatchUnitUnavailableException)
+        {
+            return Failure("git_patch_stale", "The selected hunk or line is no longer available. Refresh and retry.");
+        }
+        catch (Exception exception) when (exception is LibGit2SharpException or IOException or
+                                           UnauthorizedAccessException or ArgumentException or
+                                           InvalidOperationException)
+        {
+            return Failure("git_patch_failed", "Git could not apply the selected change.");
+        }
+    }
+
+    private static ProcessStartInfo CreatePatchStartInfo(string root, bool reverse)
+    {
+        ProcessStartInfo startInfo = new("git")
+        {
+            WorkingDirectory = root,
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        startInfo.ArgumentList.Add("apply");
+        startInfo.ArgumentList.Add("--cached");
+        startInfo.ArgumentList.Add("--recount");
+        startInfo.ArgumentList.Add("--unidiff-zero");
+        startInfo.ArgumentList.Add("--whitespace=nowarn");
+        if (reverse) startInfo.ArgumentList.Add("--reverse");
+        startInfo.Environment["GIT_TERMINAL_PROMPT"] = "0";
+        startInfo.Environment["LC_ALL"] = "C";
+        return startInfo;
+    }
+
+    private static bool IsPatchUnitId(string value) =>
+        value.Length == PatchUnitIdLength && value.All(character =>
+            character is >= '0' and <= '9' or >= 'a' and <= 'f');
+
     private static bool TryValidatePaths(
         string repositoryRoot,
         IReadOnlyList<DeveloperGitPath> requested,
@@ -132,4 +230,6 @@ internal sealed class LibGitDeveloperGitRepository : IDeveloperGitRepository
 
     private static DeveloperGitIndexResult Failure(string code, string error) =>
         new(null, [], code, error);
+
+    private sealed class GitPatchUnitUnavailableException : Exception;
 }

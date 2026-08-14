@@ -10,4 +10,5 @@ public sealed record WorkspaceGitStateView(
     string? Error,
     string Fingerprint = "",
     string StagedDiff = "",
-    string UnstagedDiff = "");
+    string UnstagedDiff = "",
+    IReadOnlyList<DeveloperGitPatchUnitView>? PatchUnits = null);

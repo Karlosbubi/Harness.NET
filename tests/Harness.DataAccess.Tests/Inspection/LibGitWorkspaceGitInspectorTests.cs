@@ -95,6 +95,7 @@ public sealed class LibGitWorkspaceGitInspectorTests : IDisposable
         Assert.Null(result.Error);
         Assert.True(result.IsTruncated);
         Assert.True(System.Text.Encoding.UTF8.GetByteCount(result.Diff) <= 128 * 1024);
+        Assert.Empty(result.PatchUnits!);
     }
 
     [Fact]

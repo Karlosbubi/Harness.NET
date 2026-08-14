@@ -33,6 +33,8 @@ internal static class GitRepositoryStateReader
             entries, out bool combinedTruncated);
         truncated |= combinedTruncated;
         string fingerprint = Fingerprint(repository, entries, cancellationToken);
+        IReadOnlyList<DeveloperGitPatchUnit> patchUnits = GitPatchUnitParser.Parse(
+            staged, unstaged, fingerprint, stagedTruncated, unstagedTruncated);
         return new(
             repository.Info.IsHeadDetached ? "(detached)" : repository.Head.FriendlyName,
             repository.Head.Tip?.Sha,
@@ -43,7 +45,8 @@ internal static class GitRepositoryStateReader
             null,
             fingerprint,
             staged,
-            unstaged);
+            unstaged,
+            patchUnits);
     }
 
     private static WorkspaceGitFileChange Map(StatusEntry entry)

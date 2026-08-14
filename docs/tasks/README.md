@@ -491,7 +491,7 @@ and Debug needs. Database, profiler, and notebook modules remain later slices.
 
 ### 050 — complete Git workbench
 
-Status: `In progress — exact file staging delivered`
+Status: `In progress — exact file, hunk, and line staging delivered`
 
 Dependencies: 023, 029, 035, 036, 039.
 
@@ -524,13 +524,14 @@ Acceptance criteria:
     cover stale index, conflicts, detached HEAD, submodules, worktrees, network
     failure, cancellation, restart, accessibility, and large repositories.
 
-Delivered first slice: ADR 024 fixes ownership and authority before mutation work.
+Delivered index slices: ADR 024 fixes ownership and authority before mutation work.
 The active source context now exposes one staged/unstaged/conflict state with a
 complete fingerprint and separate bounded diffs. Developers can stage or unstage an
-exact file from the Git tool. Harness rejects stale fingerprints, refreshes the view,
-and never includes untracked file content in inspection output. Line and hunk
-selection, destructive actions, commits, references, history, merge editing, and
-remotes remain open.
+exact file, hunk, or changed line from the Git tool. Hunk and line identities are
+opaque and recomputed below Presentation; callers cannot provide patch text or Git
+arguments. Harness rejects stale fingerprints, refreshes the view, and never includes
+untracked file content in inspection output. Destructive actions, commits, references,
+history, merge editing, and remotes remain open.
 
 ### 051 — developer terminal and structured tasks
 

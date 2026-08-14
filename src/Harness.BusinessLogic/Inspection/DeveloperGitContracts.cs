@@ -21,10 +21,32 @@ public sealed record DeveloperGitIndexCommandResult(
     IReadOnlyList<DeveloperGitPath> AffectedPaths,
     string? ErrorCode,
     string? Error);
+public sealed record DeveloperGitPatchUnitView(
+    string Id,
+    DeveloperGitPath Path,
+    DeveloperGitIndexAction Action,
+    DeveloperGitPatchKind Kind,
+    string Label,
+    int? OldLine,
+    int? NewLine,
+    string Preview);
+public enum DeveloperGitPatchKind
+{
+    Hunk,
+    Line,
+}
+public sealed record DeveloperGitPatchCommand(
+    WorkbenchWorkspaceRequest Workspace,
+    DeveloperGitStateFingerprint ExpectedFingerprint,
+    string PatchUnitId);
 
 public interface IDeveloperGitService
 {
     ValueTask<DeveloperGitIndexCommandResult> UpdateIndexAsync(
         DeveloperGitIndexCommand command,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitIndexCommandResult> ApplyPatchAsync(
+        DeveloperGitPatchCommand command,
         CancellationToken cancellationToken = default);
 }

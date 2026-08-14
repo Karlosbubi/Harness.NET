@@ -6,6 +6,18 @@ public enum DeveloperGitIndexOperation
     Unstage,
 }
 
+public enum DeveloperGitPatchDirection
+{
+    Stage,
+    Unstage,
+}
+
+public enum DeveloperGitPatchKind
+{
+    Hunk,
+    Line,
+}
+
 public sealed record DeveloperGitStateFingerprint(string Value);
 public sealed record DeveloperGitPath(string Value);
 public sealed record DeveloperGitIndexRequest(
@@ -18,10 +30,29 @@ public sealed record DeveloperGitIndexResult(
     IReadOnlyList<DeveloperGitPath> AffectedPaths,
     string? ErrorCode,
     string? Error);
+public sealed record DeveloperGitPatchUnit(
+    string Id,
+    DeveloperGitPath Path,
+    DeveloperGitPatchDirection Direction,
+    DeveloperGitPatchKind Kind,
+    string Label,
+    int? OldLine,
+    int? NewLine,
+    string Preview,
+    string Patch,
+    bool ApplyInReverse);
+public sealed record DeveloperGitPatchRequest(
+    string RepositoryRoot,
+    DeveloperGitStateFingerprint ExpectedFingerprint,
+    string PatchUnitId);
 
 public interface IDeveloperGitRepository
 {
     ValueTask<DeveloperGitIndexResult> UpdateIndexAsync(
         DeveloperGitIndexRequest request,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitIndexResult> ApplyPatchAsync(
+        DeveloperGitPatchRequest request,
         CancellationToken cancellationToken = default);
 }

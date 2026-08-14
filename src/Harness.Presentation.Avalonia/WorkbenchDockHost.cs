@@ -94,9 +94,14 @@ internal sealed class WorkbenchDockHost
     private readonly ListBox searchResults = new();
     private readonly TextBlock fileStatus = new() { TextWrapping = TextWrapping.Wrap };
     private readonly ListBox changes = new();
+    private readonly ListBox patchUnits = new();
     private readonly TextBlock gitSummary = new() { TextWrapping = TextWrapping.Wrap };
     private readonly TextBlock gitStatus = new() { TextWrapping = TextWrapping.Wrap };
+    private readonly Button stageGit = new() { Content = "Stage" };
+    private readonly Button unstageGit = new() { Content = "Unstage" };
+    private readonly Button clearGitSelection = new() { Content = "Whole file" };
     private string gitFingerprint = string.Empty;
+    private IReadOnlyList<DeveloperGitPatchUnitView> currentPatchUnits = [];
     private readonly ListBox runOutputs = new();
     private readonly TextBlock runOutputStatus = new() { TextWrapping = TextWrapping.Wrap };
     private readonly Button cancelDeveloperRun = new() { Content = "Stop", IsEnabled = false };
@@ -790,6 +795,9 @@ internal sealed class WorkbenchDockHost
         changes.ItemsSource = git.Changes
             .Select(change => new ChangeChoice(change, context.GoalId))
             .ToArray();
+        currentPatchUnits = git.PatchUnits ?? [];
+        changes.SelectedIndex = git.Changes.Count > 0 ? 0 : -1;
+        UpdatePatchUnitChoices();
         gitStatus.Text = conflictCount > 0
             ? $"{conflictCount} unresolved Git conflict(s) block commit approval. " +
               "Resolve and stage them with Git, then refresh this view."
@@ -808,16 +816,60 @@ internal sealed class WorkbenchDockHost
 
         await RunAsync(async () =>
         {
-            DeveloperGitIndexCommandResult result = await developerGitService.UpdateIndexAsync(new(
-                WorkbenchRequest(active),
-                new(gitFingerprint),
-                action,
-                [new(selected.Change.Path)]), cancellationToken);
+            DeveloperGitIndexCommandResult result;
+            if (patchUnits.SelectedItem is PatchChoice patch)
+            {
+                if (patch.Unit.Action != action)
+                {
+                    gitStatus.Text = $"That selection is for {patch.Unit.Action.ToString().ToLowerInvariant()}.";
+                    return;
+                }
+                result = await developerGitService.ApplyPatchAsync(new(
+                    WorkbenchRequest(active), new(gitFingerprint), patch.Unit.Id), cancellationToken);
+            }
+            else
+            {
+                result = await developerGitService.UpdateIndexAsync(new(
+                    WorkbenchRequest(active),
+                    new(gitFingerprint),
+                    action,
+                    [new(selected.Change.Path)]), cancellationToken);
+            }
             if (result.State is not null) RenderGitState(result.Context, result.State);
             gitStatus.Text = result.ErrorCode == "git_state_stale"
                 ? "Git changed outside Harness.NET. The view was refreshed; review it and retry."
                 : result.Error ?? $"{(action == DeveloperGitIndexAction.Stage ? "Staged" : "Unstaged")} {selected.Change.Path}.";
         });
+    }
+
+    private void UpdatePatchUnitChoices()
+    {
+        if (changes.SelectedItem is not ChangeChoice selected)
+        {
+            patchUnits.ItemsSource = Array.Empty<PatchChoice>();
+            UpdateGitActionAvailability();
+            return;
+        }
+
+        patchUnits.ItemsSource = currentPatchUnits
+            .Where(unit => unit.Path.Value.Equals(selected.Change.Path, StringComparison.Ordinal))
+            .Select(unit => new PatchChoice(unit))
+            .ToArray();
+        patchUnits.SelectedIndex = -1;
+        UpdateGitActionAvailability();
+    }
+
+    private void UpdateGitActionAvailability()
+    {
+        ChangeChoice? file = changes.SelectedItem as ChangeChoice;
+        PatchChoice? patch = patchUnits.SelectedItem as PatchChoice;
+        stageGit.IsEnabled = file is not null && (patch is not null
+            ? patch.Unit.Action == DeveloperGitIndexAction.Stage
+            : file.Change.IsUnstaged || file.Change.IsConflicted);
+        unstageGit.IsEnabled = file is not null && (patch is not null
+            ? patch.Unit.Action == DeveloperGitIndexAction.Unstage
+            : file.Change.IsStaged);
+        clearGitSelection.IsEnabled = patch is not null;
     }
 
     internal async ValueTask OpenDiffAsync()
@@ -1378,7 +1430,7 @@ internal sealed class WorkbenchDockHost
     {
         Grid grid = new()
         {
-            RowDefinitions = new("Auto,Auto,*,Auto"),
+            RowDefinitions = new("Auto,Auto,2*,*,Auto"),
             Margin = new Thickness(10),
             RowSpacing = 8,
         };
@@ -1397,16 +1449,18 @@ internal sealed class WorkbenchDockHost
         openDiff.Click += async (_, _) => await OpenDiffAsync();
         actions.Children.Add(refresh);
         actions.Children.Add(openDiff);
-        Button stage = new() { Content = "Stage" };
-        stage.Margin = new Thickness(0, 0, 6, 6);
-        AutomationProperties.SetName(stage, "Stage selected Git change");
-        stage.Click += async (_, _) => await UpdateSelectedGitIndexAsync(DeveloperGitIndexAction.Stage);
-        Button unstage = new() { Content = "Unstage" };
-        unstage.Margin = new Thickness(0, 0, 6, 6);
-        AutomationProperties.SetName(unstage, "Unstage selected Git change");
-        unstage.Click += async (_, _) => await UpdateSelectedGitIndexAsync(DeveloperGitIndexAction.Unstage);
-        actions.Children.Add(stage);
-        actions.Children.Add(unstage);
+        stageGit.Margin = new Thickness(0, 0, 6, 6);
+        AutomationProperties.SetName(stageGit, "Stage selected Git change");
+        stageGit.Click += async (_, _) => await UpdateSelectedGitIndexAsync(DeveloperGitIndexAction.Stage);
+        unstageGit.Margin = new Thickness(0, 0, 6, 6);
+        AutomationProperties.SetName(unstageGit, "Unstage selected Git change");
+        unstageGit.Click += async (_, _) => await UpdateSelectedGitIndexAsync(DeveloperGitIndexAction.Unstage);
+        clearGitSelection.Margin = new Thickness(0, 0, 6, 6);
+        AutomationProperties.SetName(clearGitSelection, "Clear Git hunk or line selection");
+        clearGitSelection.Click += (_, _) => patchUnits.SelectedIndex = -1;
+        actions.Children.Add(stageGit);
+        actions.Children.Add(unstageGit);
+        actions.Children.Add(clearGitSelection);
         Grid.SetRow(actions, 1);
         grid.Children.Add(actions);
         AutomationProperties.SetName(changes, "Git working-tree changes");
@@ -1417,9 +1471,17 @@ internal sealed class WorkbenchDockHost
                 await OpenFileAsync(choice.Change.Path, choice.GoalId);
             }
         };
+        changes.SelectionChanged += (_, _) => UpdatePatchUnitChoices();
         Grid.SetRow(changes, 2);
         grid.Children.Add(changes);
-        Grid.SetRow(gitStatus, 3);
+        AutomationProperties.SetName(patchUnits, "Git hunks and changed lines");
+        patchUnits.SelectionMode = SelectionMode.Single;
+        patchUnits.SelectionChanged += (_, _) => UpdateGitActionAvailability();
+        ToolTip.SetTip(patchUnits,
+            "Select one exact hunk or changed line, then choose Stage or Unstage. Clear the selection to act on the whole file.");
+        Grid.SetRow(patchUnits, 3);
+        grid.Children.Add(patchUnits);
+        Grid.SetRow(gitStatus, 4);
         grid.Children.Add(gitStatus);
         return grid;
     }
@@ -4706,6 +4768,15 @@ internal sealed class WorkbenchDockHost
         {
             string flags = $"{(Change.IsStaged ? "S" : " ")}{(Change.IsUnstaged ? "M" : " ")}";
             return $"[{flags}]  {Change.Path}" + (Change.IsConflicted ? "  CONFLICT" : string.Empty);
+        }
+    }
+
+    private sealed record PatchChoice(DeveloperGitPatchUnitView Unit)
+    {
+        public override string ToString()
+        {
+            string direction = Unit.Action == DeveloperGitIndexAction.Stage ? "STAGE" : "UNSTAGE";
+            return $"[{direction} {Unit.Kind.ToString().ToUpperInvariant()}] {Unit.Label} · {Unit.Preview}";
         }
     }
 

@@ -120,6 +120,7 @@ internal sealed class WorkbenchInspectionService(
                 git.Error,
                 git.Fingerprint,
                 git.StagedDiff,
-                git.UnstagedDiff));
+                git.UnstagedDiff,
+                DeveloperGitService.MapPatchUnits(git.PatchUnits)));
     }
 }
