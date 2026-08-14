@@ -36,6 +36,14 @@ public enum DeveloperGitHookPolicy
     BypassHooks,
 }
 
+public enum DeveloperGitBranchOperation
+{
+    Create,
+    Switch,
+    Rename,
+    Delete,
+}
+
 public sealed record DeveloperGitStateFingerprint(string Value);
 public sealed record DeveloperGitPath(string Value);
 public sealed record DeveloperGitIndexRequest(
@@ -82,6 +90,28 @@ public sealed record DeveloperGitCommitResult(
     string? CommitSha,
     string? ErrorCode,
     string? Error);
+public sealed record DeveloperGitBranch(
+    string Name,
+    string TipSha,
+    bool IsCurrent,
+    bool IsMergedIntoHead);
+public sealed record DeveloperGitBranchInspection(
+    WorkspaceGitState? State,
+    IReadOnlyList<DeveloperGitBranch> Branches,
+    string? ErrorCode,
+    string? Error);
+public sealed record DeveloperGitBranchRequest(
+    string RepositoryRoot,
+    DeveloperGitStateFingerprint ExpectedFingerprint,
+    DeveloperGitBranchOperation Operation,
+    string? ExistingName,
+    string? NewName,
+    bool Force);
+public sealed record DeveloperGitBranchResult(
+    WorkspaceGitState? State,
+    IReadOnlyList<DeveloperGitBranch> Branches,
+    string? ErrorCode,
+    string? Error);
 
 public interface IDeveloperGitRepository
 {
@@ -103,5 +133,13 @@ public interface IDeveloperGitRepository
 
     ValueTask<DeveloperGitCommitResult> CommitAsync(
         DeveloperGitCommitRequest request,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitBranchInspection> InspectBranchesAsync(
+        string repositoryRoot,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitBranchResult> ApplyBranchAsync(
+        DeveloperGitBranchRequest request,
         CancellationToken cancellationToken = default);
 }

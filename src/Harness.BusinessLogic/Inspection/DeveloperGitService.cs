@@ -246,6 +246,128 @@ internal sealed class DeveloperGitService(
             result.CommitSha, result.ErrorCode, result.Error);
     }
 
+    public async ValueTask<DeveloperGitBranchInspectionResult> InspectBranchesAsync(
+        WorkbenchWorkspaceRequest workspace,
+        CancellationToken cancellationToken = default)
+    {
+        WorkbenchWorkspaceResolution resolution = await contextResolver.ResolveAsync(workspace, cancellationToken);
+        if (resolution.RootPath is null || resolution.Error is not null)
+            return new(resolution.Context, null, [], resolution.ErrorCode, resolution.Error);
+        if (resolution.Context.Scope != WorkbenchWorkspaceScope.OriginalWorkspace)
+            return new(resolution.Context, null, [], "git_branches_goal_context_denied",
+                "Developer branch management is available only in the original workspace.");
+        DeveloperGitBranchInspection inspection = await repository.InspectBranchesAsync(
+            resolution.RootPath, cancellationToken);
+        return MapBranches(resolution.Context, inspection);
+    }
+
+    public async ValueTask<DeveloperGitBranchInspectionResult> ApplyBranchAsync(
+        DeveloperGitBranchCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        WorkbenchWorkspaceResolution resolution = await contextResolver.ResolveAsync(
+            command.Workspace, cancellationToken);
+        if (resolution.RootPath is null || resolution.Error is not null)
+            return new(resolution.Context, null, [], resolution.ErrorCode, resolution.Error);
+        if (resolution.Context.Scope != WorkbenchWorkspaceScope.OriginalWorkspace)
+            return new(resolution.Context, null, [], "git_branches_goal_context_denied",
+                "Developer branch management is available only in the original workspace.");
+        DeveloperGitBranchResult result = await repository.ApplyBranchAsync(new(
+            resolution.RootPath,
+            new(command.ExpectedFingerprint.Value),
+            command.Action switch
+            {
+                DeveloperGitBranchAction.Create => DeveloperGitBranchOperation.Create,
+                DeveloperGitBranchAction.Switch => DeveloperGitBranchOperation.Switch,
+                DeveloperGitBranchAction.Rename => DeveloperGitBranchOperation.Rename,
+                _ => throw new InvalidOperationException("Unsupported branch action."),
+            },
+            command.ExistingName?.Value,
+            command.NewName?.Value,
+            Force: false), cancellationToken);
+        return MapBranches(resolution.Context, result);
+    }
+
+    public async ValueTask<DeveloperGitBranchDeletePreviewResult> PreviewBranchDeleteAsync(
+        DeveloperGitBranchDeletePreviewCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        DeveloperGitBranchInspectionResult inspection = await InspectBranchesAsync(
+            command.Workspace, cancellationToken);
+        if (inspection.Error is not null || inspection.State is null)
+            return new(null, inspection, inspection.ErrorCode, inspection.Error);
+        if (!inspection.State.Fingerprint.Equals(command.ExpectedFingerprint.Value, StringComparison.Ordinal))
+            return new(null, inspection, "git_state_stale",
+                "Git references or working state changed after they were displayed. Refresh and retry.");
+        DeveloperGitBranchView? branch = inspection.Branches.SingleOrDefault(candidate =>
+            candidate.Name.Value.Equals(command.Name.Value, StringComparison.Ordinal));
+        if (branch is null || branch.IsCurrent)
+            return new(null, inspection, "git_branch_delete_invalid",
+                branch is null ? "Select an existing local branch." : "The current branch cannot be deleted.");
+        if (!command.Force && !branch.IsMergedIntoHead)
+            return new(null, inspection, "git_branch_unmerged",
+                "This branch is not merged into HEAD. Enable force deletion only after reviewing its tip.");
+        string identity = string.Join('\0', inspection.Context.WorkspaceId.Value,
+            inspection.State.Fingerprint, branch.Name.Value, branch.TipSha, command.Force);
+        var preview = new DeveloperGitBranchDeletePreviewView(
+            new(Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(identity))).ToLowerInvariant()),
+            inspection.Context, new(inspection.State.Fingerprint), branch, command.Force,
+            command.Force && !branch.IsMergedIntoHead
+                ? $"The unmerged local branch '{branch.Name.Value}' will be deleted at {branch.TipSha}."
+                : $"The local branch '{branch.Name.Value}' will be deleted at {branch.TipSha}.",
+            "The tip commit may remain addressable by this SHA or reflog until Git prunes it, but Harness does not guarantee recovery.",
+            HasGuaranteedRecovery: false);
+        return new(preview, inspection, null, null);
+    }
+
+    public async ValueTask<DeveloperGitBranchInspectionResult> ApplyBranchDeleteAsync(
+        DeveloperGitBranchDeletePreviewView preview,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(preview);
+        DeveloperGitBranchDeletePreviewResult current = await PreviewBranchDeleteAsync(new(
+            new(preview.Context.WorkspaceId, GoalId: null), preview.Fingerprint,
+            preview.Branch.Name, preview.Force), cancellationToken);
+        if (current.Preview is null || current.Error is not null)
+            return current.Inspection;
+        if (!current.Preview.Id.Equals(preview.Id))
+            return current.Inspection with
+            {
+                ErrorCode = "git_branch_delete_preview_stale",
+                Error = "The branch deletion preview changed. Review a new preview before deleting.",
+            };
+        WorkbenchWorkspaceResolution resolution = await contextResolver.ResolveAsync(
+            new(preview.Context.WorkspaceId, GoalId: null), cancellationToken);
+        if (resolution.RootPath is null || resolution.Error is not null)
+            return new(resolution.Context, null, [], resolution.ErrorCode, resolution.Error);
+        DeveloperGitBranchResult result = await repository.ApplyBranchAsync(new(
+            resolution.RootPath, new(preview.Fingerprint.Value), DeveloperGitBranchOperation.Delete,
+            preview.Branch.Name.Value, null, preview.Force), cancellationToken);
+        return MapBranches(resolution.Context, result);
+    }
+
+    private static DeveloperGitBranchInspectionResult MapBranches(
+        WorkbenchWorkspaceContext context,
+        DeveloperGitBranchInspection inspection) => new(
+            context,
+            inspection.State is null ? null : Map(inspection.State),
+            inspection.Branches.Select(branch => new DeveloperGitBranchView(
+                new(branch.Name), branch.TipSha, branch.IsCurrent, branch.IsMergedIntoHead)).ToArray(),
+            inspection.ErrorCode,
+            inspection.Error);
+
+    private static DeveloperGitBranchInspectionResult MapBranches(
+        WorkbenchWorkspaceContext context,
+        DeveloperGitBranchResult result) => new(
+            context,
+            result.State is null ? null : Map(result.State),
+            result.Branches.Select(branch => new DeveloperGitBranchView(
+                new(branch.Name), branch.TipSha, branch.IsCurrent, branch.IsMergedIntoHead)).ToArray(),
+            result.ErrorCode,
+            result.Error);
+
     private static bool TryValidateDestructive(
         DeveloperGitDestructiveAction action,
         IReadOnlyList<DeveloperGitPath> requested,

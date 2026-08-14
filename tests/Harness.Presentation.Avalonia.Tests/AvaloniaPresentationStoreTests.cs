@@ -964,6 +964,12 @@ public sealed class AvaloniaPresentationStoreTests
             workspace = (workspace ?? throw new InvalidOperationException()) with { IsActive = true };
             return ValueTask.FromResult(workspace);
         }
+
+        public ValueTask<WorkspaceResult> RefreshAsync(
+            string workspaceId,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new WorkspaceResult(workspace, [],
+                workspace?.Id == workspaceId ? null : "Workspace missing."));
     }
 
     private sealed class MultiWorkspaceService(IReadOnlyList<WorkspaceView> initial)
@@ -1000,6 +1006,11 @@ public sealed class AvaloniaPresentationStoreTests
             string workspaceId,
             bool isTrusted,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<WorkspaceResult> RefreshAsync(
+            string workspaceId,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new WorkspaceResult(
+                workspaces.SingleOrDefault(item => item.Id == workspaceId), [], null));
     }
 
     private sealed class MultiGoalService(IReadOnlyList<GoalView> goals) : IGoalService

@@ -192,7 +192,8 @@ internal sealed class MainWindow : Window
             mutationService,
             ShowProjectUserSecretsAsync,
             developerExecutionService,
-            developerGitService);
+            developerGitService,
+            () => store.RefreshActiveWorkspaceContextAsync(cancellationToken).AsTask());
         Border documentActions = new()
         {
             Child = workbench.DocumentActions,

@@ -300,6 +300,161 @@ internal sealed class LibGitDeveloperGitRepository : IDeveloperGitRepository
         }
     }
 
+    public ValueTask<DeveloperGitBranchInspection> InspectBranchesAsync(
+        string repositoryRoot,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        string? repositoryPath = Repository.Discover(repositoryRoot);
+        if (repositoryPath is null)
+            return ValueTask.FromResult(BranchInspectionFailure(
+                "repository_missing", "No Git repository was found."));
+        try
+        {
+            using Repository repository = new(repositoryPath);
+            if (!NormalizeRoot(repositoryRoot).Equals(
+                    NormalizeRoot(repository.Info.WorkingDirectory), StringComparison.Ordinal))
+                return ValueTask.FromResult(BranchInspectionFailure(
+                    "repository_mismatch", "The workspace root must be the Git repository root."));
+            WorkspaceGitState state = GitRepositoryStateReader.Read(repository, cancellationToken);
+            return ValueTask.FromResult(new DeveloperGitBranchInspection(
+                state, MapBranches(repository), null, null));
+        }
+        catch (Exception exception) when (exception is LibGit2SharpException or IOException or
+                                           UnauthorizedAccessException or ArgumentException)
+        {
+            return ValueTask.FromResult(BranchInspectionFailure(
+                "git_branches_failed", "Git branches could not be inspected."));
+        }
+    }
+
+    public ValueTask<DeveloperGitBranchResult> ApplyBranchAsync(
+        DeveloperGitBranchRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+        string? repositoryPath = Repository.Discover(request.RepositoryRoot);
+        if (repositoryPath is null)
+            return ValueTask.FromResult(BranchFailure(
+                "repository_missing", "No Git repository was found."));
+        try
+        {
+            using Repository repository = new(repositoryPath);
+            if (!NormalizeRoot(request.RepositoryRoot).Equals(
+                    NormalizeRoot(repository.Info.WorkingDirectory), StringComparison.Ordinal))
+                return ValueTask.FromResult(BranchFailure(
+                    "repository_mismatch", "The workspace root must be the Git repository root."));
+            WorkspaceGitState before = GitRepositoryStateReader.Read(repository, cancellationToken);
+            if (!CryptographicEquals(before.Fingerprint, request.ExpectedFingerprint.Value))
+                return ValueTask.FromResult(new DeveloperGitBranchResult(
+                    before, MapBranches(repository), "git_state_stale",
+                    "Git references or working state changed after they were displayed. Refresh and retry."));
+            if (repository.Info.CurrentOperation != CurrentOperation.None)
+                return ValueTask.FromResult(new DeveloperGitBranchResult(
+                    before, MapBranches(repository), "git_operation_in_progress",
+                    "Finish the current Git operation before changing branches."));
+
+            string? validation = ValidateBranchRequest(repository, request);
+            if (validation is not null)
+                return ValueTask.FromResult(new DeveloperGitBranchResult(
+                    before, MapBranches(repository), "git_branch_invalid", validation));
+            switch (request.Operation)
+            {
+                case DeveloperGitBranchOperation.Create:
+                    repository.CreateBranch(request.NewName!);
+                    break;
+                case DeveloperGitBranchOperation.Switch:
+                    Commands.Checkout(repository, repository.Branches[request.ExistingName!]!);
+                    break;
+                case DeveloperGitBranchOperation.Rename:
+                    repository.Branches.Rename(request.ExistingName!, request.NewName!);
+                    break;
+                case DeveloperGitBranchOperation.Delete:
+                    repository.Branches.Remove(request.ExistingName!);
+                    break;
+                default:
+                    throw new InvalidOperationException("Unsupported Git branch operation.");
+            }
+            WorkspaceGitState after = GitRepositoryStateReader.Read(repository, cancellationToken);
+            return ValueTask.FromResult(new DeveloperGitBranchResult(
+                after, MapBranches(repository), null, null));
+        }
+        catch (CheckoutConflictException)
+        {
+            return ValueTask.FromResult(ReadBranchFailure(repositoryPath,
+                "git_branch_checkout_conflict",
+                "Local changes conflict with that branch. Commit, stash, or discard them before switching."));
+        }
+        catch (Exception exception) when (exception is LibGit2SharpException or IOException or
+                                           UnauthorizedAccessException or ArgumentException or InvalidOperationException)
+        {
+            return ValueTask.FromResult(ReadBranchFailure(repositoryPath,
+                "git_branch_failed", "Git could not apply the branch operation."));
+        }
+    }
+
+    private static DeveloperGitBranchResult ReadBranchFailure(
+        string repositoryPath,
+        string code,
+        string error)
+    {
+        try
+        {
+            using Repository repository = new(repositoryPath);
+            return new(GitRepositoryStateReader.Read(repository, CancellationToken.None),
+                MapBranches(repository), code, error);
+        }
+        catch (Exception exception) when (exception is LibGit2SharpException or IOException or
+                                           UnauthorizedAccessException or ArgumentException)
+        {
+            return BranchFailure(code, error);
+        }
+    }
+
+    private static string? ValidateBranchRequest(Repository repository, DeveloperGitBranchRequest request)
+    {
+        bool needsExisting = request.Operation is DeveloperGitBranchOperation.Switch or
+            DeveloperGitBranchOperation.Rename or DeveloperGitBranchOperation.Delete;
+        bool needsNew = request.Operation is DeveloperGitBranchOperation.Create or
+            DeveloperGitBranchOperation.Rename;
+        Branch? existing = needsExisting && !string.IsNullOrWhiteSpace(request.ExistingName)
+            ? repository.Branches[request.ExistingName] : null;
+        if (needsExisting && (existing is null || existing.IsRemote))
+            return "Select an existing local branch.";
+        if (needsNew && (string.IsNullOrWhiteSpace(request.NewName) ||
+                         !Reference.IsValidName($"refs/heads/{request.NewName}")))
+            return "Enter a valid new local branch name.";
+        if (needsNew && repository.Branches[request.NewName] is not null)
+            return "A branch with that name already exists.";
+        if (request.Operation == DeveloperGitBranchOperation.Switch && existing!.IsCurrentRepositoryHead)
+            return "That branch is already checked out.";
+        if (request.Operation == DeveloperGitBranchOperation.Delete)
+        {
+            if (existing!.IsCurrentRepositoryHead) return "The current branch cannot be deleted.";
+            if (!request.Force && !IsMergedIntoHead(repository, existing))
+                return "The branch is not merged into HEAD. Review and explicitly choose force deletion.";
+        }
+        return null;
+    }
+
+    private static DeveloperGitBranch[] MapBranches(Repository repository) =>
+        repository.Branches.Where(branch => !branch.IsRemote)
+            .OrderBy(branch => branch.FriendlyName, StringComparer.Ordinal)
+            .Select(branch => new DeveloperGitBranch(
+                branch.FriendlyName,
+                branch.Tip?.Sha ?? string.Empty,
+                branch.IsCurrentRepositoryHead,
+                IsMergedIntoHead(repository, branch)))
+            .ToArray();
+
+    private static bool IsMergedIntoHead(Repository repository, Branch branch)
+    {
+        if (repository.Head.Tip is null || branch.Tip is null) return false;
+        Commit? mergeBase = repository.ObjectDatabase.FindMergeBase(repository.Head.Tip, branch.Tip);
+        return mergeBase?.Sha == branch.Tip.Sha;
+    }
+
     private static bool ValidateDestructiveSelection(
         WorkspaceGitState state,
         DeveloperGitDestructiveOperation operation,
@@ -504,6 +659,12 @@ internal sealed class LibGitDeveloperGitRepository : IDeveloperGitRepository
 
     private static DeveloperGitCommitResult CommitFailure(string code, string error) =>
         new(null, null, code, error);
+
+    private static DeveloperGitBranchInspection BranchInspectionFailure(string code, string error) =>
+        new(null, [], code, error);
+
+    private static DeveloperGitBranchResult BranchFailure(string code, string error) =>
+        new(null, [], code, error);
 
     private sealed class GitPatchUnitUnavailableException : Exception;
 }

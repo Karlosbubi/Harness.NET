@@ -211,6 +211,11 @@ public sealed class ConversationDashboardServiceTests
             string workspaceId,
             CancellationToken cancellationToken = default) =>
             ValueTask.FromException<WorkspaceView>(new NotSupportedException());
+
+        public ValueTask<WorkspaceResult> RefreshAsync(
+            string workspaceId,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new WorkspaceResult(activeWorkspace, [], null));
     }
 
     private sealed class FakeConversationStore : IConversationStore

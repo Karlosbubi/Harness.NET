@@ -57,6 +57,10 @@ internal interface IWorkbenchDocumentPrompt
     ValueTask<bool> ConfirmGitCommitAsync(
         DeveloperGitCommitPreviewView preview,
         Window? owner);
+
+    ValueTask<bool> ConfirmGitBranchDeleteAsync(
+        DeveloperGitBranchDeletePreviewView preview,
+        Window? owner);
 }
 
 internal sealed record DeveloperGitCommitDraft(
@@ -112,6 +116,63 @@ internal sealed class AvaloniaWorkbenchDocumentPrompt : IWorkbenchDocumentPrompt
     {
         if (owner is null) return false;
         return await new GitCommitConfirmationDialog(preview).ShowDialog<bool>(owner);
+    }
+
+    public async ValueTask<bool> ConfirmGitBranchDeleteAsync(
+        DeveloperGitBranchDeletePreviewView preview,
+        Window? owner)
+    {
+        if (owner is null) return false;
+        return await new GitBranchDeleteConfirmationDialog(preview).ShowDialog<bool>(owner);
+    }
+}
+
+internal sealed class GitBranchDeleteConfirmationDialog : Window
+{
+    internal GitBranchDeleteConfirmationDialog(DeveloperGitBranchDeletePreviewView preview)
+    {
+        Title = "Confirm local branch deletion";
+        Width = 640;
+        SizeToContent = SizeToContent.Height;
+        WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        AutomationProperties.SetName(this, "Confirm local Git branch deletion");
+        Button confirm = new() { Content = "Delete branch", IsEnabled = false, MinWidth = 110 };
+        Button cancel = new() { Content = "Cancel", IsCancel = true, MinWidth = 88 };
+        CheckBox acknowledge = new()
+        {
+            Content = "I reviewed the exact branch tip and understand recovery is not guaranteed.",
+        };
+        AutomationProperties.SetName(acknowledge, "Acknowledge local Git branch deletion consequences");
+        AutomationProperties.SetName(confirm, "Confirm deletion of exact local Git branch");
+        AutomationProperties.SetName(cancel, "Cancel local Git branch deletion");
+        acknowledge.IsCheckedChanged += (_, _) => confirm.IsEnabled = acknowledge.IsChecked == true;
+        confirm.Click += (_, _) => Close(true);
+        cancel.Click += (_, _) => Close(false);
+        Content = new StackPanel
+        {
+            Margin = new Thickness(24),
+            Spacing = 12,
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = $"{preview.Branch.Name.Value}\nTip: {preview.Branch.TipSha}\n" +
+                           $"Merged into HEAD: {preview.Branch.IsMergedIntoHead}\nForce: {preview.Force}",
+                    FontWeight = FontWeight.SemiBold,
+                    TextWrapping = TextWrapping.Wrap,
+                },
+                new TextBlock { Text = preview.Consequence, TextWrapping = TextWrapping.Wrap },
+                new TextBlock { Text = preview.Recovery, TextWrapping = TextWrapping.Wrap },
+                acknowledge,
+                new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    Spacing = 8,
+                    Children = { cancel, confirm },
+                },
+            },
+        };
     }
 }
 

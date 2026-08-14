@@ -106,6 +106,50 @@ public sealed record DeveloperGitCommitCommandResult(
     string? CommitSha,
     string? ErrorCode,
     string? Error);
+public enum DeveloperGitBranchAction
+{
+    Create,
+    Switch,
+    Rename,
+}
+public sealed record DeveloperGitBranchName(string Value);
+public sealed record DeveloperGitBranchView(
+    DeveloperGitBranchName Name,
+    string TipSha,
+    bool IsCurrent,
+    bool IsMergedIntoHead);
+public sealed record DeveloperGitBranchInspectionResult(
+    WorkbenchWorkspaceContext Context,
+    WorkspaceGitStateView? State,
+    IReadOnlyList<DeveloperGitBranchView> Branches,
+    string? ErrorCode,
+    string? Error);
+public sealed record DeveloperGitBranchCommand(
+    WorkbenchWorkspaceRequest Workspace,
+    DeveloperGitStateFingerprint ExpectedFingerprint,
+    DeveloperGitBranchAction Action,
+    DeveloperGitBranchName? ExistingName,
+    DeveloperGitBranchName? NewName);
+public sealed record DeveloperGitBranchDeletePreviewId(string Value);
+public sealed record DeveloperGitBranchDeletePreviewCommand(
+    WorkbenchWorkspaceRequest Workspace,
+    DeveloperGitStateFingerprint ExpectedFingerprint,
+    DeveloperGitBranchName Name,
+    bool Force);
+public sealed record DeveloperGitBranchDeletePreviewView(
+    DeveloperGitBranchDeletePreviewId Id,
+    WorkbenchWorkspaceContext Context,
+    DeveloperGitStateFingerprint Fingerprint,
+    DeveloperGitBranchView Branch,
+    bool Force,
+    string Consequence,
+    string Recovery,
+    bool HasGuaranteedRecovery);
+public sealed record DeveloperGitBranchDeletePreviewResult(
+    DeveloperGitBranchDeletePreviewView? Preview,
+    DeveloperGitBranchInspectionResult Inspection,
+    string? ErrorCode,
+    string? Error);
 public sealed record DeveloperGitPatchCommand(
     WorkbenchWorkspaceRequest Workspace,
     DeveloperGitStateFingerprint ExpectedFingerprint,
@@ -135,5 +179,21 @@ public interface IDeveloperGitService
 
     ValueTask<DeveloperGitCommitCommandResult> CommitAsync(
         DeveloperGitCommitPreviewView preview,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitBranchInspectionResult> InspectBranchesAsync(
+        WorkbenchWorkspaceRequest workspace,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitBranchInspectionResult> ApplyBranchAsync(
+        DeveloperGitBranchCommand command,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitBranchDeletePreviewResult> PreviewBranchDeleteAsync(
+        DeveloperGitBranchDeletePreviewCommand command,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitBranchInspectionResult> ApplyBranchDeleteAsync(
+        DeveloperGitBranchDeletePreviewView preview,
         CancellationToken cancellationToken = default);
 }

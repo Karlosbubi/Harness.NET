@@ -491,7 +491,7 @@ and Debug needs. Database, profiler, and notebook modules remain later slices.
 
 ### 050 — complete Git workbench
 
-Status: `In progress — exact staging, file cleanup, and developer commit/amend delivered`
+Status: `In progress — exact staging, cleanup, commit/amend, and local branches delivered`
 
 Dependencies: 023, 029, 035, 036, 039.
 
@@ -542,6 +542,15 @@ paths, message, and hook policy, then require a second confirmation. Git hooks r
 default; bypass is an explicit compose-time choice. Unborn branches and detached HEAD
 are supported. References, history, merge editing, remotes, and destructive reference
 operations remain open.
+
+Local branch management is also delivered in the Git tool. The shared fingerprint
+now covers every Git reference as well as HEAD, index, operation state, and worktree.
+Developers can list, create, switch, and rename local branches. Switching or renaming
+the current branch resolves dirty documents first and refreshes the registered
+workspace so all user and model source contexts use the new branch. Deletion previews
+the exact name and tip SHA, distinguishes merged from forced unmerged deletion, states
+reflog/object-retention limits, and requires explicit acknowledgement. Tags,
+developer worktrees, stash, history, merge editing, and remotes remain open.
 
 ### 051 — developer terminal and structured tasks
 

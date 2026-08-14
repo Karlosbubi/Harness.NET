@@ -424,6 +424,13 @@ The preview displays identity, branch/HEAD, paths, message, and whether configur
 hooks run; stale or truncated state is rejected. This cannot satisfy or replace a
 goal commit approval.
 
+Local branch management is delivered on that same exact state. Reference fingerprints
+detect external branch changes. The Git panel lists local branches and supports create,
+safe switch, and rename. Active-context changes close or resolve editor buffers and
+refresh persisted workspace identity. Branch deletion has an exact tip/merge/force
+preview and explicit recovery warning. Tags, developer worktrees, stash, history,
+merge editing, and remotes remain.
+
 ### Planned: Task 051 — developer terminal and structured tasks
 
 Add a developer-operated PTY terminal and task runner as separate workbench tools.

@@ -3360,6 +3360,109 @@ public sealed class PresentationControlTests
     }
 
     [Fact]
+    public async Task Git_branch_tool_creates_and_switches_against_exact_reference_state()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            DeveloperGitService git = new();
+            bool contextRefreshed = false;
+            WorkbenchDockHost workbench = CreateWorkbench(
+                TrustedShell(), new(), developerGit: git,
+                refreshWorkspaceContext: () => { contextRefreshed = true; return Task.CompletedTask; });
+            Window window = new() { Content = workbench.Control };
+            window.Show();
+            workbench.RefreshGitBranchesAsync().AsTask().GetAwaiter().GetResult();
+            Control gitTool = Assert.IsAssignableFrom<Control>(
+                Find<IDockable>(workbench.Root, WorkbenchDockIds.GitTool).Context);
+            TextBox name = Assert.Single(gitTool.GetLogicalDescendants().OfType<TextBox>(), item =>
+                AutomationProperties.GetName(item) == "New local Git branch name");
+            ListBox branches = Assert.Single(gitTool.GetLogicalDescendants().OfType<ListBox>(), item =>
+                AutomationProperties.GetName(item) == "Local Git branches");
+            Assert.Contains(gitTool.GetLogicalDescendants().OfType<Button>(), item =>
+                AutomationProperties.GetName(item) == "Switch to selected local Git branch");
+            Assert.Contains(gitTool.GetLogicalDescendants().OfType<Button>(), item =>
+                AutomationProperties.GetName(item) == "Preview deletion of selected local Git branch");
+            Assert.Contains(gitTool.GetLogicalDescendants().OfType<CheckBox>(), item =>
+                AutomationProperties.GetName(item) == "Force deletion of unmerged local Git branch");
+            name.Text = "feature/new";
+
+            workbench.ApplyGitBranchAsync(DeveloperGitBranchAction.Create)
+                .AsTask().GetAwaiter().GetResult();
+            Assert.Equal(DeveloperGitBranchAction.Create, git.BranchCommand!.Action);
+            Assert.Equal("git-fingerprint", git.BranchCommand.ExpectedFingerprint.Value);
+            Assert.Equal("feature/new", git.BranchCommand.NewName!.Value);
+
+            branches.SelectedIndex = 0;
+            workbench.ApplyGitBranchAsync(DeveloperGitBranchAction.Switch)
+                .AsTask().GetAwaiter().GetResult();
+            Assert.Equal(DeveloperGitBranchAction.Switch, git.BranchCommand.Action);
+            Assert.True(contextRefreshed);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Git_branch_delete_requires_exact_preview_and_confirmation()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            DeveloperGitService git = new();
+            DocumentPrompt prompt = new();
+            prompt.GitBranchDeleteDecisions.Enqueue(true);
+            WorkbenchDockHost workbench = CreateWorkbench(
+                TrustedShell(), new(), prompt: prompt, developerGit: git);
+            Window window = new() { Content = workbench.Control };
+            window.Show();
+            workbench.RefreshGitBranchesAsync().AsTask().GetAwaiter().GetResult();
+            Control gitTool = Assert.IsAssignableFrom<Control>(
+                Find<IDockable>(workbench.Root, WorkbenchDockIds.GitTool).Context);
+            ListBox branches = Assert.Single(gitTool.GetLogicalDescendants().OfType<ListBox>(), item =>
+                AutomationProperties.GetName(item) == "Local Git branches");
+            branches.SelectedIndex = 0;
+
+            workbench.DeleteSelectedGitBranchAsync().AsTask().GetAwaiter().GetResult();
+
+            Assert.Equal("git-fingerprint", git.BranchDeleteCommand!.ExpectedFingerprint.Value);
+            Assert.Same(Assert.Single(prompt.GitBranchDeletePreviews), git.AppliedBranchDelete);
+            Assert.Contains("Deleted local branch", workbench.GitStatusText, StringComparison.Ordinal);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Branch_delete_dialog_shows_exact_tip_and_requires_acknowledgement()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            var preview = new DeveloperGitBranchDeletePreviewView(
+                new("preview"),
+                new(new("workspace-1"), null, new("main"),
+                    WorkbenchWorkspaceScope.OriginalWorkspace, "Original workspace"),
+                new("fingerprint"),
+                new(new("feature"), new string('b', 40), false, false), true,
+                "Delete unmerged feature.", "Recovery is not guaranteed.", false);
+            GitBranchDeleteConfirmationDialog dialog = new(preview);
+            dialog.Show();
+            CheckBox acknowledgement = Assert.Single(dialog.GetVisualDescendants().OfType<CheckBox>(), item =>
+                AutomationProperties.GetName(item) == "Acknowledge local Git branch deletion consequences");
+            Button confirm = Assert.Single(dialog.GetVisualDescendants().OfType<Button>(), item =>
+                AutomationProperties.GetName(item) == "Confirm deletion of exact local Git branch");
+            Assert.False(confirm.IsEnabled);
+            Assert.Contains(new string('b', 40), dialog.GetVisualDescendants().OfType<TextBlock>()
+                .Select(item => item.Text).First(text => text?.Contains("Tip:", StringComparison.Ordinal) == true));
+            acknowledgement.IsChecked = true;
+            Assert.True(confirm.IsEnabled);
+            dialog.Close(false);
+        }, CancellationToken.None);
+    }
+
+    [Fact]
     public async Task Layout_reset_keeps_durable_controls_in_the_rendered_tree()
     {
         using HeadlessUnitTestSession session =
@@ -3578,7 +3681,8 @@ public sealed class PresentationControlTests
         Func<bool, Task>? manageWorkspace = null,
         MutationService? mutationService = null,
         Control? conversation = null,
-        IDeveloperGitService? developerGit = null) => new(
+        IDeveloperGitService? developerGit = null,
+        Func<Task>? refreshWorkspaceContext = null) => new(
         runOutput ?? new RunOutputService(),
         inspection ?? new InspectionService(),
         documents ?? new DocumentService(),
@@ -3594,7 +3698,8 @@ public sealed class PresentationControlTests
         mutationService,
         null,
         null,
-        developerGit);
+        developerGit,
+        refreshWorkspaceContext);
 
     private static Control ConversationSurface(string text) => new Border
     {
@@ -3826,6 +3931,9 @@ public sealed class PresentationControlTests
         internal DeveloperGitDestructivePreviewView? AppliedDestructivePreview { get; private set; }
         internal DeveloperGitCommitPreviewCommand? CommitPreviewCommand { get; private set; }
         internal DeveloperGitCommitPreviewView? AppliedCommitPreview { get; private set; }
+        internal DeveloperGitBranchCommand? BranchCommand { get; private set; }
+        internal DeveloperGitBranchDeletePreviewCommand? BranchDeleteCommand { get; private set; }
+        internal DeveloperGitBranchDeletePreviewView? AppliedBranchDelete { get; private set; }
 
         public ValueTask<DeveloperGitIndexCommandResult> UpdateIndexAsync(
             DeveloperGitIndexCommand command,
@@ -3912,6 +4020,48 @@ public sealed class PresentationControlTests
             return ValueTask.FromResult(new DeveloperGitCommitCommandResult(
                 preview.Context, null, new string('c', 40), null, null));
         }
+
+        public ValueTask<DeveloperGitBranchInspectionResult> InspectBranchesAsync(
+            WorkbenchWorkspaceRequest workspace,
+            CancellationToken cancellationToken = default)
+        {
+            var context = new WorkbenchWorkspaceContext(workspace.WorkspaceId, null, new("main"),
+                WorkbenchWorkspaceScope.OriginalWorkspace, "Original workspace");
+            return ValueTask.FromResult(new DeveloperGitBranchInspectionResult(
+                context,
+                new("main", new string('a', 40), [], "", false, null, null, "git-fingerprint"),
+                [new(new("main"), new string('a', 40), true, true),
+                 new(new("feature"), new string('b', 40), false, false)], null, null));
+        }
+
+        public ValueTask<DeveloperGitBranchInspectionResult> ApplyBranchAsync(
+            DeveloperGitBranchCommand command,
+            CancellationToken cancellationToken = default)
+        {
+            BranchCommand = command;
+            return InspectBranchesAsync(command.Workspace, cancellationToken);
+        }
+
+        public async ValueTask<DeveloperGitBranchDeletePreviewResult> PreviewBranchDeleteAsync(
+            DeveloperGitBranchDeletePreviewCommand command,
+            CancellationToken cancellationToken = default)
+        {
+            BranchDeleteCommand = command;
+            DeveloperGitBranchInspectionResult inspection = await InspectBranchesAsync(
+                command.Workspace, cancellationToken);
+            DeveloperGitBranchView branch = inspection.Branches.Single(item => item.Name == command.Name);
+            return new(new(new("delete-preview"), inspection.Context, command.ExpectedFingerprint,
+                branch, command.Force, "Delete branch.", "Recovery is not guaranteed.", false),
+                inspection, null, null);
+        }
+
+        public ValueTask<DeveloperGitBranchInspectionResult> ApplyBranchDeleteAsync(
+            DeveloperGitBranchDeletePreviewView preview,
+            CancellationToken cancellationToken = default)
+        {
+            AppliedBranchDelete = preview;
+            return InspectBranchesAsync(new(preview.Context.WorkspaceId, null), cancellationToken);
+        }
     }
 
     private sealed class RunOutputService : IRunOutputService
@@ -3989,6 +4139,8 @@ public sealed class PresentationControlTests
         internal Queue<DeveloperGitCommitDraft?> GitCommitDrafts { get; } = [];
         internal Queue<bool> GitCommitDecisions { get; } = [];
         internal List<DeveloperGitCommitPreviewView> GitCommitPreviews { get; } = [];
+        internal Queue<bool> GitBranchDeleteDecisions { get; } = [];
+        internal List<DeveloperGitBranchDeletePreviewView> GitBranchDeletePreviews { get; } = [];
 
         public ValueTask<WorkbenchUnsavedDecision> DecideUnsavedAsync(
             WorkbenchUnsavedPrompt prompt,
@@ -4028,6 +4180,14 @@ public sealed class PresentationControlTests
         {
             GitCommitPreviews.Add(preview);
             return ValueTask.FromResult(GitCommitDecisions.TryDequeue(out bool decision) && decision);
+        }
+
+        public ValueTask<bool> ConfirmGitBranchDeleteAsync(
+            DeveloperGitBranchDeletePreviewView preview,
+            Window? owner)
+        {
+            GitBranchDeletePreviews.Add(preview);
+            return ValueTask.FromResult(GitBranchDeleteDecisions.TryDequeue(out bool decision) && decision);
         }
     }
 

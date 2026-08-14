@@ -140,12 +140,59 @@ public sealed class DeveloperGitServiceTests
         Assert.Null(result.Preview);
     }
 
+    [Fact]
+    public async Task Branch_management_binds_original_context_and_exact_reference_fingerprint()
+    {
+        Repository repository = new();
+        DeveloperGitService service = new(
+            new ContextResolver(goalContext: false), repository, new GitInspector());
+
+        DeveloperGitBranchInspectionResult inspected = await service.InspectBranchesAsync(
+            new(new("workspace-id"), null));
+        Assert.Equal(2, inspected.Branches.Count);
+
+        await service.ApplyBranchAsync(new(
+            new(new("workspace-id"), null), new("branch-fingerprint"),
+            DeveloperGitBranchAction.Rename, new("feature"), new("renamed")));
+
+        Assert.Equal(DeveloperGitBranchOperation.Rename, repository.BranchRequest!.Operation);
+        Assert.Equal("branch-fingerprint", repository.BranchRequest.ExpectedFingerprint.Value);
+        Assert.Equal("feature", repository.BranchRequest.ExistingName);
+        Assert.Equal("renamed", repository.BranchRequest.NewName);
+    }
+
+    [Fact]
+    public async Task Unmerged_branch_delete_requires_force_and_exact_preview()
+    {
+        Repository repository = new();
+        DeveloperGitService service = new(
+            new ContextResolver(goalContext: false), repository, new GitInspector());
+
+        DeveloperGitBranchDeletePreviewResult denied = await service.PreviewBranchDeleteAsync(new(
+            new(new("workspace-id"), null), new("branch-fingerprint"), new("feature"), false));
+        Assert.Equal("git_branch_unmerged", denied.ErrorCode);
+
+        DeveloperGitBranchDeletePreviewResult result = await service.PreviewBranchDeleteAsync(new(
+            new(new("workspace-id"), null), new("branch-fingerprint"), new("feature"), true));
+        DeveloperGitBranchDeletePreviewView preview = Assert.IsType<DeveloperGitBranchDeletePreviewView>(
+            result.Preview);
+        Assert.Contains(new string('b', 40), preview.Consequence, StringComparison.Ordinal);
+        Assert.False(preview.HasGuaranteedRecovery);
+
+        await service.ApplyBranchDeleteAsync(preview);
+
+        Assert.Equal(DeveloperGitBranchOperation.Delete, repository.BranchRequest!.Operation);
+        Assert.True(repository.BranchRequest.Force);
+        Assert.Equal("feature", repository.BranchRequest.ExistingName);
+    }
+
     private sealed class Repository : IDeveloperGitRepository
     {
         internal DeveloperGitIndexRequest? Request { get; private set; }
         internal DeveloperGitPatchRequest? PatchRequest { get; private set; }
         internal DeveloperGitDestructiveRequest? DestructiveRequest { get; private set; }
         internal DeveloperGitCommitRequest? CommitRequest { get; private set; }
+        internal DeveloperGitBranchRequest? BranchRequest { get; private set; }
 
         public ValueTask<DeveloperGitIndexResult> UpdateIndexAsync(
             DeveloperGitIndexRequest request,
@@ -184,6 +231,24 @@ public sealed class DeveloperGitServiceTests
             CommitRequest = request;
             return ValueTask.FromResult(new DeveloperGitCommitResult(
                 null, new string('c', 40), null, null));
+        }
+
+        public ValueTask<DeveloperGitBranchInspection> InspectBranchesAsync(
+            string repositoryRoot,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new DeveloperGitBranchInspection(
+                new("main", new string('a', 40), [], "", false, null, null, "branch-fingerprint"),
+                [new("main", new string('a', 40), true, true),
+                 new("feature", new string('b', 40), false, false)], null, null));
+
+        public ValueTask<DeveloperGitBranchResult> ApplyBranchAsync(
+            DeveloperGitBranchRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            BranchRequest = request;
+            return ValueTask.FromResult(new DeveloperGitBranchResult(
+                new("main", new string('a', 40), [], "", false, null, null, "after"),
+                [new("main", new string('a', 40), true, true)], null, null));
         }
     }
 

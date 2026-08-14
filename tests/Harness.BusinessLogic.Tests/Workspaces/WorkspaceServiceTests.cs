@@ -57,13 +57,42 @@ public sealed class WorkspaceServiceTests
         Assert.True(trusted.Workspace.IsDirty);
     }
 
+    [Fact]
+    public async Task Refresh_updates_branch_and_dirty_state_without_losing_trust_or_selection()
+    {
+        string root = Path.GetFullPath("/workspace/repository");
+        string entryPoint = Path.Combine(root, "Repository.slnx");
+        FakeWorkspaceInspector inspector = new(new(
+            root, "repository", "main", false, [entryPoint], null));
+        FakeWorkspaceStore store = new();
+        WorkspaceService service = new(inspector, store);
+        WorkspaceResult registered = await service.RegisterAsync(root, entryPoint);
+        await service.SetTrustAsync(registered.Workspace!.Id, true);
+        inspector.Inspection = inspector.Inspection with
+        {
+            Branch = "feature/switched",
+            IsDirty = true,
+        };
+
+        WorkspaceResult refreshed = await service.RefreshAsync(registered.Workspace.Id);
+
+        Assert.Null(refreshed.Error);
+        Assert.Equal("feature/switched", refreshed.Workspace!.Branch);
+        Assert.True(refreshed.Workspace.IsDirty);
+        Assert.True(refreshed.Workspace.IsTrusted);
+        Assert.True(refreshed.Workspace.IsActive);
+        Assert.Equal(entryPoint, refreshed.Workspace.EntryPoint);
+    }
+
     private sealed class FakeWorkspaceInspector(WorkspaceInspection inspection)
         : IWorkspaceInspector
     {
+        internal WorkspaceInspection Inspection { get; set; } = inspection;
+
         public ValueTask<WorkspaceInspection> InspectAsync(
             string path,
             CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(inspection);
+            ValueTask.FromResult(Inspection);
     }
 
     private sealed class FakeWorkspaceStore : IWorkspaceStore
@@ -79,16 +108,19 @@ public sealed class WorkspaceServiceTests
         {
             SaveCount++;
             DateTimeOffset now = DateTimeOffset.UtcNow;
+            bool trusted = workspace?.IsTrusted ?? false;
+            bool active = workspace?.IsActive ?? false;
+            DateTimeOffset created = workspace?.CreatedAt ?? now;
             workspace = new(
                 "workspace-id",
                 inspection.RootPath,
                 inspection.Name,
                 entryPoint,
-                false,
-                false,
+                trusted,
+                active,
                 inspection.Branch,
                 inspection.IsDirty,
-                now,
+                created,
                 now);
             return ValueTask.FromResult(workspace);
         }

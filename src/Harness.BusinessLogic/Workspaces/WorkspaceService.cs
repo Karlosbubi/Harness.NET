@@ -72,6 +72,21 @@ internal sealed class WorkspaceService(
         string workspaceId,
         CancellationToken cancellationToken = default) =>
         (await store.SetActiveAsync(workspaceId, cancellationToken)).ToView();
+
+    public async ValueTask<WorkspaceResult> RefreshAsync(
+        string workspaceId,
+        CancellationToken cancellationToken = default)
+    {
+        RegisteredWorkspace? existing = (await store.ListAsync(cancellationToken))
+            .SingleOrDefault(workspace => workspace.Id.Equals(workspaceId, StringComparison.Ordinal));
+        if (existing is null) return new(null, [], "The workspace is no longer registered.");
+        WorkspaceInspection inspection = await inspector.InspectAsync(existing.RootPath, cancellationToken);
+        if (inspection.Error is not null)
+            return new(existing.ToView(), inspection.EntryPoints, inspection.Error);
+        RegisteredWorkspace saved = await store.SaveAsync(
+            inspection, existing.EntryPoint, cancellationToken);
+        return new(saved.ToView(), inspection.EntryPoints, null);
+    }
 }
 
 internal static class RegisteredWorkspaceMapping

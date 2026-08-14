@@ -25,4 +25,8 @@ public interface IWorkspaceService
     ValueTask<WorkspaceView> SelectAsync(
         string workspaceId,
         CancellationToken cancellationToken = default);
+
+    ValueTask<WorkspaceResult> RefreshAsync(
+        string workspaceId,
+        CancellationToken cancellationToken = default);
 }

@@ -126,6 +126,12 @@ internal static class GitRepositoryStateReader
         Append(hash, repository.Head.Tip?.Sha ?? "unborn");
         Append(hash, repository.Info.IsHeadDetached ? "detached" : repository.Head.FriendlyName);
         Append(hash, repository.Info.CurrentOperation.ToString());
+        foreach (Reference reference in repository.Refs.OrderBy(reference =>
+                     reference.CanonicalName, StringComparer.Ordinal))
+        {
+            Append(hash, reference.CanonicalName);
+            Append(hash, reference.TargetIdentifier);
+        }
         string indexPath = Path.Combine(repository.Info.Path, "index");
         AppendFile(hash, indexPath, cancellationToken);
         string root = repository.Info.WorkingDirectory;

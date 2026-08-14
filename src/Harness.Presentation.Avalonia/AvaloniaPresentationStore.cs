@@ -1192,6 +1192,16 @@ internal sealed class AvaloniaPresentationStore(
         }
     }
 
+    internal async ValueTask RefreshActiveWorkspaceContextAsync(CancellationToken cancellationToken)
+    {
+        WorkspaceView? active = ActiveWorkspace(Current.Workspaces.Registered);
+        if (active is null) return;
+        WorkspaceResult result = await workspaceService.RefreshAsync(active.Id, cancellationToken);
+        await ReloadWorkspaceContextAsync(
+            result.Error ?? $"Refreshed {result.Workspace?.Name ?? active.Name} source context.",
+            cancellationToken);
+    }
+
     internal async ValueTask InspectWorkspaceAsync(CancellationToken cancellationToken)
     {
         string path = Current.Workspaces.RepositoryPath.Trim();

@@ -413,6 +413,109 @@ public sealed class LibGitDeveloperGitRepositoryTests : IDisposable
         Assert.Equal("Amended commit", after.Head.Tip.MessageShort);
     }
 
+    [Fact]
+    public async Task Branch_create_rename_and_switch_use_exact_reference_state()
+    {
+        await InitializeAsync();
+        var sut = new LibGitDeveloperGitRepository();
+        DeveloperGitBranchInspection first = await sut.InspectBranchesAsync(root);
+
+        DeveloperGitBranchResult created = await sut.ApplyBranchAsync(new(
+            root, new(first.State!.Fingerprint), DeveloperGitBranchOperation.Create,
+            null, "feature/local", false));
+        Assert.Null(created.Error);
+        Assert.Contains(created.Branches, branch => branch.Name == "feature/local" && !branch.IsCurrent);
+
+        DeveloperGitBranchResult renamed = await sut.ApplyBranchAsync(new(
+            root, new(created.State!.Fingerprint), DeveloperGitBranchOperation.Rename,
+            "feature/local", "feature/renamed", false));
+        Assert.Null(renamed.Error);
+        DeveloperGitBranchResult switched = await sut.ApplyBranchAsync(new(
+            root, new(renamed.State!.Fingerprint), DeveloperGitBranchOperation.Switch,
+            "feature/renamed", null, false));
+        Assert.Null(switched.Error);
+        Assert.Equal("feature/renamed", switched.State!.Branch);
+        Assert.True(switched.Branches.Single(branch => branch.Name == "feature/renamed").IsCurrent);
+    }
+
+    [Fact]
+    public async Task Branch_operation_rejects_reference_change_after_display()
+    {
+        await InitializeAsync();
+        var sut = new LibGitDeveloperGitRepository();
+        DeveloperGitBranchInspection displayed = await sut.InspectBranchesAsync(root);
+        using (Repository repository = new(root)) repository.CreateBranch("external");
+
+        DeveloperGitBranchResult result = await sut.ApplyBranchAsync(new(
+            root, new(displayed.State!.Fingerprint), DeveloperGitBranchOperation.Create,
+            null, "requested", false));
+
+        Assert.Equal("git_state_stale", result.ErrorCode);
+        Assert.DoesNotContain(result.Branches, branch => branch.Name == "requested");
+    }
+
+    [Fact]
+    public async Task Unmerged_branch_requires_explicit_force_deletion()
+    {
+        await InitializeAsync();
+        string baseBranch;
+        using (Repository repository = new(root))
+        {
+            baseBranch = repository.Head.FriendlyName;
+            Branch feature = repository.CreateBranch("feature");
+            Commands.Checkout(repository, feature);
+            File.WriteAllText(Path.Combine(root, "first.txt"), "feature\n");
+            Commands.Stage(repository, "first.txt");
+            Signature signature = new("Harness Tests", "tests@harness.local", DateTimeOffset.UtcNow);
+            repository.Commit("feature commit", signature, signature);
+            Commands.Checkout(repository, repository.Branches[baseBranch]!);
+        }
+        var sut = new LibGitDeveloperGitRepository();
+        DeveloperGitBranchInspection before = await sut.InspectBranchesAsync(root);
+        Assert.False(before.Branches.Single(branch => branch.Name == "feature").IsMergedIntoHead);
+
+        DeveloperGitBranchResult rejected = await sut.ApplyBranchAsync(new(
+            root, new(before.State!.Fingerprint), DeveloperGitBranchOperation.Delete,
+            "feature", null, false));
+        Assert.Equal("git_branch_invalid", rejected.ErrorCode);
+
+        DeveloperGitBranchResult forced = await sut.ApplyBranchAsync(new(
+            root, new(rejected.State!.Fingerprint), DeveloperGitBranchOperation.Delete,
+            "feature", null, true));
+        Assert.Null(forced.Error);
+        Assert.DoesNotContain(forced.Branches, branch => branch.Name == "feature");
+    }
+
+    [Fact]
+    public async Task Branch_switch_reports_dirty_checkout_conflict_without_losing_content()
+    {
+        await InitializeAsync();
+        string baseBranch;
+        using (Repository repository = new(root))
+        {
+            baseBranch = repository.Head.FriendlyName;
+            Branch feature = repository.CreateBranch("feature");
+            Commands.Checkout(repository, feature);
+            File.WriteAllText(Path.Combine(root, "first.txt"), "feature\n");
+            Commands.Stage(repository, "first.txt");
+            Signature signature = new("Harness Tests", "tests@harness.local", DateTimeOffset.UtcNow);
+            repository.Commit("feature", signature, signature);
+            Commands.Checkout(repository, repository.Branches[baseBranch]!);
+        }
+        await File.WriteAllTextAsync(Path.Combine(root, "first.txt"), "local dirty\n");
+        var sut = new LibGitDeveloperGitRepository();
+        DeveloperGitBranchInspection before = await sut.InspectBranchesAsync(root);
+
+        DeveloperGitBranchResult result = await sut.ApplyBranchAsync(new(
+            root, new(before.State!.Fingerprint), DeveloperGitBranchOperation.Switch,
+            "feature", null, false));
+
+        Assert.Equal("git_branch_checkout_conflict", result.ErrorCode);
+        Assert.Equal("local dirty\n", await File.ReadAllTextAsync(Path.Combine(root, "first.txt")));
+        using Repository after = new(root);
+        Assert.Equal(baseBranch, after.Head.FriendlyName);
+    }
+
     [Theory]
     [InlineData("../outside.txt")]
     [InlineData(".git/config")]

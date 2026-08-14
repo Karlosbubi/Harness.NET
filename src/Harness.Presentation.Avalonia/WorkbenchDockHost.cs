@@ -46,6 +46,7 @@ internal sealed class WorkbenchDockHost
     private readonly Func<AvaloniaShellState> state;
     private readonly Func<bool, Task> manageWorkspace;
     private readonly Func<Task> manageProjectSecrets;
+    private readonly Func<Task> refreshWorkspaceContext;
     private readonly IDeveloperProjectExecutionService? developerExecutionService;
     private readonly CancellationToken cancellationToken;
     private readonly Factory factory = new();
@@ -103,6 +104,10 @@ internal sealed class WorkbenchDockHost
     private readonly Button discardGit = new() { Content = "Discard file" };
     private readonly Button cleanGit = new() { Content = "Delete untracked" };
     private readonly Button commitGit = new() { Content = "Commit…" };
+    private readonly ListBox gitBranches = new();
+    private readonly TextBox gitBranchName = new() { PlaceholderText = "New branch name" };
+    private readonly CheckBox forceBranchDelete = new() { Content = "Force unmerged deletion" };
+    private DeveloperGitBranchInspectionResult? currentBranchInspection;
     private string gitFingerprint = string.Empty;
     private IReadOnlyList<DeveloperGitPatchUnitView> currentPatchUnits = [];
     private WorkbenchWorkspaceContext? currentGitContext;
@@ -188,7 +193,8 @@ internal sealed class WorkbenchDockHost
         IWorkspaceMutationService? mutationService = null,
         Func<Task>? manageProjectSecrets = null,
         IDeveloperProjectExecutionService? developerExecutionService = null,
-        IDeveloperGitService? developerGitService = null)
+        IDeveloperGitService? developerGitService = null,
+        Func<Task>? refreshWorkspaceContext = null)
     {
         this.runOutputService = runOutputService;
         this.inspectionService = inspectionService;
@@ -202,6 +208,7 @@ internal sealed class WorkbenchDockHost
         this.manageProjectSecrets = manageProjectSecrets ?? (() => Task.CompletedTask);
         this.developerExecutionService = developerExecutionService;
         this.developerGitService = developerGitService;
+        this.refreshWorkspaceContext = refreshWorkspaceContext ?? (() => Task.CompletedTask);
         this.cancellationToken = cancellationToken;
         factory.HideToolsOnClose = true;
         layoutCodec = new(factory);
@@ -783,6 +790,16 @@ internal sealed class WorkbenchDockHost
             }
 
             RenderGitState(inspected.Context, git);
+            if (developerGitService is not null &&
+                inspected.Context.Scope == WorkbenchWorkspaceScope.OriginalWorkspace)
+            {
+                DeveloperGitBranchInspectionResult branches = await developerGitService.InspectBranchesAsync(
+                    WorkbenchRequest(active), cancellationToken);
+                RenderGitBranches(branches);
+                if (branches.State is not null &&
+                    !branches.State.Fingerprint.Equals(git.Fingerprint, StringComparison.Ordinal))
+                    RenderGitState(branches.Context, branches.State);
+            }
         });
     }
 
@@ -935,6 +952,98 @@ internal sealed class WorkbenchDockHost
             gitStatus.Text = committed.Error ??
                 $"{(draft.Action == DeveloperGitCommitAction.Amend ? "Amended" : "Created")} commit {committed.CommitSha}.";
         });
+    }
+
+    internal async ValueTask RefreshGitBranchesAsync()
+    {
+        WorkspaceView? active = ActiveWorkspace();
+        if (busy || active is null || developerGitService is null) return;
+        await RunAsync(async () =>
+        {
+            DeveloperGitBranchInspectionResult result = await developerGitService.InspectBranchesAsync(
+                WorkbenchRequest(active), cancellationToken);
+            RenderGitBranches(result);
+        });
+    }
+
+    internal async ValueTask ApplyGitBranchAsync(DeveloperGitBranchAction action)
+    {
+        WorkspaceView? active = ActiveWorkspace();
+        DeveloperGitBranchView? selected = (gitBranches.SelectedItem as BranchChoice)?.Branch;
+        if (busy || active is null || developerGitService is null ||
+            currentBranchInspection?.State is null)
+        {
+            gitStatus.Text = "Refresh local branches first.";
+            return;
+        }
+        bool changesActiveContext = action == DeveloperGitBranchAction.Switch ||
+                                    action == DeveloperGitBranchAction.Rename && selected?.IsCurrent == true;
+        if (changesActiveContext && selected is not null &&
+            !await PrepareForWorkspaceChangeAsync())
+        {
+            gitStatus.Text = "Branch switch cancelled; unsaved documents remain open.";
+            return;
+        }
+        string name = gitBranchName.Text?.Trim() ?? string.Empty;
+        await RunAsync(async () =>
+        {
+            DeveloperGitBranchInspectionResult result = await developerGitService.ApplyBranchAsync(new(
+                WorkbenchRequest(active), new(currentBranchInspection.State.Fingerprint), action,
+                selected?.Name, string.IsNullOrWhiteSpace(name) ? null : new(name)), cancellationToken);
+            RenderGitBranches(result);
+            if (result.State is not null) RenderGitState(result.Context, result.State);
+            if (result.Error is not null)
+            {
+                gitStatus.Text = result.Error;
+                return;
+            }
+            if (action == DeveloperGitBranchAction.Switch ||
+                action == DeveloperGitBranchAction.Rename && selected?.IsCurrent == true)
+                await refreshWorkspaceContext();
+            gitStatus.Text = $"Branch {action.ToString().ToLowerInvariant()} completed.";
+        });
+    }
+
+    internal async ValueTask DeleteSelectedGitBranchAsync()
+    {
+        WorkspaceView? active = ActiveWorkspace();
+        if (busy || active is null || developerGitService is null ||
+            currentBranchInspection?.State is null ||
+            gitBranches.SelectedItem is not BranchChoice selected)
+        {
+            gitStatus.Text = "Select a current local branch first.";
+            return;
+        }
+        await RunAsync(async () =>
+        {
+            DeveloperGitBranchDeletePreviewResult result = await developerGitService.PreviewBranchDeleteAsync(new(
+                WorkbenchRequest(active), new(currentBranchInspection.State.Fingerprint),
+                selected.Branch.Name, forceBranchDelete.IsChecked == true), cancellationToken);
+            RenderGitBranches(result.Inspection);
+            if (result.Preview is null)
+            {
+                gitStatus.Text = result.Error ?? "The branch deletion preview is unavailable.";
+                return;
+            }
+            if (!await documentPrompt.ConfirmGitBranchDeleteAsync(result.Preview, OwnerWindow()))
+            {
+                gitStatus.Text = "Branch deletion cancelled; no reference was changed.";
+                return;
+            }
+            DeveloperGitBranchInspectionResult applied = await developerGitService.ApplyBranchDeleteAsync(
+                result.Preview, cancellationToken);
+            RenderGitBranches(applied);
+            if (applied.State is not null) RenderGitState(applied.Context, applied.State);
+            gitStatus.Text = applied.Error ?? $"Deleted local branch {selected.Branch.Name.Value}.";
+        });
+    }
+
+    private void RenderGitBranches(DeveloperGitBranchInspectionResult result)
+    {
+        currentBranchInspection = result;
+        gitBranches.ItemsSource = result.Branches.Select(branch => new BranchChoice(branch)).ToArray();
+        gitBranches.SelectedIndex = result.Branches.Count > 0 ? 0 : -1;
+        if (result.Error is not null) gitStatus.Text = result.Error;
     }
 
     internal async ValueTask PreviewAndApplyGitDestructiveAsync(DeveloperGitDestructiveAction action)
@@ -1555,7 +1664,7 @@ internal sealed class WorkbenchDockHost
     {
         Grid grid = new()
         {
-            RowDefinitions = new("Auto,Auto,2*,*,Auto"),
+            RowDefinitions = new("Auto,Auto,2*,*,Auto,Auto,*,Auto"),
             Margin = new Thickness(10),
             RowSpacing = 8,
         };
@@ -1620,7 +1729,40 @@ internal sealed class WorkbenchDockHost
             "Select one exact hunk or changed line, then choose Stage or Unstage. Clear the selection to act on the whole file.");
         Grid.SetRow(patchUnits, 3);
         grid.Children.Add(patchUnits);
-        Grid.SetRow(gitStatus, 4);
+        WrapPanel branchActions = new() { Orientation = AvaloniaOrientation.Horizontal };
+        Button refreshBranches = new() { Content = "Refresh branches" };
+        Button createBranch = new() { Content = "Create" };
+        Button switchBranch = new() { Content = "Switch" };
+        Button renameBranch = new() { Content = "Rename" };
+        Button deleteBranch = new() { Content = "Delete" };
+        foreach (Button button in new[] { refreshBranches, createBranch, switchBranch, renameBranch, deleteBranch })
+            button.Margin = new Thickness(0, 0, 6, 6);
+        AutomationProperties.SetName(refreshBranches, "Refresh local Git branches");
+        AutomationProperties.SetName(createBranch, "Create local Git branch");
+        AutomationProperties.SetName(switchBranch, "Switch to selected local Git branch");
+        AutomationProperties.SetName(renameBranch, "Rename selected local Git branch");
+        AutomationProperties.SetName(deleteBranch, "Preview deletion of selected local Git branch");
+        refreshBranches.Click += async (_, _) => await RefreshGitBranchesAsync();
+        createBranch.Click += async (_, _) => await ApplyGitBranchAsync(DeveloperGitBranchAction.Create);
+        switchBranch.Click += async (_, _) => await ApplyGitBranchAsync(DeveloperGitBranchAction.Switch);
+        renameBranch.Click += async (_, _) => await ApplyGitBranchAsync(DeveloperGitBranchAction.Rename);
+        deleteBranch.Click += async (_, _) => await DeleteSelectedGitBranchAsync();
+        branchActions.Children.Add(refreshBranches);
+        branchActions.Children.Add(createBranch);
+        branchActions.Children.Add(switchBranch);
+        branchActions.Children.Add(renameBranch);
+        branchActions.Children.Add(deleteBranch);
+        branchActions.Children.Add(forceBranchDelete);
+        AutomationProperties.SetName(gitBranchName, "New local Git branch name");
+        AutomationProperties.SetName(forceBranchDelete, "Force deletion of unmerged local Git branch");
+        AutomationProperties.SetName(gitBranches, "Local Git branches");
+        Grid.SetRow(gitBranchName, 4);
+        Grid.SetRow(branchActions, 5);
+        Grid.SetRow(gitBranches, 6);
+        grid.Children.Add(gitBranchName);
+        grid.Children.Add(branchActions);
+        grid.Children.Add(gitBranches);
+        Grid.SetRow(gitStatus, 7);
         grid.Children.Add(gitStatus);
         return grid;
     }
@@ -4917,6 +5059,13 @@ internal sealed class WorkbenchDockHost
             string direction = Unit.Action == DeveloperGitIndexAction.Stage ? "STAGE" : "UNSTAGE";
             return $"[{direction} {Unit.Kind.ToString().ToUpperInvariant()}] {Unit.Label} · {Unit.Preview}";
         }
+    }
+
+    private sealed record BranchChoice(DeveloperGitBranchView Branch)
+    {
+        public override string ToString() =>
+            $"{(Branch.IsCurrent ? "● " : string.Empty)}{Branch.Name.Value} · {Branch.TipSha[..Math.Min(8, Branch.TipSha.Length)]}" +
+            (Branch.IsMergedIntoHead ? " · merged" : string.Empty);
     }
 
     private abstract record RunOutputChoiceBase(DateTimeOffset StartedAt);
