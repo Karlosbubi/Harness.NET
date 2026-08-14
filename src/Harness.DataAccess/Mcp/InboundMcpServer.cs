@@ -154,7 +154,8 @@ internal sealed class InboundMcpServer(
         instanceId,
         ClientId(httpContext),
         settings.Mode,
-        timeProvider.GetUtcNow());
+        timeProvider.GetUtcNow(),
+        settings.AllowedTools.Where(ToolAllowed).ToArray());
 
     internal bool MatchesInstance(string expectedInstanceId) =>
         instanceId.Value.Equals(expectedInstanceId, StringComparison.Ordinal);

@@ -63,7 +63,8 @@ public sealed record InboundMcpCallContext(
     InboundMcpApplicationInstanceId InstanceId,
     InboundMcpClientId ClientId,
     InboundMcpMode Mode,
-    DateTimeOffset RequestedAt);
+    DateTimeOffset RequestedAt,
+    IReadOnlyList<InboundMcpToolId>? ExposedTools = null);
 
 public sealed record InboundMcpTreeRequest(
     string RelativeRoot,

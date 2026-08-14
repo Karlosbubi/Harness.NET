@@ -87,7 +87,9 @@ internal sealed class InboundMcpApplicationService(
             requestedAt = context.RequestedAt,
             protocol = "stateless-streamable-http",
             providers = providers.Providers,
-            tools = ToolPolicies,
+            toolDiscovery = "Use MCP tools/list for the authoritative exposed tool list.",
+            exposedTools = context.ExposedTools?.Select(tool => tool.Value).ToArray() ?? [],
+            toolPolicies = ToolPolicies,
         });
     }
 

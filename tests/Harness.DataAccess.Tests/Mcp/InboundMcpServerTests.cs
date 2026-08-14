@@ -66,6 +66,10 @@ public sealed class InboundMcpServerTests
         Assert.Contains(server.Current.ActiveClients,
             item => item.Id.Value == "local-anonymous");
         Assert.Equal("test-client", application.LastContext?.ClientId.Value);
+        Assert.Equal(tools.Select(tool => tool.Name).Order(),
+            application.LastContext?.ExposedTools?.Select(tool => tool.Value).Order());
+        Assert.DoesNotContain(application.LastContext?.ExposedTools ?? [],
+            tool => tool.Value == "harness_ui_activate");
         var created = await tools.Single(tool => tool.Name == "harness_create_goal").CallAsync(
             new Dictionary<string, object?>
             {
