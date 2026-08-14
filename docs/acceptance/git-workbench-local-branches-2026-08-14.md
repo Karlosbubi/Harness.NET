@@ -55,3 +55,17 @@ open.
 - `dotnet test Harness.slnx --no-build --no-restore -p:UseSharedCompilation=false -m:1`:
   767 passed, 0 failed, 0 skipped.
 - The solution build completed with 0 warnings and 0 errors.
+
+## Live dogfood
+
+`Harness.NET-live` was fast-forwarded to `4d15499`, rebuilt with zero warnings, and
+restarted as one normal-mode instance. The live `harness_git` result reported that
+same HEAD. Creating one temporary local branch changed only the complete fingerprint
+from `7379…6566` to `2ad9…5fe3`; HEAD, current branch, and worktree output did not
+change. Deleting the temporary branch restored the original fingerprint exactly. The
+temporary reference was removed before this record was written.
+
+The restart again did not finish after process termination was requested and required
+a forced stop. This is an unresolved application-lifecycle defect, not a branch-state
+failure. It remains part of Task 050's restart gate and must be diagnosed before the
+task can be marked done.
