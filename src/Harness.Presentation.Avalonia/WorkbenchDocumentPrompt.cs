@@ -61,6 +61,10 @@ internal interface IWorkbenchDocumentPrompt
     ValueTask<bool> ConfirmGitBranchDeleteAsync(
         DeveloperGitBranchDeletePreviewView preview,
         Window? owner);
+
+    ValueTask<bool> ConfirmGitTagDeleteAsync(
+        DeveloperGitTagDeletePreviewView preview,
+        Window? owner);
 }
 
 internal sealed record DeveloperGitCommitDraft(
@@ -124,6 +128,63 @@ internal sealed class AvaloniaWorkbenchDocumentPrompt : IWorkbenchDocumentPrompt
     {
         if (owner is null) return false;
         return await new GitBranchDeleteConfirmationDialog(preview).ShowDialog<bool>(owner);
+    }
+
+    public async ValueTask<bool> ConfirmGitTagDeleteAsync(
+        DeveloperGitTagDeletePreviewView preview,
+        Window? owner)
+    {
+        if (owner is null) return false;
+        return await new GitTagDeleteConfirmationDialog(preview).ShowDialog<bool>(owner);
+    }
+}
+
+internal sealed class GitTagDeleteConfirmationDialog : Window
+{
+    internal GitTagDeleteConfirmationDialog(DeveloperGitTagDeletePreviewView preview)
+    {
+        Title = "Confirm local tag deletion";
+        Width = 640;
+        SizeToContent = SizeToContent.Height;
+        WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        AutomationProperties.SetName(this, "Confirm local Git tag deletion");
+        Button confirm = new() { Content = "Delete tag", IsEnabled = false, MinWidth = 110 };
+        Button cancel = new() { Content = "Cancel", IsCancel = true, MinWidth = 88 };
+        CheckBox acknowledge = new()
+        {
+            Content = "I reviewed the exact tag target and understand recovery is not guaranteed.",
+        };
+        AutomationProperties.SetName(acknowledge, "Acknowledge local Git tag deletion consequences");
+        AutomationProperties.SetName(confirm, "Confirm deletion of exact local Git tag");
+        AutomationProperties.SetName(cancel, "Cancel local Git tag deletion");
+        acknowledge.IsCheckedChanged += (_, _) => confirm.IsEnabled = acknowledge.IsChecked == true;
+        confirm.Click += (_, _) => Close(true);
+        cancel.Click += (_, _) => Close(false);
+        Content = new StackPanel
+        {
+            Margin = new Thickness(24),
+            Spacing = 12,
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = $"{preview.Tag.Name.Value}\nTarget: {preview.Tag.TargetSha}\n" +
+                           $"Annotated: {preview.Tag.IsAnnotated}",
+                    FontWeight = FontWeight.SemiBold,
+                    TextWrapping = TextWrapping.Wrap,
+                },
+                new TextBlock { Text = preview.Consequence, TextWrapping = TextWrapping.Wrap },
+                new TextBlock { Text = preview.Recovery, TextWrapping = TextWrapping.Wrap },
+                acknowledge,
+                new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    Spacing = 8,
+                    Children = { cancel, confirm },
+                },
+            },
+        };
     }
 }
 

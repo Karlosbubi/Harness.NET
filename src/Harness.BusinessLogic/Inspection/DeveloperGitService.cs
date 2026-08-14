@@ -348,6 +348,90 @@ internal sealed class DeveloperGitService(
         return MapBranches(resolution.Context, result);
     }
 
+    public async ValueTask<DeveloperGitTagInspectionResult> InspectTagsAsync(
+        WorkbenchWorkspaceRequest workspace,
+        CancellationToken cancellationToken = default)
+    {
+        WorkbenchWorkspaceResolution resolution = await contextResolver.ResolveAsync(workspace, cancellationToken);
+        if (resolution.RootPath is null || resolution.Error is not null)
+            return new(resolution.Context, null, [], resolution.ErrorCode, resolution.Error);
+        if (resolution.Context.Scope != WorkbenchWorkspaceScope.OriginalWorkspace)
+            return new(resolution.Context, null, [], "git_tags_goal_context_denied",
+                "Developer tag management is available only in the original workspace.");
+        DeveloperGitTagInspection inspection = await repository.InspectTagsAsync(
+            resolution.RootPath, cancellationToken);
+        return MapTags(resolution.Context, inspection);
+    }
+
+    public async ValueTask<DeveloperGitTagInspectionResult> CreateTagAsync(
+        DeveloperGitTagCreateCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        WorkbenchWorkspaceResolution resolution = await contextResolver.ResolveAsync(
+            command.Workspace, cancellationToken);
+        if (resolution.RootPath is null || resolution.Error is not null)
+            return new(resolution.Context, null, [], resolution.ErrorCode, resolution.Error);
+        if (resolution.Context.Scope != WorkbenchWorkspaceScope.OriginalWorkspace)
+            return new(resolution.Context, null, [], "git_tags_goal_context_denied",
+                "Developer tag management is available only in the original workspace.");
+        DeveloperGitTagResult result = await repository.ApplyTagAsync(new(
+            resolution.RootPath, new(command.ExpectedFingerprint.Value), DeveloperGitTagOperation.Create,
+            command.Name.Value, command.Annotated, command.Message?.Value), cancellationToken);
+        return MapTags(resolution.Context, result);
+    }
+
+    public async ValueTask<DeveloperGitTagDeletePreviewResult> PreviewTagDeleteAsync(
+        DeveloperGitTagDeletePreviewCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        DeveloperGitTagInspectionResult inspection = await InspectTagsAsync(
+            command.Workspace, cancellationToken);
+        if (inspection.Error is not null || inspection.State is null)
+            return new(null, inspection, inspection.ErrorCode, inspection.Error);
+        if (!inspection.State.Fingerprint.Equals(command.ExpectedFingerprint.Value, StringComparison.Ordinal))
+            return new(null, inspection, "git_state_stale",
+                "Git references or working state changed after they were displayed. Refresh and retry.");
+        DeveloperGitTagView? tag = inspection.Tags.SingleOrDefault(candidate => candidate.Name == command.Name);
+        if (tag is null)
+            return new(null, inspection, "git_tag_delete_invalid", "Select an existing local tag.");
+        string identity = string.Join('\0', inspection.Context.WorkspaceId.Value,
+            inspection.State.Fingerprint, tag.Name.Value, tag.TargetSha);
+        var preview = new DeveloperGitTagDeletePreviewView(
+            new(Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(identity))).ToLowerInvariant()),
+            inspection.Context, new(inspection.State.Fingerprint), tag,
+            $"The local tag '{tag.Name.Value}' pointing to {tag.TargetSha} will be deleted.",
+            "The target object remains while reachable elsewhere, but Harness does not guarantee tag-name or object recovery.",
+            HasGuaranteedRecovery: false);
+        return new(preview, inspection, null, null);
+    }
+
+    public async ValueTask<DeveloperGitTagInspectionResult> ApplyTagDeleteAsync(
+        DeveloperGitTagDeletePreviewView preview,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(preview);
+        DeveloperGitTagDeletePreviewResult current = await PreviewTagDeleteAsync(new(
+            new(preview.Context.WorkspaceId, GoalId: null), preview.Fingerprint,
+            preview.Tag.Name), cancellationToken);
+        if (current.Preview is null || current.Error is not null) return current.Inspection;
+        if (!current.Preview.Id.Equals(preview.Id))
+            return current.Inspection with
+            {
+                ErrorCode = "git_tag_delete_preview_stale",
+                Error = "The tag deletion preview changed. Review a new preview before deleting.",
+            };
+        WorkbenchWorkspaceResolution resolution = await contextResolver.ResolveAsync(
+            new(preview.Context.WorkspaceId, GoalId: null), cancellationToken);
+        if (resolution.RootPath is null || resolution.Error is not null)
+            return new(resolution.Context, null, [], resolution.ErrorCode, resolution.Error);
+        DeveloperGitTagResult result = await repository.ApplyTagAsync(new(
+            resolution.RootPath, new(preview.Fingerprint.Value), DeveloperGitTagOperation.Delete,
+            preview.Tag.Name.Value, false, null), cancellationToken);
+        return MapTags(resolution.Context, result);
+    }
+
     private static DeveloperGitBranchInspectionResult MapBranches(
         WorkbenchWorkspaceContext context,
         DeveloperGitBranchInspection inspection) => new(
@@ -365,6 +449,28 @@ internal sealed class DeveloperGitService(
             result.State is null ? null : Map(result.State),
             result.Branches.Select(branch => new DeveloperGitBranchView(
                 new(branch.Name), branch.TipSha, branch.IsCurrent, branch.IsMergedIntoHead)).ToArray(),
+            result.ErrorCode,
+            result.Error);
+
+    private static DeveloperGitTagInspectionResult MapTags(
+        WorkbenchWorkspaceContext context,
+        DeveloperGitTagInspection inspection) => new(
+            context,
+            inspection.State is null ? null : Map(inspection.State),
+            inspection.Tags.Select(tag => new DeveloperGitTagView(
+                new(tag.Name), tag.TargetSha, tag.IsAnnotated, tag.Message,
+                tag.MessageIsTruncated)).ToArray(),
+            inspection.ErrorCode,
+            inspection.Error);
+
+    private static DeveloperGitTagInspectionResult MapTags(
+        WorkbenchWorkspaceContext context,
+        DeveloperGitTagResult result) => new(
+            context,
+            result.State is null ? null : Map(result.State),
+            result.Tags.Select(tag => new DeveloperGitTagView(
+                new(tag.Name), tag.TargetSha, tag.IsAnnotated, tag.Message,
+                tag.MessageIsTruncated)).ToArray(),
             result.ErrorCode,
             result.Error);
 

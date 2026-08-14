@@ -3463,6 +3463,94 @@ public sealed class PresentationControlTests
     }
 
     [Fact]
+    public async Task Git_tag_tool_creates_annotated_tag_against_exact_reference_state()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            DeveloperGitService git = new();
+            WorkbenchDockHost workbench = CreateWorkbench(TrustedShell(), new(), developerGit: git);
+            Window window = new() { Content = workbench.Control };
+            window.Show();
+            workbench.RefreshGitAsync().AsTask().GetAwaiter().GetResult();
+            Control gitTool = Assert.IsAssignableFrom<Control>(
+                Find<IDockable>(workbench.Root, WorkbenchDockIds.GitTool).Context);
+            TextBox name = Assert.Single(gitTool.GetLogicalDescendants().OfType<TextBox>(), item =>
+                AutomationProperties.GetName(item) == "New local Git tag name");
+            TextBox message = Assert.Single(gitTool.GetLogicalDescendants().OfType<TextBox>(), item =>
+                AutomationProperties.GetName(item) == "Annotated local Git tag message");
+            CheckBox annotated = Assert.Single(gitTool.GetLogicalDescendants().OfType<CheckBox>(), item =>
+                AutomationProperties.GetName(item) == "Create annotated local Git tag");
+            name.Text = "v2.0";
+            message.Text = "Release notes";
+            annotated.IsChecked = true;
+
+            workbench.CreateGitTagAsync().AsTask().GetAwaiter().GetResult();
+
+            Assert.Equal("git-fingerprint", git.TagCreateCommand!.ExpectedFingerprint.Value);
+            Assert.Equal("v2.0", git.TagCreateCommand.Name.Value);
+            Assert.True(git.TagCreateCommand.Annotated);
+            Assert.Equal("Release notes", git.TagCreateCommand.Message!.Value);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Git_tag_delete_requires_exact_target_preview_and_confirmation()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            DeveloperGitService git = new();
+            DocumentPrompt prompt = new();
+            prompt.GitTagDeleteDecisions.Enqueue(true);
+            WorkbenchDockHost workbench = CreateWorkbench(
+                TrustedShell(), new(), prompt: prompt, developerGit: git);
+            Window window = new() { Content = workbench.Control };
+            window.Show();
+            workbench.RefreshGitAsync().AsTask().GetAwaiter().GetResult();
+
+            workbench.DeleteSelectedGitTagAsync().AsTask().GetAwaiter().GetResult();
+
+            Assert.Equal("git-fingerprint", git.TagDeleteCommand!.ExpectedFingerprint.Value);
+            Assert.Equal("v1.0", git.TagDeleteCommand.Name.Value);
+            Assert.Same(Assert.Single(prompt.GitTagDeletePreviews), git.AppliedTagDelete);
+            Assert.Contains("Deleted local tag", workbench.GitStatusText, StringComparison.Ordinal);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Tag_delete_dialog_shows_exact_target_and_requires_acknowledgement()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            var preview = new DeveloperGitTagDeletePreviewView(
+                new("preview"),
+                new(new("workspace-1"), null, new("main"),
+                    WorkbenchWorkspaceScope.OriginalWorkspace, "Original workspace"),
+                new("fingerprint"), new(new("v1.0"), new string('c', 40), true, "Release", false),
+                "Delete v1.0.", "Recovery is not guaranteed.", false);
+            GitTagDeleteConfirmationDialog dialog = new(preview);
+            dialog.Show();
+            CheckBox acknowledgement = Assert.Single(dialog.GetVisualDescendants().OfType<CheckBox>(), item =>
+                AutomationProperties.GetName(item) == "Acknowledge local Git tag deletion consequences");
+            Button confirm = Assert.Single(dialog.GetVisualDescendants().OfType<Button>(), item =>
+                AutomationProperties.GetName(item) == "Confirm deletion of exact local Git tag");
+            Assert.False(confirm.IsEnabled);
+            Assert.Contains(new string('c', 40), dialog.GetVisualDescendants().OfType<TextBlock>()
+                .Select(item => item.Text).First(text => text?.Contains("Target:", StringComparison.Ordinal) == true));
+            acknowledgement.IsChecked = true;
+            Assert.True(confirm.IsEnabled);
+            dialog.Close(false);
+        }, CancellationToken.None);
+    }
+
+    [Fact]
     public async Task Layout_reset_keeps_durable_controls_in_the_rendered_tree()
     {
         using HeadlessUnitTestSession session =
@@ -3934,6 +4022,9 @@ public sealed class PresentationControlTests
         internal DeveloperGitBranchCommand? BranchCommand { get; private set; }
         internal DeveloperGitBranchDeletePreviewCommand? BranchDeleteCommand { get; private set; }
         internal DeveloperGitBranchDeletePreviewView? AppliedBranchDelete { get; private set; }
+        internal DeveloperGitTagCreateCommand? TagCreateCommand { get; private set; }
+        internal DeveloperGitTagDeletePreviewCommand? TagDeleteCommand { get; private set; }
+        internal DeveloperGitTagDeletePreviewView? AppliedTagDelete { get; private set; }
 
         public ValueTask<DeveloperGitIndexCommandResult> UpdateIndexAsync(
             DeveloperGitIndexCommand command,
@@ -4062,6 +4153,46 @@ public sealed class PresentationControlTests
             AppliedBranchDelete = preview;
             return InspectBranchesAsync(new(preview.Context.WorkspaceId, null), cancellationToken);
         }
+
+        public ValueTask<DeveloperGitTagInspectionResult> InspectTagsAsync(
+            WorkbenchWorkspaceRequest workspace,
+            CancellationToken cancellationToken = default)
+        {
+            var context = new WorkbenchWorkspaceContext(workspace.WorkspaceId, null, new("main"),
+                WorkbenchWorkspaceScope.OriginalWorkspace, "Original workspace");
+            return ValueTask.FromResult(new DeveloperGitTagInspectionResult(
+                context,
+                new("main", new string('a', 40), [], "", false, null, null, "git-fingerprint"),
+                [new(new("v1.0"), new string('a', 40), true, "Release", false)], null, null));
+        }
+
+        public ValueTask<DeveloperGitTagInspectionResult> CreateTagAsync(
+            DeveloperGitTagCreateCommand command,
+            CancellationToken cancellationToken = default)
+        {
+            TagCreateCommand = command;
+            return InspectTagsAsync(command.Workspace, cancellationToken);
+        }
+
+        public async ValueTask<DeveloperGitTagDeletePreviewResult> PreviewTagDeleteAsync(
+            DeveloperGitTagDeletePreviewCommand command,
+            CancellationToken cancellationToken = default)
+        {
+            TagDeleteCommand = command;
+            DeveloperGitTagInspectionResult inspection = await InspectTagsAsync(
+                command.Workspace, cancellationToken);
+            DeveloperGitTagView tag = inspection.Tags.Single(item => item.Name == command.Name);
+            return new(new(new("tag-delete-preview"), inspection.Context, command.ExpectedFingerprint,
+                tag, "Delete tag.", "Recovery is not guaranteed.", false), inspection, null, null);
+        }
+
+        public ValueTask<DeveloperGitTagInspectionResult> ApplyTagDeleteAsync(
+            DeveloperGitTagDeletePreviewView preview,
+            CancellationToken cancellationToken = default)
+        {
+            AppliedTagDelete = preview;
+            return InspectTagsAsync(new(preview.Context.WorkspaceId, null), cancellationToken);
+        }
     }
 
     private sealed class RunOutputService : IRunOutputService
@@ -4141,6 +4272,8 @@ public sealed class PresentationControlTests
         internal List<DeveloperGitCommitPreviewView> GitCommitPreviews { get; } = [];
         internal Queue<bool> GitBranchDeleteDecisions { get; } = [];
         internal List<DeveloperGitBranchDeletePreviewView> GitBranchDeletePreviews { get; } = [];
+        internal Queue<bool> GitTagDeleteDecisions { get; } = [];
+        internal List<DeveloperGitTagDeletePreviewView> GitTagDeletePreviews { get; } = [];
 
         public ValueTask<WorkbenchUnsavedDecision> DecideUnsavedAsync(
             WorkbenchUnsavedPrompt prompt,
@@ -4188,6 +4321,14 @@ public sealed class PresentationControlTests
         {
             GitBranchDeletePreviews.Add(preview);
             return ValueTask.FromResult(GitBranchDeleteDecisions.TryDequeue(out bool decision) && decision);
+        }
+
+        public ValueTask<bool> ConfirmGitTagDeleteAsync(
+            DeveloperGitTagDeletePreviewView preview,
+            Window? owner)
+        {
+            GitTagDeletePreviews.Add(preview);
+            return ValueTask.FromResult(GitTagDeleteDecisions.TryDequeue(out bool decision) && decision);
         }
     }
 

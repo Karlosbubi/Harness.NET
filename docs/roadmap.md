@@ -428,8 +428,11 @@ Local branch management is delivered on that same exact state. Reference fingerp
 detect external branch changes. The Git panel lists local branches and supports create,
 safe switch, and rename. Active-context changes close or resolve editor buffers and
 refresh persisted workspace identity. Branch deletion has an exact tip/merge/force
-preview and explicit recovery warning. Tags, developer worktrees, stash, history,
-merge editing, and remotes remain.
+preview and explicit recovery warning. Local tags are also delivered: the Git panel
+lists peeled targets, creates lightweight or annotated tags at the exact displayed
+HEAD, and deletes only after an exact name/target preview and acknowledgement.
+Reference changes invalidate every displayed tag action. Developer worktrees, stash,
+history, merge editing, and remotes remain.
 
 ### Planned: Task 051 — developer terminal and structured tasks
 

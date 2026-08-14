@@ -491,7 +491,7 @@ and Debug needs. Database, profiler, and notebook modules remain later slices.
 
 ### 050 — complete Git workbench
 
-Status: `In progress — exact staging, cleanup, commit/amend, and local branches delivered`
+Status: `In progress — exact staging, cleanup, commit/amend, branches, and tags delivered`
 
 Dependencies: 023, 029, 035, 036, 039.
 
@@ -549,8 +549,12 @@ Developers can list, create, switch, and rename local branches. Switching or ren
 the current branch resolves dirty documents first and refreshes the registered
 workspace so all user and model source contexts use the new branch. Deletion previews
 the exact name and tip SHA, distinguishes merged from forced unmerged deletion, states
-reflog/object-retention limits, and requires explicit acknowledgement. Tags,
-developer worktrees, stash, history, merge editing, and remotes remain open.
+reflog/object-retention limits, and requires explicit acknowledgement. Developers can
+also list tags, create a lightweight or annotated tag at the exact displayed HEAD,
+and delete a tag through an exact name and peeled-target preview. Annotated creation
+requires a bounded message and configured Git identity. Tag mutation rejects stale
+reference state and in-progress Git operations. Developer worktrees, stash, history,
+merge editing, and remotes remain open.
 
 ### 051 — developer terminal and structured tasks
 

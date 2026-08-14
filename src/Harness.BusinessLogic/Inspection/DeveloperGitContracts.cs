@@ -150,6 +150,44 @@ public sealed record DeveloperGitBranchDeletePreviewResult(
     DeveloperGitBranchInspectionResult Inspection,
     string? ErrorCode,
     string? Error);
+public sealed record DeveloperGitTagName(string Value);
+public sealed record DeveloperGitTagMessage(string Value);
+public sealed record DeveloperGitTagView(
+    DeveloperGitTagName Name,
+    string TargetSha,
+    bool IsAnnotated,
+    string? Message,
+    bool MessageIsTruncated);
+public sealed record DeveloperGitTagInspectionResult(
+    WorkbenchWorkspaceContext Context,
+    WorkspaceGitStateView? State,
+    IReadOnlyList<DeveloperGitTagView> Tags,
+    string? ErrorCode,
+    string? Error);
+public sealed record DeveloperGitTagCreateCommand(
+    WorkbenchWorkspaceRequest Workspace,
+    DeveloperGitStateFingerprint ExpectedFingerprint,
+    DeveloperGitTagName Name,
+    bool Annotated,
+    DeveloperGitTagMessage? Message);
+public sealed record DeveloperGitTagDeletePreviewId(string Value);
+public sealed record DeveloperGitTagDeletePreviewCommand(
+    WorkbenchWorkspaceRequest Workspace,
+    DeveloperGitStateFingerprint ExpectedFingerprint,
+    DeveloperGitTagName Name);
+public sealed record DeveloperGitTagDeletePreviewView(
+    DeveloperGitTagDeletePreviewId Id,
+    WorkbenchWorkspaceContext Context,
+    DeveloperGitStateFingerprint Fingerprint,
+    DeveloperGitTagView Tag,
+    string Consequence,
+    string Recovery,
+    bool HasGuaranteedRecovery);
+public sealed record DeveloperGitTagDeletePreviewResult(
+    DeveloperGitTagDeletePreviewView? Preview,
+    DeveloperGitTagInspectionResult Inspection,
+    string? ErrorCode,
+    string? Error);
 public sealed record DeveloperGitPatchCommand(
     WorkbenchWorkspaceRequest Workspace,
     DeveloperGitStateFingerprint ExpectedFingerprint,
@@ -195,5 +233,21 @@ public interface IDeveloperGitService
 
     ValueTask<DeveloperGitBranchInspectionResult> ApplyBranchDeleteAsync(
         DeveloperGitBranchDeletePreviewView preview,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitTagInspectionResult> InspectTagsAsync(
+        WorkbenchWorkspaceRequest workspace,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitTagInspectionResult> CreateTagAsync(
+        DeveloperGitTagCreateCommand command,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitTagDeletePreviewResult> PreviewTagDeleteAsync(
+        DeveloperGitTagDeletePreviewCommand command,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitTagInspectionResult> ApplyTagDeleteAsync(
+        DeveloperGitTagDeletePreviewView preview,
         CancellationToken cancellationToken = default);
 }

@@ -108,6 +108,11 @@ internal sealed class WorkbenchDockHost
     private readonly TextBox gitBranchName = new() { PlaceholderText = "New branch name" };
     private readonly CheckBox forceBranchDelete = new() { Content = "Force unmerged deletion" };
     private DeveloperGitBranchInspectionResult? currentBranchInspection;
+    private readonly ListBox gitTags = new();
+    private readonly TextBox gitTagName = new() { PlaceholderText = "Tag name" };
+    private readonly TextBox gitTagMessage = new() { PlaceholderText = "Annotated tag message" };
+    private readonly CheckBox annotatedGitTag = new() { Content = "Annotated tag" };
+    private DeveloperGitTagInspectionResult? currentTagInspection;
     private string gitFingerprint = string.Empty;
     private IReadOnlyList<DeveloperGitPatchUnitView> currentPatchUnits = [];
     private WorkbenchWorkspaceContext? currentGitContext;
@@ -799,6 +804,9 @@ internal sealed class WorkbenchDockHost
                 if (branches.State is not null &&
                     !branches.State.Fingerprint.Equals(git.Fingerprint, StringComparison.Ordinal))
                     RenderGitState(branches.Context, branches.State);
+                DeveloperGitTagInspectionResult tags = await developerGitService.InspectTagsAsync(
+                    WorkbenchRequest(active), cancellationToken);
+                RenderGitTags(tags);
             }
         });
     }
@@ -1043,6 +1051,77 @@ internal sealed class WorkbenchDockHost
         currentBranchInspection = result;
         gitBranches.ItemsSource = result.Branches.Select(branch => new BranchChoice(branch)).ToArray();
         gitBranches.SelectedIndex = result.Branches.Count > 0 ? 0 : -1;
+        if (result.Error is not null) gitStatus.Text = result.Error;
+    }
+
+    internal async ValueTask RefreshGitTagsAsync()
+    {
+        WorkspaceView? active = ActiveWorkspace();
+        if (busy || active is null || developerGitService is null) return;
+        await RunAsync(async () => RenderGitTags(await developerGitService.InspectTagsAsync(
+            WorkbenchRequest(active), cancellationToken)));
+    }
+
+    internal async ValueTask CreateGitTagAsync()
+    {
+        WorkspaceView? active = ActiveWorkspace();
+        if (busy || active is null || developerGitService is null || currentTagInspection?.State is null)
+        {
+            gitStatus.Text = "Refresh local tags first.";
+            return;
+        }
+        string name = gitTagName.Text?.Trim() ?? string.Empty;
+        string message = gitTagMessage.Text?.Trim() ?? string.Empty;
+        await RunAsync(async () =>
+        {
+            DeveloperGitTagInspectionResult result = await developerGitService.CreateTagAsync(new(
+                WorkbenchRequest(active), new(currentTagInspection.State.Fingerprint), new(name),
+                annotatedGitTag.IsChecked == true,
+                string.IsNullOrWhiteSpace(message) ? null : new(message)), cancellationToken);
+            RenderGitTags(result);
+            if (result.State is not null) RenderGitState(result.Context, result.State);
+            gitStatus.Text = result.Error ?? $"Created local tag {name}.";
+        });
+    }
+
+    internal async ValueTask DeleteSelectedGitTagAsync()
+    {
+        WorkspaceView? active = ActiveWorkspace();
+        if (busy || active is null || developerGitService is null || currentTagInspection?.State is null ||
+            gitTags.SelectedItem is not TagChoice selected)
+        {
+            gitStatus.Text = "Select a current local tag first.";
+            return;
+        }
+        await RunAsync(async () =>
+        {
+            DeveloperGitTagDeletePreviewResult result = await developerGitService.PreviewTagDeleteAsync(new(
+                WorkbenchRequest(active), new(currentTagInspection.State.Fingerprint),
+                selected.Tag.Name), cancellationToken);
+            RenderGitTags(result.Inspection);
+            if (result.Preview is null)
+            {
+                gitStatus.Text = result.Error ?? "The tag deletion preview is unavailable.";
+                return;
+            }
+            if (!await documentPrompt.ConfirmGitTagDeleteAsync(result.Preview, OwnerWindow()))
+            {
+                gitStatus.Text = "Tag deletion cancelled; no reference was changed.";
+                return;
+            }
+            DeveloperGitTagInspectionResult applied = await developerGitService.ApplyTagDeleteAsync(
+                result.Preview, cancellationToken);
+            RenderGitTags(applied);
+            if (applied.State is not null) RenderGitState(applied.Context, applied.State);
+            gitStatus.Text = applied.Error ?? $"Deleted local tag {selected.Tag.Name.Value}.";
+        });
+    }
+
+    private void RenderGitTags(DeveloperGitTagInspectionResult result)
+    {
+        currentTagInspection = result;
+        gitTags.ItemsSource = result.Tags.Select(tag => new TagChoice(tag)).ToArray();
+        gitTags.SelectedIndex = result.Tags.Count > 0 ? 0 : -1;
         if (result.Error is not null) gitStatus.Text = result.Error;
     }
 
@@ -1664,7 +1743,7 @@ internal sealed class WorkbenchDockHost
     {
         Grid grid = new()
         {
-            RowDefinitions = new("Auto,Auto,2*,*,Auto,Auto,*,Auto"),
+            RowDefinitions = new("Auto,Auto,2*,*,Auto,Auto,*,Auto,Auto,Auto,*,Auto"),
             Margin = new Thickness(10),
             RowSpacing = 8,
         };
@@ -1762,7 +1841,35 @@ internal sealed class WorkbenchDockHost
         grid.Children.Add(gitBranchName);
         grid.Children.Add(branchActions);
         grid.Children.Add(gitBranches);
-        Grid.SetRow(gitStatus, 7);
+        WrapPanel tagActions = new() { Orientation = AvaloniaOrientation.Horizontal };
+        Button refreshTags = new() { Content = "Refresh tags" };
+        Button createTag = new() { Content = "Create tag" };
+        Button deleteTag = new() { Content = "Delete tag" };
+        foreach (Button button in new[] { refreshTags, createTag, deleteTag })
+            button.Margin = new Thickness(0, 0, 6, 6);
+        AutomationProperties.SetName(refreshTags, "Refresh local Git tags");
+        AutomationProperties.SetName(createTag, "Create local Git tag at HEAD");
+        AutomationProperties.SetName(deleteTag, "Preview deletion of selected local Git tag");
+        AutomationProperties.SetName(gitTagName, "New local Git tag name");
+        AutomationProperties.SetName(gitTagMessage, "Annotated local Git tag message");
+        AutomationProperties.SetName(annotatedGitTag, "Create annotated local Git tag");
+        AutomationProperties.SetName(gitTags, "Local Git tags");
+        refreshTags.Click += async (_, _) => await RefreshGitTagsAsync();
+        createTag.Click += async (_, _) => await CreateGitTagAsync();
+        deleteTag.Click += async (_, _) => await DeleteSelectedGitTagAsync();
+        tagActions.Children.Add(refreshTags);
+        tagActions.Children.Add(createTag);
+        tagActions.Children.Add(deleteTag);
+        tagActions.Children.Add(annotatedGitTag);
+        Grid.SetRow(gitTagName, 7);
+        Grid.SetRow(gitTagMessage, 8);
+        Grid.SetRow(tagActions, 9);
+        Grid.SetRow(gitTags, 10);
+        grid.Children.Add(gitTagName);
+        grid.Children.Add(gitTagMessage);
+        grid.Children.Add(tagActions);
+        grid.Children.Add(gitTags);
+        Grid.SetRow(gitStatus, 11);
         grid.Children.Add(gitStatus);
         return grid;
     }
@@ -5066,6 +5173,13 @@ internal sealed class WorkbenchDockHost
         public override string ToString() =>
             $"{(Branch.IsCurrent ? "● " : string.Empty)}{Branch.Name.Value} · {Branch.TipSha[..Math.Min(8, Branch.TipSha.Length)]}" +
             (Branch.IsMergedIntoHead ? " · merged" : string.Empty);
+    }
+
+    private sealed record TagChoice(DeveloperGitTagView Tag)
+    {
+        public override string ToString() =>
+            $"{Tag.Name.Value} · {Tag.TargetSha[..Math.Min(8, Tag.TargetSha.Length)]}" +
+            (Tag.IsAnnotated ? " · annotated" : string.Empty);
     }
 
     private abstract record RunOutputChoiceBase(DateTimeOffset StartedAt);

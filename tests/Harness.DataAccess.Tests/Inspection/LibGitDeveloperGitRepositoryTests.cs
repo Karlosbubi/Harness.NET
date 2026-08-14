@@ -516,6 +516,78 @@ public sealed class LibGitDeveloperGitRepositoryTests : IDisposable
         Assert.Equal(baseBranch, after.Head.FriendlyName);
     }
 
+    [Fact]
+    public async Task Tags_create_lightweight_and_annotated_then_delete_exact_reference()
+    {
+        await InitializeAsync();
+        var sut = new LibGitDeveloperGitRepository();
+        DeveloperGitTagInspection initial = await sut.InspectTagsAsync(root);
+        Assert.Empty(initial.Tags);
+
+        DeveloperGitTagResult lightweight = await sut.ApplyTagAsync(new(
+            root, new(initial.State!.Fingerprint), DeveloperGitTagOperation.Create,
+            "v1.0", false, null));
+        Assert.Null(lightweight.Error);
+        DeveloperGitTag light = Assert.Single(lightweight.Tags);
+        Assert.False(light.IsAnnotated);
+
+        DeveloperGitTagResult annotated = await sut.ApplyTagAsync(new(
+            root, new(lightweight.State!.Fingerprint), DeveloperGitTagOperation.Create,
+            "v1.1", true, "Release notes"));
+        Assert.Null(annotated.Error);
+        DeveloperGitTag annotation = annotated.Tags.Single(tag => tag.Name == "v1.1");
+        Assert.True(annotation.IsAnnotated);
+        Assert.Equal("Release notes", annotation.Message);
+        Assert.Equal(light.TargetSha, annotation.TargetSha);
+
+        DeveloperGitTagResult deleted = await sut.ApplyTagAsync(new(
+            root, new(annotated.State!.Fingerprint), DeveloperGitTagOperation.Delete,
+            "v1.0", false, null));
+        Assert.Null(deleted.Error);
+        Assert.DoesNotContain(deleted.Tags, tag => tag.Name == "v1.0");
+        Assert.Contains(deleted.Tags, tag => tag.Name == "v1.1");
+    }
+
+    [Fact]
+    public async Task Tag_operation_rejects_reference_change_after_display()
+    {
+        await InitializeAsync();
+        var sut = new LibGitDeveloperGitRepository();
+        DeveloperGitTagInspection displayed = await sut.InspectTagsAsync(root);
+        using (Repository repository = new(root)) repository.ApplyTag("external", repository.Head.Tip!.Sha);
+
+        DeveloperGitTagResult result = await sut.ApplyTagAsync(new(
+            root, new(displayed.State!.Fingerprint), DeveloperGitTagOperation.Create,
+            "requested", false, null));
+
+        Assert.Equal("git_state_stale", result.ErrorCode);
+        Assert.DoesNotContain(result.Tags, tag => tag.Name == "requested");
+        Assert.Contains(result.Tags, tag => tag.Name == "external");
+    }
+
+    [Fact]
+    public async Task Annotated_tag_requires_configured_identity_and_message()
+    {
+        await InitializeAsync();
+        using (Repository repository = new(root))
+        {
+            repository.Config.Set("user.name", string.Empty);
+            repository.Config.Set("user.email", string.Empty);
+        }
+        var sut = new LibGitDeveloperGitRepository();
+        DeveloperGitTagInspection before = await sut.InspectTagsAsync(root);
+        DeveloperGitTagResult noMessage = await sut.ApplyTagAsync(new(
+            root, new(before.State!.Fingerprint), DeveloperGitTagOperation.Create,
+            "v1", true, null));
+        Assert.Equal("git_tag_message_invalid", noMessage.ErrorCode);
+
+        DeveloperGitTagResult noIdentity = await sut.ApplyTagAsync(new(
+            root, new(noMessage.State!.Fingerprint), DeveloperGitTagOperation.Create,
+            "v1", true, "Release"));
+        Assert.Equal("git_identity_missing", noIdentity.ErrorCode);
+        Assert.Empty(noIdentity.Tags);
+    }
+
     [Theory]
     [InlineData("../outside.txt")]
     [InlineData(".git/config")]

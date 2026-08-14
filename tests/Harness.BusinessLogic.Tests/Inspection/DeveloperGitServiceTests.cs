@@ -186,6 +186,45 @@ public sealed class DeveloperGitServiceTests
         Assert.Equal("feature", repository.BranchRequest.ExistingName);
     }
 
+    [Fact]
+    public async Task Tag_create_preserves_exact_reference_state_annotation_and_message()
+    {
+        Repository repository = new();
+        DeveloperGitService service = new(
+            new ContextResolver(goalContext: false), repository, new GitInspector());
+
+        await service.CreateTagAsync(new(
+            new(new("workspace-id"), null), new("tag-fingerprint"), new("v1.0"),
+            true, new("Release notes")));
+
+        Assert.Equal(DeveloperGitTagOperation.Create, repository.TagRequest!.Operation);
+        Assert.Equal("tag-fingerprint", repository.TagRequest.ExpectedFingerprint.Value);
+        Assert.Equal("v1.0", repository.TagRequest.Name);
+        Assert.True(repository.TagRequest.Annotated);
+        Assert.Equal("Release notes", repository.TagRequest.Message);
+    }
+
+    [Fact]
+    public async Task Tag_delete_revalidates_exact_target_preview_before_apply()
+    {
+        Repository repository = new();
+        DeveloperGitService service = new(
+            new ContextResolver(goalContext: false), repository, new GitInspector());
+
+        DeveloperGitTagDeletePreviewResult result = await service.PreviewTagDeleteAsync(new(
+            new(new("workspace-id"), null), new("tag-fingerprint"), new("v1.0")));
+        DeveloperGitTagDeletePreviewView preview = Assert.IsType<DeveloperGitTagDeletePreviewView>(
+            result.Preview);
+        Assert.Contains(new string('a', 40), preview.Consequence, StringComparison.Ordinal);
+        Assert.False(preview.HasGuaranteedRecovery);
+
+        await service.ApplyTagDeleteAsync(preview);
+
+        Assert.Equal(DeveloperGitTagOperation.Delete, repository.TagRequest!.Operation);
+        Assert.Equal("v1.0", repository.TagRequest.Name);
+        Assert.Equal("tag-fingerprint", repository.TagRequest.ExpectedFingerprint.Value);
+    }
+
     private sealed class Repository : IDeveloperGitRepository
     {
         internal DeveloperGitIndexRequest? Request { get; private set; }
@@ -193,6 +232,7 @@ public sealed class DeveloperGitServiceTests
         internal DeveloperGitDestructiveRequest? DestructiveRequest { get; private set; }
         internal DeveloperGitCommitRequest? CommitRequest { get; private set; }
         internal DeveloperGitBranchRequest? BranchRequest { get; private set; }
+        internal DeveloperGitTagRequest? TagRequest { get; private set; }
 
         public ValueTask<DeveloperGitIndexResult> UpdateIndexAsync(
             DeveloperGitIndexRequest request,
@@ -249,6 +289,23 @@ public sealed class DeveloperGitServiceTests
             return ValueTask.FromResult(new DeveloperGitBranchResult(
                 new("main", new string('a', 40), [], "", false, null, null, "after"),
                 [new("main", new string('a', 40), true, true)], null, null));
+        }
+
+        public ValueTask<DeveloperGitTagInspection> InspectTagsAsync(
+            string repositoryRoot,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new DeveloperGitTagInspection(
+                new("main", new string('a', 40), [], "", false, null, null, "tag-fingerprint"),
+                [new("v1.0", new string('a', 40), true, "Release", false)], null, null));
+
+        public ValueTask<DeveloperGitTagResult> ApplyTagAsync(
+            DeveloperGitTagRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            TagRequest = request;
+            return ValueTask.FromResult(new DeveloperGitTagResult(
+                new("main", new string('a', 40), [], "", false, null, null, "after-tag"),
+                [], null, null));
         }
     }
 

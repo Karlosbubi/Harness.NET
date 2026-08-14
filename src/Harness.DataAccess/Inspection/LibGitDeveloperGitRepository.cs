@@ -394,6 +394,142 @@ internal sealed class LibGitDeveloperGitRepository : IDeveloperGitRepository
         }
     }
 
+    public ValueTask<DeveloperGitTagInspection> InspectTagsAsync(
+        string repositoryRoot,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        string? repositoryPath = Repository.Discover(repositoryRoot);
+        if (repositoryPath is null)
+            return ValueTask.FromResult(TagInspectionFailure(
+                "repository_missing", "No Git repository was found."));
+        try
+        {
+            using Repository repository = new(repositoryPath);
+            if (!NormalizeRoot(repositoryRoot).Equals(
+                    NormalizeRoot(repository.Info.WorkingDirectory), StringComparison.Ordinal))
+                return ValueTask.FromResult(TagInspectionFailure(
+                    "repository_mismatch", "The workspace root must be the Git repository root."));
+            return ValueTask.FromResult(new DeveloperGitTagInspection(
+                GitRepositoryStateReader.Read(repository, cancellationToken),
+                MapTags(repository), null, null));
+        }
+        catch (Exception exception) when (exception is LibGit2SharpException or IOException or
+                                           UnauthorizedAccessException or ArgumentException)
+        {
+            return ValueTask.FromResult(TagInspectionFailure(
+                "git_tags_failed", "Git tags could not be inspected."));
+        }
+    }
+
+    public ValueTask<DeveloperGitTagResult> ApplyTagAsync(
+        DeveloperGitTagRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+        string? repositoryPath = Repository.Discover(request.RepositoryRoot);
+        if (repositoryPath is null)
+            return ValueTask.FromResult(TagFailure("repository_missing", "No Git repository was found."));
+        try
+        {
+            using Repository repository = new(repositoryPath);
+            if (!NormalizeRoot(request.RepositoryRoot).Equals(
+                    NormalizeRoot(repository.Info.WorkingDirectory), StringComparison.Ordinal))
+                return ValueTask.FromResult(TagFailure(
+                    "repository_mismatch", "The workspace root must be the Git repository root."));
+            WorkspaceGitState before = GitRepositoryStateReader.Read(repository, cancellationToken);
+            if (!CryptographicEquals(before.Fingerprint, request.ExpectedFingerprint.Value))
+                return ValueTask.FromResult(new DeveloperGitTagResult(
+                    before, MapTags(repository), "git_state_stale",
+                    "Git references or working state changed after they were displayed. Refresh and retry."));
+            if (repository.Info.CurrentOperation != CurrentOperation.None)
+                return ValueTask.FromResult(new DeveloperGitTagResult(
+                    before, MapTags(repository), "git_operation_in_progress",
+                    "Finish the current Git operation before changing tags."));
+            string name = request.Name.Trim();
+            if (name.Length == 0 || !Reference.IsValidName($"refs/tags/{name}"))
+                return ValueTask.FromResult(new DeveloperGitTagResult(
+                    before, MapTags(repository), "git_tag_invalid", "Enter a valid local tag name."));
+            Tag? existing = repository.Tags[name];
+            if (request.Operation == DeveloperGitTagOperation.Create)
+            {
+                if (existing is not null)
+                    return ValueTask.FromResult(new DeveloperGitTagResult(
+                        before, MapTags(repository), "git_tag_exists", "A tag with that name already exists."));
+                if (repository.Head.Tip is null)
+                    return ValueTask.FromResult(new DeveloperGitTagResult(
+                        before, MapTags(repository), "git_tag_unborn", "An unborn branch has no commit to tag."));
+                if (request.Annotated)
+                {
+                    string? message = request.Message?.Trim();
+                    if (string.IsNullOrWhiteSpace(message) || message.Length > 32_768)
+                        return ValueTask.FromResult(new DeveloperGitTagResult(
+                            before, MapTags(repository), "git_tag_message_invalid",
+                            "Enter an annotated tag message between 1 and 32,768 characters."));
+                    string? authorName = repository.Config.Get<string>("user.name")?.Value?.Trim();
+                    string? authorEmail = repository.Config.Get<string>("user.email")?.Value?.Trim();
+                    if (string.IsNullOrWhiteSpace(authorName) || string.IsNullOrWhiteSpace(authorEmail))
+                        return ValueTask.FromResult(new DeveloperGitTagResult(
+                            before, MapTags(repository), "git_identity_missing",
+                            "Configure Git user.name and user.email before creating an annotated tag."));
+                    repository.ApplyTag(name, repository.Head.Tip.Sha,
+                        new Signature(authorName, authorEmail, DateTimeOffset.UtcNow), message);
+                }
+                else
+                {
+                    repository.ApplyTag(name, repository.Head.Tip.Sha);
+                }
+            }
+            else
+            {
+                if (existing is null)
+                    return ValueTask.FromResult(new DeveloperGitTagResult(
+                        before, MapTags(repository), "git_tag_missing", "Select an existing local tag."));
+                repository.Tags.Remove(name);
+            }
+            WorkspaceGitState after = GitRepositoryStateReader.Read(repository, cancellationToken);
+            return ValueTask.FromResult(new DeveloperGitTagResult(after, MapTags(repository), null, null));
+        }
+        catch (Exception exception) when (exception is LibGit2SharpException or IOException or
+                                           UnauthorizedAccessException or ArgumentException or InvalidOperationException)
+        {
+            return ValueTask.FromResult(ReadTagFailure(repositoryPath,
+                "git_tag_failed", "Git could not apply the tag operation."));
+        }
+    }
+
+    private static DeveloperGitTag[] MapTags(Repository repository) =>
+        repository.Tags.OrderBy(tag => tag.FriendlyName, StringComparer.Ordinal)
+            .Select(MapTag)
+            .ToArray();
+
+    private static DeveloperGitTag MapTag(Tag tag)
+    {
+        const int maximumDisplayedMessageCharacters = 32_768;
+        string? message = tag.Annotation?.Message?.TrimEnd();
+        bool truncated = message?.Length > maximumDisplayedMessageCharacters;
+        if (truncated)
+            message = message![..maximumDisplayedMessageCharacters];
+        return new(tag.FriendlyName, tag.Target.Peel<Commit>()?.Sha ?? tag.Target.Sha,
+            tag.Annotation is not null, message, truncated);
+    }
+
+    private static DeveloperGitTagResult ReadTagFailure(string repositoryPath, string code, string error)
+    {
+        try
+        {
+            using Repository repository = new(repositoryPath);
+            return new(GitRepositoryStateReader.Read(repository, CancellationToken.None),
+                MapTags(repository), code, error);
+        }
+        catch (Exception exception) when (exception is LibGit2SharpException or IOException or
+                                           UnauthorizedAccessException or ArgumentException)
+        {
+            return TagFailure(code, error);
+        }
+    }
+
     private static DeveloperGitBranchResult ReadBranchFailure(
         string repositoryPath,
         string code,
@@ -664,6 +800,12 @@ internal sealed class LibGitDeveloperGitRepository : IDeveloperGitRepository
         new(null, [], code, error);
 
     private static DeveloperGitBranchResult BranchFailure(string code, string error) =>
+        new(null, [], code, error);
+
+    private static DeveloperGitTagInspection TagInspectionFailure(string code, string error) =>
+        new(null, [], code, error);
+
+    private static DeveloperGitTagResult TagFailure(string code, string error) =>
         new(null, [], code, error);
 
     private sealed class GitPatchUnitUnavailableException : Exception;

@@ -44,6 +44,12 @@ public enum DeveloperGitBranchOperation
     Delete,
 }
 
+public enum DeveloperGitTagOperation
+{
+    Create,
+    Delete,
+}
+
 public sealed record DeveloperGitStateFingerprint(string Value);
 public sealed record DeveloperGitPath(string Value);
 public sealed record DeveloperGitIndexRequest(
@@ -112,6 +118,29 @@ public sealed record DeveloperGitBranchResult(
     IReadOnlyList<DeveloperGitBranch> Branches,
     string? ErrorCode,
     string? Error);
+public sealed record DeveloperGitTag(
+    string Name,
+    string TargetSha,
+    bool IsAnnotated,
+    string? Message,
+    bool MessageIsTruncated);
+public sealed record DeveloperGitTagInspection(
+    WorkspaceGitState? State,
+    IReadOnlyList<DeveloperGitTag> Tags,
+    string? ErrorCode,
+    string? Error);
+public sealed record DeveloperGitTagRequest(
+    string RepositoryRoot,
+    DeveloperGitStateFingerprint ExpectedFingerprint,
+    DeveloperGitTagOperation Operation,
+    string Name,
+    bool Annotated,
+    string? Message);
+public sealed record DeveloperGitTagResult(
+    WorkspaceGitState? State,
+    IReadOnlyList<DeveloperGitTag> Tags,
+    string? ErrorCode,
+    string? Error);
 
 public interface IDeveloperGitRepository
 {
@@ -141,5 +170,13 @@ public interface IDeveloperGitRepository
 
     ValueTask<DeveloperGitBranchResult> ApplyBranchAsync(
         DeveloperGitBranchRequest request,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitTagInspection> InspectTagsAsync(
+        string repositoryRoot,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitTagResult> ApplyTagAsync(
+        DeveloperGitTagRequest request,
         CancellationToken cancellationToken = default);
 }
