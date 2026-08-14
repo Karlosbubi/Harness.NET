@@ -34,7 +34,9 @@ internal static class GitRepositoryStateReader
         truncated |= combinedTruncated;
         string fingerprint = Fingerprint(repository, entries, cancellationToken);
         IReadOnlyList<DeveloperGitPatchUnit> patchUnits = GitPatchUnitParser.Parse(
-            staged, unstaged, fingerprint, stagedTruncated, unstagedTruncated);
+                staged, unstaged, fingerprint, stagedTruncated, unstagedTruncated)
+            .Select(application => application.Unit)
+            .ToArray();
         return new(
             repository.Info.IsHeadDetached ? "(detached)" : repository.Head.FriendlyName,
             repository.Head.Tip?.Sha,

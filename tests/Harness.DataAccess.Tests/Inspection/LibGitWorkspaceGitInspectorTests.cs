@@ -43,6 +43,9 @@ public sealed class LibGitWorkspaceGitInspectorTests : IDisposable
         Assert.NotEmpty(result.Fingerprint);
         Assert.Empty(result.StagedDiff);
         Assert.Contains("+after", result.UnstagedDiff, StringComparison.Ordinal);
+        string patchMetadata = System.Text.Json.JsonSerializer.Serialize(result.PatchUnits);
+        Assert.DoesNotContain("\"Patch\"", patchMetadata, StringComparison.Ordinal);
+        Assert.DoesNotContain("ApplyInReverse", patchMetadata, StringComparison.Ordinal);
         Assert.Contains("-before", result.Diff, StringComparison.Ordinal);
         Assert.Contains("+after", result.Diff, StringComparison.Ordinal);
         Assert.False(result.IsTruncated);

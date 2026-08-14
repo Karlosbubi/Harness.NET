@@ -9,14 +9,14 @@ internal static class GitPatchUnitParser
     private const int MaximumUnits = 2_000;
     private const int MaximumPreviewCharacters = 240;
 
-    internal static IReadOnlyList<DeveloperGitPatchUnit> Parse(
+    internal static IReadOnlyList<GitPatchApplicationUnit> Parse(
         string stagedDiff,
         string unstagedDiff,
         string fingerprint,
         bool stagedDiffTruncated,
         bool unstagedDiffTruncated)
     {
-        var units = new List<DeveloperGitPatchUnit>();
+        var units = new List<GitPatchApplicationUnit>();
         if (!unstagedDiffTruncated)
             AddDiff(units, unstagedDiff, fingerprint, DeveloperGitPatchDirection.Stage);
         if (!stagedDiffTruncated)
@@ -25,7 +25,7 @@ internal static class GitPatchUnitParser
     }
 
     private static void AddDiff(
-        List<DeveloperGitPatchUnit> units,
+        List<GitPatchApplicationUnit> units,
         string diff,
         string fingerprint,
         DeveloperGitPatchDirection direction)
@@ -43,7 +43,7 @@ internal static class GitPatchUnitParser
     }
 
     private static void AddFile(
-        List<DeveloperGitPatchUnit> units,
+        List<GitPatchApplicationUnit> units,
         string[] fileLines,
         string fingerprint,
         DeveloperGitPatchDirection direction)
@@ -96,7 +96,7 @@ internal static class GitPatchUnitParser
     }
 
     private static void AddLines(
-        List<DeveloperGitPatchUnit> units,
+        List<GitPatchApplicationUnit> units,
         string header,
         string[] hunk,
         HunkRange range,
@@ -189,7 +189,7 @@ internal static class GitPatchUnitParser
             : diff + oldPath + newPath;
     }
 
-    private static DeveloperGitPatchUnit CreateUnit(
+    private static GitPatchApplicationUnit CreateUnit(
         string fingerprint,
         string path,
         DeveloperGitPatchDirection direction,
@@ -206,8 +206,10 @@ internal static class GitPatchUnitParser
         string boundedPreview = preview.Length <= MaximumPreviewCharacters
             ? preview.TrimEnd()
             : preview[..MaximumPreviewCharacters].TrimEnd() + "…";
-        return new(id, new(path), direction, kind, label, oldLine, newLine,
-            boundedPreview, patch, ApplyInReverse);
+        return new(
+            new(id, new(path), direction, kind, label, oldLine, newLine, boundedPreview),
+            patch,
+            ApplyInReverse);
     }
 
     private static string? ParsePath(IReadOnlyList<string> header)
@@ -314,3 +316,8 @@ internal static class GitPatchUnitParser
 
     private readonly record struct HunkRange(int OldStart, int OldCount, int NewStart, int NewCount);
 }
+
+internal sealed record GitPatchApplicationUnit(
+    DeveloperGitPatchUnit Unit,
+    string Patch,
+    bool ApplyInReverse);

@@ -38,9 +38,7 @@ public sealed record DeveloperGitPatchUnit(
     string Label,
     int? OldLine,
     int? NewLine,
-    string Preview,
-    string Patch,
-    bool ApplyInReverse);
+    string Preview);
 public sealed record DeveloperGitPatchRequest(
     string RepositoryRoot,
     DeveloperGitStateFingerprint ExpectedFingerprint,

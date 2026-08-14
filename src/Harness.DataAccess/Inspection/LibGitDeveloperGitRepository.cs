@@ -87,7 +87,7 @@ internal sealed class LibGitDeveloperGitRepository : IDeveloperGitRepository
         try
         {
             WorkspaceGitState before;
-            DeveloperGitPatchUnit unit;
+            GitPatchApplicationUnit unit;
             string root;
             using (Repository repository = new(repositoryPath))
             {
@@ -98,8 +98,17 @@ internal sealed class LibGitDeveloperGitRepository : IDeveloperGitRepository
                 if (!CryptographicEquals(before.Fingerprint, request.ExpectedFingerprint.Value))
                     return new(before, [], "git_state_stale",
                         "Git state changed after it was displayed. Refresh and retry.");
-                unit = (before.PatchUnits ?? []).SingleOrDefault(candidate =>
-                           candidate.Id.Equals(request.PatchUnitId, StringComparison.Ordinal))
+                bool wasDisplayed = (before.PatchUnits ?? []).Any(candidate =>
+                    candidate.Id.Equals(request.PatchUnitId, StringComparison.Ordinal));
+                if (!wasDisplayed) throw new GitPatchUnitUnavailableException();
+                unit = GitPatchUnitParser.Parse(
+                           before.StagedDiff,
+                           before.UnstagedDiff,
+                           before.Fingerprint,
+                           stagedDiffTruncated: false,
+                           unstagedDiffTruncated: false)
+                           .SingleOrDefault(candidate => candidate.Unit.Id.Equals(
+                               request.PatchUnitId, StringComparison.Ordinal))
                        ?? throw new GitPatchUnitUnavailableException();
             }
 
@@ -127,7 +136,7 @@ internal sealed class LibGitDeveloperGitRepository : IDeveloperGitRepository
             if (process.ExitCode != 0)
                 return new(after, [], "git_patch_rejected",
                     "Git could not apply that selection to the current index. Refresh and review the surrounding changes.");
-            return new(after, [unit.Path], null, null);
+            return new(after, [unit.Unit.Path], null, null);
         }
         catch (GitPatchUnitUnavailableException)
         {

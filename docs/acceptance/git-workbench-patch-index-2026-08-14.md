@@ -40,10 +40,20 @@ Paid providers and network Git operations are not used by this slice.
 
 ## Verification
 
-- Focused Data Access Git tests: 13 passed after the slice, including 10 index
+- Focused Data Access Git tests: 15 passed after the slice, including 10 index
   mutation cases and quoted Unicode path handling.
 - Focused Business Logic tests: 2 passed.
 - Focused headless Avalonia Git tests: 3 passed.
 - `dotnet test Harness.slnx --no-restore -p:UseSharedCompilation=false -m:1`:
   739 passed, 0 failed, 0 skipped.
 - The solution build completed with zero compiler warnings.
+
+## Live dogfood finding
+
+The first live MCP check used a reversible tracked documentation change. It proved
+that hunk and line identities were generated, but also found that `harness_git`
+serialized the internal patch payload and reverse flag from the Data Access record.
+That enlarged model context and violated the intended boundary. The public patch-unit
+record now contains metadata only; an internal application record owns patch text and
+direction. A serialization regression assertion rejects both internal properties.
+The temporary change was removed after inspection.
