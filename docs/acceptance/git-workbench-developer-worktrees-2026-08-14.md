@@ -67,5 +67,17 @@ large-repository, submodule, and final accessibility coverage remain open.
 
 ## Live dogfood
 
-The live-copy synchronization, visual inspection, and linked-worktree fingerprint
-check are recorded in a follow-up commit after the executable is rebuilt and restarted.
+The main commit was pushed and the separate live checkout was fast-forwarded to it.
+That checkout built with zero warnings and errors and restarted as a normal Harness
+desktop process. Live `harness_application`, `harness_git`, and `harness_ui` calls then
+confirmed the new application instance, exact pushed HEAD, available closed Git-panel
+action, and one untracked private configuration path without returning that file's
+contents.
+
+Dogfood also found an MCP catalog ambiguity. `harness_application` called its complete
+policy catalog `tools`, although the configured server allowlist did not expose every
+entry. The result now reports exact `exposedTools`, labels the complete list
+`toolPolicies`, and directs clients to MCP `tools/list` as authoritative discovery.
+The focused four-test loopback server suite verifies propagation of the exact exposed
+allowlist. Sensitive UI activation remained unexposed and was not bypassed; the four
+headless worktree UI tests provide the mutation-path UI evidence.
