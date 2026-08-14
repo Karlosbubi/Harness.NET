@@ -193,7 +193,8 @@ internal sealed class MainWindow : Window
             ShowProjectUserSecretsAsync,
             developerExecutionService,
             developerGitService,
-            () => store.RefreshActiveWorkspaceContextAsync(cancellationToken).AsTask());
+            () => store.RefreshActiveWorkspaceContextAsync(cancellationToken).AsTask(),
+            ShowWorkspaceDialogAtAsync);
         Border documentActions = new()
         {
             Child = workbench.DocumentActions,
@@ -848,6 +849,12 @@ internal sealed class MainWindow : Window
             browseOnOpen: browseImmediately,
             prepareWorkspaceChange: PrepareWorkspaceChangeAsync);
         await dialog.ShowDialog(this);
+    }
+
+    private async Task ShowWorkspaceDialogAtAsync(string path)
+    {
+        store.SetRepositoryPath(path);
+        await ShowWorkspaceDialogAsync(browseImmediately: false);
     }
 
     private async Task<bool> PrepareWorkspaceChangeAsync() =>

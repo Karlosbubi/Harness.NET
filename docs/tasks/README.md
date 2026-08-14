@@ -491,7 +491,7 @@ and Debug needs. Database, profiler, and notebook modules remain later slices.
 
 ### 050 — complete Git workbench
 
-Status: `In progress — exact staging, cleanup, commit/amend, branches, and tags delivered`
+Status: `In progress — exact staging, cleanup, commit/amend, references, and worktrees delivered`
 
 Dependencies: 023, 029, 035, 036, 039.
 
@@ -553,8 +553,14 @@ reflog/object-retention limits, and requires explicit acknowledgement. Developer
 also list tags, create a lightweight or annotated tag at the exact displayed HEAD,
 and delete a tag through an exact name and peeled-target preview. Annotated creation
 requires a bounded message and configured Git identity. Tag mutation rejects stale
-reference state and in-progress Git operations. Developer worktrees, stash, history,
-merge editing, and remotes remain open.
+reference state and in-progress Git operations. Developer worktrees are now listed in
+the tabbed Git workbench with their exact path, branch or detached state, HEAD, dirty,
+conflict, lock, goal-management, and workspace-registration state. Developers can
+create one from an existing branch or a new branch at HEAD, then open it through the
+normal workspace inspection and trust flow. Removal revalidates both repository and
+worktree-set fingerprints, blocks original, locked, registered, and Harness-managed
+goal worktrees, and requires an exact destructive preview; dirty removal also requires
+an explicit force choice. Stash, history, merge editing, and remotes remain open.
 
 ### 051 — developer terminal and structured tasks
 

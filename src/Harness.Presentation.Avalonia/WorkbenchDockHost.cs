@@ -45,6 +45,7 @@ internal sealed class WorkbenchDockHost
     private readonly IWorkbenchDocumentPrompt documentPrompt;
     private readonly Func<AvaloniaShellState> state;
     private readonly Func<bool, Task> manageWorkspace;
+    private readonly Func<string, Task> manageWorkspaceAt;
     private readonly Func<Task> manageProjectSecrets;
     private readonly Func<Task> refreshWorkspaceContext;
     private readonly IDeveloperProjectExecutionService? developerExecutionService;
@@ -113,6 +114,12 @@ internal sealed class WorkbenchDockHost
     private readonly TextBox gitTagMessage = new() { PlaceholderText = "Annotated tag message" };
     private readonly CheckBox annotatedGitTag = new() { Content = "Annotated tag" };
     private DeveloperGitTagInspectionResult? currentTagInspection;
+    private readonly ListBox gitWorktrees = new();
+    private readonly TextBox gitWorktreePath = new() { PlaceholderText = "Absolute worktree path" };
+    private readonly TextBox gitWorktreeBranch = new() { PlaceholderText = "Existing or new branch" };
+    private readonly CheckBox createWorktreeBranch = new() { Content = "Create new branch at HEAD" };
+    private readonly CheckBox forceWorktreeRemove = new() { Content = "Force removal of dirty worktree" };
+    private DeveloperGitWorktreeInspectionResult? currentWorktreeInspection;
     private string gitFingerprint = string.Empty;
     private IReadOnlyList<DeveloperGitPatchUnitView> currentPatchUnits = [];
     private WorkbenchWorkspaceContext? currentGitContext;
@@ -199,7 +206,8 @@ internal sealed class WorkbenchDockHost
         Func<Task>? manageProjectSecrets = null,
         IDeveloperProjectExecutionService? developerExecutionService = null,
         IDeveloperGitService? developerGitService = null,
-        Func<Task>? refreshWorkspaceContext = null)
+        Func<Task>? refreshWorkspaceContext = null,
+        Func<string, Task>? manageWorkspaceAt = null)
     {
         this.runOutputService = runOutputService;
         this.inspectionService = inspectionService;
@@ -210,6 +218,7 @@ internal sealed class WorkbenchDockHost
         this.documentPrompt = documentPrompt;
         this.state = state;
         this.manageWorkspace = manageWorkspace ?? (_ => Task.CompletedTask);
+        this.manageWorkspaceAt = manageWorkspaceAt ?? (_ => Task.CompletedTask);
         this.manageProjectSecrets = manageProjectSecrets ?? (() => Task.CompletedTask);
         this.developerExecutionService = developerExecutionService;
         this.developerGitService = developerGitService;
@@ -807,6 +816,10 @@ internal sealed class WorkbenchDockHost
                 DeveloperGitTagInspectionResult tags = await developerGitService.InspectTagsAsync(
                     WorkbenchRequest(active), cancellationToken);
                 RenderGitTags(tags);
+                DeveloperGitWorktreeInspectionResult worktrees =
+                    await developerGitService.InspectWorktreesAsync(
+                        WorkbenchRequest(active), cancellationToken);
+                RenderGitWorktrees(worktrees);
             }
         });
     }
@@ -1122,6 +1135,103 @@ internal sealed class WorkbenchDockHost
         currentTagInspection = result;
         gitTags.ItemsSource = result.Tags.Select(tag => new TagChoice(tag)).ToArray();
         gitTags.SelectedIndex = result.Tags.Count > 0 ? 0 : -1;
+        if (result.Error is not null) gitStatus.Text = result.Error;
+    }
+
+    internal async ValueTask RefreshGitWorktreesAsync()
+    {
+        WorkspaceView? active = ActiveWorkspace();
+        if (busy || active is null || developerGitService is null) return;
+        await RunAsync(async () => RenderGitWorktrees(await developerGitService.InspectWorktreesAsync(
+            WorkbenchRequest(active), cancellationToken)));
+    }
+
+    internal async ValueTask CreateGitWorktreeAsync()
+    {
+        WorkspaceView? active = ActiveWorkspace();
+        if (busy || active is null || developerGitService is null ||
+            currentWorktreeInspection?.State is null ||
+            currentWorktreeInspection.WorktreeFingerprint is null)
+        {
+            gitStatus.Text = "Refresh linked worktrees first.";
+            return;
+        }
+        string path = gitWorktreePath.Text?.Trim() ?? string.Empty;
+        string branch = gitWorktreeBranch.Text?.Trim() ?? string.Empty;
+        await RunAsync(async () =>
+        {
+            DeveloperGitWorktreeInspectionResult result = await developerGitService.CreateWorktreeAsync(new(
+                WorkbenchRequest(active),
+                new(currentWorktreeInspection.State.Fingerprint),
+                currentWorktreeInspection.WorktreeFingerprint,
+                new(path),
+                createWorktreeBranch.IsChecked == true ? null : new(branch),
+                createWorktreeBranch.IsChecked == true ? new(branch) : null), cancellationToken);
+            RenderGitWorktrees(result);
+            if (result.State is not null) RenderGitState(result.Context, result.State);
+            gitStatus.Text = result.Error ?? $"Created linked worktree at {path}.";
+        });
+    }
+
+    internal async ValueTask OpenSelectedGitWorktreeAsync()
+    {
+        if (busy || gitWorktrees.SelectedItem is not WorktreeChoice selected)
+        {
+            gitStatus.Text = "Select a linked worktree first.";
+            return;
+        }
+        if (selected.Worktree.IsMain)
+        {
+            gitStatus.Text = "The original worktree is already the active workspace.";
+            return;
+        }
+        await manageWorkspaceAt(selected.Worktree.Path.Value);
+    }
+
+    internal async ValueTask RemoveSelectedGitWorktreeAsync()
+    {
+        WorkspaceView? active = ActiveWorkspace();
+        if (busy || active is null || developerGitService is null ||
+            currentWorktreeInspection?.State is null ||
+            currentWorktreeInspection.WorktreeFingerprint is null ||
+            gitWorktrees.SelectedItem is not WorktreeChoice selected)
+        {
+            gitStatus.Text = "Select a current linked worktree first.";
+            return;
+        }
+        await RunAsync(async () =>
+        {
+            DeveloperGitWorktreeRemovePreviewResult result =
+                await developerGitService.PreviewWorktreeRemoveAsync(new(
+                    WorkbenchRequest(active),
+                    new(currentWorktreeInspection.State.Fingerprint),
+                    currentWorktreeInspection.WorktreeFingerprint,
+                    selected.Worktree.Path,
+                    forceWorktreeRemove.IsChecked == true), cancellationToken);
+            RenderGitWorktrees(result.Inspection);
+            if (result.Preview is null)
+            {
+                gitStatus.Text = result.Error ?? "The worktree removal preview is unavailable.";
+                return;
+            }
+            if (!await documentPrompt.ConfirmGitWorktreeRemoveAsync(result.Preview, OwnerWindow()))
+            {
+                gitStatus.Text = "Worktree removal cancelled; no directory was deleted.";
+                return;
+            }
+            DeveloperGitWorktreeInspectionResult applied =
+                await developerGitService.ApplyWorktreeRemoveAsync(result.Preview, cancellationToken);
+            RenderGitWorktrees(applied);
+            if (applied.State is not null) RenderGitState(applied.Context, applied.State);
+            gitStatus.Text = applied.Error ?? $"Removed linked worktree {selected.Worktree.Path.Value}.";
+        });
+    }
+
+    private void RenderGitWorktrees(DeveloperGitWorktreeInspectionResult result)
+    {
+        currentWorktreeInspection = result;
+        gitWorktrees.ItemsSource = result.Worktrees.Select(worktree => new WorktreeChoice(worktree)).ToArray();
+        gitWorktrees.SelectedIndex = result.Worktrees.Count > 0 ? 0 : -1;
         if (result.Error is not null) gitStatus.Text = result.Error;
     }
 
@@ -1743,7 +1853,7 @@ internal sealed class WorkbenchDockHost
     {
         Grid grid = new()
         {
-            RowDefinitions = new("Auto,Auto,2*,*,Auto,Auto,*,Auto,Auto,Auto,*,Auto"),
+            RowDefinitions = new("Auto,Auto,*,Auto"),
             Margin = new Thickness(10),
             RowSpacing = 8,
         };
@@ -1790,6 +1900,8 @@ internal sealed class WorkbenchDockHost
         actions.Children.Add(commitGit);
         Grid.SetRow(actions, 1);
         grid.Children.Add(actions);
+
+        Grid changePanel = new() { RowDefinitions = new("2*,*"), RowSpacing = 8 };
         AutomationProperties.SetName(changes, "Git working-tree changes");
         changes.DoubleTapped += async (_, _) =>
         {
@@ -1799,15 +1911,15 @@ internal sealed class WorkbenchDockHost
             }
         };
         changes.SelectionChanged += (_, _) => UpdatePatchUnitChoices();
-        Grid.SetRow(changes, 2);
-        grid.Children.Add(changes);
+        changePanel.Children.Add(changes);
         AutomationProperties.SetName(patchUnits, "Git hunks and changed lines");
         patchUnits.SelectionMode = SelectionMode.Single;
         patchUnits.SelectionChanged += (_, _) => UpdateGitActionAvailability();
         ToolTip.SetTip(patchUnits,
             "Select one exact hunk or changed line, then choose Stage or Unstage. Clear the selection to act on the whole file.");
-        Grid.SetRow(patchUnits, 3);
-        grid.Children.Add(patchUnits);
+        Grid.SetRow(patchUnits, 1);
+        changePanel.Children.Add(patchUnits);
+
         WrapPanel branchActions = new() { Orientation = AvaloniaOrientation.Horizontal };
         Button refreshBranches = new() { Content = "Refresh branches" };
         Button createBranch = new() { Content = "Create" };
@@ -1835,12 +1947,13 @@ internal sealed class WorkbenchDockHost
         AutomationProperties.SetName(gitBranchName, "New local Git branch name");
         AutomationProperties.SetName(forceBranchDelete, "Force deletion of unmerged local Git branch");
         AutomationProperties.SetName(gitBranches, "Local Git branches");
-        Grid.SetRow(gitBranchName, 4);
-        Grid.SetRow(branchActions, 5);
-        Grid.SetRow(gitBranches, 6);
-        grid.Children.Add(gitBranchName);
-        grid.Children.Add(branchActions);
-        grid.Children.Add(gitBranches);
+        Grid branchPanel = new() { RowDefinitions = new("Auto,Auto,*"), RowSpacing = 8 };
+        branchPanel.Children.Add(gitBranchName);
+        Grid.SetRow(branchActions, 1);
+        branchPanel.Children.Add(branchActions);
+        Grid.SetRow(gitBranches, 2);
+        branchPanel.Children.Add(gitBranches);
+
         WrapPanel tagActions = new() { Orientation = AvaloniaOrientation.Horizontal };
         Button refreshTags = new() { Content = "Refresh tags" };
         Button createTag = new() { Content = "Create tag" };
@@ -1861,15 +1974,69 @@ internal sealed class WorkbenchDockHost
         tagActions.Children.Add(createTag);
         tagActions.Children.Add(deleteTag);
         tagActions.Children.Add(annotatedGitTag);
-        Grid.SetRow(gitTagName, 7);
-        Grid.SetRow(gitTagMessage, 8);
-        Grid.SetRow(tagActions, 9);
-        Grid.SetRow(gitTags, 10);
-        grid.Children.Add(gitTagName);
-        grid.Children.Add(gitTagMessage);
-        grid.Children.Add(tagActions);
-        grid.Children.Add(gitTags);
-        Grid.SetRow(gitStatus, 11);
+        Grid tagPanel = new() { RowDefinitions = new("Auto,Auto,Auto,*"), RowSpacing = 8 };
+        tagPanel.Children.Add(gitTagName);
+        Grid.SetRow(gitTagMessage, 1);
+        tagPanel.Children.Add(gitTagMessage);
+        Grid.SetRow(tagActions, 2);
+        tagPanel.Children.Add(tagActions);
+        Grid.SetRow(gitTags, 3);
+        tagPanel.Children.Add(gitTags);
+
+        WrapPanel worktreeActions = new() { Orientation = AvaloniaOrientation.Horizontal };
+        Button refreshWorktrees = new() { Content = "Refresh worktrees" };
+        Button createWorktree = new() { Content = "Create" };
+        Button openWorktree = new() { Content = "Open as workspace…" };
+        Button removeWorktree = new() { Content = "Remove…" };
+        foreach (Button button in new[] { refreshWorktrees, createWorktree, openWorktree, removeWorktree })
+            button.Margin = new Thickness(0, 0, 6, 6);
+        AutomationProperties.SetName(refreshWorktrees, "Refresh linked Git worktrees");
+        AutomationProperties.SetName(createWorktree, "Create linked Git worktree");
+        AutomationProperties.SetName(openWorktree, "Open selected linked Git worktree as a workspace");
+        AutomationProperties.SetName(removeWorktree, "Preview removal of selected linked Git worktree");
+        AutomationProperties.SetName(gitWorktreePath, "New linked Git worktree absolute path");
+        AutomationProperties.SetName(gitWorktreeBranch, "Linked Git worktree branch name");
+        AutomationProperties.SetName(createWorktreeBranch, "Create new local branch for linked Git worktree");
+        AutomationProperties.SetName(forceWorktreeRemove, "Force removal of dirty linked Git worktree");
+        AutomationProperties.SetName(gitWorktrees, "Linked Git worktrees");
+        refreshWorktrees.Click += async (_, _) => await RefreshGitWorktreesAsync();
+        createWorktree.Click += async (_, _) => await CreateGitWorktreeAsync();
+        openWorktree.Click += async (_, _) => await OpenSelectedGitWorktreeAsync();
+        removeWorktree.Click += async (_, _) => await RemoveSelectedGitWorktreeAsync();
+        worktreeActions.Children.Add(refreshWorktrees);
+        worktreeActions.Children.Add(createWorktree);
+        worktreeActions.Children.Add(openWorktree);
+        worktreeActions.Children.Add(removeWorktree);
+        worktreeActions.Children.Add(createWorktreeBranch);
+        worktreeActions.Children.Add(forceWorktreeRemove);
+        Grid worktreePanel = new() { RowDefinitions = new("Auto,Auto,Auto,*"), RowSpacing = 8 };
+        worktreePanel.Children.Add(gitWorktreePath);
+        Grid.SetRow(gitWorktreeBranch, 1);
+        worktreePanel.Children.Add(gitWorktreeBranch);
+        Grid.SetRow(worktreeActions, 2);
+        worktreePanel.Children.Add(worktreeActions);
+        Grid.SetRow(gitWorktrees, 3);
+        worktreePanel.Children.Add(gitWorktrees);
+
+        TabItem changesTab = new() { Header = "Changes", Content = changePanel };
+        TabItem branchesTab = new() { Header = "Branches", Content = branchPanel };
+        TabItem tagsTab = new() { Header = "Tags", Content = tagPanel };
+        TabItem worktreesTab = new() { Header = "Worktrees", Content = worktreePanel };
+        AutomationProperties.SetName(changesTab, "Git changes tab");
+        AutomationProperties.SetName(branchesTab, "Git branches tab");
+        AutomationProperties.SetName(tagsTab, "Git tags tab");
+        AutomationProperties.SetName(worktreesTab, "Git worktrees tab");
+        TabControl tabs = new();
+        tabs.Items.Add(changesTab);
+        tabs.Items.Add(branchesTab);
+        tabs.Items.Add(tagsTab);
+        tabs.Items.Add(worktreesTab);
+        tabs.SelectedIndex = 0;
+        AutomationProperties.SetName(tabs, "Git workbench sections");
+        Grid.SetRow(tabs, 2);
+        grid.Children.Add(tabs);
+
+        Grid.SetRow(gitStatus, 3);
         grid.Children.Add(gitStatus);
         return grid;
     }
@@ -5180,6 +5347,22 @@ internal sealed class WorkbenchDockHost
         public override string ToString() =>
             $"{Tag.Name.Value} · {Tag.TargetSha[..Math.Min(8, Tag.TargetSha.Length)]}" +
             (Tag.IsAnnotated ? " · annotated" : string.Empty);
+    }
+
+    private sealed record WorktreeChoice(DeveloperGitWorktreeView Worktree)
+    {
+        public override string ToString()
+        {
+            string branch = Worktree.Branch?.Value ?? "detached HEAD";
+            string flags = (Worktree.IsMain ? " · original" : string.Empty) +
+                           (Worktree.IsDirty ? " · dirty" : string.Empty) +
+                           (Worktree.HasConflicts ? " · conflicts" : string.Empty) +
+                           (Worktree.IsLocked ? " · locked" : string.Empty) +
+                           (Worktree.IsHarnessManaged ? " · goal-managed" : string.Empty) +
+                           (Worktree.IsRegisteredWorkspace ? " · registered" : string.Empty);
+            return $"{branch} · {Worktree.HeadSha[..Math.Min(8, Worktree.HeadSha.Length)]} · " +
+                   $"{Worktree.Path.Value}{flags}";
+        }
     }
 
     private abstract record RunOutputChoiceBase(DateTimeOffset StartedAt);

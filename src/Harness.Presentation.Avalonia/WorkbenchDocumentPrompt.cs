@@ -65,6 +65,10 @@ internal interface IWorkbenchDocumentPrompt
     ValueTask<bool> ConfirmGitTagDeleteAsync(
         DeveloperGitTagDeletePreviewView preview,
         Window? owner);
+
+    ValueTask<bool> ConfirmGitWorktreeRemoveAsync(
+        DeveloperGitWorktreeRemovePreviewView preview,
+        Window? owner);
 }
 
 internal sealed record DeveloperGitCommitDraft(
@@ -136,6 +140,66 @@ internal sealed class AvaloniaWorkbenchDocumentPrompt : IWorkbenchDocumentPrompt
     {
         if (owner is null) return false;
         return await new GitTagDeleteConfirmationDialog(preview).ShowDialog<bool>(owner);
+    }
+
+    public async ValueTask<bool> ConfirmGitWorktreeRemoveAsync(
+        DeveloperGitWorktreeRemovePreviewView preview,
+        Window? owner)
+    {
+        if (owner is null) return false;
+        return await new GitWorktreeRemoveConfirmationDialog(preview).ShowDialog<bool>(owner);
+    }
+}
+
+internal sealed class GitWorktreeRemoveConfirmationDialog : Window
+{
+    internal GitWorktreeRemoveConfirmationDialog(DeveloperGitWorktreeRemovePreviewView preview)
+    {
+        Title = "Confirm linked worktree removal";
+        Width = 720;
+        SizeToContent = SizeToContent.Height;
+        WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        AutomationProperties.SetName(this, "Confirm linked Git worktree removal");
+        Button confirm = new() { Content = "Remove worktree", IsEnabled = false, MinWidth = 130 };
+        Button cancel = new() { Content = "Cancel", IsCancel = true, MinWidth = 88 };
+        CheckBox acknowledge = new()
+        {
+            Content = "I reviewed the exact path and understand what can and cannot be recovered.",
+        };
+        AutomationProperties.SetName(acknowledge, "Acknowledge linked Git worktree removal consequences");
+        AutomationProperties.SetName(confirm, "Confirm removal of exact linked Git worktree");
+        AutomationProperties.SetName(cancel, "Cancel linked Git worktree removal");
+        acknowledge.IsCheckedChanged += (_, _) => confirm.IsEnabled = acknowledge.IsChecked == true;
+        confirm.Click += (_, _) => Close(true);
+        cancel.Click += (_, _) => Close(false);
+        Content = new StackPanel
+        {
+            Margin = new Thickness(24),
+            Spacing = 12,
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = $"Path: {preview.Worktree.Path.Value}\n" +
+                           $"Branch: {preview.Worktree.Branch?.Value ?? "detached HEAD"}\n" +
+                           $"HEAD: {preview.Worktree.HeadSha}\n" +
+                           $"Dirty: {preview.Worktree.IsDirty}\nConflicts: {preview.Worktree.HasConflicts}\n" +
+                           $"Force: {preview.Force}",
+                    FontWeight = FontWeight.SemiBold,
+                    TextWrapping = TextWrapping.Wrap,
+                },
+                new TextBlock { Text = preview.Consequence, TextWrapping = TextWrapping.Wrap },
+                new TextBlock { Text = preview.Recovery, TextWrapping = TextWrapping.Wrap },
+                acknowledge,
+                new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    Spacing = 8,
+                    Children = { cancel, confirm },
+                },
+            },
+        };
     }
 }
 

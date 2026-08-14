@@ -188,6 +188,56 @@ public sealed record DeveloperGitTagDeletePreviewResult(
     DeveloperGitTagInspectionResult Inspection,
     string? ErrorCode,
     string? Error);
+public sealed record DeveloperGitWorktreePath(string Value);
+public sealed record DeveloperGitWorktreeSetFingerprint(string Value);
+public sealed record DeveloperGitWorktreeView(
+    DeveloperGitWorktreePath Path,
+    DeveloperGitBranchName? Branch,
+    string HeadSha,
+    bool IsMain,
+    bool IsLocked,
+    string? LockReason,
+    bool IsDirty,
+    bool HasConflicts,
+    bool IsHarnessManaged,
+    bool IsRegisteredWorkspace,
+    DeveloperGitStateFingerprint StateFingerprint);
+public sealed record DeveloperGitWorktreeInspectionResult(
+    WorkbenchWorkspaceContext Context,
+    WorkspaceGitStateView? State,
+    DeveloperGitWorktreeSetFingerprint? WorktreeFingerprint,
+    IReadOnlyList<DeveloperGitWorktreeView> Worktrees,
+    string? ErrorCode,
+    string? Error);
+public sealed record DeveloperGitWorktreeCreateCommand(
+    WorkbenchWorkspaceRequest Workspace,
+    DeveloperGitStateFingerprint ExpectedFingerprint,
+    DeveloperGitWorktreeSetFingerprint ExpectedWorktreeFingerprint,
+    DeveloperGitWorktreePath Path,
+    DeveloperGitBranchName? ExistingBranch,
+    DeveloperGitBranchName? NewBranch);
+public sealed record DeveloperGitWorktreeRemovePreviewId(string Value);
+public sealed record DeveloperGitWorktreeRemovePreviewCommand(
+    WorkbenchWorkspaceRequest Workspace,
+    DeveloperGitStateFingerprint ExpectedFingerprint,
+    DeveloperGitWorktreeSetFingerprint ExpectedWorktreeFingerprint,
+    DeveloperGitWorktreePath Path,
+    bool Force);
+public sealed record DeveloperGitWorktreeRemovePreviewView(
+    DeveloperGitWorktreeRemovePreviewId Id,
+    WorkbenchWorkspaceContext Context,
+    DeveloperGitStateFingerprint Fingerprint,
+    DeveloperGitWorktreeSetFingerprint WorktreeFingerprint,
+    DeveloperGitWorktreeView Worktree,
+    bool Force,
+    string Consequence,
+    string Recovery,
+    bool HasGuaranteedRecovery);
+public sealed record DeveloperGitWorktreeRemovePreviewResult(
+    DeveloperGitWorktreeRemovePreviewView? Preview,
+    DeveloperGitWorktreeInspectionResult Inspection,
+    string? ErrorCode,
+    string? Error);
 public sealed record DeveloperGitPatchCommand(
     WorkbenchWorkspaceRequest Workspace,
     DeveloperGitStateFingerprint ExpectedFingerprint,
@@ -249,5 +299,21 @@ public interface IDeveloperGitService
 
     ValueTask<DeveloperGitTagInspectionResult> ApplyTagDeleteAsync(
         DeveloperGitTagDeletePreviewView preview,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitWorktreeInspectionResult> InspectWorktreesAsync(
+        WorkbenchWorkspaceRequest workspace,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitWorktreeInspectionResult> CreateWorktreeAsync(
+        DeveloperGitWorktreeCreateCommand command,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitWorktreeRemovePreviewResult> PreviewWorktreeRemoveAsync(
+        DeveloperGitWorktreeRemovePreviewCommand command,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitWorktreeInspectionResult> ApplyWorktreeRemoveAsync(
+        DeveloperGitWorktreeRemovePreviewView preview,
         CancellationToken cancellationToken = default);
 }

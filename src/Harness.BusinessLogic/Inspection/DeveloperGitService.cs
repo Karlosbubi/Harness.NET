@@ -1,14 +1,15 @@
-using Harness.BusinessLogic.Workspaces;
-using Harness.DataAccess.Inspection;
 using System.Security.Cryptography;
 using System.Text;
+using Harness.BusinessLogic.Workspaces;
+using Harness.DataAccess.Inspection;
 
 namespace Harness.BusinessLogic.Inspection;
 
 internal sealed class DeveloperGitService(
     IWorkbenchWorkspaceContextResolver contextResolver,
     IDeveloperGitRepository repository,
-    IWorkspaceGitInspector gitInspector) : IDeveloperGitService
+    IWorkspaceGitInspector gitInspector,
+    IWorkspaceService? workspaceService = null) : IDeveloperGitService
 {
     public async ValueTask<DeveloperGitIndexCommandResult> UpdateIndexAsync(
         DeveloperGitIndexCommand command,
@@ -432,6 +433,134 @@ internal sealed class DeveloperGitService(
         return MapTags(resolution.Context, result);
     }
 
+    public async ValueTask<DeveloperGitWorktreeInspectionResult> InspectWorktreesAsync(
+        WorkbenchWorkspaceRequest workspace,
+        CancellationToken cancellationToken = default)
+    {
+        WorkbenchWorkspaceResolution resolution = await contextResolver.ResolveAsync(workspace, cancellationToken);
+        if (resolution.RootPath is null || resolution.Error is not null)
+            return new(resolution.Context, null, null, [], resolution.ErrorCode, resolution.Error);
+        if (resolution.Context.Scope != WorkbenchWorkspaceScope.OriginalWorkspace)
+            return new(resolution.Context, null, null, [], "git_worktrees_goal_context_denied",
+                "Developer worktree management is available only in the original workspace.");
+        DeveloperGitWorktreeInspection inspection = await repository.InspectWorktreesAsync(
+            resolution.RootPath, cancellationToken);
+        return await MapWorktreesAsync(resolution.Context, inspection, cancellationToken);
+    }
+
+    public async ValueTask<DeveloperGitWorktreeInspectionResult> CreateWorktreeAsync(
+        DeveloperGitWorktreeCreateCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        WorkbenchWorkspaceResolution resolution = await contextResolver.ResolveAsync(
+            command.Workspace, cancellationToken);
+        if (resolution.RootPath is null || resolution.Error is not null)
+            return new(resolution.Context, null, null, [], resolution.ErrorCode, resolution.Error);
+        if (resolution.Context.Scope != WorkbenchWorkspaceScope.OriginalWorkspace)
+            return new(resolution.Context, null, null, [], "git_worktrees_goal_context_denied",
+                "Developer worktree management is available only in the original workspace.");
+        DeveloperGitWorktreeResult result = await repository.ApplyWorktreeAsync(new(
+            resolution.RootPath,
+            new(command.ExpectedFingerprint.Value),
+            new(command.ExpectedWorktreeFingerprint.Value),
+            DeveloperGitWorktreeOperation.Create,
+            command.Path.Value,
+            command.ExistingBranch?.Value,
+            command.NewBranch?.Value,
+            ExpectedSelectedWorktreeFingerprint: null,
+            Force: false), cancellationToken);
+        return await MapWorktreesAsync(resolution.Context, result, cancellationToken);
+    }
+
+    public async ValueTask<DeveloperGitWorktreeRemovePreviewResult> PreviewWorktreeRemoveAsync(
+        DeveloperGitWorktreeRemovePreviewCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        DeveloperGitWorktreeInspectionResult inspection = await InspectWorktreesAsync(
+            command.Workspace, cancellationToken);
+        if (inspection.Error is not null || inspection.State is null ||
+            inspection.WorktreeFingerprint is null)
+            return new(null, inspection, inspection.ErrorCode, inspection.Error);
+        if (!inspection.State.Fingerprint.Equals(command.ExpectedFingerprint.Value, StringComparison.Ordinal) ||
+            !inspection.WorktreeFingerprint.Equals(command.ExpectedWorktreeFingerprint))
+            return new(null, inspection, "git_state_stale",
+                "Git references, working state, or linked worktrees changed after display. Refresh and retry.");
+        DeveloperGitWorktreeView? worktree = inspection.Worktrees.SingleOrDefault(candidate =>
+            candidate.Path == command.Path);
+        if (worktree is null || worktree.IsMain || worktree.IsHarnessManaged ||
+            worktree.IsRegisteredWorkspace || worktree.IsLocked)
+        {
+            string error = worktree switch
+            {
+                null => "Select an existing linked worktree.",
+                { IsMain: true } => "The original workspace cannot be removed as a linked worktree.",
+                { IsHarnessManaged: true } => "Harness-managed goal worktrees cannot be removed here.",
+                { IsRegisteredWorkspace: true } =>
+                    "A registered workspace cannot be removed. Keep it available or remove its registration first.",
+                _ => "Unlock this worktree with Git before removing it.",
+            };
+            return new(null, inspection, "git_worktree_remove_invalid", error);
+        }
+        if ((worktree.IsDirty || worktree.HasConflicts) && !command.Force)
+            return new(null, inspection, "git_worktree_dirty",
+                "This worktree has uncommitted content. Review it and explicitly enable forced removal.");
+
+        string identity = string.Join('\0', inspection.Context.WorkspaceId.Value,
+            inspection.State.Fingerprint, inspection.WorktreeFingerprint.Value,
+            worktree.Path.Value, worktree.StateFingerprint.Value, worktree.Branch?.Value,
+            worktree.HeadSha, command.Force);
+        bool losesContent = worktree.IsDirty || worktree.HasConflicts;
+        var preview = new DeveloperGitWorktreeRemovePreviewView(
+            new(Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(identity))).ToLowerInvariant()),
+            inspection.Context,
+            new(inspection.State.Fingerprint),
+            inspection.WorktreeFingerprint,
+            worktree,
+            command.Force,
+            losesContent
+                ? $"The linked worktree at '{worktree.Path.Value}' and all uncommitted content in it will be deleted."
+                : $"The clean linked worktree at '{worktree.Path.Value}' will be deleted. Its branch is kept.",
+            losesContent
+                ? "Committed objects and the local branch remain, but Git does not recover deleted uncommitted files."
+                : "The local branch and committed objects remain and can be checked out into another worktree.",
+            HasGuaranteedRecovery: !losesContent);
+        return new(preview, inspection, null, null);
+    }
+
+    public async ValueTask<DeveloperGitWorktreeInspectionResult> ApplyWorktreeRemoveAsync(
+        DeveloperGitWorktreeRemovePreviewView preview,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(preview);
+        DeveloperGitWorktreeRemovePreviewResult current = await PreviewWorktreeRemoveAsync(new(
+            new(preview.Context.WorkspaceId, GoalId: null), preview.Fingerprint,
+            preview.WorktreeFingerprint, preview.Worktree.Path, preview.Force), cancellationToken);
+        if (current.Preview is null || current.Error is not null) return current.Inspection;
+        if (!current.Preview.Id.Equals(preview.Id))
+            return current.Inspection with
+            {
+                ErrorCode = "git_worktree_remove_preview_stale",
+                Error = "The worktree removal preview changed. Review a new preview before deleting.",
+            };
+        WorkbenchWorkspaceResolution resolution = await contextResolver.ResolveAsync(
+            new(preview.Context.WorkspaceId, GoalId: null), cancellationToken);
+        if (resolution.RootPath is null || resolution.Error is not null)
+            return new(resolution.Context, null, null, [], resolution.ErrorCode, resolution.Error);
+        DeveloperGitWorktreeResult result = await repository.ApplyWorktreeAsync(new(
+            resolution.RootPath,
+            new(preview.Fingerprint.Value),
+            new(preview.WorktreeFingerprint.Value),
+            DeveloperGitWorktreeOperation.Remove,
+            preview.Worktree.Path.Value,
+            ExistingBranch: null,
+            NewBranch: null,
+            new(preview.Worktree.StateFingerprint.Value),
+            preview.Force), cancellationToken);
+        return await MapWorktreesAsync(resolution.Context, result, cancellationToken);
+    }
+
     private static DeveloperGitBranchInspectionResult MapBranches(
         WorkbenchWorkspaceContext context,
         DeveloperGitBranchInspection inspection) => new(
@@ -473,6 +602,66 @@ internal sealed class DeveloperGitService(
                 tag.MessageIsTruncated)).ToArray(),
             result.ErrorCode,
             result.Error);
+
+    private async ValueTask<DeveloperGitWorktreeInspectionResult> MapWorktreesAsync(
+        WorkbenchWorkspaceContext context,
+        DeveloperGitWorktreeInspection inspection,
+        CancellationToken cancellationToken)
+    {
+        IReadOnlyList<WorkspaceView> registered = workspaceService is null
+            ? [] : await workspaceService.ListAsync(cancellationToken);
+        return MapWorktrees(context, inspection.State, inspection.WorktreeFingerprint,
+            inspection.Worktrees, inspection.ErrorCode, inspection.Error, registered);
+    }
+
+    private async ValueTask<DeveloperGitWorktreeInspectionResult> MapWorktreesAsync(
+        WorkbenchWorkspaceContext context,
+        DeveloperGitWorktreeResult result,
+        CancellationToken cancellationToken)
+    {
+        IReadOnlyList<WorkspaceView> registered = workspaceService is null
+            ? [] : await workspaceService.ListAsync(cancellationToken);
+        return MapWorktrees(context, result.State, result.WorktreeFingerprint,
+            result.Worktrees, result.ErrorCode, result.Error, registered);
+    }
+
+    private static DeveloperGitWorktreeInspectionResult MapWorktrees(
+        WorkbenchWorkspaceContext context,
+        WorkspaceGitState? state,
+        Harness.DataAccess.Inspection.DeveloperGitWorktreeSetFingerprint? fingerprint,
+        IReadOnlyList<Harness.DataAccess.Inspection.DeveloperGitWorktree> worktrees,
+        string? errorCode,
+        string? error,
+        IReadOnlyList<WorkspaceView> registered)
+    {
+        HashSet<string> registeredRoots = registered.Select(workspace => NormalizePath(workspace.RootPath))
+            .ToHashSet(StringComparer.Ordinal);
+        return new(context,
+            state is null ? null : Map(state),
+            fingerprint is null ? null : new(fingerprint.Value),
+            worktrees.Select(worktree => new DeveloperGitWorktreeView(
+                new(worktree.Path),
+                worktree.Branch is null ? null : new(worktree.Branch),
+                worktree.HeadSha,
+                worktree.IsMain,
+                worktree.IsLocked,
+                worktree.LockReason,
+                worktree.IsDirty,
+                worktree.HasConflicts,
+                worktree.IsHarnessManaged,
+                registeredRoots.Contains(NormalizePath(worktree.Path)),
+                new(worktree.StateFingerprint.Value))).ToArray(),
+            errorCode,
+            error);
+    }
+
+    private static string NormalizePath(string path)
+    {
+        try { return Path.TrimEndingDirectorySeparator(Path.GetFullPath(path)); }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException or
+                                           PathTooLongException)
+        { return path; }
+    }
 
     private static bool TryValidateDestructive(
         DeveloperGitDestructiveAction action,

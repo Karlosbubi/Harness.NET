@@ -225,14 +225,86 @@ public sealed class DeveloperGitServiceTests
         Assert.Equal("tag-fingerprint", repository.TagRequest.ExpectedFingerprint.Value);
     }
 
+    [Fact]
+    public async Task Worktree_create_preserves_exact_repository_set_path_and_branch_choice()
+    {
+        Repository repository = new();
+        DeveloperGitService service = new(
+            new ContextResolver(goalContext: false), repository, new GitInspector());
+
+        await service.CreateWorktreeAsync(new(
+            new(new("workspace-id"), null), new("worktree-state"), new("worktree-set"),
+            new("/workspace/new-feature"), null, new("new-feature")));
+
+        Assert.Equal(DeveloperGitWorktreeOperation.Create, repository.WorktreeRequest!.Operation);
+        Assert.Equal("worktree-state", repository.WorktreeRequest.ExpectedFingerprint.Value);
+        Assert.Equal("worktree-set", repository.WorktreeRequest.ExpectedWorktreeFingerprint.Value);
+        Assert.Equal("/workspace/new-feature", repository.WorktreeRequest.Path);
+        Assert.Equal("new-feature", repository.WorktreeRequest.NewBranch);
+        Assert.Null(repository.WorktreeRequest.ExistingBranch);
+    }
+
+    [Fact]
+    public async Task Dirty_worktree_remove_requires_force_and_revalidates_exact_preview()
+    {
+        Repository repository = new() { WorktreeIsDirty = true };
+        DeveloperGitService service = new(
+            new ContextResolver(goalContext: false), repository, new GitInspector());
+
+        DeveloperGitWorktreeRemovePreviewResult denied = await service.PreviewWorktreeRemoveAsync(new(
+            new(new("workspace-id"), null), new("worktree-state"), new("worktree-set"),
+            new("/workspace/feature"), false));
+        Assert.Equal("git_worktree_dirty", denied.ErrorCode);
+
+        DeveloperGitWorktreeRemovePreviewResult result = await service.PreviewWorktreeRemoveAsync(new(
+            new(new("workspace-id"), null), new("worktree-state"), new("worktree-set"),
+            new("/workspace/feature"), true));
+        DeveloperGitWorktreeRemovePreviewView preview = Assert.IsType<DeveloperGitWorktreeRemovePreviewView>(
+            result.Preview);
+        Assert.Contains("uncommitted", preview.Consequence, StringComparison.OrdinalIgnoreCase);
+        Assert.False(preview.HasGuaranteedRecovery);
+
+        await service.ApplyWorktreeRemoveAsync(preview);
+
+        Assert.Equal(DeveloperGitWorktreeOperation.Remove, repository.WorktreeRequest!.Operation);
+        Assert.Equal("feature-state", repository.WorktreeRequest.ExpectedSelectedWorktreeFingerprint!.Value);
+        Assert.True(repository.WorktreeRequest.Force);
+    }
+
+    [Fact]
+    public async Task Registered_or_harness_managed_worktree_cannot_be_removed()
+    {
+        Repository registeredRepository = new();
+        DeveloperGitService registeredService = new(
+            new ContextResolver(goalContext: false), registeredRepository, new GitInspector(),
+            new WorkspaceService("/workspace/feature"));
+        DeveloperGitWorktreeRemovePreviewResult registered = await registeredService.PreviewWorktreeRemoveAsync(
+            new(new(new("workspace-id"), null), new("worktree-state"), new("worktree-set"),
+                new("/workspace/feature"), false));
+        Assert.Equal("git_worktree_remove_invalid", registered.ErrorCode);
+        Assert.Contains("registered", registered.Error!, StringComparison.OrdinalIgnoreCase);
+
+        Repository managedRepository = new() { WorktreeIsHarnessManaged = true };
+        DeveloperGitService managedService = new(
+            new ContextResolver(goalContext: false), managedRepository, new GitInspector());
+        DeveloperGitWorktreeRemovePreviewResult managed = await managedService.PreviewWorktreeRemoveAsync(
+            new(new(new("workspace-id"), null), new("worktree-state"), new("worktree-set"),
+                new("/workspace/feature"), false));
+        Assert.Equal("git_worktree_remove_invalid", managed.ErrorCode);
+        Assert.Contains("Harness-managed", managed.Error!, StringComparison.Ordinal);
+    }
+
     private sealed class Repository : IDeveloperGitRepository
     {
+        internal bool WorktreeIsDirty { get; init; }
+        internal bool WorktreeIsHarnessManaged { get; init; }
         internal DeveloperGitIndexRequest? Request { get; private set; }
         internal DeveloperGitPatchRequest? PatchRequest { get; private set; }
         internal DeveloperGitDestructiveRequest? DestructiveRequest { get; private set; }
         internal DeveloperGitCommitRequest? CommitRequest { get; private set; }
         internal DeveloperGitBranchRequest? BranchRequest { get; private set; }
         internal DeveloperGitTagRequest? TagRequest { get; private set; }
+        internal DeveloperGitWorktreeRequest? WorktreeRequest { get; private set; }
 
         public ValueTask<DeveloperGitIndexResult> UpdateIndexAsync(
             DeveloperGitIndexRequest request,
@@ -307,6 +379,31 @@ public sealed class DeveloperGitServiceTests
                 new("main", new string('a', 40), [], "", false, null, null, "after-tag"),
                 [], null, null));
         }
+
+        public ValueTask<DeveloperGitWorktreeInspection> InspectWorktreesAsync(
+            string repositoryRoot,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new DeveloperGitWorktreeInspection(
+                new("main", new string('a', 40), [], "", false, null, null, "worktree-state"),
+                new("worktree-set"),
+                [
+                    new("/workspace/repository", "main", new string('a', 40), true, false, null,
+                        false, false, false, new("main-state")),
+                    new("/workspace/feature", "feature", new string('b', 40), false, false, null,
+                        WorktreeIsDirty, false, WorktreeIsHarnessManaged, new("feature-state")),
+                ], null, null));
+
+        public ValueTask<DeveloperGitWorktreeResult> ApplyWorktreeAsync(
+            DeveloperGitWorktreeRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            WorktreeRequest = request;
+            return ValueTask.FromResult(new DeveloperGitWorktreeResult(
+                new("main", new string('a', 40), [], "", false, null, null, "after-worktree"),
+                new("after-worktree-set"),
+                [new("/workspace/repository", "main", new string('a', 40), true, false, null,
+                    false, false, false, new("main-state"))], null, null));
+        }
     }
 
     private sealed class GitInspector(WorkspaceGitState? state = null) : IWorkspaceGitInspector
@@ -332,5 +429,26 @@ public sealed class DeveloperGitServiceTests
                 goalContext ? "/state/worktrees/goal-id" : "/workspace/repository",
                 null,
                 null));
+    }
+
+    private sealed class WorkspaceService(string registeredRoot) : IWorkspaceService
+    {
+        public ValueTask<IReadOnlyList<WorkspaceView>> ListAsync(
+            CancellationToken cancellationToken = default) => ValueTask.FromResult<IReadOnlyList<WorkspaceView>>(
+            [new("registered", registeredRoot, "feature", Path.Combine(registeredRoot, "App.csproj"),
+                true, false, "feature", false)]);
+
+        public ValueTask<WorkspaceResult> InspectAsync(string path, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+        public ValueTask<WorkspaceResult> RegisterAsync(string path, string entryPoint,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<WorkspaceResult> SetTrustAsync(string workspaceId, bool isTrusted,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<WorkspaceView?> GetActiveAsync(CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+        public ValueTask<WorkspaceView> SelectAsync(string workspaceId,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<WorkspaceResult> RefreshAsync(string workspaceId,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 }

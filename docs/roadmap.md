@@ -431,8 +431,12 @@ refresh persisted workspace identity. Branch deletion has an exact tip/merge/for
 preview and explicit recovery warning. Local tags are also delivered: the Git panel
 lists peeled targets, creates lightweight or annotated tags at the exact displayed
 HEAD, and deletes only after an exact name/target preview and acknowledgement.
-Reference changes invalidate every displayed tag action. Developer worktrees, stash,
-history, merge editing, and remotes remain.
+Reference changes invalidate every displayed tag action. Developer worktree management
+is delivered on a separate complete set fingerprint: inspect, create from an existing
+or new branch, enter through the normal workspace trust flow, and exact confirmed
+removal. Goal-managed and registered worktrees are protected, and dirty removal needs
+an explicit force choice. The Git panel now separates Changes, Branches, Tags, and
+Worktrees into accessible tabs. Stash, history, merge editing, and remotes remain.
 
 ### Planned: Task 051 — developer terminal and structured tasks
 

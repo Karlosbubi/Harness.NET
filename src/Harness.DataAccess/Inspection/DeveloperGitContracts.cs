@@ -50,6 +50,12 @@ public enum DeveloperGitTagOperation
     Delete,
 }
 
+public enum DeveloperGitWorktreeOperation
+{
+    Create,
+    Remove,
+}
+
 public sealed record DeveloperGitStateFingerprint(string Value);
 public sealed record DeveloperGitPath(string Value);
 public sealed record DeveloperGitIndexRequest(
@@ -141,6 +147,40 @@ public sealed record DeveloperGitTagResult(
     IReadOnlyList<DeveloperGitTag> Tags,
     string? ErrorCode,
     string? Error);
+public sealed record DeveloperGitWorktreeSetFingerprint(string Value);
+public sealed record DeveloperGitWorktree(
+    string Path,
+    string? Branch,
+    string HeadSha,
+    bool IsMain,
+    bool IsLocked,
+    string? LockReason,
+    bool IsDirty,
+    bool HasConflicts,
+    bool IsHarnessManaged,
+    DeveloperGitStateFingerprint StateFingerprint);
+public sealed record DeveloperGitWorktreeInspection(
+    WorkspaceGitState? State,
+    DeveloperGitWorktreeSetFingerprint? WorktreeFingerprint,
+    IReadOnlyList<DeveloperGitWorktree> Worktrees,
+    string? ErrorCode,
+    string? Error);
+public sealed record DeveloperGitWorktreeRequest(
+    string RepositoryRoot,
+    DeveloperGitStateFingerprint ExpectedFingerprint,
+    DeveloperGitWorktreeSetFingerprint ExpectedWorktreeFingerprint,
+    DeveloperGitWorktreeOperation Operation,
+    string Path,
+    string? ExistingBranch,
+    string? NewBranch,
+    DeveloperGitStateFingerprint? ExpectedSelectedWorktreeFingerprint,
+    bool Force);
+public sealed record DeveloperGitWorktreeResult(
+    WorkspaceGitState? State,
+    DeveloperGitWorktreeSetFingerprint? WorktreeFingerprint,
+    IReadOnlyList<DeveloperGitWorktree> Worktrees,
+    string? ErrorCode,
+    string? Error);
 
 public interface IDeveloperGitRepository
 {
@@ -178,5 +218,13 @@ public interface IDeveloperGitRepository
 
     ValueTask<DeveloperGitTagResult> ApplyTagAsync(
         DeveloperGitTagRequest request,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitWorktreeInspection> InspectWorktreesAsync(
+        string repositoryRoot,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitWorktreeResult> ApplyWorktreeAsync(
+        DeveloperGitWorktreeRequest request,
         CancellationToken cancellationToken = default);
 }

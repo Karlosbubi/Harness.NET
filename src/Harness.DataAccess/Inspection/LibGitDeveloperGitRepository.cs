@@ -1,9 +1,13 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Text;
+using Harness.DataAccess.Configuration;
 using LibGit2Sharp;
 
 namespace Harness.DataAccess.Inspection;
 
-internal sealed class LibGitDeveloperGitRepository : IDeveloperGitRepository
+internal sealed class LibGitDeveloperGitRepository(IApplicationPaths? applicationPaths = null)
+    : IDeveloperGitRepository
 {
     private const int PatchUnitIdLength = 64;
     public ValueTask<DeveloperGitIndexResult> UpdateIndexAsync(
@@ -498,6 +502,290 @@ internal sealed class LibGitDeveloperGitRepository : IDeveloperGitRepository
                 "git_tag_failed", "Git could not apply the tag operation."));
         }
     }
+
+    public ValueTask<DeveloperGitWorktreeInspection> InspectWorktreesAsync(
+        string repositoryRoot,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        string? repositoryPath = Repository.Discover(repositoryRoot);
+        if (repositoryPath is null)
+            return ValueTask.FromResult(WorktreeInspectionFailure(
+                "repository_missing", "No Git repository was found."));
+        try
+        {
+            using Repository repository = new(repositoryPath);
+            if (!NormalizeRoot(repositoryRoot).Equals(
+                    NormalizeRoot(repository.Info.WorkingDirectory), StringComparison.Ordinal))
+                return ValueTask.FromResult(WorktreeInspectionFailure(
+                    "repository_mismatch", "The workspace root must be the Git repository root."));
+            WorkspaceGitState state = GitRepositoryStateReader.Read(repository, cancellationToken);
+            DeveloperGitWorktree[] worktrees = MapWorktrees(repository, cancellationToken);
+            return ValueTask.FromResult(new DeveloperGitWorktreeInspection(
+                state, WorktreeFingerprint(worktrees), worktrees, null, null));
+        }
+        catch (Exception exception) when (exception is LibGit2SharpException or IOException or
+                                           UnauthorizedAccessException or ArgumentException)
+        {
+            return ValueTask.FromResult(WorktreeInspectionFailure(
+                "git_worktrees_failed", "Git worktrees could not be inspected."));
+        }
+    }
+
+    public async ValueTask<DeveloperGitWorktreeResult> ApplyWorktreeAsync(
+        DeveloperGitWorktreeRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+        DeveloperGitWorktreeInspection before = await InspectWorktreesAsync(
+            request.RepositoryRoot, cancellationToken);
+        if (before.State is null || before.WorktreeFingerprint is null || before.Error is not null)
+            return new(before.State, before.WorktreeFingerprint, before.Worktrees,
+                before.ErrorCode, before.Error);
+        if (!CryptographicEquals(before.State.Fingerprint, request.ExpectedFingerprint.Value) ||
+            !CryptographicEquals(before.WorktreeFingerprint.Value, request.ExpectedWorktreeFingerprint.Value))
+            return new(before.State, before.WorktreeFingerprint, before.Worktrees,
+                "git_state_stale",
+                "Git references, working state, or linked worktrees changed after display. Refresh and retry.");
+
+        try
+        {
+            string root = NormalizeRoot(request.RepositoryRoot);
+            using (Repository repository = new(root))
+            {
+                if (repository.Info.CurrentOperation != CurrentOperation.None)
+                    return new(before.State, before.WorktreeFingerprint, before.Worktrees,
+                        "git_operation_in_progress",
+                        "Finish the current Git operation before changing worktrees.");
+                string? validation = request.Operation == DeveloperGitWorktreeOperation.Create
+                    ? ValidateWorktreeCreate(repository, before.Worktrees, request, out string? target)
+                    : ValidateWorktreeRemove(before.Worktrees, request, out target);
+                if (validation is not null)
+                    return new(before.State, before.WorktreeFingerprint, before.Worktrees,
+                        "git_worktree_invalid", validation);
+
+                List<string> arguments = ["worktree", request.Operation == DeveloperGitWorktreeOperation.Create
+                    ? "add" : "remove"];
+                if (request.Operation == DeveloperGitWorktreeOperation.Create)
+                {
+                    if (request.NewBranch is not null)
+                    {
+                        arguments.Add("-b");
+                        arguments.Add(request.NewBranch);
+                        arguments.Add("--no-track");
+                    }
+                    arguments.Add(target!);
+                    arguments.Add(request.NewBranch is null ? request.ExistingBranch! : "HEAD");
+                }
+                else
+                {
+                    if (request.Force) arguments.Add("--force");
+                    arguments.Add(target!);
+                }
+
+                int exitCode = await RunWorktreeGitAsync(root, arguments, cancellationToken);
+                DeveloperGitWorktreeInspection after = await InspectWorktreesAsync(
+                    request.RepositoryRoot, CancellationToken.None);
+                if (exitCode != 0)
+                    return new(after.State, after.WorktreeFingerprint, after.Worktrees,
+                        request.Operation == DeveloperGitWorktreeOperation.Create
+                            ? "git_worktree_create_rejected" : "git_worktree_remove_rejected",
+                        request.Operation == DeveloperGitWorktreeOperation.Create
+                            ? "Git could not create the requested worktree. Refresh and review its path and branch."
+                            : "Git could not remove the requested worktree. Refresh and review its current state.");
+                return new(after.State, after.WorktreeFingerprint, after.Worktrees, null, null);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is LibGit2SharpException or IOException or
+                                           UnauthorizedAccessException or ArgumentException or
+                                           InvalidOperationException or NotSupportedException)
+        {
+            DeveloperGitWorktreeInspection after = await InspectWorktreesAsync(
+                request.RepositoryRoot, CancellationToken.None);
+            return new(after.State, after.WorktreeFingerprint, after.Worktrees,
+                "git_worktree_failed", "Git could not apply the worktree operation.");
+        }
+    }
+
+    private static string? ValidateWorktreeCreate(
+        Repository repository,
+        IReadOnlyList<DeveloperGitWorktree> worktrees,
+        DeveloperGitWorktreeRequest request,
+        out string? target)
+    {
+        string? normalizedTarget = NormalizeWorktreePath(request.Path);
+        target = normalizedTarget;
+        if (normalizedTarget is null) return "Choose an absolute worktree path.";
+        if (worktrees.Any(worktree => IsAtOrBelow(normalizedTarget, worktree.Path)))
+            return "The new worktree path must not be inside an existing worktree.";
+        if (File.Exists(target)) return "The new worktree path must not be a file.";
+        if (Directory.Exists(target))
+        {
+            if ((File.GetAttributes(target) & FileAttributes.ReparsePoint) != 0)
+                return "The new worktree path must not be a symbolic link.";
+            if (Directory.EnumerateFileSystemEntries(target).Any())
+                return "The new worktree directory must be empty.";
+        }
+        else if (!Directory.Exists(Path.GetDirectoryName(target)))
+        {
+            return "The parent directory for the new worktree must exist.";
+        }
+
+        bool hasExisting = !string.IsNullOrWhiteSpace(request.ExistingBranch);
+        bool hasNew = !string.IsNullOrWhiteSpace(request.NewBranch);
+        if (hasExisting == hasNew)
+            return "Choose exactly one existing branch or new branch name.";
+        if (hasNew)
+        {
+            if (!Reference.IsValidName($"refs/heads/{request.NewBranch}") ||
+                repository.Branches[request.NewBranch] is not null)
+                return "Enter a valid unused local branch name.";
+            if (repository.Head.Tip is null) return "An unborn repository cannot create a worktree branch.";
+        }
+        else
+        {
+            Branch? branch = repository.Branches[request.ExistingBranch];
+            if (branch is null || branch.IsRemote) return "Select an existing local branch.";
+            if (worktrees.Any(worktree => worktree.Branch?.Equals(
+                    request.ExistingBranch, StringComparison.Ordinal) == true))
+                return "That local branch is already checked out in another worktree.";
+        }
+        return null;
+    }
+
+    private static string? ValidateWorktreeRemove(
+        IReadOnlyList<DeveloperGitWorktree> worktrees,
+        DeveloperGitWorktreeRequest request,
+        out string? target)
+    {
+        string? normalizedTarget = NormalizeWorktreePath(request.Path);
+        target = normalizedTarget;
+        DeveloperGitWorktree? selected = normalizedTarget is null ? null : worktrees.SingleOrDefault(worktree =>
+            worktree.Path.Equals(normalizedTarget, StringComparison.Ordinal));
+        if (selected is null) return "Select an existing linked worktree.";
+        if (selected.IsMain) return "The original workspace cannot be removed as a linked worktree.";
+        if (selected.IsHarnessManaged) return "Harness-managed goal worktrees cannot be removed here.";
+        if (selected.IsLocked) return "Unlock this worktree with Git before removing it.";
+        if (request.ExpectedSelectedWorktreeFingerprint is null ||
+            !CryptographicEquals(selected.StateFingerprint.Value,
+                request.ExpectedSelectedWorktreeFingerprint.Value))
+            return "The selected worktree changed after display. Refresh and retry.";
+        if ((selected.IsDirty || selected.HasConflicts) && !request.Force)
+            return "The worktree has uncommitted content. Review it and explicitly enable forced removal.";
+        return null;
+    }
+
+    private DeveloperGitWorktree[] MapWorktrees(
+        Repository repository,
+        CancellationToken cancellationToken)
+    {
+        List<DeveloperGitWorktree> mapped =
+        [
+            MapWorktreeRepository(repository, isMain: true, isLocked: false, lockReason: null,
+                cancellationToken),
+        ];
+        foreach (Worktree worktree in repository.Worktrees)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            using Repository linked = worktree.WorktreeRepository;
+            mapped.Add(MapWorktreeRepository(linked, isMain: false, worktree.IsLocked,
+                Bound(worktree.LockReason, 1024), cancellationToken));
+        }
+        return mapped.OrderBy(worktree => worktree.Path, StringComparer.Ordinal).ToArray();
+    }
+
+    private DeveloperGitWorktree MapWorktreeRepository(
+        Repository repository,
+        bool isMain,
+        bool isLocked,
+        string? lockReason,
+        CancellationToken cancellationToken)
+    {
+        WorkspaceGitState state = GitRepositoryStateReader.Read(repository, cancellationToken);
+        string path = NormalizeRoot(repository.Info.WorkingDirectory);
+        return new(path,
+            repository.Info.IsHeadDetached ? null : repository.Head.FriendlyName,
+            repository.Head.Tip?.Sha ?? string.Empty,
+            isMain,
+            isLocked,
+            lockReason,
+            state.Changes.Count > 0,
+            state.Changes.Any(change => change.IsConflicted),
+            IsHarnessManaged(path),
+            new(state.Fingerprint));
+    }
+
+    private bool IsHarnessManaged(string path) => applicationPaths is not null &&
+        IsAtOrBelow(path, applicationPaths.Current.WorktreeDirectory);
+
+    private static DeveloperGitWorktreeSetFingerprint WorktreeFingerprint(
+        IReadOnlyList<DeveloperGitWorktree> worktrees)
+    {
+        StringBuilder input = new();
+        foreach (DeveloperGitWorktree worktree in worktrees)
+            input.Append(worktree.Path).Append('\0').Append(worktree.Branch).Append('\0')
+                .Append(worktree.HeadSha).Append('\0').Append(worktree.IsMain).Append('\0')
+                .Append(worktree.IsLocked).Append('\0').Append(worktree.LockReason).Append('\0')
+                .Append(worktree.IsDirty).Append('\0').Append(worktree.HasConflicts).Append('\0')
+                .Append(worktree.IsHarnessManaged).Append('\0')
+                .Append(worktree.StateFingerprint.Value).Append('\n');
+        return new(Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(input.ToString())))
+            .ToLowerInvariant());
+    }
+
+    private static string? NormalizeWorktreePath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !Path.IsPathFullyQualified(path)) return null;
+        try { return NormalizeRoot(path); }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException or
+                                           PathTooLongException)
+        { return null; }
+    }
+
+    private static bool IsAtOrBelow(string candidate, string root)
+    {
+        string normalizedCandidate = NormalizeRoot(candidate);
+        string normalizedRoot = NormalizeRoot(root);
+        return normalizedCandidate.Equals(normalizedRoot, StringComparison.Ordinal) ||
+               normalizedCandidate.StartsWith(normalizedRoot + Path.DirectorySeparatorChar,
+                   StringComparison.Ordinal);
+    }
+
+    private static string? Bound(string? value, int maximum) => string.IsNullOrWhiteSpace(value)
+        ? null : value.Length <= maximum ? value : value[..maximum];
+
+    private static async Task<int> RunWorktreeGitAsync(
+        string root,
+        IReadOnlyList<string> arguments,
+        CancellationToken cancellationToken)
+    {
+        ProcessStartInfo startInfo = CreateGitStartInfo(root);
+        foreach (string argument in arguments) startInfo.ArgumentList.Add(argument);
+        using Process process = new() { StartInfo = startInfo };
+        if (!process.Start()) return -1;
+        Task standardError = DrainAsync(process.StandardError, cancellationToken);
+        Task standardOutput = DrainAsync(process.StandardOutput, cancellationToken);
+        try
+        {
+            await process.WaitForExitAsync(cancellationToken);
+            await Task.WhenAll(standardError, standardOutput);
+            return process.ExitCode;
+        }
+        catch (OperationCanceledException)
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            await process.WaitForExitAsync(CancellationToken.None);
+            throw;
+        }
+    }
+
+    private static DeveloperGitWorktreeInspection WorktreeInspectionFailure(string code, string error) =>
+        new(null, null, [], code, error);
 
     private static DeveloperGitTag[] MapTags(Repository repository) =>
         repository.Tags.OrderBy(tag => tag.FriendlyName, StringComparer.Ordinal)

@@ -1,3 +1,4 @@
+using Harness.DataAccess.Configuration;
 using Harness.DataAccess.Inspection;
 using LibGit2Sharp;
 
@@ -5,6 +6,7 @@ namespace Harness.DataAccess.Tests.Inspection;
 
 public sealed class LibGitDeveloperGitRepositoryTests : IDisposable
 {
+    private readonly List<string> linkedWorktreePaths = [];
     private readonly string root = Path.Combine(
         Path.GetTempPath(),
         "harness-developer-git-tests",
@@ -588,6 +590,122 @@ public sealed class LibGitDeveloperGitRepositoryTests : IDisposable
         Assert.Empty(noIdentity.Tags);
     }
 
+    [Fact]
+    public async Task Worktree_create_and_remove_preserve_exact_branch_and_set_state()
+    {
+        await InitializeAsync();
+        string path = NewWorktreePath();
+        var sut = new LibGitDeveloperGitRepository();
+        DeveloperGitWorktreeInspection initial = await sut.InspectWorktreesAsync(root);
+        DeveloperGitWorktree main = Assert.Single(initial.Worktrees);
+        Assert.True(main.IsMain);
+
+        DeveloperGitWorktreeResult created = await sut.ApplyWorktreeAsync(new(
+            root, new(initial.State!.Fingerprint), initial.WorktreeFingerprint!,
+            DeveloperGitWorktreeOperation.Create, path, null, "feature-worktree", null, false));
+
+        Assert.Null(created.Error);
+        DeveloperGitWorktree linked = Assert.Single(created.Worktrees, item => !item.IsMain);
+        Assert.Equal(Path.GetFullPath(path), linked.Path);
+        Assert.Equal("feature-worktree", linked.Branch);
+        Assert.False(linked.IsDirty);
+        Assert.NotEqual(initial.WorktreeFingerprint, created.WorktreeFingerprint);
+
+        DeveloperGitWorktreeResult removed = await sut.ApplyWorktreeAsync(new(
+            root, new(created.State!.Fingerprint), created.WorktreeFingerprint!,
+            DeveloperGitWorktreeOperation.Remove, path, null, null,
+            linked.StateFingerprint, false));
+
+        Assert.Null(removed.Error);
+        Assert.Single(removed.Worktrees);
+        Assert.False(Directory.Exists(path));
+
+        string reopenedPath = NewWorktreePath();
+        DeveloperGitWorktreeResult reopened = await sut.ApplyWorktreeAsync(new(
+            root, new(removed.State!.Fingerprint), removed.WorktreeFingerprint!,
+            DeveloperGitWorktreeOperation.Create, reopenedPath, "feature-worktree", null, null, false));
+        Assert.Null(reopened.Error);
+        Assert.Equal("feature-worktree", Assert.Single(reopened.Worktrees, item => !item.IsMain).Branch);
+    }
+
+    [Fact]
+    public async Task Dirty_worktree_requires_exact_force_and_removes_only_selected_path()
+    {
+        await InitializeAsync();
+        string path = NewWorktreePath();
+        var sut = new LibGitDeveloperGitRepository();
+        DeveloperGitWorktreeInspection initial = await sut.InspectWorktreesAsync(root);
+        DeveloperGitWorktreeResult created = await sut.ApplyWorktreeAsync(new(
+            root, new(initial.State!.Fingerprint), initial.WorktreeFingerprint!,
+            DeveloperGitWorktreeOperation.Create, path, null, "dirty-worktree", null, false));
+        await File.WriteAllTextAsync(Path.Combine(path, "untracked.txt"), "keep unless forced\n");
+        DeveloperGitWorktreeInspection dirty = await sut.InspectWorktreesAsync(root);
+        DeveloperGitWorktree selected = Assert.Single(dirty.Worktrees, item => !item.IsMain);
+        Assert.True(selected.IsDirty);
+
+        DeveloperGitWorktreeResult denied = await sut.ApplyWorktreeAsync(new(
+            root, new(dirty.State!.Fingerprint), dirty.WorktreeFingerprint!,
+            DeveloperGitWorktreeOperation.Remove, path, null, null,
+            selected.StateFingerprint, false));
+        Assert.Equal("git_worktree_invalid", denied.ErrorCode);
+        Assert.True(File.Exists(Path.Combine(path, "untracked.txt")));
+
+        DeveloperGitWorktreeResult removed = await sut.ApplyWorktreeAsync(new(
+            root, new(dirty.State.Fingerprint), dirty.WorktreeFingerprint!,
+            DeveloperGitWorktreeOperation.Remove, path, null, null,
+            selected.StateFingerprint, true));
+        Assert.Null(removed.Error);
+        Assert.False(Directory.Exists(path));
+    }
+
+    [Fact]
+    public async Task Worktree_operation_rejects_stale_linked_set_without_creating_target()
+    {
+        await InitializeAsync();
+        string first = NewWorktreePath();
+        string staleTarget = NewWorktreePath();
+        var sut = new LibGitDeveloperGitRepository();
+        DeveloperGitWorktreeInspection displayed = await sut.InspectWorktreesAsync(root);
+        DeveloperGitWorktreeResult changed = await sut.ApplyWorktreeAsync(new(
+            root, new(displayed.State!.Fingerprint), displayed.WorktreeFingerprint!,
+            DeveloperGitWorktreeOperation.Create, first, null, "first-worktree", null, false));
+        Assert.Null(changed.Error);
+
+        DeveloperGitWorktreeResult stale = await sut.ApplyWorktreeAsync(new(
+            root, new(displayed.State.Fingerprint), displayed.WorktreeFingerprint!,
+            DeveloperGitWorktreeOperation.Create, staleTarget, null, "stale-worktree", null, false));
+
+        Assert.Equal("git_state_stale", stale.ErrorCode);
+        Assert.False(Directory.Exists(staleTarget));
+    }
+
+    [Fact]
+    public async Task Harness_managed_worktree_is_identified_and_cannot_be_removed()
+    {
+        await InitializeAsync();
+        string managedRoot = root + "-managed";
+        string path = Path.Combine(managedRoot, "goal-worktree");
+        Directory.CreateDirectory(managedRoot);
+        linkedWorktreePaths.Add(managedRoot);
+        var paths = new StubApplicationPaths(new(
+            managedRoot, managedRoot, managedRoot, managedRoot,
+            Path.Combine(managedRoot, "state.db"), managedRoot, managedRoot));
+        var sut = new LibGitDeveloperGitRepository(paths);
+        DeveloperGitWorktreeInspection initial = await sut.InspectWorktreesAsync(root);
+        DeveloperGitWorktreeResult created = await sut.ApplyWorktreeAsync(new(
+            root, new(initial.State!.Fingerprint), initial.WorktreeFingerprint!,
+            DeveloperGitWorktreeOperation.Create, path, null, "managed-worktree", null, false));
+        DeveloperGitWorktree managed = Assert.Single(created.Worktrees, item => !item.IsMain);
+        Assert.True(managed.IsHarnessManaged);
+
+        DeveloperGitWorktreeResult denied = await sut.ApplyWorktreeAsync(new(
+            root, new(created.State!.Fingerprint), created.WorktreeFingerprint!,
+            DeveloperGitWorktreeOperation.Remove, path, null, null, managed.StateFingerprint, true));
+
+        Assert.Equal("git_worktree_invalid", denied.ErrorCode);
+        Assert.True(Directory.Exists(path));
+    }
+
     [Theory]
     [InlineData("../outside.txt")]
     [InlineData(".git/config")]
@@ -619,6 +737,18 @@ public sealed class LibGitDeveloperGitRepositoryTests : IDisposable
         repository.Commit("initial", signature, signature);
     }
 
+    private string NewWorktreePath()
+    {
+        string path = root + "-linked-" + Guid.NewGuid().ToString("N");
+        linkedWorktreePaths.Add(path);
+        return path;
+    }
+
+    private sealed class StubApplicationPaths(ApplicationPaths current) : IApplicationPaths
+    {
+        public ApplicationPaths Current { get; } = current;
+    }
+
     private string ReadIndexText(string path)
     {
         using Repository repository = new(root);
@@ -628,6 +758,8 @@ public sealed class LibGitDeveloperGitRepositoryTests : IDisposable
 
     public void Dispose()
     {
+        foreach (string path in linkedWorktreePaths)
+            if (Directory.Exists(path)) Directory.Delete(path, recursive: true);
         if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
     }
 }

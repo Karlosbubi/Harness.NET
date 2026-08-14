@@ -3551,6 +3551,154 @@ public sealed class PresentationControlTests
     }
 
     [Fact]
+    public async Task Git_worktree_tool_creates_new_branch_against_exact_repository_and_set_state()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            DeveloperGitService git = new();
+            WorkbenchDockHost workbench = CreateWorkbench(TrustedShell(), new(), developerGit: git);
+            Window window = new() { Content = workbench.Control };
+            window.Show();
+            workbench.RefreshGitAsync().AsTask().GetAwaiter().GetResult();
+            Control gitTool = Assert.IsAssignableFrom<Control>(
+                Find<IDockable>(workbench.Root, WorkbenchDockIds.GitTool).Context);
+            TabControl tabs = Assert.Single(gitTool.GetVisualDescendants().OfType<TabControl>(), item =>
+                AutomationProperties.GetName(item) == "Git workbench sections");
+            TabItem worktreeTab = Assert.IsType<TabItem>(
+                tabs.Items.OfType<TabItem>().ElementAt(3));
+            Control worktreePanel = Assert.IsAssignableFrom<Control>(worktreeTab.Content);
+            TextBox path = Assert.Single(worktreePanel.GetLogicalDescendants().OfType<TextBox>(), item =>
+                AutomationProperties.GetName(item) == "New linked Git worktree absolute path");
+            TextBox branch = Assert.Single(worktreePanel.GetLogicalDescendants().OfType<TextBox>(), item =>
+                AutomationProperties.GetName(item) == "Linked Git worktree branch name");
+            CheckBox createBranch = Assert.Single(worktreePanel.GetLogicalDescendants().OfType<CheckBox>(), item =>
+                AutomationProperties.GetName(item) == "Create new local branch for linked Git worktree");
+            path.Text = "/work/new-feature";
+            branch.Text = "new-feature";
+            createBranch.IsChecked = true;
+
+            workbench.CreateGitWorktreeAsync().AsTask().GetAwaiter().GetResult();
+
+            Assert.Equal("git-fingerprint", git.WorktreeCreateCommand!.ExpectedFingerprint.Value);
+            Assert.Equal("worktree-fingerprint",
+                git.WorktreeCreateCommand.ExpectedWorktreeFingerprint.Value);
+            Assert.Equal("/work/new-feature", git.WorktreeCreateCommand.Path.Value);
+            Assert.Equal("new-feature", git.WorktreeCreateCommand.NewBranch!.Value);
+            Assert.Null(git.WorktreeCreateCommand.ExistingBranch);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Git_worktree_tool_opens_selected_path_through_workspace_flow()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            string? requestedPath = null;
+            WorkbenchDockHost workbench = CreateWorkbench(
+                TrustedShell(), new(), developerGit: new DeveloperGitService(),
+                manageWorkspaceAt: path =>
+                {
+                    requestedPath = path;
+                    return Task.CompletedTask;
+                });
+            Window window = new() { Content = workbench.Control };
+            window.Show();
+            workbench.RefreshGitAsync().AsTask().GetAwaiter().GetResult();
+            Control gitTool = Assert.IsAssignableFrom<Control>(
+                Find<IDockable>(workbench.Root, WorkbenchDockIds.GitTool).Context);
+            TabControl tabs = Assert.Single(gitTool.GetVisualDescendants().OfType<TabControl>(), item =>
+                AutomationProperties.GetName(item) == "Git workbench sections");
+            TabItem worktreeTab = Assert.IsType<TabItem>(
+                tabs.Items.OfType<TabItem>().ElementAt(3));
+            Control worktreePanel = Assert.IsAssignableFrom<Control>(worktreeTab.Content);
+            ListBox worktrees = Assert.Single(worktreePanel.GetLogicalDescendants().OfType<ListBox>(), item =>
+                AutomationProperties.GetName(item) == "Linked Git worktrees");
+            worktrees.SelectedIndex = 1;
+
+            workbench.OpenSelectedGitWorktreeAsync().AsTask().GetAwaiter().GetResult();
+
+            Assert.Equal("/work/feature", requestedPath);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Git_worktree_remove_requires_exact_preview_and_confirmation()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            DeveloperGitService git = new();
+            DocumentPrompt prompt = new();
+            prompt.GitWorktreeRemoveDecisions.Enqueue(true);
+            WorkbenchDockHost workbench = CreateWorkbench(
+                TrustedShell(), new(), prompt: prompt, developerGit: git);
+            Window window = new() { Content = workbench.Control };
+            window.Show();
+            workbench.RefreshGitAsync().AsTask().GetAwaiter().GetResult();
+            Control gitTool = Assert.IsAssignableFrom<Control>(
+                Find<IDockable>(workbench.Root, WorkbenchDockIds.GitTool).Context);
+            TabControl tabs = Assert.Single(gitTool.GetVisualDescendants().OfType<TabControl>(), item =>
+                AutomationProperties.GetName(item) == "Git workbench sections");
+            TabItem worktreeTab = Assert.IsType<TabItem>(
+                tabs.Items.OfType<TabItem>().ElementAt(3));
+            Control worktreePanel = Assert.IsAssignableFrom<Control>(worktreeTab.Content);
+            ListBox worktrees = Assert.Single(worktreePanel.GetLogicalDescendants().OfType<ListBox>(), item =>
+                AutomationProperties.GetName(item) == "Linked Git worktrees");
+            worktrees.SelectedIndex = 1;
+
+            workbench.RemoveSelectedGitWorktreeAsync().AsTask().GetAwaiter().GetResult();
+
+            Assert.Equal("git-fingerprint", git.WorktreeRemoveCommand!.ExpectedFingerprint.Value);
+            Assert.Equal("worktree-fingerprint",
+                git.WorktreeRemoveCommand.ExpectedWorktreeFingerprint.Value);
+            Assert.Equal("/work/feature", git.WorktreeRemoveCommand.Path.Value);
+            Assert.Same(Assert.Single(prompt.GitWorktreeRemovePreviews), git.AppliedWorktreeRemove);
+            Assert.Contains("Removed linked worktree", workbench.GitStatusText, StringComparison.Ordinal);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Worktree_remove_dialog_shows_exact_path_head_and_requires_acknowledgement()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            var preview = new DeveloperGitWorktreeRemovePreviewView(
+                new("preview"),
+                new(new("workspace-1"), null, new("main"),
+                    WorkbenchWorkspaceScope.OriginalWorkspace, "Original workspace"),
+                new("fingerprint"), new("worktree-fingerprint"),
+                new(new("/work/feature"), new("feature"), new string('d', 40), false,
+                    false, null, true, false, false, false, new("selected-state")),
+                true, "Delete uncommitted content.", "Recovery is not guaranteed.", false);
+            GitWorktreeRemoveConfirmationDialog dialog = new(preview);
+            dialog.Show();
+            CheckBox acknowledgement = Assert.Single(dialog.GetVisualDescendants().OfType<CheckBox>(), item =>
+                AutomationProperties.GetName(item) ==
+                "Acknowledge linked Git worktree removal consequences");
+            Button confirm = Assert.Single(dialog.GetVisualDescendants().OfType<Button>(), item =>
+                AutomationProperties.GetName(item) == "Confirm removal of exact linked Git worktree");
+            Assert.False(confirm.IsEnabled);
+            string exact = dialog.GetVisualDescendants().OfType<TextBlock>()
+                .Select(item => item.Text).First(text => text?.Contains("Path:", StringComparison.Ordinal) == true)!;
+            Assert.Contains("/work/feature", exact, StringComparison.Ordinal);
+            Assert.Contains(new string('d', 40), exact, StringComparison.Ordinal);
+            acknowledgement.IsChecked = true;
+            Assert.True(confirm.IsEnabled);
+            dialog.Close(false);
+        }, CancellationToken.None);
+    }
+
+    [Fact]
     public async Task Layout_reset_keeps_durable_controls_in_the_rendered_tree()
     {
         using HeadlessUnitTestSession session =
@@ -3770,7 +3918,8 @@ public sealed class PresentationControlTests
         MutationService? mutationService = null,
         Control? conversation = null,
         IDeveloperGitService? developerGit = null,
-        Func<Task>? refreshWorkspaceContext = null) => new(
+        Func<Task>? refreshWorkspaceContext = null,
+        Func<string, Task>? manageWorkspaceAt = null) => new(
         runOutput ?? new RunOutputService(),
         inspection ?? new InspectionService(),
         documents ?? new DocumentService(),
@@ -3787,7 +3936,8 @@ public sealed class PresentationControlTests
         null,
         null,
         developerGit,
-        refreshWorkspaceContext);
+        refreshWorkspaceContext,
+        manageWorkspaceAt);
 
     private static Control ConversationSurface(string text) => new Border
     {
@@ -4025,6 +4175,9 @@ public sealed class PresentationControlTests
         internal DeveloperGitTagCreateCommand? TagCreateCommand { get; private set; }
         internal DeveloperGitTagDeletePreviewCommand? TagDeleteCommand { get; private set; }
         internal DeveloperGitTagDeletePreviewView? AppliedTagDelete { get; private set; }
+        internal DeveloperGitWorktreeCreateCommand? WorktreeCreateCommand { get; private set; }
+        internal DeveloperGitWorktreeRemovePreviewCommand? WorktreeRemoveCommand { get; private set; }
+        internal DeveloperGitWorktreeRemovePreviewView? AppliedWorktreeRemove { get; private set; }
 
         public ValueTask<DeveloperGitIndexCommandResult> UpdateIndexAsync(
             DeveloperGitIndexCommand command,
@@ -4193,6 +4346,54 @@ public sealed class PresentationControlTests
             AppliedTagDelete = preview;
             return InspectTagsAsync(new(preview.Context.WorkspaceId, null), cancellationToken);
         }
+
+        public ValueTask<DeveloperGitWorktreeInspectionResult> InspectWorktreesAsync(
+            WorkbenchWorkspaceRequest workspace,
+            CancellationToken cancellationToken = default)
+        {
+            var context = new WorkbenchWorkspaceContext(workspace.WorkspaceId, null, new("main"),
+                WorkbenchWorkspaceScope.OriginalWorkspace, "Original workspace");
+            return ValueTask.FromResult(new DeveloperGitWorktreeInspectionResult(
+                context,
+                new("main", new string('a', 40), [], "", false, null, null, "git-fingerprint"),
+                new("worktree-fingerprint"),
+                [
+                    new(new("/work/repository"), new("main"), new string('a', 40), true,
+                        false, null, false, false, false, true, new("main-worktree-state")),
+                    new(new("/work/feature"), new("feature"), new string('b', 40), false,
+                        false, null, false, false, false, false, new("feature-worktree-state")),
+                ], null, null));
+        }
+
+        public ValueTask<DeveloperGitWorktreeInspectionResult> CreateWorktreeAsync(
+            DeveloperGitWorktreeCreateCommand command,
+            CancellationToken cancellationToken = default)
+        {
+            WorktreeCreateCommand = command;
+            return InspectWorktreesAsync(command.Workspace, cancellationToken);
+        }
+
+        public async ValueTask<DeveloperGitWorktreeRemovePreviewResult> PreviewWorktreeRemoveAsync(
+            DeveloperGitWorktreeRemovePreviewCommand command,
+            CancellationToken cancellationToken = default)
+        {
+            WorktreeRemoveCommand = command;
+            DeveloperGitWorktreeInspectionResult inspection = await InspectWorktreesAsync(
+                command.Workspace, cancellationToken);
+            DeveloperGitWorktreeView worktree = inspection.Worktrees.Single(item => item.Path == command.Path);
+            return new(new(new("worktree-remove-preview"), inspection.Context,
+                command.ExpectedFingerprint, command.ExpectedWorktreeFingerprint, worktree,
+                command.Force, "Remove worktree.", "The branch remains.", true),
+                inspection, null, null);
+        }
+
+        public ValueTask<DeveloperGitWorktreeInspectionResult> ApplyWorktreeRemoveAsync(
+            DeveloperGitWorktreeRemovePreviewView preview,
+            CancellationToken cancellationToken = default)
+        {
+            AppliedWorktreeRemove = preview;
+            return InspectWorktreesAsync(new(preview.Context.WorkspaceId, null), cancellationToken);
+        }
     }
 
     private sealed class RunOutputService : IRunOutputService
@@ -4274,6 +4475,8 @@ public sealed class PresentationControlTests
         internal List<DeveloperGitBranchDeletePreviewView> GitBranchDeletePreviews { get; } = [];
         internal Queue<bool> GitTagDeleteDecisions { get; } = [];
         internal List<DeveloperGitTagDeletePreviewView> GitTagDeletePreviews { get; } = [];
+        internal Queue<bool> GitWorktreeRemoveDecisions { get; } = [];
+        internal List<DeveloperGitWorktreeRemovePreviewView> GitWorktreeRemovePreviews { get; } = [];
 
         public ValueTask<WorkbenchUnsavedDecision> DecideUnsavedAsync(
             WorkbenchUnsavedPrompt prompt,
@@ -4329,6 +4532,14 @@ public sealed class PresentationControlTests
         {
             GitTagDeletePreviews.Add(preview);
             return ValueTask.FromResult(GitTagDeleteDecisions.TryDequeue(out bool decision) && decision);
+        }
+
+        public ValueTask<bool> ConfirmGitWorktreeRemoveAsync(
+            DeveloperGitWorktreeRemovePreviewView preview,
+            Window? owner)
+        {
+            GitWorktreeRemovePreviews.Add(preview);
+            return ValueTask.FromResult(GitWorktreeRemoveDecisions.TryDequeue(out bool decision) && decision);
         }
     }
 
