@@ -53,3 +53,15 @@ remotes, restart, large-repository, and final accessibility coverage remain open
 - `dotnet test Harness.slnx --no-restore -p:UseSharedCompilation=false -m:1`:
   757 passed, 0 failed, 0 skipped.
 - The solution build completed with 0 warnings and 0 errors.
+
+## Live dogfood
+
+After commit `5cf943a`, `Harness.NET-live` was fast-forwarded, rebuilt with zero
+warnings, and restarted as one normal-mode process. Its stateless MCP server reported
+the same HEAD and branch through `harness_git`; the only change was the deliberately
+untracked local `.codex/config.toml`, whose contents were not read or persisted.
+
+ADR 024 intentionally keeps developer Git mutations out of model tools. Live MCP can
+therefore verify the shared Git state and application version, but cannot create a
+developer commit. The user-only compose, exact-preview, confirmation, and apply path
+is covered by the headless Avalonia tests above.
