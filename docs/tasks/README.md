@@ -491,7 +491,7 @@ and Debug needs. Database, profiler, and notebook modules remain later slices.
 
 ### 050 — complete Git workbench
 
-Status: `In progress — exact staging and file discard/cleanup delivered`
+Status: `In progress — exact staging, file cleanup, and developer commit/amend delivered`
 
 Dependencies: 023, 029, 035, 036, 039.
 
@@ -533,9 +533,15 @@ arguments. Harness rejects stale fingerprints, refreshes the view, and never inc
 untracked file content in inspection output. Developers can preview and explicitly
 confirm an exact tracked-file discard or untracked-file deletion. These actions are
 limited to the original workspace, reject dirty editor buffers and stale Git state,
-preserve the index when discarding, and never follow a selected symbolic link. Branch
-deletion and other destructive actions, commits, references, history, merge editing,
-and remotes remain open.
+preserve the index when discarding, and never follow a selected symbolic link.
+
+Developer commit and amend are now separate from goal approval. They target only the
+original workspace, require an exact untruncated staged-diff preview and unchanged Git
+fingerprint, show branch or detached state, HEAD, configured author identity, staged
+paths, message, and hook policy, then require a second confirmation. Git hooks run by
+default; bypass is an explicit compose-time choice. Unborn branches and detached HEAD
+are supported. References, history, merge editing, remotes, and destructive reference
+operations remain open.
 
 ### 051 — developer terminal and structured tasks
 

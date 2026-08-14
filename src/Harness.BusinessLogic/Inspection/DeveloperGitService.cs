@@ -151,6 +151,101 @@ internal sealed class DeveloperGitService(
             result.Error);
     }
 
+    public async ValueTask<DeveloperGitCommitPreviewResult> PreviewCommitAsync(
+        DeveloperGitCommitPreviewCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        if (string.IsNullOrWhiteSpace(command.Message.Value) || command.Message.Value.Length > 32_768)
+            return new(null, null, "git_commit_message_invalid",
+                "Enter a commit message between 1 and 32,768 characters.");
+        WorkbenchWorkspaceResolution resolution = await contextResolver.ResolveAsync(
+            command.Workspace, cancellationToken);
+        if (resolution.RootPath is null || resolution.Error is not null)
+            return new(null, null, resolution.ErrorCode ?? "workspace_unavailable",
+                resolution.Error ?? "The workspace context is unavailable.");
+        if (resolution.Context.Scope != WorkbenchWorkspaceScope.OriginalWorkspace)
+            return new(null, null, "git_commit_goal_context_denied",
+                "Developer commits are available only in the original workspace. Goal commits use exact goal approval.");
+
+        WorkspaceGitState state = await gitInspector.InspectAsync(resolution.RootPath, cancellationToken);
+        WorkspaceGitStateView view = Map(state);
+        if (state.Error is not null) return new(null, view, state.ErrorCode, state.Error);
+        if (!state.Fingerprint.Equals(command.ExpectedFingerprint.Value, StringComparison.Ordinal))
+            return new(null, view, "git_state_stale",
+                "Git state changed after it was displayed. Review the refreshed state and retry.");
+        if (state.IsTruncated)
+            return new(null, view, "git_commit_preview_truncated",
+                "The staged diff is too large for an exact commit preview.");
+        if (state.Changes.Any(change => change.IsConflicted))
+            return new(null, view, "git_conflicts_present", "Resolve every Git conflict before committing.");
+        DeveloperGitPath[] staged = state.Changes.Where(change => change.IsStaged)
+            .Select(change => new DeveloperGitPath(change.Path)).OrderBy(path => path.Value, StringComparer.Ordinal)
+            .ToArray();
+        if (staged.Length == 0)
+            return new(null, view, "git_nothing_staged", "Stage at least one change before committing.");
+        if (command.Action == DeveloperGitCommitAction.Amend && state.HeadSha is null)
+            return new(null, view, "git_amend_unborn", "An unborn branch has no commit to amend.");
+        DeveloperGitCommitIdentityResult identity = await repository.GetCommitIdentityAsync(
+            resolution.RootPath, cancellationToken);
+        if (identity.Identity is null)
+            return new(null, view, identity.ErrorCode, identity.Error);
+
+        string previewIdentity = string.Join('\0', resolution.Context.WorkspaceId.Value,
+            state.Fingerprint, command.Action, command.HookPolicy, command.Message.Value,
+            identity.Identity.Name, identity.Identity.Email);
+        var preview = new DeveloperGitCommitPreviewView(
+            new(Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(previewIdentity))).ToLowerInvariant()),
+            resolution.Context,
+            new(state.Fingerprint),
+            command.Action,
+            command.HookPolicy,
+            command.Message,
+            state.Branch,
+            state.HeadSha,
+            identity.Identity.Name,
+            identity.Identity.Email,
+            staged,
+            state.StagedDiff ?? string.Empty,
+            command.Action == DeveloperGitCommitAction.Amend
+                ? "The current HEAD commit will be replaced by a new commit containing the staged tree and this message."
+                : "A new commit containing the staged tree and this message will be added at HEAD.",
+            command.Action == DeveloperGitCommitAction.Amend
+                ? "Git normally retains the replaced commit in the local reflog until expiration, but Harness does not guarantee recovery."
+                : "The new commit can be reverted or reset using ordinary Git history operations.",
+            HasGuaranteedRecovery: false);
+        return new(preview, view, null, null);
+    }
+
+    public async ValueTask<DeveloperGitCommitCommandResult> CommitAsync(
+        DeveloperGitCommitPreviewView preview,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(preview);
+        DeveloperGitCommitPreviewResult current = await PreviewCommitAsync(new(
+            new(preview.Context.WorkspaceId, GoalId: null), preview.Fingerprint,
+            preview.Action, preview.HookPolicy, preview.Message), cancellationToken);
+        if (current.Preview is null || current.Error is not null)
+            return new(preview.Context, current.State, null, current.ErrorCode, current.Error);
+        if (!current.Preview.Id.Equals(preview.Id))
+            return new(preview.Context, current.State, null, "git_commit_preview_stale",
+                "The commit preview changed. Review a new preview before committing.");
+        WorkbenchWorkspaceResolution resolution = await contextResolver.ResolveAsync(
+            new(preview.Context.WorkspaceId, GoalId: null), cancellationToken);
+        if (resolution.RootPath is null || resolution.Error is not null)
+            return new(resolution.Context, null, null, resolution.ErrorCode, resolution.Error);
+        DeveloperGitCommitResult result = await repository.CommitAsync(new(
+            resolution.RootPath,
+            new(preview.Fingerprint.Value),
+            preview.Action == DeveloperGitCommitAction.Create
+                ? DeveloperGitCommitOperation.Create : DeveloperGitCommitOperation.Amend,
+            preview.HookPolicy == DeveloperGitCommitHookPolicy.RunConfiguredHooks
+                ? DeveloperGitHookPolicy.RunConfiguredHooks : DeveloperGitHookPolicy.BypassHooks,
+            preview.Message.Value), cancellationToken);
+        return new(resolution.Context, result.State is null ? null : Map(result.State),
+            result.CommitSha, result.ErrorCode, result.Error);
+    }
+
     private static bool TryValidateDestructive(
         DeveloperGitDestructiveAction action,
         IReadOnlyList<DeveloperGitPath> requested,

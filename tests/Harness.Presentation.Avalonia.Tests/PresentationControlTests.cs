@@ -3132,6 +3132,8 @@ public sealed class PresentationControlTests
                 AutomationProperties.GetName(button) == "Preview discard of selected tracked Git file");
             Assert.Contains(gitTool.GetLogicalDescendants().OfType<Button>(), button =>
                 AutomationProperties.GetName(button) == "Preview deletion of selected untracked Git file");
+            Assert.Contains(gitTool.GetLogicalDescendants().OfType<Button>(), button =>
+                AutomationProperties.GetName(button) == "Compose developer Git commit from staged changes");
             window.Close();
         }, CancellationToken.None);
     }
@@ -3284,6 +3286,76 @@ public sealed class PresentationControlTests
             Assert.Contains("unsaved editor buffer", workbench.GitStatusText,
                 StringComparison.OrdinalIgnoreCase);
             window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Git_tool_previews_and_confirms_exact_developer_commit()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            InspectionService inspection = new()
+            {
+                IsStaged = true,
+                IndexStatus = "ModifiedInIndex",
+                WorktreeStatus = "Unaltered",
+            };
+            DeveloperGitService git = new();
+            DocumentPrompt prompt = new();
+            prompt.GitCommitDrafts.Enqueue(new(new("Developer message"),
+                DeveloperGitCommitAction.Amend, DeveloperGitCommitHookPolicy.BypassHooks));
+            prompt.GitCommitDecisions.Enqueue(true);
+            WorkbenchDockHost workbench = CreateWorkbench(
+                TrustedShell(), new(), prompt: prompt, inspection: inspection, developerGit: git);
+            Window window = new() { Content = workbench.Control };
+            window.Show();
+            workbench.RefreshGitAsync().AsTask().GetAwaiter().GetResult();
+
+            workbench.ComposeAndCommitGitAsync().AsTask().GetAwaiter().GetResult();
+
+            Assert.Equal("git-fingerprint", git.CommitPreviewCommand!.ExpectedFingerprint.Value);
+            Assert.Equal(DeveloperGitCommitAction.Amend, git.CommitPreviewCommand.Action);
+            Assert.Equal(DeveloperGitCommitHookPolicy.BypassHooks, git.CommitPreviewCommand.HookPolicy);
+            Assert.Equal("Developer message", git.CommitPreviewCommand.Message.Value);
+            Assert.Same(Assert.Single(prompt.GitCommitPreviews), git.AppliedCommitPreview);
+            Assert.Contains("Amended", workbench.GitStatusText, StringComparison.Ordinal);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Developer_commit_dialogs_expose_message_policy_and_exact_diff_accessibly()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            GitCommitComposeDialog compose = new();
+            compose.Show();
+            Assert.Contains(compose.GetVisualDescendants().OfType<TextBox>(), control =>
+                AutomationProperties.GetName(control) == "Developer Git commit message");
+            Assert.Contains(compose.GetVisualDescendants().OfType<CheckBox>(), control =>
+                AutomationProperties.GetName(control) == "Bypass configured Git commit hooks");
+            compose.Close(null);
+
+            var preview = new DeveloperGitCommitPreviewView(
+                new("preview"),
+                new(new("workspace-1"), null, new("main"),
+                    WorkbenchWorkspaceScope.OriginalWorkspace, "Original workspace"),
+                new("fingerprint"), DeveloperGitCommitAction.Create,
+                DeveloperGitCommitHookPolicy.RunConfiguredHooks, new("Message"),
+                "main", new string('a', 40), "Developer", "developer@harness.local",
+                [new("src/App.cs")], "diff --git a/src/App.cs b/src/App.cs",
+                "A commit will be created.", "It remains in Git history.", false);
+            GitCommitConfirmationDialog confirm = new(preview);
+            confirm.Show();
+            Assert.Contains(confirm.GetVisualDescendants().OfType<TextEditor>(), control =>
+                AutomationProperties.GetName(control) == "Exact staged Git diff");
+            Assert.Contains(confirm.GetVisualDescendants().OfType<Button>(), control =>
+                AutomationProperties.GetName(control) == "Confirm exact developer Git commit");
+            confirm.Close(false);
         }, CancellationToken.None);
     }
 
@@ -3752,6 +3824,8 @@ public sealed class PresentationControlTests
         internal DeveloperGitPatchCommand? PatchCommand { get; private set; }
         internal DeveloperGitDestructivePreviewCommand? DestructivePreviewCommand { get; private set; }
         internal DeveloperGitDestructivePreviewView? AppliedDestructivePreview { get; private set; }
+        internal DeveloperGitCommitPreviewCommand? CommitPreviewCommand { get; private set; }
+        internal DeveloperGitCommitPreviewView? AppliedCommitPreview { get; private set; }
 
         public ValueTask<DeveloperGitIndexCommandResult> UpdateIndexAsync(
             DeveloperGitIndexCommand command,
@@ -3812,6 +3886,31 @@ public sealed class PresentationControlTests
             AppliedDestructivePreview = preview;
             return ValueTask.FromResult(new DeveloperGitIndexCommandResult(
                 preview.Context, null, preview.Paths, null, null));
+        }
+
+        public ValueTask<DeveloperGitCommitPreviewResult> PreviewCommitAsync(
+            DeveloperGitCommitPreviewCommand command,
+            CancellationToken cancellationToken = default)
+        {
+            CommitPreviewCommand = command;
+            var context = new WorkbenchWorkspaceContext(
+                command.Workspace.WorkspaceId, null, new("main"),
+                WorkbenchWorkspaceScope.OriginalWorkspace, "Original workspace");
+            return ValueTask.FromResult(new DeveloperGitCommitPreviewResult(new(
+                new("commit-preview"), context, command.ExpectedFingerprint,
+                command.Action, command.HookPolicy, command.Message, "main", new string('a', 40),
+                "Harness Developer", "developer@harness.local", [new("src/App.cs")], "staged diff",
+                "A commit will be created.", "It remains in Git history.", false),
+                null, null, null));
+        }
+
+        public ValueTask<DeveloperGitCommitCommandResult> CommitAsync(
+            DeveloperGitCommitPreviewView preview,
+            CancellationToken cancellationToken = default)
+        {
+            AppliedCommitPreview = preview;
+            return ValueTask.FromResult(new DeveloperGitCommitCommandResult(
+                preview.Context, null, new string('c', 40), null, null));
         }
     }
 
@@ -3887,6 +3986,9 @@ public sealed class PresentationControlTests
         internal List<WorkbenchConflictPrompt> ConflictPrompts { get; } = [];
         internal Queue<bool> GitDestructiveDecisions { get; } = [];
         internal List<DeveloperGitDestructivePreviewView> GitDestructivePreviews { get; } = [];
+        internal Queue<DeveloperGitCommitDraft?> GitCommitDrafts { get; } = [];
+        internal Queue<bool> GitCommitDecisions { get; } = [];
+        internal List<DeveloperGitCommitPreviewView> GitCommitPreviews { get; } = [];
 
         public ValueTask<WorkbenchUnsavedDecision> DecideUnsavedAsync(
             WorkbenchUnsavedPrompt prompt,
@@ -3914,6 +4016,18 @@ public sealed class PresentationControlTests
         {
             GitDestructivePreviews.Add(preview);
             return ValueTask.FromResult(GitDestructiveDecisions.TryDequeue(out bool decision) && decision);
+        }
+
+        public ValueTask<DeveloperGitCommitDraft?> CollectGitCommitAsync(Window? owner) =>
+            ValueTask.FromResult(GitCommitDrafts.TryDequeue(out DeveloperGitCommitDraft? draft)
+                ? draft : null);
+
+        public ValueTask<bool> ConfirmGitCommitAsync(
+            DeveloperGitCommitPreviewView preview,
+            Window? owner)
+        {
+            GitCommitPreviews.Add(preview);
+            return ValueTask.FromResult(GitCommitDecisions.TryDequeue(out bool decision) && decision);
         }
     }
 

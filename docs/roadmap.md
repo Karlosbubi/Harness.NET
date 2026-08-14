@@ -418,7 +418,11 @@ opaque recomputed patch-unit identities and a closed stdin-only Git adapter. The
 Git tool also previews and explicitly confirms exact tracked-file discard and
 untracked-file deletion. It rejects dirty editor buffers and stale state, preserves
 the index, and does not follow symbolic links. The remaining workbench capabilities
-follow on the same contracts.
+follow on the same contracts. Developer commit and amend are also delivered as a
+separate original-workspace flow: compose, exact staged preview, then confirmation.
+The preview displays identity, branch/HEAD, paths, message, and whether configured
+hooks run; stale or truncated state is rejected. This cannot satisfy or replace a
+goal commit approval.
 
 ### Planned: Task 051 — developer terminal and structured tasks
 

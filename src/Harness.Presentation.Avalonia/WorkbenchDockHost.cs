@@ -102,6 +102,7 @@ internal sealed class WorkbenchDockHost
     private readonly Button clearGitSelection = new() { Content = "Whole file" };
     private readonly Button discardGit = new() { Content = "Discard file" };
     private readonly Button cleanGit = new() { Content = "Delete untracked" };
+    private readonly Button commitGit = new() { Content = "Commit…" };
     private string gitFingerprint = string.Empty;
     private IReadOnlyList<DeveloperGitPatchUnitView> currentPatchUnits = [];
     private WorkbenchWorkspaceContext? currentGitContext;
@@ -882,6 +883,58 @@ internal sealed class WorkbenchDockHost
                              file.Change.IsUnstaged && !file.Change.IsStaged &&
                              !file.Change.IsConflicted &&
                              file.Change.WorktreeStatus.Contains("NewInWorkdir", StringComparison.Ordinal);
+        commitGit.IsEnabled = original && currentGitContext is not null &&
+                              changes.ItemsSource?.Cast<ChangeChoice>().Any(choice =>
+                                  choice.Change.IsStaged && !choice.Change.IsConflicted) == true;
+    }
+
+    internal async ValueTask ComposeAndCommitGitAsync()
+    {
+        WorkspaceView? active = ActiveWorkspace();
+        if (busy || active is null || developerGitService is null ||
+            currentGitContext?.Scope != WorkbenchWorkspaceScope.OriginalWorkspace ||
+            string.IsNullOrEmpty(gitFingerprint))
+        {
+            gitStatus.Text = "Refresh the original workspace Git state before committing.";
+            return;
+        }
+        foreach (SourceDocumentSession session in sourceDocuments.Values.Where(session =>
+                     session.View.GoalId is null))
+            session.SynchronizeDirtyState();
+        if (sourceDocuments.Values.Any(session => session.View.GoalId is null && session.IsDirty))
+        {
+            gitStatus.Text = "Save or discard every unsaved original-workspace editor buffer before committing.";
+            return;
+        }
+        DeveloperGitCommitDraft? draft = await documentPrompt.CollectGitCommitAsync(OwnerWindow());
+        if (draft is null)
+        {
+            gitStatus.Text = "Developer Git commit cancelled; no commit was created.";
+            return;
+        }
+        await RunAsync(async () =>
+        {
+            DeveloperGitCommitPreviewResult result = await developerGitService.PreviewCommitAsync(new(
+                WorkbenchRequest(active), new(gitFingerprint), draft.Action, draft.HookPolicy,
+                draft.Message), cancellationToken);
+            if (result.State is not null && currentGitContext is not null)
+                RenderGitState(currentGitContext, result.State);
+            if (result.Preview is null)
+            {
+                gitStatus.Text = result.Error ?? "The developer commit preview is unavailable.";
+                return;
+            }
+            if (!await documentPrompt.ConfirmGitCommitAsync(result.Preview, OwnerWindow()))
+            {
+                gitStatus.Text = "Developer Git commit cancelled after preview; no commit was created.";
+                return;
+            }
+            DeveloperGitCommitCommandResult committed = await developerGitService.CommitAsync(
+                result.Preview, cancellationToken);
+            if (committed.State is not null) RenderGitState(committed.Context, committed.State);
+            gitStatus.Text = committed.Error ??
+                $"{(draft.Action == DeveloperGitCommitAction.Amend ? "Amended" : "Created")} commit {committed.CommitSha}.";
+        });
     }
 
     internal async ValueTask PreviewAndApplyGitDestructiveAsync(DeveloperGitDestructiveAction action)
@@ -1543,6 +1596,10 @@ internal sealed class WorkbenchDockHost
             DeveloperGitDestructiveAction.DeleteUntracked);
         actions.Children.Add(discardGit);
         actions.Children.Add(cleanGit);
+        commitGit.Margin = new Thickness(0, 0, 6, 6);
+        AutomationProperties.SetName(commitGit, "Compose developer Git commit from staged changes");
+        commitGit.Click += async (_, _) => await ComposeAndCommitGitAsync();
+        actions.Children.Add(commitGit);
         Grid.SetRow(actions, 1);
         grid.Children.Add(actions);
         AutomationProperties.SetName(changes, "Git working-tree changes");

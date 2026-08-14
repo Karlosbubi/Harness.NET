@@ -3,6 +3,7 @@ using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
+using AvaloniaEdit;
 using Harness.BusinessLogic.Inspection;
 
 namespace Harness.Presentation.Avalonia;
@@ -50,7 +51,18 @@ internal interface IWorkbenchDocumentPrompt
     ValueTask<bool> ConfirmGitDestructiveAsync(
         DeveloperGitDestructivePreviewView preview,
         Window? owner);
+
+    ValueTask<DeveloperGitCommitDraft?> CollectGitCommitAsync(Window? owner);
+
+    ValueTask<bool> ConfirmGitCommitAsync(
+        DeveloperGitCommitPreviewView preview,
+        Window? owner);
 }
+
+internal sealed record DeveloperGitCommitDraft(
+    DeveloperGitCommitMessage Message,
+    DeveloperGitCommitAction Action,
+    DeveloperGitCommitHookPolicy HookPolicy);
 
 internal sealed class AvaloniaWorkbenchDocumentPrompt : IWorkbenchDocumentPrompt
 {
@@ -86,6 +98,153 @@ internal sealed class AvaloniaWorkbenchDocumentPrompt : IWorkbenchDocumentPrompt
     {
         if (owner is null) return false;
         return await new GitDestructiveConfirmationDialog(preview).ShowDialog<bool>(owner);
+    }
+
+    public async ValueTask<DeveloperGitCommitDraft?> CollectGitCommitAsync(Window? owner)
+    {
+        if (owner is null) return null;
+        return await new GitCommitComposeDialog().ShowDialog<DeveloperGitCommitDraft?>(owner);
+    }
+
+    public async ValueTask<bool> ConfirmGitCommitAsync(
+        DeveloperGitCommitPreviewView preview,
+        Window? owner)
+    {
+        if (owner is null) return false;
+        return await new GitCommitConfirmationDialog(preview).ShowDialog<bool>(owner);
+    }
+}
+
+internal sealed class GitCommitComposeDialog : Window
+{
+    internal GitCommitComposeDialog()
+    {
+        Title = "Compose Git commit";
+        Width = 620;
+        Height = 430;
+        WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        AutomationProperties.SetName(this, "Compose developer Git commit");
+        Content = BuildContent();
+    }
+
+    private Control BuildContent()
+    {
+        var message = new TextBox { AcceptsReturn = true, TextWrapping = TextWrapping.Wrap };
+        var amend = new CheckBox { Content = "Amend the current HEAD commit" };
+        var bypassHooks = new CheckBox { Content = "Bypass configured commit hooks (--no-verify)" };
+        Button review = new() { Content = "Review staged commit", IsDefault = true, MinWidth = 150 };
+        Button cancel = new() { Content = "Cancel", IsCancel = true, MinWidth = 88 };
+        AutomationProperties.SetName(message, "Developer Git commit message");
+        AutomationProperties.SetName(amend, "Amend current Git HEAD");
+        AutomationProperties.SetName(bypassHooks, "Bypass configured Git commit hooks");
+        AutomationProperties.SetName(review, "Review exact staged Git commit");
+        AutomationProperties.SetName(cancel, "Cancel developer Git commit");
+        message.TextChanged += (_, _) => review.IsEnabled = !string.IsNullOrWhiteSpace(message.Text);
+        review.IsEnabled = false;
+        review.Click += (_, _) => Close(new DeveloperGitCommitDraft(
+            new(message.Text ?? string.Empty),
+            amend.IsChecked == true ? DeveloperGitCommitAction.Amend : DeveloperGitCommitAction.Create,
+            bypassHooks.IsChecked == true
+                ? DeveloperGitCommitHookPolicy.BypassHooks
+                : DeveloperGitCommitHookPolicy.RunConfiguredHooks));
+        cancel.Click += (_, _) => Close(null);
+        return new Grid
+        {
+            Margin = new Thickness(24),
+            RowDefinitions = new("Auto,*,Auto,Auto,Auto"),
+            RowSpacing = 12,
+            Children =
+            {
+                new TextBlock { Text = "Commit message", FontWeight = FontWeight.SemiBold },
+                AtRow(message, 1),
+                AtRow(amend, 2),
+                AtRow(bypassHooks, 3),
+                AtRow(new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    Spacing = 8,
+                    Children = { cancel, review },
+                }, 4),
+            },
+        };
+    }
+
+    private static T AtRow<T>(T control, int row) where T : Control
+    {
+        Grid.SetRow(control, row);
+        return control;
+    }
+}
+
+internal sealed class GitCommitConfirmationDialog : Window
+{
+    internal GitCommitConfirmationDialog(DeveloperGitCommitPreviewView preview)
+    {
+        Title = preview.Action == DeveloperGitCommitAction.Amend ? "Confirm Git amend" : "Confirm Git commit";
+        Width = 780;
+        Height = 700;
+        WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        AutomationProperties.SetName(this, "Review exact developer Git commit");
+        Content = BuildContent(preview);
+    }
+
+    private void Confirm() => Close(true);
+
+    private Control BuildContent(DeveloperGitCommitPreviewView preview)
+    {
+        TextEditor diff = CodeEditorView.Create(preview.StagedDiff, true, false, true, "staged.diff");
+        AutomationProperties.SetName(diff, "Exact staged Git diff");
+        Button confirm = new()
+        {
+            Content = preview.Action == DeveloperGitCommitAction.Amend ? "Amend commit" : "Create commit",
+            MinWidth = 120,
+        };
+        Button cancel = new() { Content = "Cancel", IsCancel = true, MinWidth = 88 };
+        AutomationProperties.SetName(confirm, "Confirm exact developer Git commit");
+        AutomationProperties.SetName(cancel, "Cancel developer Git commit preview");
+        confirm.Click += (_, _) => Confirm();
+        cancel.Click += (_, _) => Close(false);
+        string hooks = preview.HookPolicy == DeveloperGitCommitHookPolicy.RunConfiguredHooks
+            ? "Configured Git hooks will run."
+            : "Configured Git hooks will be bypassed.";
+        return new Grid
+        {
+            Margin = new Thickness(20),
+            RowDefinitions = new("Auto,Auto,Auto,*,Auto"),
+            RowSpacing = 10,
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = $"{preview.Action} on {preview.Branch} at {preview.HeadSha ?? "unborn"}",
+                    FontWeight = FontWeight.SemiBold,
+                    TextWrapping = TextWrapping.Wrap,
+                },
+                AtRow(new TextBlock
+                {
+                    Text = $"Author: {preview.AuthorName} <{preview.AuthorEmail}>\n{hooks}\n" +
+                           $"Paths: {string.Join(", ", preview.StagedPaths.Select(path => path.Value))}\n\n" +
+                           $"{preview.Consequence}\n{preview.Recovery}\n\n{preview.Message.Value}",
+                    TextWrapping = TextWrapping.Wrap,
+                }, 1),
+                AtRow(new TextBlock { Text = "Exact staged diff", FontWeight = FontWeight.SemiBold }, 2),
+                AtRow(diff, 3),
+                AtRow(new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    Spacing = 8,
+                    Children = { cancel, confirm },
+                }, 4),
+            },
+        };
+    }
+
+    private static T AtRow<T>(T control, int row) where T : Control
+    {
+        Grid.SetRow(control, row);
+        return control;
     }
 }
 

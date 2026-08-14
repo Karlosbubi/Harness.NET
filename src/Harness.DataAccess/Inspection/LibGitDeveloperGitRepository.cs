@@ -67,7 +67,7 @@ internal sealed class LibGitDeveloperGitRepository : IDeveloperGitRepository
         catch (Exception exception) when (exception is LibGit2SharpException or IOException or
                                            UnauthorizedAccessException or ArgumentException)
         {
-            return ValueTask.FromResult(Failure("git_index_failed", exception.Message));
+            return ValueTask.FromResult(Failure("git_index_failed", "Git could not update the selected index paths."));
         }
     }
 
@@ -115,8 +115,8 @@ internal sealed class LibGitDeveloperGitRepository : IDeveloperGitRepository
             ProcessStartInfo startInfo = CreatePatchStartInfo(root, unit.ApplyInReverse);
             using Process process = new() { StartInfo = startInfo };
             if (!process.Start()) return Failure("git_patch_failed", "Git could not start the patch operation.");
-            Task<string> standardError = process.StandardError.ReadToEndAsync(cancellationToken);
-            Task<string> standardOutput = process.StandardOutput.ReadToEndAsync(cancellationToken);
+            Task standardError = DrainAsync(process.StandardError, cancellationToken);
+            Task standardOutput = DrainAsync(process.StandardOutput, cancellationToken);
             try
             {
                 await process.StandardInput.WriteAsync(unit.Patch.AsMemory(), cancellationToken);
@@ -215,6 +215,91 @@ internal sealed class LibGitDeveloperGitRepository : IDeveloperGitRepository
         }
     }
 
+    public ValueTask<DeveloperGitCommitIdentityResult> GetCommitIdentityAsync(
+        string repositoryRoot,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        try
+        {
+            string? repositoryPath = Repository.Discover(repositoryRoot);
+            if (repositoryPath is null)
+                return ValueTask.FromResult(new DeveloperGitCommitIdentityResult(
+                    null, "repository_missing", "No Git repository was found."));
+            using Repository repository = new(repositoryPath);
+            if (!NormalizeRoot(repositoryRoot).Equals(
+                    NormalizeRoot(repository.Info.WorkingDirectory), StringComparison.Ordinal))
+                return ValueTask.FromResult(new DeveloperGitCommitIdentityResult(
+                    null, "repository_mismatch", "The workspace root must be the Git repository root."));
+            string? name = repository.Config.Get<string>("user.name")?.Value?.Trim();
+            string? email = repository.Config.Get<string>("user.email")?.Value?.Trim();
+            if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(email))
+                return ValueTask.FromResult(new DeveloperGitCommitIdentityResult(
+                    null, "git_identity_missing",
+                    "Configure Git user.name and user.email before committing."));
+            return ValueTask.FromResult(new DeveloperGitCommitIdentityResult(
+                new(name, email), null, null));
+        }
+        catch (Exception exception) when (exception is LibGit2SharpException or IOException or
+                                           UnauthorizedAccessException or ArgumentException)
+        {
+            return ValueTask.FromResult(new DeveloperGitCommitIdentityResult(
+                null, "git_identity_failed", "Git commit identity could not be read."));
+        }
+    }
+
+    public async ValueTask<DeveloperGitCommitResult> CommitAsync(
+        DeveloperGitCommitRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (string.IsNullOrWhiteSpace(request.Message) || request.Message.Length > 32_768)
+            return CommitFailure("git_commit_message_invalid",
+                "Enter a commit message between 1 and 32,768 characters.");
+        string? repositoryPath = Repository.Discover(request.RepositoryRoot);
+        if (repositoryPath is null)
+            return CommitFailure("repository_missing", "No Git repository was found.");
+        try
+        {
+            string root;
+            using (Repository repository = new(repositoryPath))
+            {
+                root = NormalizeRoot(repository.Info.WorkingDirectory);
+                if (!NormalizeRoot(request.RepositoryRoot).Equals(root, StringComparison.Ordinal))
+                    return CommitFailure("repository_mismatch",
+                        "The workspace root must be the Git repository root.");
+                WorkspaceGitState before = GitRepositoryStateReader.Read(repository, cancellationToken);
+                if (!CryptographicEquals(before.Fingerprint, request.ExpectedFingerprint.Value))
+                    return new(before, null, "git_state_stale",
+                        "Git state changed after the commit preview. Refresh and retry.");
+                if (before.Changes.Any(change => change.IsConflicted))
+                    return new(before, null, "git_conflicts_present",
+                        "Resolve every Git conflict before committing.");
+                if (!before.Changes.Any(change => change.IsStaged))
+                    return new(before, null, "git_nothing_staged", "Stage at least one change before committing.");
+                if (request.Operation == DeveloperGitCommitOperation.Amend && repository.Head.Tip is null)
+                    return new(before, null, "git_amend_unborn", "An unborn branch has no commit to amend.");
+            }
+
+            int exitCode = await RunCommitAsync(root, request, cancellationToken);
+            using Repository afterRepository = new(repositoryPath);
+            WorkspaceGitState after = GitRepositoryStateReader.Read(afterRepository, CancellationToken.None);
+            if (exitCode != 0)
+                return new(after, null, "git_commit_rejected",
+                    "Git rejected the commit. Review configured hooks and repository state.");
+            return new(after, afterRepository.Head.Tip?.Sha, null, null);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is LibGit2SharpException or IOException or
+                                           UnauthorizedAccessException or ArgumentException or InvalidOperationException)
+        {
+            return CommitFailure("git_commit_failed", "Git could not create the commit.");
+        }
+    }
+
     private static bool ValidateDestructiveSelection(
         WorkspaceGitState state,
         DeveloperGitDestructiveOperation operation,
@@ -261,8 +346,42 @@ internal sealed class LibGitDeveloperGitRepository : IDeveloperGitRepository
         foreach (string path in paths) startInfo.ArgumentList.Add(path);
         using Process process = new() { StartInfo = startInfo };
         if (!process.Start()) return -1;
-        Task<string> standardError = process.StandardError.ReadToEndAsync(cancellationToken);
-        Task<string> standardOutput = process.StandardOutput.ReadToEndAsync(cancellationToken);
+        Task standardError = DrainAsync(process.StandardError, cancellationToken);
+        Task standardOutput = DrainAsync(process.StandardOutput, cancellationToken);
+        try
+        {
+            await process.WaitForExitAsync(cancellationToken);
+            await Task.WhenAll(standardError, standardOutput);
+            return process.ExitCode;
+        }
+        catch (OperationCanceledException)
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            await process.WaitForExitAsync(CancellationToken.None);
+            throw;
+        }
+    }
+
+    private static async Task<int> RunCommitAsync(
+        string root,
+        DeveloperGitCommitRequest request,
+        CancellationToken cancellationToken)
+    {
+        ProcessStartInfo startInfo = CreateGitStartInfo(root);
+        startInfo.RedirectStandardInput = true;
+        startInfo.ArgumentList.Add("commit");
+        startInfo.ArgumentList.Add("--file=-");
+        if (request.Operation == DeveloperGitCommitOperation.Amend)
+            startInfo.ArgumentList.Add("--amend");
+        if (request.HookPolicy == DeveloperGitHookPolicy.BypassHooks)
+            startInfo.ArgumentList.Add("--no-verify");
+        using Process process = new() { StartInfo = startInfo };
+        if (!process.Start()) return -1;
+        Task standardError = DrainAsync(process.StandardError, cancellationToken);
+        Task standardOutput = DrainAsync(process.StandardOutput, cancellationToken);
+        await process.StandardInput.WriteAsync(request.Message.AsMemory(), cancellationToken);
+        await process.StandardInput.FlushAsync(cancellationToken);
+        process.StandardInput.Close();
         try
         {
             await process.WaitForExitAsync(cancellationToken);
@@ -288,6 +407,16 @@ internal sealed class LibGitDeveloperGitRepository : IDeveloperGitRepository
         startInfo.ArgumentList.Add("--whitespace=nowarn");
         if (reverse) startInfo.ArgumentList.Add("--reverse");
         return startInfo;
+    }
+
+    private static async Task DrainAsync(StreamReader reader, CancellationToken cancellationToken)
+    {
+        char[] buffer = new char[4096];
+        while (await reader.ReadAsync(buffer.AsMemory(), cancellationToken) > 0)
+        {
+            // Git and hooks may emit arbitrarily large output. Drain it without retaining it;
+            // developer-facing failures remain bounded and sanitized.
+        }
     }
 
     private static ProcessStartInfo CreateGitStartInfo(string root)
@@ -372,6 +501,9 @@ internal sealed class LibGitDeveloperGitRepository : IDeveloperGitRepository
 
     private static DeveloperGitIndexResult Failure(string code, string error) =>
         new(null, [], code, error);
+
+    private static DeveloperGitCommitResult CommitFailure(string code, string error) =>
+        new(null, null, code, error);
 
     private sealed class GitPatchUnitUnavailableException : Exception;
 }

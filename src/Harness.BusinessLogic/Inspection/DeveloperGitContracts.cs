@@ -61,6 +61,51 @@ public sealed record DeveloperGitDestructivePreviewResult(
     WorkspaceGitStateView? State,
     string? ErrorCode,
     string? Error);
+public enum DeveloperGitCommitAction
+{
+    Create,
+    Amend,
+}
+public enum DeveloperGitCommitHookPolicy
+{
+    RunConfiguredHooks,
+    BypassHooks,
+}
+public sealed record DeveloperGitCommitMessage(string Value);
+public sealed record DeveloperGitCommitPreviewId(string Value);
+public sealed record DeveloperGitCommitPreviewCommand(
+    WorkbenchWorkspaceRequest Workspace,
+    DeveloperGitStateFingerprint ExpectedFingerprint,
+    DeveloperGitCommitAction Action,
+    DeveloperGitCommitHookPolicy HookPolicy,
+    DeveloperGitCommitMessage Message);
+public sealed record DeveloperGitCommitPreviewView(
+    DeveloperGitCommitPreviewId Id,
+    WorkbenchWorkspaceContext Context,
+    DeveloperGitStateFingerprint Fingerprint,
+    DeveloperGitCommitAction Action,
+    DeveloperGitCommitHookPolicy HookPolicy,
+    DeveloperGitCommitMessage Message,
+    string Branch,
+    string? HeadSha,
+    string AuthorName,
+    string AuthorEmail,
+    IReadOnlyList<DeveloperGitPath> StagedPaths,
+    string StagedDiff,
+    string Consequence,
+    string Recovery,
+    bool HasGuaranteedRecovery);
+public sealed record DeveloperGitCommitPreviewResult(
+    DeveloperGitCommitPreviewView? Preview,
+    WorkspaceGitStateView? State,
+    string? ErrorCode,
+    string? Error);
+public sealed record DeveloperGitCommitCommandResult(
+    WorkbenchWorkspaceContext Context,
+    WorkspaceGitStateView? State,
+    string? CommitSha,
+    string? ErrorCode,
+    string? Error);
 public sealed record DeveloperGitPatchCommand(
     WorkbenchWorkspaceRequest Workspace,
     DeveloperGitStateFingerprint ExpectedFingerprint,
@@ -82,5 +127,13 @@ public interface IDeveloperGitService
 
     ValueTask<DeveloperGitIndexCommandResult> ApplyDestructiveAsync(
         DeveloperGitDestructivePreviewView preview,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitCommitPreviewResult> PreviewCommitAsync(
+        DeveloperGitCommitPreviewCommand command,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitCommitCommandResult> CommitAsync(
+        DeveloperGitCommitPreviewView preview,
         CancellationToken cancellationToken = default);
 }

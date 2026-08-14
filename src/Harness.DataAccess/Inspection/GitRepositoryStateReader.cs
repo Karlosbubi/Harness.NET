@@ -77,13 +77,12 @@ internal static class GitRepositoryStateReader
         out bool truncated)
     {
         truncated = false;
-        if (repository.Head.Tip is null) return string.Empty;
         string[] paths = entries
             .Where(entry => ShouldIncludeInDiff(entry.State))
             .Select(entry => entry.FilePath)
             .ToArray();
         if (paths.Length == 0) return string.Empty;
-        using Patch patch = repository.Diff.Compare<Patch>(repository.Head.Tip.Tree, target, paths);
+        using Patch patch = repository.Diff.Compare<Patch>(repository.Head.Tip?.Tree, target, paths);
         return BoundUtf8(patch.Content, out truncated);
     }
 

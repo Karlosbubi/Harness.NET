@@ -289,6 +289,130 @@ public sealed class LibGitDeveloperGitRepositoryTests : IDisposable
         Assert.Equal("changed later", await File.ReadAllTextAsync(selected));
     }
 
+    [Fact]
+    public async Task Commit_creates_exact_staged_commit_and_leaves_unstaged_content()
+    {
+        await InitializeAsync();
+        await File.WriteAllTextAsync(Path.Combine(root, "first.txt"), "staged\n");
+        await File.WriteAllTextAsync(Path.Combine(root, "second.txt"), "unstaged\n");
+        using (Repository repository = new(root)) Commands.Stage(repository, "first.txt");
+        WorkspaceGitState before = await new LibGitWorkspaceGitInspector().InspectAsync(root);
+
+        DeveloperGitCommitResult result = await new LibGitDeveloperGitRepository().CommitAsync(new(
+            root, new(before.Fingerprint), DeveloperGitCommitOperation.Create,
+            DeveloperGitHookPolicy.RunConfiguredHooks, "Developer commit"));
+
+        Assert.Null(result.Error);
+        Assert.NotNull(result.CommitSha);
+        using Repository after = new(root);
+        Assert.Equal("Developer commit", after.Head.Tip!.MessageShort);
+        Assert.Equal("staged\n", after.Head.Tip.Tree["first.txt"].Target is Blob blob
+            ? blob.GetContentText() : null);
+        Assert.Contains(result.State!.Changes, change =>
+            change.Path == "second.txt" && change.IsUnstaged && !change.IsStaged);
+    }
+
+    [Fact]
+    public async Task Initial_commit_has_exact_staged_preview_and_creates_head()
+    {
+        Directory.CreateDirectory(root);
+        Repository.Init(root);
+        await File.WriteAllTextAsync(Path.Combine(root, "first.txt"), "initial\n");
+        using (Repository repository = new(root))
+        {
+            repository.Config.Set("user.name", "Harness Tests");
+            repository.Config.Set("user.email", "tests@harness.local");
+            Commands.Stage(repository, "first.txt");
+        }
+        WorkspaceGitState before = await new LibGitWorkspaceGitInspector().InspectAsync(root);
+        Assert.Null(before.HeadSha);
+        Assert.Contains("first.txt", before.StagedDiff, StringComparison.Ordinal);
+        Assert.Contains("+initial", before.StagedDiff, StringComparison.Ordinal);
+
+        DeveloperGitCommitResult result = await new LibGitDeveloperGitRepository().CommitAsync(new(
+            root, new(before.Fingerprint), DeveloperGitCommitOperation.Create,
+            DeveloperGitHookPolicy.RunConfiguredHooks, "Initial commit"));
+
+        Assert.Null(result.Error);
+        Assert.NotNull(result.CommitSha);
+        using Repository after = new(root);
+        Assert.Equal("Initial commit", after.Head.Tip!.MessageShort);
+    }
+
+    [Fact]
+    public async Task Commit_preserves_detached_head_state()
+    {
+        await InitializeAsync();
+        using (Repository repository = new(root))
+            Commands.Checkout(repository, repository.Head.Tip!);
+        await File.WriteAllTextAsync(Path.Combine(root, "first.txt"), "detached\n");
+        using (Repository repository = new(root)) Commands.Stage(repository, "first.txt");
+        WorkspaceGitState before = await new LibGitWorkspaceGitInspector().InspectAsync(root);
+        Assert.Equal("(detached)", before.Branch);
+
+        DeveloperGitCommitResult result = await new LibGitDeveloperGitRepository().CommitAsync(new(
+            root, new(before.Fingerprint), DeveloperGitCommitOperation.Create,
+            DeveloperGitHookPolicy.BypassHooks, "Detached commit"));
+
+        Assert.Null(result.Error);
+        using Repository after = new(root);
+        Assert.True(after.Info.IsHeadDetached);
+        Assert.Equal("Detached commit", after.Head.Tip!.MessageShort);
+    }
+
+    [Fact]
+    public async Task Commit_runs_hooks_unless_bypass_is_explicit()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        await InitializeAsync();
+        await File.WriteAllTextAsync(Path.Combine(root, "first.txt"), "changed\n");
+        using (Repository repository = new(root)) Commands.Stage(repository, "first.txt");
+        string hook = Path.Combine(root, ".git", "hooks", "pre-commit");
+        await File.WriteAllTextAsync(hook, "#!/bin/sh\nexit 1\n");
+        File.SetUnixFileMode(hook, UnixFileMode.UserRead | UnixFileMode.UserWrite |
+                                  UnixFileMode.UserExecute);
+        var sut = new LibGitDeveloperGitRepository();
+        WorkspaceGitState before = await new LibGitWorkspaceGitInspector().InspectAsync(root);
+
+        DeveloperGitCommitResult rejected = await sut.CommitAsync(new(
+            root, new(before.Fingerprint), DeveloperGitCommitOperation.Create,
+            DeveloperGitHookPolicy.RunConfiguredHooks, "Rejected"));
+
+        Assert.Equal("git_commit_rejected", rejected.ErrorCode);
+        DeveloperGitCommitResult bypassed = await sut.CommitAsync(new(
+            root, new(rejected.State!.Fingerprint), DeveloperGitCommitOperation.Create,
+            DeveloperGitHookPolicy.BypassHooks, "Bypassed"));
+        Assert.Null(bypassed.Error);
+        using Repository after = new(root);
+        Assert.Equal("Bypassed", after.Head.Tip!.MessageShort);
+    }
+
+    [Fact]
+    public async Task Amend_replaces_head_and_keeps_its_parent()
+    {
+        await InitializeAsync();
+        string originalHead;
+        string[] originalParents;
+        using (var beforeRepository = new Repository(root))
+        {
+            originalHead = beforeRepository.Head.Tip!.Sha;
+            originalParents = beforeRepository.Head.Tip.Parents.Select(parent => parent.Sha).ToArray();
+        }
+        await File.WriteAllTextAsync(Path.Combine(root, "first.txt"), "amended\n");
+        using (Repository repository = new(root)) Commands.Stage(repository, "first.txt");
+        WorkspaceGitState before = await new LibGitWorkspaceGitInspector().InspectAsync(root);
+
+        DeveloperGitCommitResult result = await new LibGitDeveloperGitRepository().CommitAsync(new(
+            root, new(before.Fingerprint), DeveloperGitCommitOperation.Amend,
+            DeveloperGitHookPolicy.BypassHooks, "Amended commit"));
+
+        Assert.Null(result.Error);
+        Assert.NotEqual(originalHead, result.CommitSha);
+        using Repository after = new(root);
+        Assert.Equal(originalParents, after.Head.Tip!.Parents.Select(parent => parent.Sha).ToArray());
+        Assert.Equal("Amended commit", after.Head.Tip.MessageShort);
+    }
+
     [Theory]
     [InlineData("../outside.txt")]
     [InlineData(".git/config")]
@@ -313,6 +437,8 @@ public sealed class LibGitDeveloperGitRepositoryTests : IDisposable
         await File.WriteAllTextAsync(Path.Combine(root, "first.txt"), "first\n");
         await File.WriteAllTextAsync(Path.Combine(root, "second.txt"), "second\n");
         using Repository repository = new(root);
+        repository.Config.Set("user.name", "Harness Tests");
+        repository.Config.Set("user.email", "tests@harness.local");
         Commands.Stage(repository, "*");
         Signature signature = new("Harness Tests", "tests@harness.local", DateTimeOffset.UtcNow);
         repository.Commit("initial", signature, signature);
