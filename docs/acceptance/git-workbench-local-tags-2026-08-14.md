@@ -49,5 +49,17 @@ remotes, restart, large-repository, and final accessibility coverage remain open
 
 ## Live dogfood
 
-The live-copy synchronization and reference-fingerprint check are recorded in a
-follow-up commit after the executable is rebuilt and restarted.
+`Harness.NET-live` was fast-forwarded to `036891c`, rebuilt with zero warnings, and
+restarted as one normal-mode instance. The live `harness_application` result reported
+stateless Streamable HTTP and the live `harness_git` result reported the same main
+repository HEAD.
+
+Creating one temporary lightweight tag changed the complete Git fingerprint from
+`17d9…39f` to `e7c1…3dd`; branch, HEAD, and worktree output remained unchanged. Deleting
+the exact temporary reference restored `17d9…39f`. The temporary tag was removed
+before this record was committed. The inbound MCP surface remained read-only for Git,
+so this check did not grant reference mutation to a model.
+
+The restart again ignored `SIGTERM` and required a forced stop of the two verified
+live-process PIDs. This reproduces the unresolved application-lifecycle defect and
+keeps Task 050's restart gate open.
