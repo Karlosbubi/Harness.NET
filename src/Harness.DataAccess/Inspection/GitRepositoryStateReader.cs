@@ -147,6 +147,13 @@ internal static class GitRepositoryStateReader
         string path,
         CancellationToken cancellationToken)
     {
+        string? linkTarget = new FileInfo(path).LinkTarget;
+        if (linkTarget is not null)
+        {
+            Append(hash, "symbolic-link");
+            Append(hash, linkTarget);
+            return;
+        }
         if (!File.Exists(path))
         {
             Append(hash, "missing");

@@ -150,23 +150,156 @@ internal sealed class LibGitDeveloperGitRepository : IDeveloperGitRepository
         }
     }
 
+    public async ValueTask<DeveloperGitIndexResult> ApplyDestructiveAsync(
+        DeveloperGitDestructiveRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!TryValidatePaths(request.RepositoryRoot, request.Paths, out string[] paths,
+                out string? validationError))
+            return Failure("git_paths_invalid", validationError!);
+        string? repositoryPath = Repository.Discover(request.RepositoryRoot);
+        if (repositoryPath is null)
+            return Failure("repository_missing", "No Git repository was found.");
+
+        try
+        {
+            string root;
+            WorkspaceGitState before;
+            using (Repository repository = new(repositoryPath))
+            {
+                root = NormalizeRoot(repository.Info.WorkingDirectory);
+                if (!NormalizeRoot(request.RepositoryRoot).Equals(root, StringComparison.Ordinal))
+                    return Failure("repository_mismatch", "The workspace root must be the Git repository root.");
+                before = GitRepositoryStateReader.Read(repository, cancellationToken);
+                if (!CryptographicEquals(before.Fingerprint, request.ExpectedFingerprint.Value))
+                    return new(before, [], "git_state_stale",
+                        "Git state changed after it was displayed. Refresh and retry.");
+                if (!ValidateDestructiveSelection(before, request.Operation, paths, out string? error))
+                    return new(before, [], "git_destructive_invalid", error);
+            }
+
+            if (request.Operation == DeveloperGitDestructiveOperation.DiscardTrackedWorktree)
+            {
+                int exitCode = await RunRestoreAsync(root, paths, cancellationToken);
+                if (exitCode != 0)
+                    return Failure("git_discard_failed", "Git could not restore the selected working-tree paths.");
+            }
+            else
+            {
+                foreach (string path in paths)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    string absolute = Path.GetFullPath(path, root);
+                    FileAttributes attributes = File.GetAttributes(absolute);
+                    bool directory = (attributes & FileAttributes.Directory) != 0;
+                    bool link = (attributes & FileAttributes.ReparsePoint) != 0;
+                    if (directory && !link)
+                        return Failure("git_clean_directory_unsupported",
+                            "Select the untracked files inside the directory; recursive directory cleanup is not enabled.");
+                    if (directory) Directory.Delete(absolute);
+                    else File.Delete(absolute);
+                }
+            }
+
+            using Repository afterRepository = new(repositoryPath);
+            WorkspaceGitState after = GitRepositoryStateReader.Read(afterRepository, CancellationToken.None);
+            return new(after, paths.Select(path => new DeveloperGitPath(path)).ToArray(), null, null);
+        }
+        catch (Exception exception) when (exception is LibGit2SharpException or IOException or
+                                           UnauthorizedAccessException or ArgumentException or
+                                           InvalidOperationException)
+        {
+            return Failure("git_destructive_failed", "Git could not apply the selected destructive action.");
+        }
+    }
+
+    private static bool ValidateDestructiveSelection(
+        WorkspaceGitState state,
+        DeveloperGitDestructiveOperation operation,
+        IReadOnlyList<string> paths,
+        out string? error)
+    {
+        var changes = state.Changes.ToDictionary(change => change.Path, StringComparer.Ordinal);
+        foreach (string path in paths)
+        {
+            if (!changes.TryGetValue(path, out WorkspaceGitFileChange? change))
+            {
+                error = "Every selected path must still be present in the displayed Git changes.";
+                return false;
+            }
+
+            bool valid = operation == DeveloperGitDestructiveOperation.DiscardTrackedWorktree
+                ? change.IsUnstaged && !change.WorktreeStatus.Contains("NewInWorkdir", StringComparison.Ordinal) &&
+                  !change.IsConflicted
+                : change.IsUnstaged && !change.IsStaged &&
+                  change.WorktreeStatus.Contains("NewInWorkdir", StringComparison.Ordinal) &&
+                  !change.IsConflicted;
+            if (!valid)
+            {
+                error = operation == DeveloperGitDestructiveOperation.DiscardTrackedWorktree
+                    ? "Discard accepts only tracked, unstaged, non-conflicted paths."
+                    : "Cleanup accepts only exact untracked, unstaged, non-conflicted paths.";
+                return false;
+            }
+        }
+
+        error = null;
+        return true;
+    }
+
+    private static async Task<int> RunRestoreAsync(
+        string root,
+        IReadOnlyList<string> paths,
+        CancellationToken cancellationToken)
+    {
+        ProcessStartInfo startInfo = CreateGitStartInfo(root);
+        startInfo.ArgumentList.Add("restore");
+        startInfo.ArgumentList.Add("--worktree");
+        startInfo.ArgumentList.Add("--");
+        foreach (string path in paths) startInfo.ArgumentList.Add(path);
+        using Process process = new() { StartInfo = startInfo };
+        if (!process.Start()) return -1;
+        Task<string> standardError = process.StandardError.ReadToEndAsync(cancellationToken);
+        Task<string> standardOutput = process.StandardOutput.ReadToEndAsync(cancellationToken);
+        try
+        {
+            await process.WaitForExitAsync(cancellationToken);
+            await Task.WhenAll(standardError, standardOutput);
+            return process.ExitCode;
+        }
+        catch (OperationCanceledException)
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            await process.WaitForExitAsync(CancellationToken.None);
+            throw;
+        }
+    }
+
     private static ProcessStartInfo CreatePatchStartInfo(string root, bool reverse)
     {
-        ProcessStartInfo startInfo = new("git")
-        {
-            WorkingDirectory = root,
-            RedirectStandardInput = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-        };
+        ProcessStartInfo startInfo = CreateGitStartInfo(root);
+        startInfo.RedirectStandardInput = true;
         startInfo.ArgumentList.Add("apply");
         startInfo.ArgumentList.Add("--cached");
         startInfo.ArgumentList.Add("--recount");
         startInfo.ArgumentList.Add("--unidiff-zero");
         startInfo.ArgumentList.Add("--whitespace=nowarn");
         if (reverse) startInfo.ArgumentList.Add("--reverse");
+        return startInfo;
+    }
+
+    private static ProcessStartInfo CreateGitStartInfo(string root)
+    {
+        ProcessStartInfo startInfo = new("git")
+        {
+            WorkingDirectory = root,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
         startInfo.Environment["GIT_TERMINAL_PROMPT"] = "0";
         startInfo.Environment["LC_ALL"] = "C";
         return startInfo;

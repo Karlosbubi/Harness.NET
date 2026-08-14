@@ -18,6 +18,12 @@ public enum DeveloperGitPatchKind
     Line,
 }
 
+public enum DeveloperGitDestructiveOperation
+{
+    DiscardTrackedWorktree,
+    DeleteUntracked,
+}
+
 public sealed record DeveloperGitStateFingerprint(string Value);
 public sealed record DeveloperGitPath(string Value);
 public sealed record DeveloperGitIndexRequest(
@@ -43,6 +49,11 @@ public sealed record DeveloperGitPatchRequest(
     string RepositoryRoot,
     DeveloperGitStateFingerprint ExpectedFingerprint,
     string PatchUnitId);
+public sealed record DeveloperGitDestructiveRequest(
+    string RepositoryRoot,
+    DeveloperGitStateFingerprint ExpectedFingerprint,
+    DeveloperGitDestructiveOperation Operation,
+    IReadOnlyList<DeveloperGitPath> Paths);
 
 public interface IDeveloperGitRepository
 {
@@ -52,5 +63,9 @@ public interface IDeveloperGitRepository
 
     ValueTask<DeveloperGitIndexResult> ApplyPatchAsync(
         DeveloperGitPatchRequest request,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitIndexResult> ApplyDestructiveAsync(
+        DeveloperGitDestructiveRequest request,
         CancellationToken cancellationToken = default);
 }

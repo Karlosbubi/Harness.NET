@@ -192,6 +192,103 @@ public sealed class LibGitDeveloperGitRepositoryTests : IDisposable
         Assert.Equal("after\n", ReadIndexText(path));
     }
 
+    [Fact]
+    public async Task Discard_restores_worktree_from_index_without_unstaging()
+    {
+        await InitializeAsync();
+        string file = Path.Combine(root, "first.txt");
+        await File.WriteAllTextAsync(file, "staged\n");
+        using (Repository repository = new(root)) Commands.Stage(repository, "first.txt");
+        await File.WriteAllTextAsync(file, "unstaged\n");
+        WorkspaceGitState before = await new LibGitWorkspaceGitInspector().InspectAsync(root);
+
+        DeveloperGitIndexResult result = await new LibGitDeveloperGitRepository().ApplyDestructiveAsync(new(
+            root,
+            new(before.Fingerprint),
+            DeveloperGitDestructiveOperation.DiscardTrackedWorktree,
+            [new("first.txt")]));
+
+        Assert.Null(result.Error);
+        Assert.Equal("staged\n", await File.ReadAllTextAsync(file));
+        Assert.Equal("staged\n", ReadIndexText("first.txt"));
+        WorkspaceGitFileChange change = Assert.Single(result.State!.Changes,
+            candidate => candidate.Path == "first.txt");
+        Assert.True(change.IsStaged);
+        Assert.False(change.IsUnstaged);
+    }
+
+    [Fact]
+    public async Task Cleanup_deletes_only_the_exact_selected_untracked_file()
+    {
+        await InitializeAsync();
+        string selected = Path.Combine(root, "selected.tmp");
+        string kept = Path.Combine(root, "kept.tmp");
+        await File.WriteAllTextAsync(selected, "delete me");
+        await File.WriteAllTextAsync(kept, "keep me");
+        WorkspaceGitState before = await new LibGitWorkspaceGitInspector().InspectAsync(root);
+
+        DeveloperGitIndexResult result = await new LibGitDeveloperGitRepository().ApplyDestructiveAsync(new(
+            root,
+            new(before.Fingerprint),
+            DeveloperGitDestructiveOperation.DeleteUntracked,
+            [new("selected.tmp")]));
+
+        Assert.Null(result.Error);
+        Assert.False(File.Exists(selected));
+        Assert.True(File.Exists(kept));
+        Assert.DoesNotContain(result.State!.Changes, change => change.Path == "selected.tmp");
+        Assert.Contains(result.State.Changes, change => change.Path == "kept.tmp");
+    }
+
+    [Fact]
+    public async Task Cleanup_deletes_an_untracked_symbolic_link_without_deleting_its_target()
+    {
+        await InitializeAsync();
+        string target = Path.Combine(root, "tracked-target.txt");
+        await File.WriteAllTextAsync(target, "keep me");
+        using (Repository repository = new(root))
+        {
+            Commands.Stage(repository, "tracked-target.txt");
+            Signature signature = new("Harness Tests", "tests@harness.local", DateTimeOffset.UtcNow);
+            repository.Commit("track target", signature, signature);
+        }
+
+        string link = Path.Combine(root, "selected-link.tmp");
+        File.CreateSymbolicLink(link, target);
+        WorkspaceGitState before = await new LibGitWorkspaceGitInspector().InspectAsync(root);
+
+        DeveloperGitIndexResult result = await new LibGitDeveloperGitRepository().ApplyDestructiveAsync(new(
+            root,
+            new(before.Fingerprint),
+            DeveloperGitDestructiveOperation.DeleteUntracked,
+            [new("selected-link.tmp")]));
+
+        Assert.Null(result.Error);
+        Assert.Null(new FileInfo(link).LinkTarget);
+        Assert.True(File.Exists(target));
+        Assert.Equal("keep me", await File.ReadAllTextAsync(target));
+    }
+
+    [Fact]
+    public async Task Cleanup_rejects_stale_state_before_deleting_untracked_file()
+    {
+        await InitializeAsync();
+        string selected = Path.Combine(root, "selected.tmp");
+        await File.WriteAllTextAsync(selected, "displayed");
+        WorkspaceGitState displayed = await new LibGitWorkspaceGitInspector().InspectAsync(root);
+        await File.WriteAllTextAsync(selected, "changed later");
+
+        DeveloperGitIndexResult result = await new LibGitDeveloperGitRepository().ApplyDestructiveAsync(new(
+            root,
+            new(displayed.Fingerprint),
+            DeveloperGitDestructiveOperation.DeleteUntracked,
+            [new("selected.tmp")]));
+
+        Assert.Equal("git_state_stale", result.ErrorCode);
+        Assert.True(File.Exists(selected));
+        Assert.Equal("changed later", await File.ReadAllTextAsync(selected));
+    }
+
     [Theory]
     [InlineData("../outside.txt")]
     [InlineData(".git/config")]

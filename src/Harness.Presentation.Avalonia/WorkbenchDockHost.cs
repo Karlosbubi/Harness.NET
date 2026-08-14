@@ -100,8 +100,11 @@ internal sealed class WorkbenchDockHost
     private readonly Button stageGit = new() { Content = "Stage" };
     private readonly Button unstageGit = new() { Content = "Unstage" };
     private readonly Button clearGitSelection = new() { Content = "Whole file" };
+    private readonly Button discardGit = new() { Content = "Discard file" };
+    private readonly Button cleanGit = new() { Content = "Delete untracked" };
     private string gitFingerprint = string.Empty;
     private IReadOnlyList<DeveloperGitPatchUnitView> currentPatchUnits = [];
+    private WorkbenchWorkspaceContext? currentGitContext;
     private readonly ListBox runOutputs = new();
     private readonly TextBlock runOutputStatus = new() { TextWrapping = TextWrapping.Wrap };
     private readonly Button cancelDeveloperRun = new() { Content = "Stop", IsEnabled = false };
@@ -787,6 +790,7 @@ internal sealed class WorkbenchDockHost
         int conflictCount = git.Changes.Count(change => change.IsConflicted ||
             change.Status.Contains("Conflicted", StringComparison.OrdinalIgnoreCase));
         gitFingerprint = git.Fingerprint;
+        currentGitContext = context;
         gitSummary.Text = $"{context.Description}\nBranch {git.Branch}\n" +
                           $"HEAD {git.HeadSha ?? "unborn"}\n" +
                           $"{git.Changes.Count} change(s)" +
@@ -870,6 +874,74 @@ internal sealed class WorkbenchDockHost
             ? patch.Unit.Action == DeveloperGitIndexAction.Unstage
             : file.Change.IsStaged);
         clearGitSelection.IsEnabled = patch is not null;
+        bool original = currentGitContext?.Scope == WorkbenchWorkspaceScope.OriginalWorkspace;
+        discardGit.IsEnabled = original && patch is null && file is not null &&
+                               file.Change.IsUnstaged && !file.Change.IsConflicted &&
+                               !file.Change.WorktreeStatus.Contains("NewInWorkdir", StringComparison.Ordinal);
+        cleanGit.IsEnabled = original && patch is null && file is not null &&
+                             file.Change.IsUnstaged && !file.Change.IsStaged &&
+                             !file.Change.IsConflicted &&
+                             file.Change.WorktreeStatus.Contains("NewInWorkdir", StringComparison.Ordinal);
+    }
+
+    internal async ValueTask PreviewAndApplyGitDestructiveAsync(DeveloperGitDestructiveAction action)
+    {
+        WorkspaceView? active = ActiveWorkspace();
+        if (busy || active is null || developerGitService is null ||
+            changes.SelectedItem is not ChangeChoice selected || string.IsNullOrEmpty(gitFingerprint))
+        {
+            gitStatus.Text = "Select a current whole-file Git change first.";
+            return;
+        }
+        if (patchUnits.SelectedItem is not null)
+        {
+            gitStatus.Text = "Choose Whole file before a destructive Git action.";
+            return;
+        }
+        SourceDocumentSession? openSession = sourceDocuments.Values.FirstOrDefault(session =>
+            session.View.GoalId is null &&
+            session.View.Path.Value.Equals(selected.Change.Path, StringComparison.Ordinal));
+        openSession?.SynchronizeDirtyState();
+        if (openSession?.IsDirty == true)
+        {
+            gitStatus.Text = $"Save or discard the unsaved editor buffer for {selected.Change.Path} first.";
+            return;
+        }
+
+        await RunAsync(async () =>
+        {
+            DeveloperGitDestructivePreviewResult result = await developerGitService.PreviewDestructiveAsync(new(
+                WorkbenchRequest(active),
+                new(gitFingerprint),
+                action,
+                [new(selected.Change.Path)]), cancellationToken);
+            if (result.State is not null && currentGitContext is not null)
+                RenderGitState(currentGitContext, result.State);
+            if (result.Preview is null)
+            {
+                gitStatus.Text = result.Error ?? "The destructive Git preview is unavailable.";
+                return;
+            }
+            if (!await documentPrompt.ConfirmGitDestructiveAsync(result.Preview, OwnerWindow()))
+            {
+                gitStatus.Text = "Destructive Git action cancelled; no files were changed.";
+                return;
+            }
+
+            DeveloperGitIndexCommandResult applied = await developerGitService.ApplyDestructiveAsync(
+                result.Preview, cancellationToken);
+            if (applied.State is not null) RenderGitState(applied.Context, applied.State);
+            if (applied.Error is not null)
+            {
+                gitStatus.Text = applied.Error;
+                return;
+            }
+            if (openSession is not null)
+                await ReloadSourceDocumentAsync(openSession, confirmDiscard: false);
+            gitStatus.Text = action == DeveloperGitDestructiveAction.DiscardTrackedWorktree
+                ? $"Discarded working-tree changes in {selected.Change.Path}. Staged content was preserved."
+                : $"Deleted untracked path {selected.Change.Path}. Git recovery is not available.";
+        });
     }
 
     internal async ValueTask OpenDiffAsync()
@@ -1461,6 +1533,16 @@ internal sealed class WorkbenchDockHost
         actions.Children.Add(stageGit);
         actions.Children.Add(unstageGit);
         actions.Children.Add(clearGitSelection);
+        discardGit.Margin = new Thickness(0, 0, 6, 6);
+        AutomationProperties.SetName(discardGit, "Preview discard of selected tracked Git file");
+        discardGit.Click += async (_, _) => await PreviewAndApplyGitDestructiveAsync(
+            DeveloperGitDestructiveAction.DiscardTrackedWorktree);
+        cleanGit.Margin = new Thickness(0, 0, 6, 6);
+        AutomationProperties.SetName(cleanGit, "Preview deletion of selected untracked Git file");
+        cleanGit.Click += async (_, _) => await PreviewAndApplyGitDestructiveAsync(
+            DeveloperGitDestructiveAction.DeleteUntracked);
+        actions.Children.Add(discardGit);
+        actions.Children.Add(cleanGit);
         Grid.SetRow(actions, 1);
         grid.Children.Add(actions);
         AutomationProperties.SetName(changes, "Git working-tree changes");

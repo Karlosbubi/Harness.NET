@@ -3128,6 +3128,10 @@ public sealed class PresentationControlTests
                 AutomationProperties.GetName(button) == "Unstage selected Git change");
             Assert.Contains(gitTool.GetLogicalDescendants().OfType<Button>(), button =>
                 AutomationProperties.GetName(button) == "Clear Git hunk or line selection");
+            Assert.Contains(gitTool.GetLogicalDescendants().OfType<Button>(), button =>
+                AutomationProperties.GetName(button) == "Preview discard of selected tracked Git file");
+            Assert.Contains(gitTool.GetLogicalDescendants().OfType<Button>(), button =>
+                AutomationProperties.GetName(button) == "Preview deletion of selected untracked Git file");
             window.Close();
         }, CancellationToken.None);
     }
@@ -3184,6 +3188,101 @@ public sealed class PresentationControlTests
 
             Assert.Equal("patch-unit", git.PatchCommand!.PatchUnitId);
             Assert.Equal("git-fingerprint", git.PatchCommand.ExpectedFingerprint.Value);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Git_tool_requires_exact_destructive_preview_and_confirmation()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            InspectionService inspection = new() { IsUnstaged = true };
+            DeveloperGitService git = new();
+            DocumentPrompt prompt = new();
+            prompt.GitDestructiveDecisions.Enqueue(true);
+            WorkbenchDockHost workbench = CreateWorkbench(
+                TrustedShell(), new(), prompt: prompt, inspection: inspection, developerGit: git);
+            Window window = new() { Content = workbench.Control };
+            window.Show();
+            workbench.RefreshGitAsync().AsTask().GetAwaiter().GetResult();
+
+            workbench.PreviewAndApplyGitDestructiveAsync(
+                    DeveloperGitDestructiveAction.DiscardTrackedWorktree)
+                .AsTask().GetAwaiter().GetResult();
+
+            Assert.Equal("git-fingerprint", git.DestructivePreviewCommand!.ExpectedFingerprint.Value);
+            Assert.Equal("src/App.cs", Assert.Single(git.DestructivePreviewCommand.Paths).Value);
+            DeveloperGitDestructivePreviewView shown = Assert.Single(prompt.GitDestructivePreviews);
+            Assert.False(shown.HasGuaranteedRecovery);
+            Assert.Same(shown, git.AppliedDestructivePreview);
+            Assert.Contains("preserved", workbench.GitStatusText, StringComparison.OrdinalIgnoreCase);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Destructive_git_dialog_lists_exact_paths_and_requires_acknowledgement()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            var preview = new DeveloperGitDestructivePreviewView(
+                new("preview"),
+                new(new("workspace-1"), null, new("main"),
+                    WorkbenchWorkspaceScope.OriginalWorkspace, "Original workspace"),
+                new("fingerprint"),
+                DeveloperGitDestructiveAction.DeleteUntracked,
+                [new("scratch.tmp")],
+                "Delete one untracked path?",
+                "The exact file will be deleted.",
+                "Git does not guarantee recovery.",
+                HasGuaranteedRecovery: false);
+            GitDestructiveConfirmationDialog dialog = new(preview);
+            dialog.Show();
+            CheckBox acknowledgement = Assert.Single(dialog.GetVisualDescendants().OfType<CheckBox>(), box =>
+                AutomationProperties.GetName(box) == "Acknowledge destructive Git consequences");
+            Button confirm = Assert.Single(dialog.GetVisualDescendants().OfType<Button>(), button =>
+                AutomationProperties.GetName(button)?.StartsWith("Confirm ", StringComparison.Ordinal) == true);
+            ItemsControl paths = Assert.Single(dialog.GetVisualDescendants().OfType<ItemsControl>(), item =>
+                AutomationProperties.GetName(item) == "Exact destructive Git paths");
+            Assert.False(confirm.IsEnabled);
+            Assert.Equal("scratch.tmp", Assert.IsType<string>(Assert.Single(paths.Items)));
+
+            acknowledgement.IsChecked = true;
+
+            Assert.True(confirm.IsEnabled);
+            dialog.Close(false);
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Destructive_git_action_is_blocked_by_unsaved_editor_buffer()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            InspectionService inspection = new() { IsUnstaged = true };
+            DeveloperGitService git = new();
+            WorkbenchDockHost workbench = CreateWorkbench(
+                TrustedShell(), new(), inspection: inspection, developerGit: git);
+            Window window = new() { Content = workbench.Control };
+            window.Show();
+            workbench.OpenFileAsync("src/App.cs").AsTask().GetAwaiter().GetResult();
+            workbench.ActiveSourceEditor!.Text = "unsaved editor content";
+            workbench.RefreshGitAsync().AsTask().GetAwaiter().GetResult();
+
+            workbench.PreviewAndApplyGitDestructiveAsync(
+                    DeveloperGitDestructiveAction.DiscardTrackedWorktree)
+                .AsTask().GetAwaiter().GetResult();
+
+            Assert.Null(git.DestructivePreviewCommand);
+            Assert.Contains("unsaved editor buffer", workbench.GitStatusText,
+                StringComparison.OrdinalIgnoreCase);
             window.Close();
         }, CancellationToken.None);
     }
@@ -3571,6 +3670,11 @@ public sealed class PresentationControlTests
         internal string Diff { get; set; } = "first diff";
         internal string Status { get; set; } = "modified";
         internal bool IncludePatchUnit { get; set; }
+        internal bool IsStaged { get; set; }
+        internal bool IsUnstaged { get; set; }
+        internal bool IsConflicted { get; set; }
+        internal string IndexStatus { get; set; } = "Unaltered";
+        internal string WorktreeStatus { get; set; } = "ModifiedInWorkdir";
 
         public ValueTask<WorkbenchFileCatalogResult> ListFilesAsync(
             WorkbenchWorkspaceRequest request,
@@ -3613,7 +3717,8 @@ public sealed class PresentationControlTests
                 new(
                     context.Branch?.Value ?? "main",
                     "abc123",
-                    [new("src/App.cs", Status)],
+                    [new("src/App.cs", Status, IndexStatus, WorktreeStatus,
+                        IsStaged, IsUnstaged, IsConflicted)],
                     Diff,
                     IsTruncated: false,
                     ErrorCode: null,
@@ -3645,6 +3750,8 @@ public sealed class PresentationControlTests
     {
         internal DeveloperGitIndexCommand? Command { get; private set; }
         internal DeveloperGitPatchCommand? PatchCommand { get; private set; }
+        internal DeveloperGitDestructivePreviewCommand? DestructivePreviewCommand { get; private set; }
+        internal DeveloperGitDestructivePreviewView? AppliedDestructivePreview { get; private set; }
 
         public ValueTask<DeveloperGitIndexCommandResult> UpdateIndexAsync(
             DeveloperGitIndexCommand command,
@@ -3672,6 +3779,39 @@ public sealed class PresentationControlTests
                 [],
                 null,
                 null));
+        }
+
+        public ValueTask<DeveloperGitDestructivePreviewResult> PreviewDestructiveAsync(
+            DeveloperGitDestructivePreviewCommand command,
+            CancellationToken cancellationToken = default)
+        {
+            DestructivePreviewCommand = command;
+            var context = new WorkbenchWorkspaceContext(
+                command.Workspace.WorkspaceId, null, new("main"),
+                WorkbenchWorkspaceScope.OriginalWorkspace, "Original workspace");
+            return ValueTask.FromResult(new DeveloperGitDestructivePreviewResult(
+                new(
+                    new("preview-id"),
+                    context,
+                    command.ExpectedFingerprint,
+                    command.Action,
+                    command.Paths,
+                    "Exact destructive preview",
+                    "Exact consequence.",
+                    "Git does not guarantee recovery.",
+                    HasGuaranteedRecovery: false),
+                null,
+                null,
+                null));
+        }
+
+        public ValueTask<DeveloperGitIndexCommandResult> ApplyDestructiveAsync(
+            DeveloperGitDestructivePreviewView preview,
+            CancellationToken cancellationToken = default)
+        {
+            AppliedDestructivePreview = preview;
+            return ValueTask.FromResult(new DeveloperGitIndexCommandResult(
+                preview.Context, null, preview.Paths, null, null));
         }
     }
 
@@ -3745,6 +3885,8 @@ public sealed class PresentationControlTests
         internal Queue<WorkbenchConflictDecision> ConflictDecisions { get; } = [];
         internal List<WorkbenchUnsavedPrompt> UnsavedPrompts { get; } = [];
         internal List<WorkbenchConflictPrompt> ConflictPrompts { get; } = [];
+        internal Queue<bool> GitDestructiveDecisions { get; } = [];
+        internal List<DeveloperGitDestructivePreviewView> GitDestructivePreviews { get; } = [];
 
         public ValueTask<WorkbenchUnsavedDecision> DecideUnsavedAsync(
             WorkbenchUnsavedPrompt prompt,
@@ -3764,6 +3906,14 @@ public sealed class PresentationControlTests
             return ValueTask.FromResult(ConflictDecisions.TryDequeue(out WorkbenchConflictDecision decision)
                 ? decision
                 : WorkbenchConflictDecision.Cancel);
+        }
+
+        public ValueTask<bool> ConfirmGitDestructiveAsync(
+            DeveloperGitDestructivePreviewView preview,
+            Window? owner)
+        {
+            GitDestructivePreviews.Add(preview);
+            return ValueTask.FromResult(GitDestructiveDecisions.TryDequeue(out bool decision) && decision);
         }
     }
 
