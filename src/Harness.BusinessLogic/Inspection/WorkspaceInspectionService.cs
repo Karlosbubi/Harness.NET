@@ -94,11 +94,19 @@ internal sealed class WorkspaceInspectionService(
             result.HeadSha,
             result.Changes.Select(change => new WorkspaceGitFileChangeView(
                 change.Path,
-                change.Status)).ToArray(),
+                change.Status,
+                change.IndexStatus,
+                change.WorktreeStatus,
+                change.IsStaged,
+                change.IsUnstaged,
+                change.IsConflicted)).ToArray(),
             result.Diff,
             result.IsTruncated,
             result.ErrorCode,
-            result.Error);
+            result.Error,
+            result.Fingerprint,
+            result.StagedDiff,
+            result.UnstagedDiff);
     }
 
     public async ValueTask<WorkspaceDotNetInfoView> InspectDotNetAsync(

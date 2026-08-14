@@ -7,4 +7,7 @@ public sealed record WorkspaceGitStateView(
     string Diff,
     bool IsTruncated,
     string? ErrorCode,
-    string? Error);
+    string? Error,
+    string Fingerprint = "",
+    string StagedDiff = "",
+    string UnstagedDiff = "");

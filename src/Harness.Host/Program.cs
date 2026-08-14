@@ -206,6 +206,7 @@ builder.Services.AddSingleton<IWorkspaceFileCatalogReader, GitWorkspaceFileCatal
 builder.Services.AddSingleton<IWorkspaceTextSearcher, GitWorkspaceTextSearcher>();
 builder.Services.AddSingleton<IWorkspaceAdvancedInspector, GitWorkspaceAdvancedInspector>();
 builder.Services.AddSingleton<IWorkspaceGitInspector, LibGitWorkspaceGitInspector>();
+builder.Services.AddSingleton<IDeveloperGitRepository, LibGitDeveloperGitRepository>();
 builder.Services.AddSingleton<IWorkspaceDotNetInspector, WorkspaceDotNetInspector>();
 builder.Services.AddSingleton<IProjectUserSecretsPathResolver,
     PlatformProjectUserSecretsPathResolver>();
@@ -221,6 +222,7 @@ builder.Services.AddSingleton<IWorkbenchWorkspaceContextResolver, WorkbenchWorks
 builder.Services.AddSingleton<IWorkbenchCodeIntelligenceService, WorkbenchCodeIntelligenceService>();
 builder.Services.AddSingleton<IKeybindingSettingsService, KeybindingSettingsService>();
 builder.Services.AddSingleton<IWorkbenchInspectionService, WorkbenchInspectionService>();
+builder.Services.AddSingleton<IDeveloperGitService, DeveloperGitService>();
 builder.Services.AddSingleton<IWorkbenchDocumentService, WorkbenchDocumentService>();
 builder.Services.AddSingleton<IWorkbenchLayoutStore, FileWorkbenchLayoutStore>();
 builder.Services.AddSingleton<IWorkbenchLayoutService, WorkbenchLayoutService>();

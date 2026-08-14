@@ -491,7 +491,7 @@ and Debug needs. Database, profiler, and notebook modules remain later slices.
 
 ### 050 — complete Git workbench
 
-Status: `Planned`
+Status: `In progress — exact file staging delivered`
 
 Dependencies: 023, 029, 035, 036, 039.
 
@@ -523,6 +523,14 @@ Acceptance criteria:
 10. An ADR records remote and destructive Git ownership before implementation; tests
     cover stale index, conflicts, detached HEAD, submodules, worktrees, network
     failure, cancellation, restart, accessibility, and large repositories.
+
+Delivered first slice: ADR 024 fixes ownership and authority before mutation work.
+The active source context now exposes one staged/unstaged/conflict state with a
+complete fingerprint and separate bounded diffs. Developers can stage or unstage an
+exact file from the Git tool. Harness rejects stale fingerprints, refreshes the view,
+and never includes untracked file content in inspection output. Line and hunk
+selection, destructive actions, commits, references, history, merge editing, and
+remotes remain open.
 
 ### 051 — developer terminal and structured tasks
 

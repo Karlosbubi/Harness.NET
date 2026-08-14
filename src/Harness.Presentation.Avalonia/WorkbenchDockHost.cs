@@ -37,6 +37,7 @@ internal sealed class WorkbenchDockHost
 {
     private readonly IRunOutputService runOutputService;
     private readonly IWorkbenchInspectionService inspectionService;
+    private readonly IDeveloperGitService? developerGitService;
     private readonly IWorkbenchDocumentService documentService;
     private readonly IWorkbenchCodeIntelligenceService codeIntelligenceService;
     private readonly IWorkspaceMutationService? mutationService;
@@ -95,6 +96,7 @@ internal sealed class WorkbenchDockHost
     private readonly ListBox changes = new();
     private readonly TextBlock gitSummary = new() { TextWrapping = TextWrapping.Wrap };
     private readonly TextBlock gitStatus = new() { TextWrapping = TextWrapping.Wrap };
+    private string gitFingerprint = string.Empty;
     private readonly ListBox runOutputs = new();
     private readonly TextBlock runOutputStatus = new() { TextWrapping = TextWrapping.Wrap };
     private readonly Button cancelDeveloperRun = new() { Content = "Stop", IsEnabled = false };
@@ -176,7 +178,8 @@ internal sealed class WorkbenchDockHost
         Func<bool, Task>? manageWorkspace = null,
         IWorkspaceMutationService? mutationService = null,
         Func<Task>? manageProjectSecrets = null,
-        IDeveloperProjectExecutionService? developerExecutionService = null)
+        IDeveloperProjectExecutionService? developerExecutionService = null,
+        IDeveloperGitService? developerGitService = null)
     {
         this.runOutputService = runOutputService;
         this.inspectionService = inspectionService;
@@ -189,6 +192,7 @@ internal sealed class WorkbenchDockHost
         this.manageWorkspace = manageWorkspace ?? (_ => Task.CompletedTask);
         this.manageProjectSecrets = manageProjectSecrets ?? (() => Task.CompletedTask);
         this.developerExecutionService = developerExecutionService;
+        this.developerGitService = developerGitService;
         this.cancellationToken = cancellationToken;
         factory.HideToolsOnClose = true;
         layoutCodec = new(factory);
@@ -769,20 +773,50 @@ internal sealed class WorkbenchDockHost
                 return;
             }
 
-            int conflictCount = git.Changes.Count(change =>
-                change.Status.Contains("Conflicted", StringComparison.OrdinalIgnoreCase));
-            gitSummary.Text = $"{inspected.Context.Description}\nBranch {git.Branch}\n" +
-                              $"HEAD {git.HeadSha ?? "unborn"}\n" +
-                              $"{git.Changes.Count} change(s)" +
-                              (conflictCount > 0 ? $" · {conflictCount} conflict(s)" : string.Empty) +
-                              (git.IsTruncated ? " · truncated" : string.Empty);
-            changes.ItemsSource = git.Changes
-                .Select(change => new ChangeChoice(change, inspected.Context.GoalId))
-                .ToArray();
-            gitStatus.Text = conflictCount > 0
-                ? $"{conflictCount} unresolved Git conflict(s) block commit approval. " +
-                  "Resolve and stage them with Git, then refresh this view."
-                : "Git state refreshed.";
+            RenderGitState(inspected.Context, git);
+        });
+    }
+
+    private void RenderGitState(WorkbenchWorkspaceContext context, WorkspaceGitStateView git)
+    {
+        int conflictCount = git.Changes.Count(change => change.IsConflicted ||
+            change.Status.Contains("Conflicted", StringComparison.OrdinalIgnoreCase));
+        gitFingerprint = git.Fingerprint;
+        gitSummary.Text = $"{context.Description}\nBranch {git.Branch}\n" +
+                          $"HEAD {git.HeadSha ?? "unborn"}\n" +
+                          $"{git.Changes.Count} change(s)" +
+                          (conflictCount > 0 ? $" · {conflictCount} conflict(s)" : string.Empty) +
+                          (git.IsTruncated ? " · truncated" : string.Empty);
+        changes.ItemsSource = git.Changes
+            .Select(change => new ChangeChoice(change, context.GoalId))
+            .ToArray();
+        gitStatus.Text = conflictCount > 0
+            ? $"{conflictCount} unresolved Git conflict(s) block commit approval. " +
+              "Resolve and stage them with Git, then refresh this view."
+            : "Git state refreshed.";
+    }
+
+    internal async ValueTask UpdateSelectedGitIndexAsync(DeveloperGitIndexAction action)
+    {
+        WorkspaceView? active = ActiveWorkspace();
+        if (busy || active is null || developerGitService is null ||
+            changes.SelectedItem is not ChangeChoice selected || string.IsNullOrEmpty(gitFingerprint))
+        {
+            gitStatus.Text = "Select a current Git change first.";
+            return;
+        }
+
+        await RunAsync(async () =>
+        {
+            DeveloperGitIndexCommandResult result = await developerGitService.UpdateIndexAsync(new(
+                WorkbenchRequest(active),
+                new(gitFingerprint),
+                action,
+                [new(selected.Change.Path)]), cancellationToken);
+            if (result.State is not null) RenderGitState(result.Context, result.State);
+            gitStatus.Text = result.ErrorCode == "git_state_stale"
+                ? "Git changed outside Harness.NET. The view was refreshed; review it and retry."
+                : result.Error ?? $"{(action == DeveloperGitIndexAction.Stage ? "Staged" : "Unstaged")} {selected.Change.Path}.";
         });
     }
 
@@ -1349,19 +1383,30 @@ internal sealed class WorkbenchDockHost
             RowSpacing = 8,
         };
         grid.Children.Add(gitSummary);
-        StackPanel actions = new()
+        WrapPanel actions = new()
         {
             Orientation = AvaloniaOrientation.Horizontal,
-            Spacing = 6,
         };
         Button refresh = new() { Content = "Refresh" };
+        refresh.Margin = new Thickness(0, 0, 6, 6);
         AutomationProperties.SetName(refresh, "Refresh Git working-tree state");
         refresh.Click += async (_, _) => await RefreshGitAsync();
         Button openDiff = new() { Content = "Open diff" };
+        openDiff.Margin = new Thickness(0, 0, 6, 6);
         AutomationProperties.SetName(openDiff, "Open bounded Git working-tree diff");
         openDiff.Click += async (_, _) => await OpenDiffAsync();
         actions.Children.Add(refresh);
         actions.Children.Add(openDiff);
+        Button stage = new() { Content = "Stage" };
+        stage.Margin = new Thickness(0, 0, 6, 6);
+        AutomationProperties.SetName(stage, "Stage selected Git change");
+        stage.Click += async (_, _) => await UpdateSelectedGitIndexAsync(DeveloperGitIndexAction.Stage);
+        Button unstage = new() { Content = "Unstage" };
+        unstage.Margin = new Thickness(0, 0, 6, 6);
+        AutomationProperties.SetName(unstage, "Unstage selected Git change");
+        unstage.Click += async (_, _) => await UpdateSelectedGitIndexAsync(DeveloperGitIndexAction.Unstage);
+        actions.Children.Add(stage);
+        actions.Children.Add(unstage);
         Grid.SetRow(actions, 1);
         grid.Children.Add(actions);
         AutomationProperties.SetName(changes, "Git working-tree changes");
@@ -4657,7 +4702,11 @@ internal sealed class WorkbenchDockHost
 
     private sealed record ChangeChoice(WorkspaceGitFileChangeView Change, GoalId? GoalId)
     {
-        public override string ToString() => $"{Change.Status}  {Change.Path}";
+        public override string ToString()
+        {
+            string flags = $"{(Change.IsStaged ? "S" : " ")}{(Change.IsUnstaged ? "M" : " ")}";
+            return $"[{flags}]  {Change.Path}" + (Change.IsConflicted ? "  CONFLICT" : string.Empty);
+        }
     }
 
     private abstract record RunOutputChoiceBase(DateTimeOffset StartedAt);

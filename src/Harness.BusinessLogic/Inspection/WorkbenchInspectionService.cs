@@ -108,10 +108,18 @@ internal sealed class WorkbenchInspectionService(
                 git.HeadSha,
                 git.Changes.Select(change => new WorkspaceGitFileChangeView(
                     change.Path,
-                    change.Status)).ToArray(),
+                    change.Status,
+                    change.IndexStatus,
+                    change.WorktreeStatus,
+                    change.IsStaged,
+                    change.IsUnstaged,
+                    change.IsConflicted)).ToArray(),
                 git.Diff,
                 git.IsTruncated,
                 git.ErrorCode,
-                git.Error));
+                git.Error,
+                git.Fingerprint,
+                git.StagedDiff,
+                git.UnstagedDiff));
     }
 }

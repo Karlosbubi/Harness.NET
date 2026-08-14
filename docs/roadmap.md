@@ -396,7 +396,7 @@ parity requirements. Task 052 covers the relevant project, Run, Test, and Debug
 workflows without changing the product into a LINQPad clone. Database, profiler, and
 notebook modules remain later independent slices.
 
-### Planned: Task 050 — complete Git workbench
+### In progress: Task 050 — complete Git workbench
 
 Turn the current status and diff support into the daily Git workflow. Add staging and
 unstaging by file, line, and hunk; safe discard; commit and amend; branch and worktree
@@ -409,6 +409,12 @@ Reuse the active source context and exact baselines across Files, editor, diff, 
 and review. Every destructive operation shows affected paths and recovery options.
 Record an ADR before adding remote integration or conflict-write contracts. Preserve
 the existing exact goal-commit approval and post-commit handoff.
+
+ADR 024 and the first index slice are delivered: one active-context Git snapshot now
+separates index and working-tree state, carries an exact stale-state fingerprint,
+keeps untracked contents out of diffs, and supports file-level stage and unstage from
+the Git tool. Line/hunk operations and the remaining workbench capabilities follow
+on the same contracts.
 
 ### Planned: Task 051 — developer terminal and structured tasks
 

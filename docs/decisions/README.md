@@ -40,3 +40,4 @@ records in both directions.
 | [021](021-typed-keybindings-and-modal-input.md) | Accepted | Typed keybindings and modal input boundary |
 | [022](022-project-user-secrets.md) | Accepted | Project User Secrets management |
 | [023](023-typed-developer-dotnet-execution.md) | Accepted | Typed developer .NET execution |
+| [024](024-developer-git-workbench.md) | Accepted | Developer Git workbench authority and state |

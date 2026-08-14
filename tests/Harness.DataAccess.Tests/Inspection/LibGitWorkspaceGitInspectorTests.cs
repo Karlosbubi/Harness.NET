@@ -38,9 +38,40 @@ public sealed class LibGitWorkspaceGitInspectorTests : IDisposable
         WorkspaceGitFileChange change = Assert.Single(result.Changes);
         Assert.Equal("tracked.txt", change.Path);
         Assert.Contains("ModifiedInWorkdir", change.Status, StringComparison.Ordinal);
+        Assert.False(change.IsStaged);
+        Assert.True(change.IsUnstaged);
+        Assert.NotEmpty(result.Fingerprint);
+        Assert.Empty(result.StagedDiff);
+        Assert.Contains("+after", result.UnstagedDiff, StringComparison.Ordinal);
         Assert.Contains("-before", result.Diff, StringComparison.Ordinal);
         Assert.Contains("+after", result.Diff, StringComparison.Ordinal);
         Assert.False(result.IsTruncated);
+    }
+
+    [Fact]
+    public async Task Separates_staged_and_unstaged_state()
+    {
+        Directory.CreateDirectory(root);
+        Repository.Init(root);
+        string file = Path.Combine(root, "tracked.txt");
+        await File.WriteAllTextAsync(file, "before\n");
+        using (Repository repository = new(root))
+        {
+            Commands.Stage(repository, "tracked.txt");
+            Signature signature = new("Harness Tests", "tests@harness.local", DateTimeOffset.UtcNow);
+            repository.Commit("initial", signature, signature);
+        }
+        await File.WriteAllTextAsync(file, "staged\n");
+        using (Repository repository = new(root)) Commands.Stage(repository, "tracked.txt");
+        await File.WriteAllTextAsync(file, "unstaged\n");
+
+        WorkspaceGitState result = await new LibGitWorkspaceGitInspector().InspectAsync(root);
+
+        WorkspaceGitFileChange change = Assert.Single(result.Changes);
+        Assert.True(change.IsStaged);
+        Assert.True(change.IsUnstaged);
+        Assert.Contains("+staged", result.StagedDiff, StringComparison.Ordinal);
+        Assert.Contains("+unstaged", result.UnstagedDiff, StringComparison.Ordinal);
     }
 
     [Fact]

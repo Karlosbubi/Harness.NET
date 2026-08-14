@@ -36,6 +36,7 @@ internal sealed class MainWindow : Window
     private readonly HarnessThemeController themeController;
     private readonly IRunOutputService runOutputService;
     private readonly IWorkbenchInspectionService inspectionService;
+    private readonly IDeveloperGitService developerGitService;
     private readonly IWorkbenchDocumentService documentService;
     private readonly IWorkbenchCodeIntelligenceService codeIntelligenceService;
     private readonly IWorkspaceMutationService mutationService;
@@ -119,6 +120,7 @@ internal sealed class MainWindow : Window
         HarnessThemeController themeController,
         IRunOutputService runOutputService,
         IWorkbenchInspectionService inspectionService,
+        IDeveloperGitService developerGitService,
         IWorkbenchDocumentService documentService,
         IWorkbenchCodeIntelligenceService codeIntelligenceService,
         IWorkspaceMutationService mutationService,
@@ -131,6 +133,7 @@ internal sealed class MainWindow : Window
         this.themeController = themeController;
         this.runOutputService = runOutputService;
         this.inspectionService = inspectionService;
+        this.developerGitService = developerGitService;
         this.documentService = documentService;
         this.codeIntelligenceService = codeIntelligenceService;
         this.mutationService = mutationService;
@@ -188,7 +191,8 @@ internal sealed class MainWindow : Window
             ShowWorkspaceDialogAsync,
             mutationService,
             ShowProjectUserSecretsAsync,
-            developerExecutionService);
+            developerExecutionService,
+            developerGitService);
         Border documentActions = new()
         {
             Child = workbench.DocumentActions,
