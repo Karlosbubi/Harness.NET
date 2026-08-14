@@ -491,7 +491,7 @@ and Debug needs. Database, profiler, and notebook modules remain later slices.
 
 ### 050 — complete Git workbench
 
-Status: `In progress — exact staging, cleanup, commit/amend, references, and worktrees delivered`
+Status: `In progress — exact staging, cleanup, commit/amend, references, worktrees, and stashes delivered`
 
 Dependencies: 023, 029, 035, 036, 039.
 
@@ -560,7 +560,11 @@ create one from an existing branch or a new branch at HEAD, then open it through
 normal workspace inspection and trust flow. Removal revalidates both repository and
 worktree-set fingerprints, blocks original, locked, registered, and Harness-managed
 goal worktrees, and requires an exact destructive preview; dirty removal also requires
-an explicit force choice. Stash, history, merge editing, and remotes remain open.
+an explicit force choice. Local stashes are now listed with exact commit and base
+identity. Developers can create a stash with an explicit untracked-file choice and
+apply it while retaining the stash. Conflicts stay visible and the stash remains
+available. Deletion is a separate exact commit-bound preview with an explicit recovery
+warning and acknowledgement. History, merge editing, and remotes remain open.
 
 ### 051 — developer terminal and structured tasks
 

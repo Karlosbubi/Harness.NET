@@ -3699,6 +3699,105 @@ public sealed class PresentationControlTests
     }
 
     [Fact]
+    public async Task Git_stash_tool_creates_and_applies_with_exact_displayed_state()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            DeveloperGitService git = new();
+            WorkbenchDockHost workbench = CreateWorkbench(
+                TrustedShell(), new(), developerGit: git);
+            Window window = new() { Content = workbench.Control };
+            window.Show();
+            workbench.RefreshGitAsync().AsTask().GetAwaiter().GetResult();
+            Control gitTool = Assert.IsAssignableFrom<Control>(
+                Find<IDockable>(workbench.Root, WorkbenchDockIds.GitTool).Context);
+            TabControl tabs = Assert.Single(gitTool.GetVisualDescendants().OfType<TabControl>(), item =>
+                AutomationProperties.GetName(item) == "Git workbench sections");
+            TabItem stashTab = Assert.IsType<TabItem>(tabs.Items.OfType<TabItem>().ElementAt(4));
+            Control stashPanel = Assert.IsAssignableFrom<Control>(stashTab.Content);
+            TextBox message = Assert.Single(stashPanel.GetLogicalDescendants().OfType<TextBox>(), item =>
+                AutomationProperties.GetName(item) == "New Git stash message");
+            CheckBox include = Assert.Single(stashPanel.GetLogicalDescendants().OfType<CheckBox>(), item =>
+                AutomationProperties.GetName(item) == "Include untracked files in new Git stash");
+            message.Text = "checkpoint";
+            include.IsChecked = true;
+
+            workbench.CreateGitStashAsync().AsTask().GetAwaiter().GetResult();
+
+            Assert.Equal("git-fingerprint", git.StashCreateCommand!.ExpectedFingerprint.Value);
+            Assert.Equal("checkpoint", git.StashCreateCommand.Message.Value);
+            Assert.True(git.StashCreateCommand.IncludeUntracked);
+
+            workbench.ApplySelectedGitStashAsync().AsTask().GetAwaiter().GetResult();
+
+            Assert.Equal("git-fingerprint", git.StashApplyCommand!.ExpectedFingerprint.Value);
+            Assert.Equal(new string('c', 40), git.StashApplyCommand.Stash.Value);
+            Assert.Contains("remains available", workbench.GitStatusText, StringComparison.Ordinal);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Git_stash_delete_requires_exact_preview_and_confirmation()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            DeveloperGitService git = new();
+            DocumentPrompt prompt = new();
+            prompt.GitStashDropDecisions.Enqueue(true);
+            WorkbenchDockHost workbench = CreateWorkbench(
+                TrustedShell(), new(), prompt: prompt, developerGit: git);
+            Window window = new() { Content = workbench.Control };
+            window.Show();
+            workbench.RefreshGitAsync().AsTask().GetAwaiter().GetResult();
+
+            workbench.DropSelectedGitStashAsync().AsTask().GetAwaiter().GetResult();
+
+            Assert.Equal("git-fingerprint", git.StashDropCommand!.ExpectedFingerprint.Value);
+            Assert.Equal(new string('c', 40), git.StashDropCommand.Stash.Value);
+            Assert.Same(Assert.Single(prompt.GitStashDropPreviews), git.AppliedStashDrop);
+            Assert.Contains("Deleted stash", workbench.GitStatusText, StringComparison.Ordinal);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Stash_delete_dialog_shows_exact_commit_and_requires_acknowledgement()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            var stash = new DeveloperGitStashView(
+                "stash@{2}", new(new string('e', 40)), new string('a', 40),
+                DateTimeOffset.UnixEpoch, "checkpoint", false);
+            var preview = new DeveloperGitStashDropPreviewView(
+                new("preview"),
+                new(new("workspace-1"), null, new("main"),
+                    WorkbenchWorkspaceScope.OriginalWorkspace, "Original workspace"),
+                new("fingerprint"), stash, "Delete stash.", "Recovery is not guaranteed.", false);
+            GitStashDropConfirmationDialog dialog = new(preview);
+            dialog.Show();
+            CheckBox acknowledgement = Assert.Single(dialog.GetVisualDescendants().OfType<CheckBox>(), item =>
+                AutomationProperties.GetName(item) == "Acknowledge Git stash deletion consequences");
+            Button confirm = Assert.Single(dialog.GetVisualDescendants().OfType<Button>(), item =>
+                AutomationProperties.GetName(item) == "Confirm deletion of exact Git stash");
+            Assert.False(confirm.IsEnabled);
+            string exact = dialog.GetVisualDescendants().OfType<TextBlock>()
+                .Select(item => item.Text).First(text => text?.Contains("Stash:", StringComparison.Ordinal) == true)!;
+            Assert.Contains("stash@{2}", exact, StringComparison.Ordinal);
+            Assert.Contains(new string('e', 40), exact, StringComparison.Ordinal);
+            acknowledgement.IsChecked = true;
+            Assert.True(confirm.IsEnabled);
+            dialog.Close(false);
+        }, CancellationToken.None);
+    }
+
+    [Fact]
     public async Task Layout_reset_keeps_durable_controls_in_the_rendered_tree()
     {
         using HeadlessUnitTestSession session =
@@ -4178,6 +4277,10 @@ public sealed class PresentationControlTests
         internal DeveloperGitWorktreeCreateCommand? WorktreeCreateCommand { get; private set; }
         internal DeveloperGitWorktreeRemovePreviewCommand? WorktreeRemoveCommand { get; private set; }
         internal DeveloperGitWorktreeRemovePreviewView? AppliedWorktreeRemove { get; private set; }
+        internal DeveloperGitStashCreateCommand? StashCreateCommand { get; private set; }
+        internal DeveloperGitStashApplyCommand? StashApplyCommand { get; private set; }
+        internal DeveloperGitStashDropPreviewCommand? StashDropCommand { get; private set; }
+        internal DeveloperGitStashDropPreviewView? AppliedStashDrop { get; private set; }
 
         public ValueTask<DeveloperGitIndexCommandResult> UpdateIndexAsync(
             DeveloperGitIndexCommand command,
@@ -4394,6 +4497,57 @@ public sealed class PresentationControlTests
             AppliedWorktreeRemove = preview;
             return InspectWorktreesAsync(new(preview.Context.WorkspaceId, null), cancellationToken);
         }
+
+        public ValueTask<DeveloperGitStashInspectionResult> InspectStashesAsync(
+            WorkbenchWorkspaceRequest workspace,
+            CancellationToken cancellationToken = default)
+        {
+            var context = new WorkbenchWorkspaceContext(workspace.WorkspaceId, null, new("main"),
+                WorkbenchWorkspaceScope.OriginalWorkspace, "Original workspace");
+            return ValueTask.FromResult(new DeveloperGitStashInspectionResult(
+                context,
+                new("main", new string('a', 40), [], "", false, null, null, "git-fingerprint"),
+                [new("stash@{0}", new(new string('c', 40)), new string('a', 40),
+                    DateTimeOffset.UnixEpoch, "On main: checkpoint", false)],
+                null, null, null));
+        }
+
+        public ValueTask<DeveloperGitStashInspectionResult> CreateStashAsync(
+            DeveloperGitStashCreateCommand command,
+            CancellationToken cancellationToken = default)
+        {
+            StashCreateCommand = command;
+            return InspectStashesAsync(command.Workspace, cancellationToken);
+        }
+
+        public ValueTask<DeveloperGitStashInspectionResult> ApplyStashAsync(
+            DeveloperGitStashApplyCommand command,
+            CancellationToken cancellationToken = default)
+        {
+            StashApplyCommand = command;
+            return InspectStashesAsync(command.Workspace, cancellationToken);
+        }
+
+        public async ValueTask<DeveloperGitStashDropPreviewResult> PreviewStashDropAsync(
+            DeveloperGitStashDropPreviewCommand command,
+            CancellationToken cancellationToken = default)
+        {
+            StashDropCommand = command;
+            DeveloperGitStashInspectionResult inspection = await InspectStashesAsync(
+                command.Workspace, cancellationToken);
+            DeveloperGitStashView stash = inspection.Stashes.Single(item => item.CommitSha == command.Stash);
+            return new(new(new("stash-drop-preview"), inspection.Context,
+                command.ExpectedFingerprint, stash, "Drop stash.", "Recovery is not guaranteed.", false),
+                inspection, null, null);
+        }
+
+        public ValueTask<DeveloperGitStashInspectionResult> ApplyStashDropAsync(
+            DeveloperGitStashDropPreviewView preview,
+            CancellationToken cancellationToken = default)
+        {
+            AppliedStashDrop = preview;
+            return InspectStashesAsync(new(preview.Context.WorkspaceId, null), cancellationToken);
+        }
     }
 
     private sealed class RunOutputService : IRunOutputService
@@ -4477,6 +4631,8 @@ public sealed class PresentationControlTests
         internal List<DeveloperGitTagDeletePreviewView> GitTagDeletePreviews { get; } = [];
         internal Queue<bool> GitWorktreeRemoveDecisions { get; } = [];
         internal List<DeveloperGitWorktreeRemovePreviewView> GitWorktreeRemovePreviews { get; } = [];
+        internal Queue<bool> GitStashDropDecisions { get; } = [];
+        internal List<DeveloperGitStashDropPreviewView> GitStashDropPreviews { get; } = [];
 
         public ValueTask<WorkbenchUnsavedDecision> DecideUnsavedAsync(
             WorkbenchUnsavedPrompt prompt,
@@ -4540,6 +4696,14 @@ public sealed class PresentationControlTests
         {
             GitWorktreeRemovePreviews.Add(preview);
             return ValueTask.FromResult(GitWorktreeRemoveDecisions.TryDequeue(out bool decision) && decision);
+        }
+
+        public ValueTask<bool> ConfirmGitStashDropAsync(
+            DeveloperGitStashDropPreviewView preview,
+            Window? owner)
+        {
+            GitStashDropPreviews.Add(preview);
+            return ValueTask.FromResult(GitStashDropDecisions.TryDequeue(out bool decision) && decision);
         }
     }
 

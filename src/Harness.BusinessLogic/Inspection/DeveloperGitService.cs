@@ -561,6 +561,128 @@ internal sealed class DeveloperGitService(
         return await MapWorktreesAsync(resolution.Context, result, cancellationToken);
     }
 
+    public async ValueTask<DeveloperGitStashInspectionResult> InspectStashesAsync(
+        WorkbenchWorkspaceRequest workspace,
+        CancellationToken cancellationToken = default)
+    {
+        WorkbenchWorkspaceResolution resolution = await contextResolver.ResolveAsync(
+            workspace, cancellationToken);
+        if (resolution.RootPath is null || resolution.Error is not null)
+            return new(resolution.Context, null, [], null,
+                resolution.ErrorCode, resolution.Error);
+        if (resolution.Context.Scope != WorkbenchWorkspaceScope.OriginalWorkspace)
+            return new(resolution.Context, null, [], null, "git_stashes_goal_context_denied",
+                "Developer stash management is available only in the original workspace.");
+        DeveloperGitStashInspection inspection = await repository.InspectStashesAsync(
+            resolution.RootPath, cancellationToken);
+        return MapStashes(resolution.Context, inspection);
+    }
+
+    public async ValueTask<DeveloperGitStashInspectionResult> CreateStashAsync(
+        DeveloperGitStashCreateCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        WorkbenchWorkspaceResolution resolution = await contextResolver.ResolveAsync(
+            command.Workspace, cancellationToken);
+        if (resolution.RootPath is null || resolution.Error is not null)
+            return new(resolution.Context, null, [], null, resolution.ErrorCode, resolution.Error);
+        if (resolution.Context.Scope != WorkbenchWorkspaceScope.OriginalWorkspace)
+            return new(resolution.Context, null, [], null, "git_stashes_goal_context_denied",
+                "Developer stash management is available only in the original workspace.");
+        DeveloperGitStashResult result = await repository.ApplyStashAsync(new(
+            resolution.RootPath,
+            new(command.ExpectedFingerprint.Value),
+            DeveloperGitStashOperation.Create,
+            ExpectedStashCommitSha: null,
+            command.Message.Value,
+            command.IncludeUntracked), cancellationToken);
+        return MapStashes(resolution.Context, result);
+    }
+
+    public async ValueTask<DeveloperGitStashInspectionResult> ApplyStashAsync(
+        DeveloperGitStashApplyCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        WorkbenchWorkspaceResolution resolution = await contextResolver.ResolveAsync(
+            command.Workspace, cancellationToken);
+        if (resolution.RootPath is null || resolution.Error is not null)
+            return new(resolution.Context, null, [], null, resolution.ErrorCode, resolution.Error);
+        if (resolution.Context.Scope != WorkbenchWorkspaceScope.OriginalWorkspace)
+            return new(resolution.Context, null, [], null, "git_stashes_goal_context_denied",
+                "Developer stash management is available only in the original workspace.");
+        DeveloperGitStashResult result = await repository.ApplyStashAsync(new(
+            resolution.RootPath,
+            new(command.ExpectedFingerprint.Value),
+            DeveloperGitStashOperation.Apply,
+            command.Stash.Value,
+            Message: null,
+            IncludeUntracked: false), cancellationToken);
+        return MapStashes(resolution.Context, result);
+    }
+
+    public async ValueTask<DeveloperGitStashDropPreviewResult> PreviewStashDropAsync(
+        DeveloperGitStashDropPreviewCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        DeveloperGitStashInspectionResult inspection = await InspectStashesAsync(
+            command.Workspace, cancellationToken);
+        if (inspection.Error is not null || inspection.State is null)
+            return new(null, inspection, inspection.ErrorCode, inspection.Error);
+        if (!inspection.State.Fingerprint.Equals(command.ExpectedFingerprint.Value,
+                StringComparison.Ordinal))
+            return new(null, inspection, "git_state_stale",
+                "Git references or working state changed after display. Refresh and retry.");
+        DeveloperGitStashView? stash = inspection.Stashes.SingleOrDefault(candidate =>
+            candidate.CommitSha.Equals(command.Stash));
+        if (stash is null)
+            return new(null, inspection, "git_stash_missing",
+                "The selected stash changed or no longer exists. Refresh and retry.");
+        string identity = string.Join('\0', inspection.Context.WorkspaceId.Value,
+            inspection.State.Fingerprint, stash.CommitSha.Value, stash.BaseSha,
+            stash.Selector, stash.CreatedAt.ToString("O", System.Globalization.CultureInfo.InvariantCulture));
+        var preview = new DeveloperGitStashDropPreviewView(
+            new(Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(identity))).ToLowerInvariant()),
+            inspection.Context,
+            new(inspection.State.Fingerprint),
+            stash,
+            $"The stash '{stash.Selector}' at {stash.CommitSha.Value} will be removed from the stash list.",
+            "Its commit may remain as an unreachable Git object until pruning, but Harness does not guarantee recovery.",
+            HasGuaranteedRecovery: false);
+        return new(preview, inspection, null, null);
+    }
+
+    public async ValueTask<DeveloperGitStashInspectionResult> ApplyStashDropAsync(
+        DeveloperGitStashDropPreviewView preview,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(preview);
+        DeveloperGitStashDropPreviewResult current = await PreviewStashDropAsync(new(
+            new(preview.Context.WorkspaceId, GoalId: null), preview.Fingerprint,
+            preview.Stash.CommitSha), cancellationToken);
+        if (current.Preview is null || current.Error is not null) return current.Inspection;
+        if (!current.Preview.Id.Equals(preview.Id))
+            return current.Inspection with
+            {
+                ErrorCode = "git_stash_drop_preview_stale",
+                Error = "The stash deletion preview changed. Review a new preview before deleting.",
+            };
+        WorkbenchWorkspaceResolution resolution = await contextResolver.ResolveAsync(
+            new(preview.Context.WorkspaceId, GoalId: null), cancellationToken);
+        if (resolution.RootPath is null || resolution.Error is not null)
+            return new(resolution.Context, null, [], null, resolution.ErrorCode, resolution.Error);
+        DeveloperGitStashResult result = await repository.ApplyStashAsync(new(
+            resolution.RootPath,
+            new(preview.Fingerprint.Value),
+            DeveloperGitStashOperation.Drop,
+            preview.Stash.CommitSha.Value,
+            Message: null,
+            IncludeUntracked: false), cancellationToken);
+        return MapStashes(resolution.Context, result);
+    }
+
     private static DeveloperGitBranchInspectionResult MapBranches(
         WorkbenchWorkspaceContext context,
         DeveloperGitBranchInspection inspection) => new(
@@ -580,6 +702,35 @@ internal sealed class DeveloperGitService(
                 new(branch.Name), branch.TipSha, branch.IsCurrent, branch.IsMergedIntoHead)).ToArray(),
             result.ErrorCode,
             result.Error);
+
+    private static DeveloperGitStashInspectionResult MapStashes(
+        WorkbenchWorkspaceContext context,
+        DeveloperGitStashInspection inspection) => new(
+            context,
+            inspection.State is null ? null : Map(inspection.State),
+            inspection.Stashes.Select(MapStash).ToArray(),
+            null,
+            inspection.ErrorCode,
+            inspection.Error);
+
+    private static DeveloperGitStashInspectionResult MapStashes(
+        WorkbenchWorkspaceContext context,
+        DeveloperGitStashResult result) => new(
+            context,
+            result.State is null ? null : Map(result.State),
+            result.Stashes.Select(MapStash).ToArray(),
+            result.AppliedStashCommitSha is null ? null : new(result.AppliedStashCommitSha),
+            result.ErrorCode,
+            result.Error);
+
+    private static DeveloperGitStashView MapStash(
+        Harness.DataAccess.Inspection.DeveloperGitStash stash) => new(
+            stash.Selector,
+            new(stash.CommitSha),
+            stash.BaseSha,
+            stash.CreatedAt,
+            stash.Message,
+            stash.MessageIsTruncated);
 
     private static DeveloperGitTagInspectionResult MapTags(
         WorkbenchWorkspaceContext context,

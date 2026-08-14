@@ -706,6 +706,135 @@ public sealed class LibGitDeveloperGitRepositoryTests : IDisposable
         Assert.True(Directory.Exists(path));
     }
 
+    [Fact]
+    public async Task Creates_and_applies_exact_stash_while_preserving_it()
+    {
+        await InitializeAsync();
+        await File.WriteAllTextAsync(Path.Combine(root, "first.txt"), "stashed first\n");
+        await File.WriteAllTextAsync(Path.Combine(root, "untracked.txt"), "stashed untracked\n");
+        using (Repository repository = new(root)) Commands.Stage(repository, "first.txt");
+        var sut = new LibGitDeveloperGitRepository();
+        DeveloperGitStashInspection before = await sut.InspectStashesAsync(root);
+
+        DeveloperGitStashResult created = await sut.ApplyStashAsync(new(
+            root, new(before.State!.Fingerprint), DeveloperGitStashOperation.Create,
+            null, "checkpoint", IncludeUntracked: true));
+
+        Assert.Null(created.Error);
+        DeveloperGitStash stash = Assert.Single(created.Stashes);
+        Assert.Contains("checkpoint", stash.Message, StringComparison.Ordinal);
+        Assert.False(File.Exists(Path.Combine(root, "untracked.txt")));
+        Assert.Empty(created.State!.Changes);
+
+        DeveloperGitStashResult applied = await sut.ApplyStashAsync(new(
+            root, new(created.State.Fingerprint), DeveloperGitStashOperation.Apply,
+            stash.CommitSha, null, IncludeUntracked: false));
+
+        Assert.Null(applied.Error);
+        Assert.Equal(stash.CommitSha, applied.AppliedStashCommitSha);
+        Assert.Single(applied.Stashes);
+        Assert.True(applied.State!.Changes.Single(change => change.Path == "first.txt").IsStaged);
+        Assert.True(File.Exists(Path.Combine(root, "untracked.txt")));
+    }
+
+    [Fact]
+    public async Task Stash_without_untracked_keeps_untracked_file_in_worktree()
+    {
+        await InitializeAsync();
+        await File.WriteAllTextAsync(Path.Combine(root, "first.txt"), "tracked change\n");
+        await File.WriteAllTextAsync(Path.Combine(root, "untracked.txt"), "keep here\n");
+        var sut = new LibGitDeveloperGitRepository();
+        DeveloperGitStashInspection before = await sut.InspectStashesAsync(root);
+
+        DeveloperGitStashResult result = await sut.ApplyStashAsync(new(
+            root, new(before.State!.Fingerprint), DeveloperGitStashOperation.Create,
+            null, "tracked only", IncludeUntracked: false));
+
+        Assert.Null(result.Error);
+        Assert.True(File.Exists(Path.Combine(root, "untracked.txt")));
+        Assert.Single(result.State!.Changes, change => change.Path == "untracked.txt");
+    }
+
+    [Fact]
+    public async Task Drops_exact_stash_commit_after_selectors_shift()
+    {
+        await InitializeAsync();
+        var sut = new LibGitDeveloperGitRepository();
+        await File.WriteAllTextAsync(Path.Combine(root, "first.txt"), "first stash\n");
+        DeveloperGitStashInspection initial = await sut.InspectStashesAsync(root);
+        DeveloperGitStashResult first = await sut.ApplyStashAsync(new(
+            root, new(initial.State!.Fingerprint), DeveloperGitStashOperation.Create,
+            null, "first checkpoint", false));
+        string firstSha = Assert.Single(first.Stashes).CommitSha;
+        await File.WriteAllTextAsync(Path.Combine(root, "second.txt"), "second stash\n");
+        DeveloperGitStashInspection secondDisplay = await sut.InspectStashesAsync(root);
+        DeveloperGitStashResult second = await sut.ApplyStashAsync(new(
+            root, new(secondDisplay.State!.Fingerprint), DeveloperGitStashOperation.Create,
+            null, "second checkpoint", false));
+        Assert.Equal(2, second.Stashes.Count);
+
+        DeveloperGitStashResult dropped = await sut.ApplyStashAsync(new(
+            root, new(second.State!.Fingerprint), DeveloperGitStashOperation.Drop,
+            firstSha, null, false));
+
+        Assert.Null(dropped.Error);
+        DeveloperGitStash remaining = Assert.Single(dropped.Stashes);
+        Assert.Contains("second checkpoint", remaining.Message, StringComparison.Ordinal);
+        Assert.NotEqual(firstSha, remaining.CommitSha);
+    }
+
+    [Fact]
+    public async Task Stash_operation_rejects_changed_worktree_before_mutation()
+    {
+        await InitializeAsync();
+        var sut = new LibGitDeveloperGitRepository();
+        await File.WriteAllTextAsync(Path.Combine(root, "first.txt"), "stash me\n");
+        DeveloperGitStashInspection before = await sut.InspectStashesAsync(root);
+        DeveloperGitStashResult created = await sut.ApplyStashAsync(new(
+            root, new(before.State!.Fingerprint), DeveloperGitStashOperation.Create,
+            null, "checkpoint", false));
+        DeveloperGitStash stash = Assert.Single(created.Stashes);
+        DeveloperGitStashInspection displayed = await sut.InspectStashesAsync(root);
+        await File.WriteAllTextAsync(Path.Combine(root, "second.txt"), "later change\n");
+
+        DeveloperGitStashResult stale = await sut.ApplyStashAsync(new(
+            root, new(displayed.State!.Fingerprint), DeveloperGitStashOperation.Apply,
+            stash.CommitSha, null, false));
+
+        Assert.Equal("git_state_stale", stale.ErrorCode);
+        Assert.Single(stale.Stashes);
+        Assert.Equal("later change\n", await File.ReadAllTextAsync(Path.Combine(root, "second.txt")));
+    }
+
+    [Fact]
+    public async Task Conflicting_stash_apply_keeps_stash_and_reports_worktree_state()
+    {
+        await InitializeAsync();
+        var sut = new LibGitDeveloperGitRepository();
+        await File.WriteAllTextAsync(Path.Combine(root, "first.txt"), "stashed version\n");
+        DeveloperGitStashInspection initial = await sut.InspectStashesAsync(root);
+        DeveloperGitStashResult created = await sut.ApplyStashAsync(new(
+            root, new(initial.State!.Fingerprint), DeveloperGitStashOperation.Create,
+            null, "conflicting checkpoint", false));
+        DeveloperGitStash stash = Assert.Single(created.Stashes);
+        await File.WriteAllTextAsync(Path.Combine(root, "first.txt"), "committed version\n");
+        using (Repository repository = new(root))
+        {
+            Commands.Stage(repository, "first.txt");
+            Signature signature = new("Harness Tests", "tests@harness.local", DateTimeOffset.UtcNow);
+            repository.Commit("conflicting current commit", signature, signature);
+        }
+        DeveloperGitStashInspection displayed = await sut.InspectStashesAsync(root);
+
+        DeveloperGitStashResult result = await sut.ApplyStashAsync(new(
+            root, new(displayed.State!.Fingerprint), DeveloperGitStashOperation.Apply,
+            stash.CommitSha, null, false));
+
+        Assert.Equal("git_stash_apply_conflict", result.ErrorCode);
+        Assert.Single(result.Stashes);
+        Assert.True(result.State!.Changes.Single(change => change.Path == "first.txt").IsConflicted);
+    }
+
     [Theory]
     [InlineData("../outside.txt")]
     [InlineData(".git/config")]

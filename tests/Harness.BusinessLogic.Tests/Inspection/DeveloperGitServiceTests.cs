@@ -294,6 +294,66 @@ public sealed class DeveloperGitServiceTests
         Assert.Contains("Harness-managed", managed.Error!, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Stash_create_and_apply_route_exact_original_state_and_commit()
+    {
+        Repository repository = new();
+        DeveloperGitService service = new(
+            new ContextResolver(goalContext: false), repository, new GitInspector());
+
+        await service.CreateStashAsync(new(
+            new(new("workspace-id"), null), new("stash-state"),
+            new("checkpoint"), IncludeUntracked: true));
+
+        Assert.Equal(DeveloperGitStashOperation.Create, repository.StashRequest!.Operation);
+        Assert.Equal("checkpoint", repository.StashRequest.Message);
+        Assert.True(repository.StashRequest.IncludeUntracked);
+
+        var stash = new DeveloperGitStashCommitSha(new string('c', 40));
+        await service.ApplyStashAsync(new(
+            new(new("workspace-id"), null), new("stash-state"), stash));
+
+        Assert.Equal(DeveloperGitStashOperation.Apply, repository.StashRequest!.Operation);
+        Assert.Equal(stash.Value, repository.StashRequest.ExpectedStashCommitSha);
+        Assert.False(repository.StashRequest.IncludeUntracked);
+    }
+
+    [Fact]
+    public async Task Stash_drop_requires_exact_preview_and_revalidates_before_apply()
+    {
+        Repository repository = new();
+        DeveloperGitService service = new(
+            new ContextResolver(goalContext: false), repository, new GitInspector());
+        var stash = new DeveloperGitStashCommitSha(new string('c', 40));
+
+        DeveloperGitStashDropPreviewResult result = await service.PreviewStashDropAsync(new(
+            new(new("workspace-id"), null), new("stash-state"), stash));
+        DeveloperGitStashDropPreviewView preview = Assert.IsType<DeveloperGitStashDropPreviewView>(
+            result.Preview);
+
+        Assert.Equal(stash, preview.Stash.CommitSha);
+        Assert.Contains(stash.Value, preview.Consequence, StringComparison.Ordinal);
+        Assert.False(preview.HasGuaranteedRecovery);
+
+        await service.ApplyStashDropAsync(preview);
+
+        Assert.Equal(DeveloperGitStashOperation.Drop, repository.StashRequest!.Operation);
+        Assert.Equal(stash.Value, repository.StashRequest.ExpectedStashCommitSha);
+        Assert.Equal("stash-state", repository.StashRequest.ExpectedFingerprint.Value);
+    }
+
+    [Fact]
+    public async Task Goal_context_cannot_manage_developer_stashes()
+    {
+        DeveloperGitService service = new(
+            new ContextResolver(goalContext: true), new Repository(), new GitInspector());
+
+        DeveloperGitStashInspectionResult result = await service.InspectStashesAsync(
+            new(new("workspace-id"), new("goal-id")));
+
+        Assert.Equal("git_stashes_goal_context_denied", result.ErrorCode);
+    }
+
     private sealed class Repository : IDeveloperGitRepository
     {
         internal bool WorktreeIsDirty { get; init; }
@@ -305,6 +365,7 @@ public sealed class DeveloperGitServiceTests
         internal DeveloperGitBranchRequest? BranchRequest { get; private set; }
         internal DeveloperGitTagRequest? TagRequest { get; private set; }
         internal DeveloperGitWorktreeRequest? WorktreeRequest { get; private set; }
+        internal DeveloperGitStashRequest? StashRequest { get; private set; }
 
         public ValueTask<DeveloperGitIndexResult> UpdateIndexAsync(
             DeveloperGitIndexRequest request,
@@ -403,6 +464,25 @@ public sealed class DeveloperGitServiceTests
                 new("after-worktree-set"),
                 [new("/workspace/repository", "main", new string('a', 40), true, false, null,
                     false, false, false, new("main-state"))], null, null));
+        }
+
+        public ValueTask<DeveloperGitStashInspection> InspectStashesAsync(
+            string repositoryRoot,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new DeveloperGitStashInspection(
+                new("main", new string('a', 40), [], "", false, null, null, "stash-state"),
+                [new("stash@{0}", new string('c', 40), new string('a', 40),
+                    DateTimeOffset.UnixEpoch, "On main: checkpoint", false)], null, null));
+
+        public ValueTask<DeveloperGitStashResult> ApplyStashAsync(
+            DeveloperGitStashRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            StashRequest = request;
+            return ValueTask.FromResult(new DeveloperGitStashResult(
+                new("main", new string('a', 40), [], "", false, null, null, "after-stash"),
+                [], request.Operation == DeveloperGitStashOperation.Apply
+                    ? request.ExpectedStashCommitSha : null, null, null));
         }
     }
 

@@ -120,6 +120,10 @@ internal sealed class WorkbenchDockHost
     private readonly CheckBox createWorktreeBranch = new() { Content = "Create new branch at HEAD" };
     private readonly CheckBox forceWorktreeRemove = new() { Content = "Force removal of dirty worktree" };
     private DeveloperGitWorktreeInspectionResult? currentWorktreeInspection;
+    private readonly ListBox gitStashes = new();
+    private readonly TextBox gitStashMessage = new() { PlaceholderText = "Stash message" };
+    private readonly CheckBox includeUntrackedInStash = new() { Content = "Include untracked files" };
+    private DeveloperGitStashInspectionResult? currentStashInspection;
     private string gitFingerprint = string.Empty;
     private IReadOnlyList<DeveloperGitPatchUnitView> currentPatchUnits = [];
     private WorkbenchWorkspaceContext? currentGitContext;
@@ -820,6 +824,9 @@ internal sealed class WorkbenchDockHost
                     await developerGitService.InspectWorktreesAsync(
                         WorkbenchRequest(active), cancellationToken);
                 RenderGitWorktrees(worktrees);
+                DeveloperGitStashInspectionResult stashes = await developerGitService.InspectStashesAsync(
+                    WorkbenchRequest(active), cancellationToken);
+                RenderGitStashes(stashes);
             }
         });
     }
@@ -1232,6 +1239,99 @@ internal sealed class WorkbenchDockHost
         currentWorktreeInspection = result;
         gitWorktrees.ItemsSource = result.Worktrees.Select(worktree => new WorktreeChoice(worktree)).ToArray();
         gitWorktrees.SelectedIndex = result.Worktrees.Count > 0 ? 0 : -1;
+        if (result.Error is not null) gitStatus.Text = result.Error;
+    }
+
+    internal async ValueTask RefreshGitStashesAsync()
+    {
+        WorkspaceView? active = ActiveWorkspace();
+        if (busy || active is null || developerGitService is null) return;
+        await RunAsync(async () => RenderGitStashes(await developerGitService.InspectStashesAsync(
+            WorkbenchRequest(active), cancellationToken)));
+    }
+
+    internal async ValueTask CreateGitStashAsync()
+    {
+        WorkspaceView? active = ActiveWorkspace();
+        if (busy || active is null || developerGitService is null ||
+            currentStashInspection?.State is null)
+        {
+            gitStatus.Text = "Refresh Git stashes first.";
+            return;
+        }
+        string message = gitStashMessage.Text?.Trim() ?? string.Empty;
+        await RunAsync(async () =>
+        {
+            DeveloperGitStashInspectionResult result = await developerGitService.CreateStashAsync(new(
+                WorkbenchRequest(active),
+                new(currentStashInspection.State.Fingerprint),
+                new(message),
+                includeUntrackedInStash.IsChecked == true), cancellationToken);
+            RenderGitStashes(result);
+            if (result.State is not null) RenderGitState(result.Context, result.State);
+            gitStatus.Text = result.Error ?? "Created a new stash from the displayed working state.";
+        });
+    }
+
+    internal async ValueTask ApplySelectedGitStashAsync()
+    {
+        WorkspaceView? active = ActiveWorkspace();
+        if (busy || active is null || developerGitService is null ||
+            currentStashInspection?.State is null || gitStashes.SelectedItem is not StashChoice selected)
+        {
+            gitStatus.Text = "Select a current Git stash first.";
+            return;
+        }
+        await RunAsync(async () =>
+        {
+            DeveloperGitStashInspectionResult result = await developerGitService.ApplyStashAsync(new(
+                WorkbenchRequest(active), new(currentStashInspection.State.Fingerprint),
+                selected.Stash.CommitSha), cancellationToken);
+            RenderGitStashes(result);
+            if (result.State is not null) RenderGitState(result.Context, result.State);
+            gitStatus.Text = result.Error ??
+                $"Applied {selected.Stash.Selector}; the stash remains available until explicitly deleted.";
+        });
+    }
+
+    internal async ValueTask DropSelectedGitStashAsync()
+    {
+        WorkspaceView? active = ActiveWorkspace();
+        if (busy || active is null || developerGitService is null ||
+            currentStashInspection?.State is null || gitStashes.SelectedItem is not StashChoice selected)
+        {
+            gitStatus.Text = "Select a current Git stash first.";
+            return;
+        }
+        await RunAsync(async () =>
+        {
+            DeveloperGitStashDropPreviewResult result = await developerGitService.PreviewStashDropAsync(new(
+                WorkbenchRequest(active), new(currentStashInspection.State.Fingerprint),
+                selected.Stash.CommitSha), cancellationToken);
+            RenderGitStashes(result.Inspection);
+            if (result.Preview is null)
+            {
+                gitStatus.Text = result.Error ?? "The stash deletion preview is unavailable.";
+                return;
+            }
+            if (!await documentPrompt.ConfirmGitStashDropAsync(result.Preview, OwnerWindow()))
+            {
+                gitStatus.Text = "Stash deletion cancelled; the stash remains available.";
+                return;
+            }
+            DeveloperGitStashInspectionResult applied = await developerGitService.ApplyStashDropAsync(
+                result.Preview, cancellationToken);
+            RenderGitStashes(applied);
+            if (applied.State is not null) RenderGitState(applied.Context, applied.State);
+            gitStatus.Text = applied.Error ?? $"Deleted stash {selected.Stash.Selector}.";
+        });
+    }
+
+    private void RenderGitStashes(DeveloperGitStashInspectionResult result)
+    {
+        currentStashInspection = result;
+        gitStashes.ItemsSource = result.Stashes.Select(stash => new StashChoice(stash)).ToArray();
+        gitStashes.SelectedIndex = result.Stashes.Count > 0 ? 0 : -1;
         if (result.Error is not null) gitStatus.Text = result.Error;
     }
 
@@ -2018,19 +2118,52 @@ internal sealed class WorkbenchDockHost
         Grid.SetRow(gitWorktrees, 3);
         worktreePanel.Children.Add(gitWorktrees);
 
+        WrapPanel stashActions = new() { Orientation = AvaloniaOrientation.Horizontal };
+        Button refreshStashes = new() { Content = "Refresh stashes" };
+        Button createStash = new() { Content = "Create stash" };
+        Button applyStash = new() { Content = "Apply" };
+        Button dropStash = new() { Content = "Delete…" };
+        foreach (Button button in new[] { refreshStashes, createStash, applyStash, dropStash })
+            button.Margin = new Thickness(0, 0, 6, 6);
+        AutomationProperties.SetName(refreshStashes, "Refresh local Git stashes");
+        AutomationProperties.SetName(createStash, "Create Git stash from displayed working state");
+        AutomationProperties.SetName(applyStash, "Apply selected Git stash and keep it");
+        AutomationProperties.SetName(dropStash, "Preview deletion of selected Git stash");
+        AutomationProperties.SetName(gitStashMessage, "New Git stash message");
+        AutomationProperties.SetName(includeUntrackedInStash, "Include untracked files in new Git stash");
+        AutomationProperties.SetName(gitStashes, "Local Git stashes");
+        refreshStashes.Click += async (_, _) => await RefreshGitStashesAsync();
+        createStash.Click += async (_, _) => await CreateGitStashAsync();
+        applyStash.Click += async (_, _) => await ApplySelectedGitStashAsync();
+        dropStash.Click += async (_, _) => await DropSelectedGitStashAsync();
+        stashActions.Children.Add(refreshStashes);
+        stashActions.Children.Add(createStash);
+        stashActions.Children.Add(applyStash);
+        stashActions.Children.Add(dropStash);
+        stashActions.Children.Add(includeUntrackedInStash);
+        Grid stashPanel = new() { RowDefinitions = new("Auto,Auto,*"), RowSpacing = 8 };
+        stashPanel.Children.Add(gitStashMessage);
+        Grid.SetRow(stashActions, 1);
+        stashPanel.Children.Add(stashActions);
+        Grid.SetRow(gitStashes, 2);
+        stashPanel.Children.Add(gitStashes);
+
         TabItem changesTab = new() { Header = "Changes", Content = changePanel };
         TabItem branchesTab = new() { Header = "Branches", Content = branchPanel };
         TabItem tagsTab = new() { Header = "Tags", Content = tagPanel };
         TabItem worktreesTab = new() { Header = "Worktrees", Content = worktreePanel };
+        TabItem stashesTab = new() { Header = "Stashes", Content = stashPanel };
         AutomationProperties.SetName(changesTab, "Git changes tab");
         AutomationProperties.SetName(branchesTab, "Git branches tab");
         AutomationProperties.SetName(tagsTab, "Git tags tab");
         AutomationProperties.SetName(worktreesTab, "Git worktrees tab");
+        AutomationProperties.SetName(stashesTab, "Git stashes tab");
         TabControl tabs = new();
         tabs.Items.Add(changesTab);
         tabs.Items.Add(branchesTab);
         tabs.Items.Add(tagsTab);
         tabs.Items.Add(worktreesTab);
+        tabs.Items.Add(stashesTab);
         tabs.SelectedIndex = 0;
         AutomationProperties.SetName(tabs, "Git workbench sections");
         Grid.SetRow(tabs, 2);
@@ -5363,6 +5496,14 @@ internal sealed class WorkbenchDockHost
             return $"{branch} · {Worktree.HeadSha[..Math.Min(8, Worktree.HeadSha.Length)]} · " +
                    $"{Worktree.Path.Value}{flags}";
         }
+    }
+
+    private sealed record StashChoice(DeveloperGitStashView Stash)
+    {
+        public override string ToString() =>
+            $"{Stash.Selector} · {Stash.CommitSha.Value[..Math.Min(8, Stash.CommitSha.Value.Length)]} · " +
+            $"{Stash.CreatedAt.LocalDateTime:g} · {Stash.Message}" +
+            (Stash.MessageIsTruncated ? "…" : string.Empty);
     }
 
     private abstract record RunOutputChoiceBase(DateTimeOffset StartedAt);

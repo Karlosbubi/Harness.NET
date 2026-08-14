@@ -238,6 +238,49 @@ public sealed record DeveloperGitWorktreeRemovePreviewResult(
     DeveloperGitWorktreeInspectionResult Inspection,
     string? ErrorCode,
     string? Error);
+public sealed record DeveloperGitStashCommitSha(string Value);
+public sealed record DeveloperGitStashMessage(string Value);
+public sealed record DeveloperGitStashView(
+    string Selector,
+    DeveloperGitStashCommitSha CommitSha,
+    string BaseSha,
+    DateTimeOffset CreatedAt,
+    string Message,
+    bool MessageIsTruncated);
+public sealed record DeveloperGitStashInspectionResult(
+    WorkbenchWorkspaceContext Context,
+    WorkspaceGitStateView? State,
+    IReadOnlyList<DeveloperGitStashView> Stashes,
+    DeveloperGitStashCommitSha? AppliedStash,
+    string? ErrorCode,
+    string? Error);
+public sealed record DeveloperGitStashCreateCommand(
+    WorkbenchWorkspaceRequest Workspace,
+    DeveloperGitStateFingerprint ExpectedFingerprint,
+    DeveloperGitStashMessage Message,
+    bool IncludeUntracked);
+public sealed record DeveloperGitStashApplyCommand(
+    WorkbenchWorkspaceRequest Workspace,
+    DeveloperGitStateFingerprint ExpectedFingerprint,
+    DeveloperGitStashCommitSha Stash);
+public sealed record DeveloperGitStashDropPreviewId(string Value);
+public sealed record DeveloperGitStashDropPreviewCommand(
+    WorkbenchWorkspaceRequest Workspace,
+    DeveloperGitStateFingerprint ExpectedFingerprint,
+    DeveloperGitStashCommitSha Stash);
+public sealed record DeveloperGitStashDropPreviewView(
+    DeveloperGitStashDropPreviewId Id,
+    WorkbenchWorkspaceContext Context,
+    DeveloperGitStateFingerprint Fingerprint,
+    DeveloperGitStashView Stash,
+    string Consequence,
+    string Recovery,
+    bool HasGuaranteedRecovery);
+public sealed record DeveloperGitStashDropPreviewResult(
+    DeveloperGitStashDropPreviewView? Preview,
+    DeveloperGitStashInspectionResult Inspection,
+    string? ErrorCode,
+    string? Error);
 public sealed record DeveloperGitPatchCommand(
     WorkbenchWorkspaceRequest Workspace,
     DeveloperGitStateFingerprint ExpectedFingerprint,
@@ -315,5 +358,25 @@ public interface IDeveloperGitService
 
     ValueTask<DeveloperGitWorktreeInspectionResult> ApplyWorktreeRemoveAsync(
         DeveloperGitWorktreeRemovePreviewView preview,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitStashInspectionResult> InspectStashesAsync(
+        WorkbenchWorkspaceRequest workspace,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitStashInspectionResult> CreateStashAsync(
+        DeveloperGitStashCreateCommand command,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitStashInspectionResult> ApplyStashAsync(
+        DeveloperGitStashApplyCommand command,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitStashDropPreviewResult> PreviewStashDropAsync(
+        DeveloperGitStashDropPreviewCommand command,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitStashInspectionResult> ApplyStashDropAsync(
+        DeveloperGitStashDropPreviewView preview,
         CancellationToken cancellationToken = default);
 }

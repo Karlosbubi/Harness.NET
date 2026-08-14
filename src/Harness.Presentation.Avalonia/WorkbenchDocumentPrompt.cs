@@ -69,6 +69,10 @@ internal interface IWorkbenchDocumentPrompt
     ValueTask<bool> ConfirmGitWorktreeRemoveAsync(
         DeveloperGitWorktreeRemovePreviewView preview,
         Window? owner);
+
+    ValueTask<bool> ConfirmGitStashDropAsync(
+        DeveloperGitStashDropPreviewView preview,
+        Window? owner);
 }
 
 internal sealed record DeveloperGitCommitDraft(
@@ -148,6 +152,66 @@ internal sealed class AvaloniaWorkbenchDocumentPrompt : IWorkbenchDocumentPrompt
     {
         if (owner is null) return false;
         return await new GitWorktreeRemoveConfirmationDialog(preview).ShowDialog<bool>(owner);
+    }
+
+    public async ValueTask<bool> ConfirmGitStashDropAsync(
+        DeveloperGitStashDropPreviewView preview,
+        Window? owner)
+    {
+        if (owner is null) return false;
+        return await new GitStashDropConfirmationDialog(preview).ShowDialog<bool>(owner);
+    }
+}
+
+internal sealed class GitStashDropConfirmationDialog : Window
+{
+    internal GitStashDropConfirmationDialog(DeveloperGitStashDropPreviewView preview)
+    {
+        Title = "Confirm stash deletion";
+        Width = 680;
+        SizeToContent = SizeToContent.Height;
+        WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        AutomationProperties.SetName(this, "Confirm exact Git stash deletion");
+        Button confirm = new() { Content = "Delete stash", IsEnabled = false, MinWidth = 120 };
+        Button cancel = new() { Content = "Cancel", IsCancel = true, MinWidth = 88 };
+        CheckBox acknowledge = new()
+        {
+            Content = "I reviewed the exact stash and understand recovery is not guaranteed.",
+        };
+        AutomationProperties.SetName(acknowledge, "Acknowledge Git stash deletion consequences");
+        AutomationProperties.SetName(confirm, "Confirm deletion of exact Git stash");
+        AutomationProperties.SetName(cancel, "Cancel Git stash deletion");
+        acknowledge.IsCheckedChanged += (_, _) => confirm.IsEnabled = acknowledge.IsChecked == true;
+        confirm.Click += (_, _) => Close(true);
+        cancel.Click += (_, _) => Close(false);
+        Content = new StackPanel
+        {
+            Margin = new Thickness(24),
+            Spacing = 12,
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = $"Stash: {preview.Stash.Selector}\n" +
+                           $"Commit: {preview.Stash.CommitSha.Value}\n" +
+                           $"Base: {preview.Stash.BaseSha}\n" +
+                           $"Created: {preview.Stash.CreatedAt.LocalDateTime:g}\n" +
+                           $"Message: {preview.Stash.Message}",
+                    FontWeight = FontWeight.SemiBold,
+                    TextWrapping = TextWrapping.Wrap,
+                },
+                new TextBlock { Text = preview.Consequence, TextWrapping = TextWrapping.Wrap },
+                new TextBlock { Text = preview.Recovery, TextWrapping = TextWrapping.Wrap },
+                acknowledge,
+                new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    Spacing = 8,
+                    Children = { cancel, confirm },
+                },
+            },
+        };
     }
 }
 

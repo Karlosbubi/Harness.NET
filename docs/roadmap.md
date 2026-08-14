@@ -435,8 +435,11 @@ Reference changes invalidate every displayed tag action. Developer worktree mana
 is delivered on a separate complete set fingerprint: inspect, create from an existing
 or new branch, enter through the normal workspace trust flow, and exact confirmed
 removal. Goal-managed and registered worktrees are protected, and dirty removal needs
-an explicit force choice. The Git panel now separates Changes, Branches, Tags, and
-Worktrees into accessible tabs. Stash, history, merge editing, and remotes remain.
+an explicit force choice. Local stash create, exact apply-with-retention, and exact
+confirmed deletion are also delivered. Applying a conflict keeps the stash and shows
+the resulting conflict state; including untracked files during creation is explicit.
+The Git panel now separates Changes, Branches, Tags, Worktrees, and Stashes into
+accessible tabs. History, merge editing, and remotes remain.
 
 ### Planned: Task 051 — developer terminal and structured tasks
 

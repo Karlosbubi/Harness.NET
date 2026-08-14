@@ -56,6 +56,13 @@ public enum DeveloperGitWorktreeOperation
     Remove,
 }
 
+public enum DeveloperGitStashOperation
+{
+    Create,
+    Apply,
+    Drop,
+}
+
 public sealed record DeveloperGitStateFingerprint(string Value);
 public sealed record DeveloperGitPath(string Value);
 public sealed record DeveloperGitIndexRequest(
@@ -181,6 +188,31 @@ public sealed record DeveloperGitWorktreeResult(
     IReadOnlyList<DeveloperGitWorktree> Worktrees,
     string? ErrorCode,
     string? Error);
+public sealed record DeveloperGitStash(
+    string Selector,
+    string CommitSha,
+    string BaseSha,
+    DateTimeOffset CreatedAt,
+    string Message,
+    bool MessageIsTruncated);
+public sealed record DeveloperGitStashInspection(
+    WorkspaceGitState? State,
+    IReadOnlyList<DeveloperGitStash> Stashes,
+    string? ErrorCode,
+    string? Error);
+public sealed record DeveloperGitStashRequest(
+    string RepositoryRoot,
+    DeveloperGitStateFingerprint ExpectedFingerprint,
+    DeveloperGitStashOperation Operation,
+    string? ExpectedStashCommitSha,
+    string? Message,
+    bool IncludeUntracked);
+public sealed record DeveloperGitStashResult(
+    WorkspaceGitState? State,
+    IReadOnlyList<DeveloperGitStash> Stashes,
+    string? AppliedStashCommitSha,
+    string? ErrorCode,
+    string? Error);
 
 public interface IDeveloperGitRepository
 {
@@ -226,5 +258,13 @@ public interface IDeveloperGitRepository
 
     ValueTask<DeveloperGitWorktreeResult> ApplyWorktreeAsync(
         DeveloperGitWorktreeRequest request,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitStashInspection> InspectStashesAsync(
+        string repositoryRoot,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitStashResult> ApplyStashAsync(
+        DeveloperGitStashRequest request,
         CancellationToken cancellationToken = default);
 }

@@ -612,6 +612,135 @@ internal sealed class LibGitDeveloperGitRepository(IApplicationPaths? applicatio
         }
     }
 
+    public async ValueTask<DeveloperGitStashInspection> InspectStashesAsync(
+        string repositoryRoot,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        string? repositoryPath = Repository.Discover(repositoryRoot);
+        if (repositoryPath is null)
+            return StashInspectionFailure("repository_missing", "No Git repository was found.");
+        try
+        {
+            using Repository repository = new(repositoryPath);
+            string root = NormalizeRoot(repository.Info.WorkingDirectory);
+            if (!NormalizeRoot(repositoryRoot).Equals(root, StringComparison.Ordinal))
+                return StashInspectionFailure(
+                    "repository_mismatch", "The workspace root must be the Git repository root.");
+            WorkspaceGitState state = GitRepositoryStateReader.Read(repository, cancellationToken);
+            DeveloperGitStash[] stashes = await ReadStashesAsync(repository, root, cancellationToken);
+            return new(state, stashes, null, null);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is LibGit2SharpException or IOException or
+                                           UnauthorizedAccessException or ArgumentException or
+                                           InvalidOperationException)
+        {
+            return StashInspectionFailure("git_stashes_failed", "Git stashes could not be inspected.");
+        }
+    }
+
+    public async ValueTask<DeveloperGitStashResult> ApplyStashAsync(
+        DeveloperGitStashRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+        DeveloperGitStashInspection before = await InspectStashesAsync(
+            request.RepositoryRoot, cancellationToken);
+        if (before.State is null || before.Error is not null)
+            return new(before.State, before.Stashes, null, before.ErrorCode, before.Error);
+        if (!CryptographicEquals(before.State.Fingerprint, request.ExpectedFingerprint.Value))
+            return new(before.State, before.Stashes, null, "git_state_stale",
+                "Git references or working state changed after display. Refresh and retry.");
+
+        DeveloperGitStash? selected = null;
+        if (request.Operation is DeveloperGitStashOperation.Apply or DeveloperGitStashOperation.Drop)
+        {
+            selected = before.Stashes.SingleOrDefault(stash => stash.CommitSha.Equals(
+                request.ExpectedStashCommitSha, StringComparison.Ordinal));
+            if (selected is null)
+                return new(before.State, before.Stashes, null, "git_stash_missing",
+                    "The selected stash changed or no longer exists. Refresh and retry.");
+        }
+        string? message = request.Message?.Trim();
+        if (request.Operation == DeveloperGitStashOperation.Create &&
+            (string.IsNullOrWhiteSpace(message) || message.Length > 1024))
+            return new(before.State, before.Stashes, null, "git_stash_message_invalid",
+                "Enter a stash message between 1 and 1,024 characters.");
+
+        try
+        {
+            string root = NormalizeRoot(request.RepositoryRoot);
+            using (Repository repository = new(root))
+            {
+                if (repository.Info.CurrentOperation != CurrentOperation.None)
+                    return new(before.State, before.Stashes, null, "git_operation_in_progress",
+                        "Finish the current Git operation before changing stashes.");
+                if (before.State.Changes.Any(change => change.IsConflicted))
+                    return new(before.State, before.Stashes, null, "git_conflicts_present",
+                        "Resolve current Git conflicts before changing stashes.");
+                if (request.Operation == DeveloperGitStashOperation.Create)
+                {
+                    string? authorName = repository.Config.Get<string>("user.name")?.Value?.Trim();
+                    string? authorEmail = repository.Config.Get<string>("user.email")?.Value?.Trim();
+                    if (string.IsNullOrWhiteSpace(authorName) || string.IsNullOrWhiteSpace(authorEmail))
+                        return new(before.State, before.Stashes, null, "git_identity_missing",
+                            "Configure Git user.name and user.email before creating a stash.");
+                    StashModifiers modifiers = request.IncludeUntracked
+                        ? StashModifiers.IncludeUntracked : StashModifiers.Default;
+                    repository.Stashes.Add(
+                        new Signature(authorName, authorEmail, DateTimeOffset.UtcNow), message!, modifiers);
+                }
+            }
+
+            if (request.Operation == DeveloperGitStashOperation.Create)
+            {
+                DeveloperGitStashInspection created = await InspectStashesAsync(
+                    request.RepositoryRoot, CancellationToken.None);
+                return new(created.State, created.Stashes, null, created.ErrorCode, created.Error);
+            }
+
+            List<string> arguments = request.Operation switch
+            {
+                DeveloperGitStashOperation.Apply => ["stash", "apply", "--index", selected!.CommitSha],
+                DeveloperGitStashOperation.Drop => ["stash", "drop", selected!.Selector],
+                _ => throw new InvalidOperationException("Unsupported Git stash operation."),
+            };
+            int exitCode = await RunGitAsync(root, arguments, cancellationToken);
+            DeveloperGitStashInspection after = await InspectStashesAsync(
+                request.RepositoryRoot, CancellationToken.None);
+            if (exitCode != 0)
+            {
+                bool conflicts = after.State?.Changes.Any(change => change.IsConflicted) == true;
+                return new(after.State, after.Stashes, null,
+                    conflicts ? "git_stash_apply_conflict" : "git_stash_rejected",
+                    conflicts
+                        ? "The stash produced conflicts and was kept. Resolve or abort the working-tree changes before retrying."
+                        : "Git rejected the stash operation. Refresh and review the working state.");
+            }
+            return new(after.State, after.Stashes,
+                request.Operation == DeveloperGitStashOperation.Apply ? selected!.CommitSha : null,
+                null, null);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is LibGit2SharpException or IOException or
+                                           UnauthorizedAccessException or ArgumentException or
+                                           InvalidOperationException)
+        {
+            DeveloperGitStashInspection after = await InspectStashesAsync(
+                request.RepositoryRoot, CancellationToken.None);
+            return new(after.State, after.Stashes, null,
+                "git_stash_failed", "Git could not apply the stash operation.");
+        }
+    }
+
     private static string? ValidateWorktreeCreate(
         Repository repository,
         IReadOnlyList<DeveloperGitWorktree> worktrees,
@@ -784,8 +913,106 @@ internal sealed class LibGitDeveloperGitRepository(IApplicationPaths? applicatio
         }
     }
 
+    private static async Task<DeveloperGitStash[]> ReadStashesAsync(
+        Repository repository,
+        string root,
+        CancellationToken cancellationToken)
+    {
+        if (repository.Refs["refs/stash"] is null) return [];
+        ProcessStartInfo startInfo = CreateGitStartInfo(root);
+        foreach (string argument in new[]
+                 {
+                     "log", "-g", "--max-count=500",
+                     "--format=%gd%x00%H%x00%P%x00%cI%x00%gs", "-z", "refs/stash",
+                 })
+            startInfo.ArgumentList.Add(argument);
+        ProcessOutput output = await RunGitForOutputAsync(startInfo, cancellationToken);
+        if (output.ExitCode != 0 || output.IsTruncated)
+            throw new InvalidOperationException("The bounded stash list could not be read.");
+        string[] fields = output.StandardOutput.Split('\0', StringSplitOptions.RemoveEmptyEntries);
+        if (fields.Length % 5 != 0)
+            throw new InvalidOperationException("The stash list format was invalid.");
+        List<DeveloperGitStash> stashes = [];
+        for (int index = 0; index < fields.Length; index += 5)
+        {
+            if (!DateTimeOffset.TryParse(fields[index + 3], System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.RoundtripKind, out DateTimeOffset createdAt))
+                throw new InvalidOperationException("The stash timestamp was invalid.");
+            string message = fields[index + 4];
+            bool truncated = message.Length > 1024;
+            stashes.Add(new(fields[index], fields[index + 1],
+                fields[index + 2].Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? string.Empty,
+                createdAt, truncated ? message[..1024] : message, truncated));
+        }
+        return stashes.ToArray();
+    }
+
+    private static async Task<ProcessOutput> RunGitForOutputAsync(
+        ProcessStartInfo startInfo,
+        CancellationToken cancellationToken)
+    {
+        const int maximumCharacters = 2 * 1024 * 1024;
+        using Process process = new() { StartInfo = startInfo };
+        if (!process.Start()) return new(-1, string.Empty, false);
+        StringBuilder output = new();
+        bool truncated = false;
+        Task standardOutput = Task.Run(async () =>
+        {
+            char[] buffer = new char[4096];
+            int read;
+            while ((read = await process.StandardOutput.ReadAsync(
+                       buffer.AsMemory(), cancellationToken)) > 0)
+            {
+                int available = maximumCharacters - output.Length;
+                if (available > 0) output.Append(buffer, 0, Math.Min(read, available));
+                truncated |= read > available;
+            }
+        }, CancellationToken.None);
+        Task standardError = DrainAsync(process.StandardError, cancellationToken);
+        try
+        {
+            await process.WaitForExitAsync(cancellationToken);
+            await Task.WhenAll(standardOutput, standardError);
+            return new(process.ExitCode, output.ToString(), truncated);
+        }
+        catch (OperationCanceledException)
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            await process.WaitForExitAsync(CancellationToken.None);
+            throw;
+        }
+    }
+
+    private static async Task<int> RunGitAsync(
+        string root,
+        IReadOnlyList<string> arguments,
+        CancellationToken cancellationToken)
+    {
+        ProcessStartInfo startInfo = CreateGitStartInfo(root);
+        foreach (string argument in arguments) startInfo.ArgumentList.Add(argument);
+        using Process process = new() { StartInfo = startInfo };
+        if (!process.Start()) return -1;
+        Task standardError = DrainAsync(process.StandardError, cancellationToken);
+        Task standardOutput = DrainAsync(process.StandardOutput, cancellationToken);
+        try
+        {
+            await process.WaitForExitAsync(cancellationToken);
+            await Task.WhenAll(standardError, standardOutput);
+            return process.ExitCode;
+        }
+        catch (OperationCanceledException)
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            await process.WaitForExitAsync(CancellationToken.None);
+            throw;
+        }
+    }
+
     private static DeveloperGitWorktreeInspection WorktreeInspectionFailure(string code, string error) =>
         new(null, null, [], code, error);
+
+    private static DeveloperGitStashInspection StashInspectionFailure(string code, string error) =>
+        new(null, [], code, error);
 
     private static DeveloperGitTag[] MapTags(Repository repository) =>
         repository.Tags.OrderBy(tag => tag.FriendlyName, StringComparer.Ordinal)
@@ -1095,6 +1322,8 @@ internal sealed class LibGitDeveloperGitRepository(IApplicationPaths? applicatio
 
     private static DeveloperGitTagResult TagFailure(string code, string error) =>
         new(null, [], code, error);
+
+    private sealed record ProcessOutput(int ExitCode, string StandardOutput, bool IsTruncated);
 
     private sealed class GitPatchUnitUnavailableException : Exception;
 }
