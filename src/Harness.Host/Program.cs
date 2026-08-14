@@ -369,6 +369,7 @@ IHostApplicationLifetime applicationLifetime =
     host.Services.GetRequiredService<IHostApplicationLifetime>();
 using CancellationTokenSource shutdown = CancellationTokenSource.CreateLinkedTokenSource(
     applicationLifetime.ApplicationStopping);
+using IDisposable terminationSignal = HostShutdownSignals.RegisterTermination(shutdown);
 ConsoleCancelEventHandler cancelHandler = (_, eventArgs) =>
 {
     eventArgs.Cancel = true;
