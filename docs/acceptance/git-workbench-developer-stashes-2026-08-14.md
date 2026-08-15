@@ -59,3 +59,22 @@ accessibility and publish gates remain open.
 - Changed-file formatting and whitespace verification completed without findings.
 - The patch credential/machine-path scan had no matches. The tracked-tree scan found
   only the existing source literals that detect private-key markers.
+
+## Live dogfood
+
+The separately running `Harness.NET-live` checkout was fast-forwarded to each pushed
+slice. Its inbound MCP catalog exposed the read-only application, workspace, tree,
+file, search, Git, code-intelligence, documentation, goal, and run tools permitted by
+the local settings. It correctly omitted the sensitive generic UI activation tool,
+so MCP could verify repository state and the Stashes implementation source but could
+not switch the visible application to the Git panel. The headless Avalonia tests are
+therefore the interaction proof for this slice; a generic remote click was not added
+to bypass the policy.
+
+Repeated live restarts exposed a separate host-lifecycle defect: SIGTERM closed the
+window and listener but a synchronously blocked nested MCP HTTP-host stop kept the
+process alive. The inbound server is now owned by the outer host, the nested server no
+longer owns process signals, and nested stop/dispose operations have an observable,
+five-second OS-timed boundary. A synced direct-binary run then exited with code 0 after
+SIGTERM. No repository content, credentials, provider calls, or model spend were used
+for that proof.
