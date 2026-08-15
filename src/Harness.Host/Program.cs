@@ -459,6 +459,7 @@ try
         {
             await host.Services.GetRequiredService<ITerminalShell>().RunAsync(shutdown.Token);
         }
+        logger.LogInformation("Interactive frontend stopped");
     }
     else
     {
@@ -469,7 +470,9 @@ try
         }
     }
 
+    logger.LogInformation("Stopping Harness.NET host");
     await host.StopAsync(CancellationToken.None);
+    logger.LogInformation("Harness.NET host stopped");
 }
 catch (OperationCanceledException) when (shutdown.IsCancellationRequested)
 {
