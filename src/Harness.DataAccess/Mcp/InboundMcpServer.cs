@@ -391,6 +391,32 @@ internal sealed class InboundMcpTools(
     public ValueTask<string> GitAsync(CancellationToken cancellationToken) =>
         InvokeAsync(new("harness_git"), context => application.GetGitAsync(context, cancellationToken));
 
+    [McpServerTool(Name = "harness_git_history", ReadOnly = true, Destructive = false,
+        Idempotent = true, OpenWorld = false)]
+    [Description("Inspect a bounded, cursor-paged commit graph for the active workspace or an optional approved goal source context. An optional tracked path returns its rename-following file timeline.")]
+    public ValueTask<string> GitHistoryAsync(
+        string? goalId, string? relativePath, string? cursor, int maximumResults,
+        CancellationToken cancellationToken) =>
+        InvokeAsync(new("harness_git_history"), context => application.GetGitHistoryAsync(
+            context, new(goalId, relativePath, cursor, maximumResults), cancellationToken));
+
+    [McpServerTool(Name = "harness_git_commit", ReadOnly = true, Destructive = false,
+        Idempotent = true, OpenWorld = false)]
+    [Description("Inspect exact commit metadata and root or per-parent patches by full commit SHA in the active workspace or an optional approved goal source context.")]
+    public ValueTask<string> GitCommitAsync(
+        string? goalId, string commitSha, CancellationToken cancellationToken) =>
+        InvokeAsync(new("harness_git_commit"), context => application.GetGitCommitAsync(
+            context, new(goalId, commitSha), cancellationToken));
+
+    [McpServerTool(Name = "harness_git_blame", ReadOnly = true, Destructive = false,
+        Idempotent = true, OpenWorld = false)]
+    [Description("Inspect a bounded one-based blame page for a tracked file at HEAD in the active workspace or an optional approved goal source context.")]
+    public ValueTask<string> GitBlameAsync(
+        string? goalId, string relativePath, int startLine, int maximumLines,
+        CancellationToken cancellationToken) =>
+        InvokeAsync(new("harness_git_blame"), context => application.GetGitBlameAsync(
+            context, new(goalId, relativePath, startLine, maximumLines), cancellationToken));
+
     [McpServerTool(Name = "harness_project_graph", ReadOnly = true, Destructive = false,
         Idempotent = true, OpenWorld = false)]
     [Description("Inspect active-workspace .NET projects, targets, package references, and direct project edges without restore.")]

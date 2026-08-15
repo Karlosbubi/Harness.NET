@@ -81,6 +81,14 @@ It produced and validated the self-contained Linux x64 application successfully.
 The server accepts no non-loopback bind. Do not proxy or port-forward it. The client
 header is a policy label and another same-user local process can spoof it.
 
+Read-only Git inspection is split by result shape. `harness_git` returns working-tree
+state and bounded tracked diffs. `harness_git_history` returns cursor-paged repository
+or rename-following file history, `harness_git_commit` returns exact metadata and
+per-parent patches for one full SHA, and `harness_git_blame` returns a bounded line
+range at HEAD. The latter three accept an optional goal ID and report whether the
+resolved source is the original workspace or an approved goal worktree. They add no
+Git mutation, network, shell, or goal authority.
+
 ## Normal-mode dogfood follow-up
 
 A second Harness.NET checkout was run normally and connected as a stateless MCP

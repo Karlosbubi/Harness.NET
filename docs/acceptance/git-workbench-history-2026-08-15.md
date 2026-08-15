@@ -21,6 +21,12 @@ active original workspace or approved goal worktree.
 - Business Logic resolves the active source context. Repository traversal, diff, and
   blame run away from the UI thread and observe cancellation. No mutation, shell,
   network, credential, provider, or goal-approval authority is added.
+- The same typed read boundary is available to local MCP clients as
+  `harness_git_history`, `harness_git_commit`, and `harness_git_blame`. Each request
+  can inspect the active original workspace or name an approved goal worktree. The
+  returned source-context identity makes that choice explicit. Existing custom MCP
+  allowlists remain unchanged; the three tools are enabled in new default settings
+  and can be selected separately in Settings → Harness control.
 
 All displayed collections and text are bounded: 200 history rows per Data Access
 request, 500 blame lines, 1,024 characters per history subject, 131,072 characters per

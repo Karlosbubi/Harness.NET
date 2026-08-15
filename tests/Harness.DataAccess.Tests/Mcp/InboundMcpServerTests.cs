@@ -44,7 +44,7 @@ public sealed class InboundMcpServerTests
             transport, loggerFactory: NullLoggerFactory.Instance);
         IList<McpClientTool> tools = await client.ListToolsAsync();
 
-        Assert.Equal(16, tools.Count);
+        Assert.Equal(19, tools.Count);
         Assert.Contains("no shell", client.ServerInstructions, StringComparison.OrdinalIgnoreCase);
         Assert.All(tools, tool => Assert.StartsWith("harness_", tool.Name, StringComparison.Ordinal));
         Assert.DoesNotContain(tools, tool =>
@@ -123,6 +123,34 @@ public sealed class InboundMcpServerTests
                 });
         Assert.NotEqual(true, workflowEvidence.IsError);
         Assert.Equal(new("goal-a", 7, "3"), application.LastWorkflowEvidence);
+        var history = await tools.Single(tool => tool.Name == "harness_git_history").CallAsync(
+            new Dictionary<string, object?>
+            {
+                ["goalId"] = "goal-a",
+                ["relativePath"] = "README.md",
+                ["cursor"] = "abc123",
+                ["maximumResults"] = 25,
+            });
+        Assert.NotEqual(true, history.IsError);
+        Assert.Equal(new("goal-a", "README.md", "abc123", 25), application.LastGitHistory);
+        var commit = await tools.Single(tool => tool.Name == "harness_git_commit").CallAsync(
+            new Dictionary<string, object?>
+            {
+                ["goalId"] = null,
+                ["commitSha"] = "def456",
+            });
+        Assert.NotEqual(true, commit.IsError);
+        Assert.Equal(new(null, "def456"), application.LastGitCommit);
+        var blame = await tools.Single(tool => tool.Name == "harness_git_blame").CallAsync(
+            new Dictionary<string, object?>
+            {
+                ["goalId"] = null,
+                ["relativePath"] = "README.md",
+                ["startLine"] = 11,
+                ["maximumLines"] = 40,
+            });
+        Assert.NotEqual(true, blame.IsError);
+        Assert.Equal(new(null, "README.md", 11, 40), application.LastGitBlame);
         var stale = await tools.Single(tool => tool.Name == "harness_open_document").CallAsync(
             new Dictionary<string, object?>
             {
@@ -218,7 +246,8 @@ public sealed class InboundMcpServerTests
     private static InboundMcpServerSettings Settings(Uri endpoint) => new(
         true, InboundMcpMode.Normal, endpoint, [],
         [new("harness_application"), new("harness_workspace"), new("harness_tree"),
-            new("harness_read_range"), new("harness_git"), new("harness_project_graph"),
+            new("harness_read_range"), new("harness_git"), new("harness_git_history"),
+            new("harness_git_commit"), new("harness_git_blame"), new("harness_project_graph"),
             new("harness_goals"), new("harness_evidence"),
             new("harness_workflow_evidence"),
             new("harness_build"), new("harness_open_document"), new("harness_create_goal"),
@@ -282,6 +311,9 @@ public sealed class InboundMcpServerTests
         public InboundMcpGoalCatalogRequest? LastCatalog { get; private set; }
         public InboundMcpEvidenceRequest? LastEvidence { get; private set; }
         public InboundMcpWorkflowEvidenceRequest? LastWorkflowEvidence { get; private set; }
+        public InboundMcpGitHistoryRequest? LastGitHistory { get; private set; }
+        public InboundMcpGitCommitRequest? LastGitCommit { get; private set; }
+        public InboundMcpGitBlameRequest? LastGitBlame { get; private set; }
         public ValueTask<InboundMcpApplicationResult> GetApplicationAsync(
             InboundMcpCallContext context, CancellationToken cancellationToken = default)
         {
@@ -300,6 +332,30 @@ public sealed class InboundMcpServerTests
             InboundMcpRangeRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public ValueTask<InboundMcpApplicationResult> GetGitAsync(InboundMcpCallContext context,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<InboundMcpApplicationResult> GetGitHistoryAsync(
+            InboundMcpCallContext context, InboundMcpGitHistoryRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            LastGitHistory = request;
+            return ValueTask.FromResult(new InboundMcpApplicationResult(
+                "{\"commits\":[]}", false, null, null));
+        }
+        public ValueTask<InboundMcpApplicationResult> GetGitCommitAsync(
+            InboundMcpCallContext context, InboundMcpGitCommitRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            LastGitCommit = request;
+            return ValueTask.FromResult(new InboundMcpApplicationResult(
+                "{\"commit\":{}}", false, null, null));
+        }
+        public ValueTask<InboundMcpApplicationResult> GetGitBlameAsync(
+            InboundMcpCallContext context, InboundMcpGitBlameRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            LastGitBlame = request;
+            return ValueTask.FromResult(new InboundMcpApplicationResult(
+                "{\"lines\":[]}", false, null, null));
+        }
         public ValueTask<InboundMcpApplicationResult> GetProjectGraphAsync(InboundMcpCallContext context,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public ValueTask<InboundMcpApplicationResult> ListGoalsAsync(InboundMcpCallContext context,

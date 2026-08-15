@@ -74,6 +74,17 @@ public sealed record InboundMcpTreeRequest(
     string? Continuation);
 
 public sealed record InboundMcpRangeRequest(string RelativePath, int StartLine, int LineCount);
+public sealed record InboundMcpGitHistoryRequest(
+    string? GoalId,
+    string? RelativePath,
+    string? Cursor,
+    int MaximumResults);
+public sealed record InboundMcpGitCommitRequest(string? GoalId, string CommitSha);
+public sealed record InboundMcpGitBlameRequest(
+    string? GoalId,
+    string RelativePath,
+    int StartLine,
+    int MaximumLines);
 public sealed record InboundMcpGoalRequest(string GoalId);
 public sealed record InboundMcpGoalListRequest(
     string? GoalId,
@@ -194,6 +205,18 @@ public interface IInboundMcpApplication
 
     ValueTask<InboundMcpApplicationResult> GetGitAsync(
         InboundMcpCallContext context, CancellationToken cancellationToken = default);
+
+    ValueTask<InboundMcpApplicationResult> GetGitHistoryAsync(
+        InboundMcpCallContext context, InboundMcpGitHistoryRequest request,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<InboundMcpApplicationResult> GetGitCommitAsync(
+        InboundMcpCallContext context, InboundMcpGitCommitRequest request,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<InboundMcpApplicationResult> GetGitBlameAsync(
+        InboundMcpCallContext context, InboundMcpGitBlameRequest request,
+        CancellationToken cancellationToken = default);
 
     ValueTask<InboundMcpApplicationResult> GetProjectGraphAsync(
         InboundMcpCallContext context, CancellationToken cancellationToken = default);

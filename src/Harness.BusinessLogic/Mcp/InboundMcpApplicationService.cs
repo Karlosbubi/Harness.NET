@@ -23,6 +23,7 @@ internal sealed class InboundMcpApplicationService(
     IWorkspaceService workspaceService,
     IWorkspaceAdvancedInspector advancedInspector,
     IWorkspaceGitInspector gitInspector,
+    IDeveloperGitService developerGitService,
     IWorkspaceDotNetInspector dotNetInspector,
     IGoalService goalService,
     IGoalModelService goalModelService,
@@ -43,7 +44,8 @@ internal sealed class InboundMcpApplicationService(
     public IReadOnlyList<InboundMcpToolPolicy> ToolPolicies { get; } =
     [
         Read("harness_application"), Read("harness_workspace"), Read("harness_tree"),
-        Read("harness_read_range"), Read("harness_git"), Read("harness_project_graph"),
+        Read("harness_read_range"), Read("harness_git"), Read("harness_git_history"),
+        Read("harness_git_commit"), Read("harness_git_blame"), Read("harness_project_graph"),
         Read("harness_goals"), Read("harness_evidence"),
         Read("harness_workflow_evidence"), Read("harness_ui", sensitive: true),
         Read("harness_goal_models"), Read("harness_commit_preview"),
@@ -191,6 +193,59 @@ internal sealed class InboundMcpApplicationService(
             result,
             freshness = context.RequestedAt
         });
+    }
+
+    public async ValueTask<InboundMcpApplicationResult> GetGitHistoryAsync(
+        InboundMcpCallContext context,
+        InboundMcpGitHistoryRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        WorkspaceView? workspace = await TrustedWorkspaceAsync(context, cancellationToken);
+        if (workspace is null) return WorkspaceFailure(context);
+        DeveloperGitHistoryPageView result = await developerGitService.InspectHistoryAsync(
+            new(
+                WorkspaceRequest(workspace, request.GoalId),
+                string.IsNullOrWhiteSpace(request.RelativePath)
+                    ? null
+                    : new Harness.BusinessLogic.Inspection.DeveloperGitPath(request.RelativePath),
+                string.IsNullOrWhiteSpace(request.Cursor)
+                    ? null
+                    : new Harness.BusinessLogic.Inspection.DeveloperGitHistoryCursor(request.Cursor),
+                request.MaximumResults),
+            cancellationToken);
+        return GitSuccess(context, workspace, result.Context, result);
+    }
+
+    public async ValueTask<InboundMcpApplicationResult> GetGitCommitAsync(
+        InboundMcpCallContext context,
+        InboundMcpGitCommitRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        WorkspaceView? workspace = await TrustedWorkspaceAsync(context, cancellationToken);
+        if (workspace is null) return WorkspaceFailure(context);
+        Harness.BusinessLogic.Inspection.DeveloperGitCommitDetailResult result =
+            await developerGitService.InspectCommitAsync(
+                WorkspaceRequest(workspace, request.GoalId),
+                new Harness.BusinessLogic.Inspection.DeveloperGitCommitSha(request.CommitSha),
+                cancellationToken);
+        return GitSuccess(context, workspace, result.Context, result);
+    }
+
+    public async ValueTask<InboundMcpApplicationResult> GetGitBlameAsync(
+        InboundMcpCallContext context,
+        InboundMcpGitBlameRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        WorkspaceView? workspace = await TrustedWorkspaceAsync(context, cancellationToken);
+        if (workspace is null) return WorkspaceFailure(context);
+        DeveloperGitBlamePageView result = await developerGitService.InspectBlameAsync(
+            new(
+                WorkspaceRequest(workspace, request.GoalId),
+                new Harness.BusinessLogic.Inspection.DeveloperGitPath(request.RelativePath),
+                request.StartLine,
+                request.MaximumLines),
+            cancellationToken);
+        return GitSuccess(context, workspace, result.Context, result);
     }
 
     public async ValueTask<InboundMcpApplicationResult> GetProjectGraphAsync(
@@ -962,6 +1017,26 @@ internal sealed class InboundMcpApplicationService(
 
     private static string SourceId(WorkspaceView workspace) =>
         $"{workspace.Id}:original:{workspace.Branch}:{workspace.EntryPoint}";
+
+    private static WorkbenchWorkspaceRequest WorkspaceRequest(
+        WorkspaceView workspace,
+        string? goalId) => new(
+        new(workspace.Id),
+        string.IsNullOrWhiteSpace(goalId) ? null : new GoalId(goalId));
+
+    private static InboundMcpApplicationResult GitSuccess(
+        InboundMcpCallContext callContext,
+        WorkspaceView workspace,
+        WorkbenchWorkspaceContext sourceContext,
+        object result) => Success(new
+        {
+            instanceId = callContext.InstanceId.Value,
+            sourceContextId = $"{workspace.Id}:{sourceContext.Scope}:" +
+                (sourceContext.GoalId?.Value ?? sourceContext.Branch?.Value),
+            sourceContext,
+            result,
+            freshness = callContext.RequestedAt,
+        });
 
     private static bool TryPage(
         int maximumResults,

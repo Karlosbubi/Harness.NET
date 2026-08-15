@@ -109,7 +109,8 @@ internal sealed class SettingsWindow : Window
     private static readonly string[] DefaultHarnessControlTools =
     [
         "harness_application", "harness_workspace", "harness_tree",
-        "harness_read_range", "harness_git", "harness_project_graph",
+        "harness_read_range", "harness_git", "harness_git_history",
+        "harness_git_commit", "harness_git_blame", "harness_project_graph",
         "harness_goals", "harness_evidence", "harness_workflow_evidence",
         "harness_goal_models",
         "harness_commit_preview", "harness_code_problems", "harness_code_symbol",
@@ -1031,7 +1032,8 @@ internal sealed class SettingsWindow : Window
         InboundControlSettings configured = snapshot?.Settings ?? new(
             false, InboundControlMode.Normal, new Uri("http://127.0.0.1:57431/mcp"), [],
             [new("harness_application"), new("harness_workspace"), new("harness_tree"),
-                new("harness_read_range"), new("harness_git"), new("harness_project_graph"),
+                new("harness_read_range"), new("harness_git"), new("harness_git_history"),
+                new("harness_git_commit"), new("harness_git_blame"), new("harness_project_graph"),
                 new("harness_goals"), new("harness_evidence"),
                 new("harness_workflow_evidence"), new("harness_goal_models"),
                 new("harness_commit_preview"), new("harness_ui"),
