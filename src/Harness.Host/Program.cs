@@ -144,6 +144,8 @@ builder.Services.AddSingleton<IInboundMcpApplication, InboundMcpApplicationServi
 builder.Services.AddSingleton<InboundMcpServer>();
 builder.Services.AddSingleton<IInboundMcpRuntime>(services =>
     services.GetRequiredService<InboundMcpServer>());
+builder.Services.AddSingleton<IHostedService>(services =>
+    services.GetRequiredService<InboundMcpServer>());
 builder.Services.AddSingleton<IInboundMcpSettingsService, InboundMcpSettingsService>();
 builder.Services.AddSingleton(new HttpClient
 {
@@ -404,7 +406,6 @@ try
             throw new InvalidOperationException($"Evaluation fixture registration failed: {registered.Error}");
         await workspaces.SetTrustAsync(registered.Workspace.Id, true, shutdown.Token);
     }
-    await host.Services.GetRequiredService<IInboundMcpRuntime>().ApplyAsync(shutdown.Token);
     await host.Services.GetRequiredService<IVisualCaptureService>()
         .CleanupAsync(shutdown.Token);
     await host.Services.GetRequiredService<IMcpSettingsService>()
