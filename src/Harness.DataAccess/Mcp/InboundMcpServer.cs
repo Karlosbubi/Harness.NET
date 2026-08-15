@@ -33,6 +33,7 @@ internal sealed class InboundMcpServer(
         new(Guid.Empty.ToString("N")), false, XdgInboundMcpSettingsStore.Default.Endpoint,
         InboundMcpMode.Normal, [], null, null);
     private int disposed;
+    private readonly ILogger logger = loggerFactory.CreateLogger<InboundMcpServer>();
 
     public InboundMcpServerStatus Current => current;
 
@@ -245,8 +246,11 @@ internal sealed class InboundMcpServer(
         RevokeInFlightRequests();
         if (active is not null)
         {
+            logger.LogInformation("Stopping inbound MCP HTTP host");
             await active.StopAsync(cancellationToken);
+            logger.LogInformation("Disposing inbound MCP HTTP host");
             await active.DisposeAsync();
+            logger.LogInformation("Inbound MCP HTTP host stopped");
         }
         lock (clients) clients.Clear();
         Publish(false, null, null);
