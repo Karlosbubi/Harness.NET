@@ -53,8 +53,18 @@ goal commit remain open.
 ## Verification
 
 - Focused Data Access developer Git tests: 38 passed.
+- Focused Data Access MCP tests: 26 passed.
 - Focused Business Logic developer Git tests: 17 passed.
 - Focused headless Avalonia Git tests: 17 passed.
 - Full deterministic solution: 803 passed, 0 failed, 0 skipped.
 - The solution build completed with 0 warnings and 0 errors.
 - Changed-file formatting and whitespace verification completed without findings.
+
+The pushed commit was fast-forwarded into the separate live checkout, rebuilt with
+zero warnings, and restarted. Its unauthenticated loopback MCP server advertised the
+three tools as read-only. Direct stateless calls then proved a three-entry history
+page with a continuation cursor, exact commit selection with the expected parent and
+nine changed paths, and a three-line README blame page with the next line set to four.
+All three results reported the original-workspace source context and the live HEAD.
+The live working tree contained only its deliberately private untracked client
+configuration; no content from that file was read or returned.
