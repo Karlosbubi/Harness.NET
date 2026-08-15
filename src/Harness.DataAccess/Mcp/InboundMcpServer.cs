@@ -59,6 +59,7 @@ internal sealed class InboundMcpServer(
             {
                 ApplicationName = typeof(InboundMcpServer).Assembly.FullName,
             });
+            builder.Services.AddSingleton<IHostLifetime, NestedMcpHostLifetime>();
             builder.Logging.ClearProviders();
             builder.Logging.AddProvider(new ForwardingLoggerProvider(loggerFactory));
             builder.WebHost.ConfigureKestrel(kestrel =>
@@ -256,6 +257,15 @@ internal sealed class InboundMcpServer(
         if (Interlocked.Exchange(ref disposed, 1) != 0) return;
         await StopServerAsync(CancellationToken.None);
         lock (clients) requestRevocation.Dispose();
+    }
+
+    private sealed class NestedMcpHostLifetime : IHostLifetime
+    {
+        public Task WaitForStartAsync(CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        public Task StopAsync(CancellationToken cancellationToken) =>
+            Task.CompletedTask;
     }
 
     private sealed class ForwardingLoggerProvider(ILoggerFactory factory) : ILoggerProvider
