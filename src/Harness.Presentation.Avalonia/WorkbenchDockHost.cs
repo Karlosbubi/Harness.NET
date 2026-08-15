@@ -124,6 +124,12 @@ internal sealed class WorkbenchDockHost
     private readonly TextBox gitStashMessage = new() { PlaceholderText = "Stash message" };
     private readonly CheckBox includeUntrackedInStash = new() { Content = "Include untracked files" };
     private DeveloperGitStashInspectionResult? currentStashInspection;
+    private readonly TextBox gitHistoryPath = new() { PlaceholderText = "Optional repository path" };
+    private readonly ListBox gitHistory = new();
+    private readonly TextEditor gitHistoryDetails = CodeEditorView.Create(
+        string.Empty, isReadOnly: true, wordWrap: false, showLineNumbers: false,
+        path: "git-history.patch");
+    private DeveloperGitHistoryPageView? currentHistoryPage;
     private string gitFingerprint = string.Empty;
     private IReadOnlyList<DeveloperGitPatchUnitView> currentPatchUnits = [];
     private WorkbenchWorkspaceContext? currentGitContext;
@@ -828,6 +834,8 @@ internal sealed class WorkbenchDockHost
                     WorkbenchRequest(active), cancellationToken);
                 RenderGitStashes(stashes);
             }
+            if (developerGitService is not null)
+                await RefreshGitHistoryCoreAsync(active, append: false);
         });
     }
 
@@ -1333,6 +1341,85 @@ internal sealed class WorkbenchDockHost
         gitStashes.ItemsSource = result.Stashes.Select(stash => new StashChoice(stash)).ToArray();
         gitStashes.SelectedIndex = result.Stashes.Count > 0 ? 0 : -1;
         if (result.Error is not null) gitStatus.Text = result.Error;
+    }
+
+    internal async ValueTask RefreshGitHistoryAsync(bool append = false)
+    {
+        WorkspaceView? active = ActiveWorkspace();
+        if (busy || active is null || developerGitService is null) return;
+        await RunAsync(() => RefreshGitHistoryCoreAsync(active, append));
+    }
+
+    private async ValueTask RefreshGitHistoryCoreAsync(WorkspaceView active, bool append)
+    {
+        string pathText = gitHistoryPath.Text?.Trim() ?? string.Empty;
+        DeveloperGitPath? path = pathText.Length == 0 ? null : new(pathText);
+        DeveloperGitHistoryPageView? previous = currentHistoryPage;
+        DeveloperGitHistoryCursor? cursor = append && previous is not null && previous.Path == path
+            ? previous.NextCursor : null;
+        DeveloperGitHistoryPageView page = await developerGitService!.InspectHistoryAsync(new(
+            WorkbenchRequest(active), path, cursor, MaximumResults: 100), cancellationToken);
+        if (append && previous is not null && page.Error is null)
+            page = page with { Commits = previous.Commits.Concat(page.Commits).ToArray() };
+        currentHistoryPage = page;
+        gitHistory.ItemsSource = BuildHistoryChoices(page.Commits);
+        if (!append) gitHistory.SelectedIndex = page.Commits.Count > 0 ? 0 : -1;
+        gitStatus.Text = page.Error ?? (page.Path is null
+            ? $"Showing {page.Commits.Count} commits." :
+            $"Showing {page.Commits.Count} commits for {page.Path.Value}.");
+    }
+
+    private async ValueTask ShowSelectedGitCommitAsync()
+    {
+        WorkspaceView? active = ActiveWorkspace();
+        if (busy || active is null || developerGitService is null ||
+            gitHistory.SelectedItem is not HistoryChoice selected) return;
+        await RunAsync(async () =>
+        {
+            DeveloperGitCommitDetailResult result = await developerGitService.InspectCommitAsync(
+                WorkbenchRequest(active), selected.Commit.Sha, cancellationToken);
+            if (result.Detail is null)
+            {
+                gitHistoryDetails.Text = result.Error ?? "The selected commit is unavailable.";
+                return;
+            }
+            DeveloperGitCommitDetailView detail = result.Detail;
+            string parents = detail.Parents.Count == 0 ? "root" :
+                string.Join(", ", detail.Parents.Select(parent => parent.Value));
+            string references = detail.References.Count == 0 ? "none" :
+                string.Join(", ", detail.References);
+            string diffs = string.Join("\n\n", detail.ParentDiffs.Select(diff =>
+                $"--- {(diff.Parent is null ? "empty tree" : diff.Parent.Value)} -> {detail.Sha.Value} " +
+                $"({diff.Paths.Count} path(s)){(diff.IsTruncated ? " · truncated" : string.Empty)} ---\n" +
+                diff.Patch));
+            gitHistoryDetails.Text = $"Commit {detail.Sha.Value}\nParents {parents}\nReferences {references}\n" +
+                $"Author {detail.AuthorName} <{detail.AuthorEmail}> · {detail.AuthoredAt:u}\n" +
+                $"Committer {detail.CommitterName} <{detail.CommitterEmail}> · {detail.CommittedAt:u}\n\n" +
+                $"{detail.Message}{(detail.MessageIsTruncated ? "\n[message truncated]" : string.Empty)}\n\n{diffs}";
+            gitStatus.Text = $"Showing exact parent/child diff for {detail.Sha.Value}.";
+        });
+    }
+
+    private async ValueTask ShowGitBlameAsync()
+    {
+        WorkspaceView? active = ActiveWorkspace();
+        string path = gitHistoryPath.Text?.Trim() ?? string.Empty;
+        if (busy || active is null || developerGitService is null || path.Length == 0)
+        {
+            gitStatus.Text = "Enter a repository path before opening blame.";
+            return;
+        }
+        await RunAsync(async () =>
+        {
+            DeveloperGitBlamePageView page = await developerGitService.InspectBlameAsync(new(
+                WorkbenchRequest(active), new(path), StartLine: 1, MaximumLines: 500), cancellationToken);
+            gitHistoryDetails.Text = page.Error ?? string.Join('\n', page.Lines.Select(line =>
+                $"{line.LineNumber,6} {line.Commit.Value[..Math.Min(8, line.Commit.Value.Length)]} " +
+                $"{line.AuthorName} {line.OriginalPath.Value}:{line.OriginalLineNumber}  {line.Text}")) +
+                (page.NextStartLine is null ? string.Empty :
+                    $"\n\nBlame is paged; next line is {page.NextStartLine.Value}.");
+            gitStatus.Text = page.Error ?? $"Showing blame for {path}.";
+        });
     }
 
     internal async ValueTask PreviewAndApplyGitDestructiveAsync(DeveloperGitDestructiveAction action)
@@ -2148,22 +2235,53 @@ internal sealed class WorkbenchDockHost
         Grid.SetRow(gitStashes, 2);
         stashPanel.Children.Add(gitStashes);
 
+        WrapPanel historyActions = new() { Orientation = AvaloniaOrientation.Horizontal };
+        Button refreshHistory = new() { Content = "Refresh history" };
+        Button moreHistory = new() { Content = "Load more" };
+        Button blamePath = new() { Content = "Blame path" };
+        foreach (Button button in new[] { refreshHistory, moreHistory, blamePath })
+            button.Margin = new Thickness(0, 0, 6, 6);
+        AutomationProperties.SetName(gitHistoryPath, "Optional path for Git file history and blame");
+        AutomationProperties.SetName(refreshHistory, "Refresh Git history or file timeline");
+        AutomationProperties.SetName(moreHistory, "Load next page of Git history");
+        AutomationProperties.SetName(blamePath, "Show blame for repository path");
+        AutomationProperties.SetName(gitHistory, "Paged Git commit history");
+        AutomationProperties.SetName(gitHistoryDetails, "Selected Git commit details and parent diffs");
+        refreshHistory.Click += async (_, _) => await RefreshGitHistoryAsync();
+        moreHistory.Click += async (_, _) => await RefreshGitHistoryAsync(append: true);
+        blamePath.Click += async (_, _) => await ShowGitBlameAsync();
+        gitHistory.SelectionChanged += async (_, _) => await ShowSelectedGitCommitAsync();
+        historyActions.Children.Add(refreshHistory);
+        historyActions.Children.Add(moreHistory);
+        historyActions.Children.Add(blamePath);
+        Grid historyPanel = new() { RowDefinitions = new("Auto,Auto,*,2*"), RowSpacing = 8 };
+        historyPanel.Children.Add(gitHistoryPath);
+        Grid.SetRow(historyActions, 1);
+        historyPanel.Children.Add(historyActions);
+        Grid.SetRow(gitHistory, 2);
+        historyPanel.Children.Add(gitHistory);
+        Grid.SetRow(gitHistoryDetails, 3);
+        historyPanel.Children.Add(gitHistoryDetails);
+
         TabItem changesTab = new() { Header = "Changes", Content = changePanel };
         TabItem branchesTab = new() { Header = "Branches", Content = branchPanel };
         TabItem tagsTab = new() { Header = "Tags", Content = tagPanel };
         TabItem worktreesTab = new() { Header = "Worktrees", Content = worktreePanel };
         TabItem stashesTab = new() { Header = "Stashes", Content = stashPanel };
+        TabItem historyTab = new() { Header = "History", Content = historyPanel };
         AutomationProperties.SetName(changesTab, "Git changes tab");
         AutomationProperties.SetName(branchesTab, "Git branches tab");
         AutomationProperties.SetName(tagsTab, "Git tags tab");
         AutomationProperties.SetName(worktreesTab, "Git worktrees tab");
         AutomationProperties.SetName(stashesTab, "Git stashes tab");
+        AutomationProperties.SetName(historyTab, "Git history, file timeline, and blame tab");
         TabControl tabs = new();
         tabs.Items.Add(changesTab);
         tabs.Items.Add(branchesTab);
         tabs.Items.Add(tagsTab);
         tabs.Items.Add(worktreesTab);
         tabs.Items.Add(stashesTab);
+        tabs.Items.Add(historyTab);
         tabs.SelectedIndex = 0;
         AutomationProperties.SetName(tabs, "Git workbench sections");
         Grid.SetRow(tabs, 2);
@@ -5504,6 +5622,43 @@ internal sealed class WorkbenchDockHost
             $"{Stash.Selector} · {Stash.CommitSha.Value[..Math.Min(8, Stash.CommitSha.Value.Length)]} · " +
             $"{Stash.CreatedAt.LocalDateTime:g} · {Stash.Message}" +
             (Stash.MessageIsTruncated ? "…" : string.Empty);
+    }
+
+    private static IReadOnlyList<HistoryChoice> BuildHistoryChoices(
+        IReadOnlyList<DeveloperGitHistoryCommitView> commits)
+    {
+        var lanes = new List<string>();
+        var choices = new List<HistoryChoice>(commits.Count);
+        foreach (DeveloperGitHistoryCommitView commit in commits)
+        {
+            int lane = lanes.IndexOf(commit.Sha.Value);
+            if (lane < 0)
+            {
+                lane = lanes.Count;
+                lanes.Add(commit.Sha.Value);
+            }
+            string graph = string.Join(' ', Enumerable.Range(0, lanes.Count)
+                .Select(index => index == lane ? "●" : "│"));
+            lanes.RemoveAt(lane);
+            for (int parent = commit.Parents.Count - 1; parent >= 0; parent--)
+                if (!lanes.Contains(commit.Parents[parent].Value, StringComparer.Ordinal))
+                    lanes.Insert(Math.Min(lane, lanes.Count), commit.Parents[parent].Value);
+            choices.Add(new(graph, commit));
+        }
+        return choices;
+    }
+
+    private sealed record HistoryChoice(string Graph, DeveloperGitHistoryCommitView Commit)
+    {
+        public override string ToString()
+        {
+            string sha = Commit.Sha.Value[..Math.Min(8, Commit.Sha.Value.Length)];
+            string references = Commit.References.Count == 0 ? string.Empty :
+                $" · {string.Join(", ", Commit.References)}";
+            string merge = Commit.Parents.Count > 1 ? " · merge" : string.Empty;
+            return $"{Graph} {sha} · {Commit.Subject} · {Commit.AuthorName} · " +
+                   $"{Commit.AuthoredAt.LocalDateTime:g}{references}{merge}";
+        }
     }
 
     private abstract record RunOutputChoiceBase(DateTimeOffset StartedAt);

@@ -741,6 +741,232 @@ internal sealed class LibGitDeveloperGitRepository(IApplicationPaths? applicatio
         }
     }
 
+    public ValueTask<DeveloperGitHistoryPage> InspectHistoryAsync(
+        DeveloperGitHistoryRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (request.MaximumResults is < 1 or > 200)
+            return ValueTask.FromResult(HistoryFailure(request.Path,
+                "git_history_page_invalid", "Request between 1 and 200 history entries."));
+        string[] paths = [];
+        if (request.Path is not null && !TryValidatePaths(request.RepositoryRoot, [request.Path],
+                out paths, out string? pathError))
+            return ValueTask.FromResult(HistoryFailure(request.Path, "git_history_path_invalid", pathError!));
+
+        string? repositoryPath = Repository.Discover(request.RepositoryRoot);
+        if (repositoryPath is null)
+            return ValueTask.FromResult(HistoryFailure(request.Path,
+                "repository_missing", "No Git repository was found."));
+        try
+        {
+            using Repository repository = new(repositoryPath);
+            string root = NormalizeRoot(repository.Info.WorkingDirectory);
+            if (!NormalizeRoot(request.RepositoryRoot).Equals(root, StringComparison.Ordinal))
+                return ValueTask.FromResult(HistoryFailure(request.Path,
+                    "repository_mismatch", "The workspace root must be the Git repository root."));
+            WorkspaceGitState state = GitRepositoryStateReader.Read(repository, cancellationToken);
+            CommitFilter filter = new()
+            {
+                IncludeReachableFrom = repository.Refs,
+                SortBy = CommitSortStrategies.Topological | CommitSortStrategies.Time,
+            };
+            IEnumerable<Commit> commits = request.Path is null
+                ? repository.Commits.QueryBy(filter)
+                : repository.Commits.QueryBy(paths[0], filter).Select(entry => entry.Commit);
+            bool afterCursor = request.Cursor is null;
+            var page = new List<DeveloperGitHistoryCommit>(request.MaximumResults + 1);
+            foreach (Commit commit in commits)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!afterCursor)
+                {
+                    if (commit.Sha.Equals(request.Cursor!.Value, StringComparison.Ordinal))
+                        afterCursor = true;
+                    continue;
+                }
+                page.Add(MapHistoryCommit(repository, commit));
+                if (page.Count > request.MaximumResults) break;
+            }
+            if (request.Cursor is not null && !afterCursor)
+                return ValueTask.FromResult(new DeveloperGitHistoryPage(state, request.Path, [], null,
+                    "git_history_cursor_stale", "The history cursor is no longer reachable. Refresh history."));
+            bool hasMore = page.Count > request.MaximumResults;
+            if (hasMore) page.RemoveAt(page.Count - 1);
+            DeveloperGitHistoryCursor? next = hasMore && page.Count > 0
+                ? new(page[^1].Sha.Value) : null;
+            return ValueTask.FromResult(new DeveloperGitHistoryPage(
+                state, request.Path, page, next, null, null));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception exception) when (exception is LibGit2SharpException or IOException or
+                                           UnauthorizedAccessException or ArgumentException or
+                                           InvalidOperationException)
+        {
+            return ValueTask.FromResult(HistoryFailure(request.Path,
+                "git_history_failed", "Git history could not be inspected."));
+        }
+    }
+
+    public ValueTask<DeveloperGitCommitDetailResult> InspectCommitAsync(
+        string repositoryRoot,
+        DeveloperGitCommitSha commit,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        string? repositoryPath = Repository.Discover(repositoryRoot);
+        if (repositoryPath is null)
+            return ValueTask.FromResult(CommitDetailFailure(
+                "repository_missing", "No Git repository was found."));
+        try
+        {
+            using Repository repository = new(repositoryPath);
+            string root = NormalizeRoot(repository.Info.WorkingDirectory);
+            if (!NormalizeRoot(repositoryRoot).Equals(root, StringComparison.Ordinal))
+                return ValueTask.FromResult(CommitDetailFailure(
+                    "repository_mismatch", "The workspace root must be the Git repository root."));
+            WorkspaceGitState state = GitRepositoryStateReader.Read(repository, cancellationToken);
+            Commit? selected = repository.Lookup<Commit>(commit.Value);
+            if (selected is null || !selected.Sha.Equals(commit.Value, StringComparison.Ordinal))
+                return ValueTask.FromResult(new DeveloperGitCommitDetailResult(
+                    state, null, "git_commit_missing", "The selected commit no longer exists."));
+            Commit[] parents = selected.Parents.ToArray();
+            var diffs = new List<DeveloperGitCommitParentDiff>(Math.Max(1, parents.Length));
+            if (parents.Length == 0)
+                diffs.Add(MapParentDiff(repository, null, selected, cancellationToken));
+            else
+                foreach (Commit parent in parents)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    diffs.Add(MapParentDiff(repository, parent, selected, cancellationToken));
+                }
+            const int maximumMessageCharacters = 131_072;
+            string message = selected.Message.TrimEnd();
+            bool messageIsTruncated = message.Length > maximumMessageCharacters;
+            if (messageIsTruncated) message = message[..maximumMessageCharacters];
+            var detail = new DeveloperGitCommitDetail(
+                new(selected.Sha),
+                parents.Select(parent => new DeveloperGitCommitSha(parent.Sha)).ToArray(),
+                selected.Author.Name, selected.Author.Email, selected.Author.When,
+                selected.Committer.Name, selected.Committer.Email, selected.Committer.When,
+                message, messageIsTruncated, ReferencesFor(repository, selected.Sha), diffs);
+            return ValueTask.FromResult(new DeveloperGitCommitDetailResult(state, detail, null, null));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception exception) when (exception is LibGit2SharpException or IOException or
+                                           UnauthorizedAccessException or ArgumentException or
+                                           InvalidOperationException)
+        {
+            return ValueTask.FromResult(CommitDetailFailure(
+                "git_commit_inspection_failed", "The Git commit could not be inspected."));
+        }
+    }
+
+    public ValueTask<DeveloperGitBlamePage> InspectBlameAsync(
+        DeveloperGitBlameRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+        string[] paths = [];
+        string? pathError = null;
+        bool requestValid = request.StartLine >= 1 && request.MaximumLines is >= 1 and <= 500 &&
+            TryValidatePaths(request.RepositoryRoot, [request.Path], out paths, out pathError);
+        if (!requestValid)
+            return ValueTask.FromResult(BlameFailure(request.Path, "git_blame_request_invalid",
+                pathError ?? "Request a positive start line and between 1 and 500 lines."));
+        string? repositoryPath = Repository.Discover(request.RepositoryRoot);
+        if (repositoryPath is null)
+            return ValueTask.FromResult(BlameFailure(request.Path,
+                "repository_missing", "No Git repository was found."));
+        try
+        {
+            using Repository repository = new(repositoryPath);
+            string root = NormalizeRoot(repository.Info.WorkingDirectory);
+            if (!NormalizeRoot(request.RepositoryRoot).Equals(root, StringComparison.Ordinal))
+                return ValueTask.FromResult(BlameFailure(request.Path,
+                    "repository_mismatch", "The workspace root must be the Git repository root."));
+            WorkspaceGitState state = GitRepositoryStateReader.Read(repository, cancellationToken);
+            Commit? head = repository.Head.Tip;
+            TreeEntry? entry = head?[paths[0]];
+            if (entry?.Target is not Blob blob)
+                return ValueTask.FromResult(new DeveloperGitBlamePage(state, request.Path, [], null,
+                    "git_blame_path_missing", "The selected path is not a file at HEAD."));
+            string normalizedText = blob.GetContentText().Replace("\r\n", "\n", StringComparison.Ordinal);
+            string[] text = normalizedText.Length == 0
+                ? []
+                : normalizedText.EndsWith('\n')
+                ? normalizedText[..^1].Split('\n')
+                : normalizedText.Split('\n');
+            BlameHunkCollection blame = repository.Blame(paths[0], new());
+            int endExclusive = Math.Min(text.Length, request.StartLine - 1 + request.MaximumLines);
+            var lines = new List<DeveloperGitBlameLine>(Math.Max(0, endExclusive - request.StartLine + 1));
+            for (int line = request.StartLine; line <= endExclusive; line++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                BlameHunk hunk = blame.HunkForLine(line - 1);
+                int originalLine = hunk.InitialStartLineNumber + line - hunk.FinalStartLineNumber;
+                lines.Add(new(line, new(hunk.FinalCommit.Sha), hunk.FinalSignature.Name,
+                    hunk.FinalSignature.When, new(hunk.InitialPath), originalLine, text[line - 1]));
+            }
+            int? next = endExclusive < text.Length ? endExclusive + 1 : null;
+            return ValueTask.FromResult(new DeveloperGitBlamePage(
+                state, request.Path, lines, next, null, null));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception exception) when (exception is LibGit2SharpException or IOException or
+                                           UnauthorizedAccessException or ArgumentException or
+                                           InvalidOperationException)
+        {
+            return ValueTask.FromResult(BlameFailure(request.Path,
+                "git_blame_failed", "Git blame could not be inspected."));
+        }
+    }
+
+    private static DeveloperGitHistoryCommit MapHistoryCommit(Repository repository, Commit commit)
+    {
+        const int maximumSubjectLength = 1024;
+        string subject = commit.MessageShort.Trim();
+        if (subject.Length > maximumSubjectLength) subject = subject[..maximumSubjectLength];
+        return new(new(commit.Sha),
+            commit.Parents.Select(parent => new DeveloperGitCommitSha(parent.Sha)).ToArray(),
+            commit.Author.Name, commit.Author.When, subject, ReferencesFor(repository, commit.Sha));
+    }
+
+    private static string[] ReferencesFor(Repository repository, string sha) =>
+        repository.Branches.Where(branch => branch.Tip?.Sha.Equals(sha, StringComparison.Ordinal) == true)
+            .Select(branch => branch.FriendlyName)
+            .Concat(repository.Tags.Where(tag =>
+                    (tag.Target.Peel<Commit>()?.Sha ?? tag.Target.Sha).Equals(sha, StringComparison.Ordinal))
+                .Select(tag => $"tag: {tag.FriendlyName}"))
+            .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
+
+    private static DeveloperGitCommitParentDiff MapParentDiff(
+        Repository repository,
+        Commit? parent,
+        Commit commit,
+        CancellationToken cancellationToken)
+    {
+        const int maximumPatchCharacters = 1_000_000;
+        cancellationToken.ThrowIfCancellationRequested();
+        using Patch patch = repository.Diff.Compare<Patch>(parent?.Tree, commit.Tree);
+        string content = patch.Content;
+        bool truncated = content.Length > maximumPatchCharacters;
+        if (truncated) content = content[..maximumPatchCharacters];
+        return new(parent is null ? null : new(parent.Sha),
+            patch.Select(change => new DeveloperGitPath(change.Path))
+                .Distinct().OrderBy(path => path.Value, StringComparer.Ordinal).ToArray(),
+            content, truncated);
+    }
+
+    private static DeveloperGitHistoryPage HistoryFailure(
+        DeveloperGitPath? path, string code, string error) => new(null, path, [], null, code, error);
+    private static DeveloperGitCommitDetailResult CommitDetailFailure(string code, string error) =>
+        new(null, null, code, error);
+    private static DeveloperGitBlamePage BlameFailure(
+        DeveloperGitPath path, string code, string error) => new(null, path, [], null, code, error);
+
     private static string? ValidateWorktreeCreate(
         Repository repository,
         IReadOnlyList<DeveloperGitWorktree> worktrees,

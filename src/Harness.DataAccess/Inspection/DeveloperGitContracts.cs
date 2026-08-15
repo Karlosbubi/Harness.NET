@@ -213,6 +213,70 @@ public sealed record DeveloperGitStashResult(
     string? AppliedStashCommitSha,
     string? ErrorCode,
     string? Error);
+public sealed record DeveloperGitCommitSha(string Value);
+public sealed record DeveloperGitHistoryCursor(string Value);
+public sealed record DeveloperGitHistoryRequest(
+    string RepositoryRoot,
+    DeveloperGitPath? Path,
+    DeveloperGitHistoryCursor? Cursor,
+    int MaximumResults);
+public sealed record DeveloperGitHistoryCommit(
+    DeveloperGitCommitSha Sha,
+    IReadOnlyList<DeveloperGitCommitSha> Parents,
+    string AuthorName,
+    DateTimeOffset AuthoredAt,
+    string Subject,
+    IReadOnlyList<string> References);
+public sealed record DeveloperGitHistoryPage(
+    WorkspaceGitState? State,
+    DeveloperGitPath? Path,
+    IReadOnlyList<DeveloperGitHistoryCommit> Commits,
+    DeveloperGitHistoryCursor? NextCursor,
+    string? ErrorCode,
+    string? Error);
+public sealed record DeveloperGitCommitParentDiff(
+    DeveloperGitCommitSha? Parent,
+    IReadOnlyList<DeveloperGitPath> Paths,
+    string Patch,
+    bool IsTruncated);
+public sealed record DeveloperGitCommitDetail(
+    DeveloperGitCommitSha Sha,
+    IReadOnlyList<DeveloperGitCommitSha> Parents,
+    string AuthorName,
+    string AuthorEmail,
+    DateTimeOffset AuthoredAt,
+    string CommitterName,
+    string CommitterEmail,
+    DateTimeOffset CommittedAt,
+    string Message,
+    bool MessageIsTruncated,
+    IReadOnlyList<string> References,
+    IReadOnlyList<DeveloperGitCommitParentDiff> ParentDiffs);
+public sealed record DeveloperGitCommitDetailResult(
+    WorkspaceGitState? State,
+    DeveloperGitCommitDetail? Detail,
+    string? ErrorCode,
+    string? Error);
+public sealed record DeveloperGitBlameRequest(
+    string RepositoryRoot,
+    DeveloperGitPath Path,
+    int StartLine,
+    int MaximumLines);
+public sealed record DeveloperGitBlameLine(
+    int LineNumber,
+    DeveloperGitCommitSha Commit,
+    string AuthorName,
+    DateTimeOffset AuthoredAt,
+    DeveloperGitPath OriginalPath,
+    int OriginalLineNumber,
+    string Text);
+public sealed record DeveloperGitBlamePage(
+    WorkspaceGitState? State,
+    DeveloperGitPath Path,
+    IReadOnlyList<DeveloperGitBlameLine> Lines,
+    int? NextStartLine,
+    string? ErrorCode,
+    string? Error);
 
 public interface IDeveloperGitRepository
 {
@@ -266,5 +330,18 @@ public interface IDeveloperGitRepository
 
     ValueTask<DeveloperGitStashResult> ApplyStashAsync(
         DeveloperGitStashRequest request,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitHistoryPage> InspectHistoryAsync(
+        DeveloperGitHistoryRequest request,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitCommitDetailResult> InspectCommitAsync(
+        string repositoryRoot,
+        DeveloperGitCommitSha commit,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitBlamePage> InspectBlameAsync(
+        DeveloperGitBlameRequest request,
         CancellationToken cancellationToken = default);
 }

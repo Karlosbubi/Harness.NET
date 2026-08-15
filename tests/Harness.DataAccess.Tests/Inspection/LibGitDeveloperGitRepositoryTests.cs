@@ -835,6 +835,93 @@ public sealed class LibGitDeveloperGitRepositoryTests : IDisposable
         Assert.True(result.State!.Changes.Single(change => change.Path == "first.txt").IsConflicted);
     }
 
+    [Fact]
+    public async Task Pages_history_and_file_timeline_with_exact_commit_cursor()
+    {
+        await InitializeAsync();
+        await File.WriteAllTextAsync(Path.Combine(root, "first.txt"), "changed\n");
+        using (Repository repository = new(root))
+        {
+            Commands.Stage(repository, "first.txt");
+            Signature signature = new("History Author", "history@harness.local", DateTimeOffset.UtcNow);
+            repository.Commit("change first", signature, signature);
+        }
+        var sut = new LibGitDeveloperGitRepository();
+
+        DeveloperGitHistoryPage first = await sut.InspectHistoryAsync(new(
+            root, new("first.txt"), null, MaximumResults: 1));
+        DeveloperGitHistoryPage second = await sut.InspectHistoryAsync(new(
+            root, new("first.txt"), first.NextCursor, MaximumResults: 1));
+
+        Assert.Null(first.Error);
+        Assert.Equal("change first", Assert.Single(first.Commits).Subject);
+        Assert.NotNull(first.NextCursor);
+        Assert.Equal("initial", Assert.Single(second.Commits).Subject);
+        Assert.Null(second.NextCursor);
+        DeveloperGitCommitDetailResult rootDetail = await sut.InspectCommitAsync(
+            root, second.Commits[0].Sha);
+        Assert.Null(Assert.Single(rootDetail.Detail!.ParentDiffs).Parent);
+    }
+
+    [Fact]
+    public async Task Large_history_is_bounded_paged_and_cancellable()
+    {
+        await InitializeAsync();
+        using (Repository repository = new(root))
+        {
+            Signature signature = new("History Author", "history@harness.local", DateTimeOffset.UtcNow);
+            for (int index = 0; index < 225; index++)
+            {
+                await File.WriteAllTextAsync(Path.Combine(root, "first.txt"), $"revision {index}\n");
+                Commands.Stage(repository, "first.txt");
+                repository.Commit($"revision {index}", signature, signature);
+            }
+        }
+        var sut = new LibGitDeveloperGitRepository();
+
+        DeveloperGitHistoryPage first = await sut.InspectHistoryAsync(new(
+            root, null, null, MaximumResults: 200));
+        DeveloperGitHistoryPage second = await sut.InspectHistoryAsync(new(
+            root, null, first.NextCursor, MaximumResults: 200));
+        using CancellationTokenSource cancelled = new();
+        cancelled.Cancel();
+
+        Assert.Equal(200, first.Commits.Count);
+        Assert.Equal(26, second.Commits.Count);
+        await Assert.ThrowsAsync<OperationCanceledException>(async () =>
+            await sut.InspectHistoryAsync(new(root, null, null, 200), cancelled.Token));
+    }
+
+    [Fact]
+    public async Task Shows_commit_parent_diff_and_bounded_blame_lines()
+    {
+        await InitializeAsync();
+        await File.WriteAllTextAsync(Path.Combine(root, "first.txt"), "first\nsecond\n");
+        string commitSha;
+        using (Repository repository = new(root))
+        {
+            Commands.Stage(repository, "first.txt");
+            Signature signature = new("Blame Author", "blame@harness.local", DateTimeOffset.UtcNow);
+            commitSha = repository.Commit("two lines", signature, signature).Sha;
+        }
+        var sut = new LibGitDeveloperGitRepository();
+
+        DeveloperGitCommitDetailResult detail = await sut.InspectCommitAsync(
+            root, new(commitSha));
+        DeveloperGitBlamePage blame = await sut.InspectBlameAsync(new(
+            root, new("first.txt"), StartLine: 2, MaximumLines: 1));
+
+        DeveloperGitCommitDetail commit = Assert.IsType<DeveloperGitCommitDetail>(detail.Detail);
+        DeveloperGitCommitParentDiff diff = Assert.Single(commit.ParentDiffs);
+        Assert.Contains(diff.Paths, path => path.Value == "first.txt");
+        Assert.Contains("+second", diff.Patch, StringComparison.Ordinal);
+        DeveloperGitBlameLine line = Assert.Single(blame.Lines);
+        Assert.Equal(2, line.LineNumber);
+        Assert.Equal("second", line.Text);
+        Assert.Equal(commitSha, line.Commit.Value);
+        Assert.Null(blame.NextStartLine);
+    }
+
     [Theory]
     [InlineData("../outside.txt")]
     [InlineData(".git/config")]

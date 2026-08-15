@@ -438,8 +438,12 @@ removal. Goal-managed and registered worktrees are protected, and dirty removal 
 an explicit force choice. Local stash create, exact apply-with-retention, and exact
 confirmed deletion are also delivered. Applying a conflict keeps the stash and shows
 the resulting conflict state; including untracked files during creation is explicit.
-The Git panel now separates Changes, Branches, Tags, Worktrees, and Stashes into
-accessible tabs. History, merge editing, and remotes remain.
+The Git panel now separates Changes, Branches, Tags, Worktrees, Stashes, and History
+into accessible tabs. History supplies a paged topological graph across reachable
+refs, an optional rename-following file timeline, exact commit details and bounded
+parent/child patches, and paged blame. Inspection follows the active original or
+approved-goal source context and runs off the UI thread with cancellation. Merge
+editing and remotes remain.
 
 ### Planned: Task 051 — developer terminal and structured tasks
 

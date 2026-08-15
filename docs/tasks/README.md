@@ -491,7 +491,7 @@ and Debug needs. Database, profiler, and notebook modules remain later slices.
 
 ### 050 — complete Git workbench
 
-Status: `In progress — exact staging, cleanup, commit/amend, references, worktrees, and stashes delivered`
+Status: `In progress — local workflows and paged history inspection delivered`
 
 Dependencies: 023, 029, 035, 036, 039.
 
@@ -540,8 +540,8 @@ original workspace, require an exact untruncated staged-diff preview and unchang
 fingerprint, show branch or detached state, HEAD, configured author identity, staged
 paths, message, and hook policy, then require a second confirmation. Git hooks run by
 default; bypass is an explicit compose-time choice. Unborn branches and detached HEAD
-are supported. References, history, merge editing, remotes, and destructive reference
-operations remain open.
+are supported. References are delivered; history inspection follows below. Merge
+editing and remotes remain open.
 
 Local branch management is also delivered in the Git tool. The shared fingerprint
 now covers every Git reference as well as HEAD, index, operation state, and worktree.
@@ -564,7 +564,12 @@ an explicit force choice. Local stashes are now listed with exact commit and bas
 identity. Developers can create a stash with an explicit untracked-file choice and
 apply it while retaining the stash. Conflicts stay visible and the stash remains
 available. Deletion is a separate exact commit-bound preview with an explicit recovery
-warning and acknowledgement. History, merge editing, and remotes remain open.
+warning and acknowledgement. A paged topological history graph now covers commits
+reachable from repository refs, with an optional rename-following file timeline,
+exact commit metadata, bounded diffs from each parent to the selected child, and paged
+line blame. Heavy inspection runs away from the UI thread, observes cancellation, and
+carries the active original or approved-goal source context. Merge editing and remotes
+remain open.
 
 ### 051 — developer terminal and structured tasks
 

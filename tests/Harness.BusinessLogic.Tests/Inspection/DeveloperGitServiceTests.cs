@@ -354,6 +354,26 @@ public sealed class DeveloperGitServiceTests
         Assert.Equal("git_stashes_goal_context_denied", result.ErrorCode);
     }
 
+    [Fact]
+    public async Task History_blame_and_commit_inspection_follow_active_goal_context()
+    {
+        var service = new DeveloperGitService(new ContextResolver(), new Repository(), new GitInspector());
+        var workspace = new WorkbenchWorkspaceRequest(new("workspace-id"), new("goal-id"));
+
+        DeveloperGitHistoryPageView history = await service.InspectHistoryAsync(new(
+            workspace, new("README.md"), null, MaximumResults: 50));
+        Harness.BusinessLogic.Inspection.DeveloperGitCommitDetailResult commit =
+            await service.InspectCommitAsync(
+            workspace, history.Commits[0].Sha);
+        DeveloperGitBlamePageView blame = await service.InspectBlameAsync(new(
+            workspace, new("README.md"), StartLine: 1, MaximumLines: 50));
+
+        Assert.Equal(WorkbenchWorkspaceScope.ApprovedGoalWorktree, history.Context.Scope);
+        Assert.Equal("Initial", Assert.Single(history.Commits).Subject);
+        Assert.Equal("patch", Assert.Single(commit.Detail!.ParentDiffs).Patch);
+        Assert.Equal("line", Assert.Single(blame.Lines).Text);
+    }
+
     private sealed class Repository : IDeveloperGitRepository
     {
         internal bool WorktreeIsDirty { get; init; }
@@ -484,6 +504,33 @@ public sealed class DeveloperGitServiceTests
                 [], request.Operation == DeveloperGitStashOperation.Apply
                     ? request.ExpectedStashCommitSha : null, null, null));
         }
+
+        public ValueTask<DeveloperGitHistoryPage> InspectHistoryAsync(
+            Harness.DataAccess.Inspection.DeveloperGitHistoryRequest request,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new DeveloperGitHistoryPage(
+                new("main", new string('a', 40), [], "", false, null, null, "history-state"),
+                request.Path,
+                [new(new(new string('a', 40)), [], "Developer", DateTimeOffset.UnixEpoch,
+                    "Initial", ["main"])], null, null, null));
+
+        public ValueTask<Harness.DataAccess.Inspection.DeveloperGitCommitDetailResult> InspectCommitAsync(
+            string repositoryRoot,
+            Harness.DataAccess.Inspection.DeveloperGitCommitSha commit,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new Harness.DataAccess.Inspection.DeveloperGitCommitDetailResult(
+                null,
+                new(commit, [], "Developer", "developer@harness.local", DateTimeOffset.UnixEpoch,
+                    "Developer", "developer@harness.local", DateTimeOffset.UnixEpoch,
+                    "Initial", false, ["main"], [new(null, [new("README.md")], "patch", false)]),
+                null, null));
+
+        public ValueTask<DeveloperGitBlamePage> InspectBlameAsync(
+            Harness.DataAccess.Inspection.DeveloperGitBlameRequest request,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new DeveloperGitBlamePage(null, request.Path,
+                [new(1, new(new string('a', 40)), "Developer", DateTimeOffset.UnixEpoch,
+                    request.Path, 1, "line")], null, null, null));
     }
 
     private sealed class GitInspector(WorkspaceGitState? state = null) : IWorkspaceGitInspector

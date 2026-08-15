@@ -3766,6 +3766,42 @@ public sealed class PresentationControlTests
     }
 
     [Fact]
+    public async Task Git_history_tool_is_accessible_and_opens_exact_parent_diff()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            DeveloperGitService git = new();
+            WorkbenchDockHost workbench = CreateWorkbench(
+                TrustedShell(), new(), developerGit: git);
+            Window window = new() { Content = workbench.Control };
+            window.Show();
+            workbench.RefreshGitAsync().AsTask().GetAwaiter().GetResult();
+            Control gitTool = Assert.IsAssignableFrom<Control>(
+                Find<IDockable>(workbench.Root, WorkbenchDockIds.GitTool).Context);
+            TabControl tabs = Assert.Single(gitTool.GetVisualDescendants().OfType<TabControl>(), item =>
+                AutomationProperties.GetName(item) == "Git workbench sections");
+            TabItem historyTab = Assert.IsType<TabItem>(tabs.Items.OfType<TabItem>().ElementAt(5));
+            Control historyPanel = Assert.IsAssignableFrom<Control>(historyTab.Content);
+            Assert.Contains(historyPanel.GetLogicalDescendants().OfType<Button>(), item =>
+                AutomationProperties.GetName(item) == "Load next page of Git history");
+            Assert.Contains(historyPanel.GetLogicalDescendants().OfType<Button>(), item =>
+                AutomationProperties.GetName(item) == "Show blame for repository path");
+            ListBox history = Assert.Single(historyPanel.GetLogicalDescendants().OfType<ListBox>(), item =>
+                AutomationProperties.GetName(item) == "Paged Git commit history");
+            history.SelectedIndex = -1;
+            history.SelectedIndex = 0;
+            TextEditor details = Assert.Single(historyPanel.GetLogicalDescendants().OfType<TextEditor>(), item =>
+                AutomationProperties.GetName(item) == "Selected Git commit details and parent diffs");
+
+            Assert.Contains("Commit ", details.Text, StringComparison.Ordinal);
+            Assert.Contains("empty tree", details.Text, StringComparison.Ordinal);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
     public async Task Stash_delete_dialog_shows_exact_commit_and_requires_acknowledgement()
     {
         using HeadlessUnitTestSession session =
@@ -4547,6 +4583,44 @@ public sealed class PresentationControlTests
         {
             AppliedStashDrop = preview;
             return InspectStashesAsync(new(preview.Context.WorkspaceId, null), cancellationToken);
+        }
+
+        public ValueTask<DeveloperGitHistoryPageView> InspectHistoryAsync(
+            DeveloperGitHistoryRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            var context = new WorkbenchWorkspaceContext(request.Workspace.WorkspaceId,
+                request.Workspace.GoalId, new("main"), WorkbenchWorkspaceScope.OriginalWorkspace,
+                "Original workspace");
+            return ValueTask.FromResult(new DeveloperGitHistoryPageView(context, null, request.Path,
+                [new(new(new string('a', 40)), [], "Developer", DateTimeOffset.UnixEpoch,
+                    "Initial", ["main"])], null, null, null));
+        }
+
+        public ValueTask<DeveloperGitCommitDetailResult> InspectCommitAsync(
+            WorkbenchWorkspaceRequest workspace,
+            DeveloperGitCommitSha commit,
+            CancellationToken cancellationToken = default)
+        {
+            var context = new WorkbenchWorkspaceContext(workspace.WorkspaceId, workspace.GoalId,
+                new("main"), WorkbenchWorkspaceScope.OriginalWorkspace, "Original workspace");
+            return ValueTask.FromResult(new DeveloperGitCommitDetailResult(context, null,
+                new(commit, [], "Developer", "developer@harness.local", DateTimeOffset.UnixEpoch,
+                    "Developer", "developer@harness.local", DateTimeOffset.UnixEpoch,
+                    "Initial", false, ["main"], [new(null, [new("README.md")], "patch", false)]),
+                null, null));
+        }
+
+        public ValueTask<DeveloperGitBlamePageView> InspectBlameAsync(
+            DeveloperGitBlameRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            var context = new WorkbenchWorkspaceContext(request.Workspace.WorkspaceId,
+                request.Workspace.GoalId, new("main"), WorkbenchWorkspaceScope.OriginalWorkspace,
+                "Original workspace");
+            return ValueTask.FromResult(new DeveloperGitBlamePageView(context, null, request.Path,
+                [new(1, new(new string('a', 40)), "Developer", DateTimeOffset.UnixEpoch,
+                    request.Path, 1, "line")], null, null, null));
         }
     }
 

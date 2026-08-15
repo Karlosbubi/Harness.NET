@@ -683,6 +683,81 @@ internal sealed class DeveloperGitService(
         return MapStashes(resolution.Context, result);
     }
 
+    public async ValueTask<DeveloperGitHistoryPageView> InspectHistoryAsync(
+        DeveloperGitHistoryRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        WorkbenchWorkspaceResolution resolution = await contextResolver.ResolveAsync(
+            request.Workspace, cancellationToken);
+        if (resolution.RootPath is null || resolution.Error is not null)
+            return new(resolution.Context, null, request.Path, [], null,
+                resolution.ErrorCode, resolution.Error);
+        DeveloperGitHistoryPage page = await Task.Run(async () =>
+            await repository.InspectHistoryAsync(new(
+                resolution.RootPath,
+                request.Path is null ? null : new Harness.DataAccess.Inspection.DeveloperGitPath(
+                    request.Path.Value),
+                request.Cursor is null ? null : new Harness.DataAccess.Inspection.DeveloperGitHistoryCursor(
+                    request.Cursor.Value),
+                request.MaximumResults), cancellationToken), cancellationToken);
+        return new(resolution.Context, page.State is null ? null : Map(page.State), request.Path,
+            page.Commits.Select(commit => new DeveloperGitHistoryCommitView(
+                new(commit.Sha.Value),
+                commit.Parents.Select(parent => new DeveloperGitCommitSha(parent.Value)).ToArray(),
+                commit.AuthorName, commit.AuthoredAt, commit.Subject, commit.References)).ToArray(),
+            page.NextCursor is null ? null : new(page.NextCursor.Value), page.ErrorCode, page.Error);
+    }
+
+    public async ValueTask<DeveloperGitCommitDetailResult> InspectCommitAsync(
+        WorkbenchWorkspaceRequest workspace,
+        DeveloperGitCommitSha commit,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(workspace);
+        ArgumentNullException.ThrowIfNull(commit);
+        WorkbenchWorkspaceResolution resolution = await contextResolver.ResolveAsync(
+            workspace, cancellationToken);
+        if (resolution.RootPath is null || resolution.Error is not null)
+            return new(resolution.Context, null, null, resolution.ErrorCode, resolution.Error);
+        Harness.DataAccess.Inspection.DeveloperGitCommitDetailResult result = await Task.Run(async () =>
+            await repository.InspectCommitAsync(
+                resolution.RootPath, new(commit.Value), cancellationToken), cancellationToken);
+        DeveloperGitCommitDetailView? detail = result.Detail is null ? null : new(
+            new(result.Detail.Sha.Value),
+            result.Detail.Parents.Select(parent => new DeveloperGitCommitSha(parent.Value)).ToArray(),
+            result.Detail.AuthorName, result.Detail.AuthorEmail, result.Detail.AuthoredAt,
+            result.Detail.CommitterName, result.Detail.CommitterEmail, result.Detail.CommittedAt,
+            result.Detail.Message, result.Detail.MessageIsTruncated, result.Detail.References,
+            result.Detail.ParentDiffs.Select(diff => new DeveloperGitCommitParentDiffView(
+                diff.Parent is null ? null : new(diff.Parent.Value),
+                diff.Paths.Select(path => new DeveloperGitPath(path.Value)).ToArray(),
+                diff.Patch, diff.IsTruncated)).ToArray());
+        return new(resolution.Context, result.State is null ? null : Map(result.State),
+            detail, result.ErrorCode, result.Error);
+    }
+
+    public async ValueTask<DeveloperGitBlamePageView> InspectBlameAsync(
+        DeveloperGitBlameRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        WorkbenchWorkspaceResolution resolution = await contextResolver.ResolveAsync(
+            request.Workspace, cancellationToken);
+        if (resolution.RootPath is null || resolution.Error is not null)
+            return new(resolution.Context, null, request.Path, [], null,
+                resolution.ErrorCode, resolution.Error);
+        DeveloperGitBlamePage page = await Task.Run(async () =>
+            await repository.InspectBlameAsync(new(
+                resolution.RootPath, new(request.Path.Value), request.StartLine, request.MaximumLines),
+                cancellationToken), cancellationToken);
+        return new(resolution.Context, page.State is null ? null : Map(page.State), request.Path,
+            page.Lines.Select(line => new DeveloperGitBlameLineView(
+                line.LineNumber, new(line.Commit.Value), line.AuthorName, line.AuthoredAt,
+                new(line.OriginalPath.Value), line.OriginalLineNumber, line.Text)).ToArray(),
+            page.NextStartLine, page.ErrorCode, page.Error);
+    }
+
     private static DeveloperGitBranchInspectionResult MapBranches(
         WorkbenchWorkspaceContext context,
         DeveloperGitBranchInspection inspection) => new(
