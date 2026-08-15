@@ -248,14 +248,9 @@ internal sealed class InboundMcpServer(
         if (active is not null)
         {
             logger.LogInformation("Stopping inbound MCP HTTP host");
-            Task stop = Task.Run(
-                () => active.StopAsync(cancellationToken),
-                CancellationToken.None);
-            try
-            {
-                await stop.WaitAsync(ShutdownTimeout, cancellationToken);
-            }
-            catch (TimeoutException)
+            if (!RunBounded(
+                    () => active.StopAsync(cancellationToken),
+                    cancellationToken))
             {
                 logger.LogWarning(
                     "Inbound MCP HTTP host did not stop within {ShutdownTimeout}; " +
@@ -264,14 +259,9 @@ internal sealed class InboundMcpServer(
                 return;
             }
             logger.LogInformation("Disposing inbound MCP HTTP host");
-            try
-            {
-                Task dispose = Task.Run(
+            if (!RunBounded(
                     async () => await active.DisposeAsync(),
-                    CancellationToken.None);
-                await dispose.WaitAsync(ShutdownTimeout, cancellationToken);
-            }
-            catch (TimeoutException)
+                    cancellationToken))
             {
                 logger.LogWarning(
                     "Inbound MCP HTTP host did not dispose within {ShutdownTimeout}; " +
@@ -283,6 +273,41 @@ internal sealed class InboundMcpServer(
         }
         lock (clients) clients.Clear();
         Publish(false, null, null);
+    }
+
+    private static bool RunBounded(
+        Func<Task> operation,
+        CancellationToken cancellationToken)
+    {
+        Exception? failure = null;
+        Thread worker = new(() =>
+        {
+            try
+            {
+                operation().GetAwaiter().GetResult();
+            }
+            catch (Exception exception)
+            {
+                failure = exception;
+            }
+        })
+        {
+            IsBackground = true,
+            Name = "Harness inbound MCP shutdown",
+        };
+        worker.Start();
+
+        long startedAt = Environment.TickCount64;
+        while (!worker.Join(millisecondsTimeout: 100))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (Environment.TickCount64 - startedAt >= ShutdownTimeout.TotalMilliseconds)
+                return false;
+        }
+
+        if (failure is not null)
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();
+        return true;
     }
 
     public async ValueTask DisposeAsync()
