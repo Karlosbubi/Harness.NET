@@ -248,7 +248,9 @@ internal sealed class InboundMcpServer(
         if (active is not null)
         {
             logger.LogInformation("Stopping inbound MCP HTTP host");
-            Task stop = active.StopAsync(cancellationToken);
+            Task stop = Task.Run(
+                () => active.StopAsync(cancellationToken),
+                CancellationToken.None);
             try
             {
                 await stop.WaitAsync(ShutdownTimeout, cancellationToken);
@@ -264,7 +266,10 @@ internal sealed class InboundMcpServer(
             logger.LogInformation("Disposing inbound MCP HTTP host");
             try
             {
-                await active.DisposeAsync().AsTask().WaitAsync(ShutdownTimeout, cancellationToken);
+                Task dispose = Task.Run(
+                    async () => await active.DisposeAsync(),
+                    CancellationToken.None);
+                await dispose.WaitAsync(ShutdownTimeout, cancellationToken);
             }
             catch (TimeoutException)
             {
