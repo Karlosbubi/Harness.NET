@@ -22,6 +22,7 @@ internal sealed class InboundMcpServer(
     TimeProvider timeProvider) : IInboundMcpRuntime, IHostedService, IAsyncDisposable
 {
     private const string ClientHeader = "X-Harness-Client";
+    private static readonly TimeSpan ShutdownTimeout = TimeSpan.FromSeconds(5);
     private readonly SemaphoreSlim gate = new(1, 1);
     private readonly Dictionary<string, InboundMcpClientStatus> clients = new(StringComparer.Ordinal);
     private readonly HashSet<string> disconnected = new(StringComparer.Ordinal);
@@ -247,9 +248,32 @@ internal sealed class InboundMcpServer(
         if (active is not null)
         {
             logger.LogInformation("Stopping inbound MCP HTTP host");
-            await active.StopAsync(cancellationToken);
+            Task stop = active.StopAsync(cancellationToken);
+            try
+            {
+                await stop.WaitAsync(ShutdownTimeout, cancellationToken);
+            }
+            catch (TimeoutException)
+            {
+                logger.LogWarning(
+                    "Inbound MCP HTTP host did not stop within {ShutdownTimeout}; " +
+                    "the closed host is being abandoned",
+                    ShutdownTimeout);
+                return;
+            }
             logger.LogInformation("Disposing inbound MCP HTTP host");
-            await active.DisposeAsync();
+            try
+            {
+                await active.DisposeAsync().AsTask().WaitAsync(ShutdownTimeout, cancellationToken);
+            }
+            catch (TimeoutException)
+            {
+                logger.LogWarning(
+                    "Inbound MCP HTTP host did not dispose within {ShutdownTimeout}; " +
+                    "the closed host is being abandoned",
+                    ShutdownTimeout);
+                return;
+            }
             logger.LogInformation("Inbound MCP HTTP host stopped");
         }
         lock (clients) clients.Clear();
