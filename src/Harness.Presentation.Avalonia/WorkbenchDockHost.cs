@@ -124,6 +124,13 @@ internal sealed class WorkbenchDockHost
     private readonly TextBox gitStashMessage = new() { PlaceholderText = "Stash message" };
     private readonly CheckBox includeUntrackedInStash = new() { Content = "Include untracked files" };
     private DeveloperGitStashInspectionResult? currentStashInspection;
+    private readonly ListBox gitRemotes = new();
+    private readonly TextBox gitRemoteSource = new() { PlaceholderText = "Source branch" };
+    private readonly TextBox gitRemoteDestination = new() { PlaceholderText = "Destination branch" };
+    private readonly CheckBox rebaseGitPull = new() { Content = "Rebase integration" };
+    private readonly CheckBox forceWithLeaseGitPush = new() { Content = "Force with lease" };
+    private readonly TextBlock gitRemoteStatus = new() { TextWrapping = TextWrapping.Wrap };
+    private DeveloperGitRemoteInspectionResult? currentRemoteInspection;
     private readonly TextBox gitHistoryPath = new() { PlaceholderText = "Optional repository path" };
     private readonly ListBox gitHistory = new();
     private readonly TextEditor gitHistoryDetails = CodeEditorView.Create(
@@ -872,6 +879,8 @@ internal sealed class WorkbenchDockHost
                 DeveloperGitStashInspectionResult stashes = await developerGitService.InspectStashesAsync(
                     WorkbenchRequest(active), cancellationToken);
                 RenderGitStashes(stashes);
+                RenderGitRemotes(await developerGitService.InspectRemotesAsync(
+                    WorkbenchRequest(active), cancellationToken));
             }
             if (developerGitService is not null)
             {
@@ -1390,6 +1399,76 @@ internal sealed class WorkbenchDockHost
         gitStashes.ItemsSource = result.Stashes.Select(stash => new StashChoice(stash)).ToArray();
         gitStashes.SelectedIndex = result.Stashes.Count > 0 ? 0 : -1;
         if (result.Error is not null) gitStatus.Text = result.Error;
+    }
+
+    internal async ValueTask RefreshGitRemotesAsync()
+    {
+        WorkspaceView? active = ActiveWorkspace();
+        if (busy || active is null || developerGitService is null) return;
+        await RunAsync(async () => RenderGitRemotes(await developerGitService.InspectRemotesAsync(
+            WorkbenchRequest(active), cancellationToken)));
+    }
+
+    private void RenderGitRemotes(DeveloperGitRemoteInspectionResult result)
+    {
+        currentRemoteInspection = result;
+        gitRemotes.ItemsSource = result.Remotes.Select(remote => new RemoteChoice(remote)).ToArray();
+        int selected = result.UpstreamRemote is null ? 0 : result.Remotes.ToList().FindIndex(remote =>
+            remote.Name == result.UpstreamRemote);
+        gitRemotes.SelectedIndex = result.Remotes.Count == 0 ? -1 : Math.Max(0, selected);
+        if (string.IsNullOrWhiteSpace(gitRemoteSource.Text))
+            gitRemoteSource.Text = result.LocalBranch?.Value ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(gitRemoteDestination.Text))
+            gitRemoteDestination.Text = result.UpstreamBranch?.Value ?? result.LocalBranch?.Value ?? string.Empty;
+        gitRemoteStatus.Text = result.Error ??
+            $"Local {result.LocalSha ?? "unborn"} · remote tracking {result.RemoteTrackingSha ?? "unknown"} · " +
+            $"ahead {result.Ahead?.ToString() ?? "?"} · behind {result.Behind?.ToString() ?? "?"}";
+    }
+
+    internal async ValueTask SynchronizeGitRemoteAsync(DeveloperGitRemoteAction action)
+    {
+        WorkspaceView? active = ActiveWorkspace();
+        if (busy || active is null || developerGitService is null ||
+            currentRemoteInspection?.State is null || gitRemotes.SelectedItem is not RemoteChoice selected)
+        {
+            gitStatus.Text = "Refresh and select a configured Git remote first.";
+            return;
+        }
+        string source = gitRemoteSource.Text?.Trim() ?? string.Empty;
+        string destination = gitRemoteDestination.Text?.Trim() ?? string.Empty;
+        DeveloperGitPushPolicy policy = forceWithLeaseGitPush.IsChecked == true
+            ? DeveloperGitPushPolicy.ForceWithLease : DeveloperGitPushPolicy.FastForwardOnly;
+        if ((action is DeveloperGitRemoteAction.PullMerge or DeveloperGitRemoteAction.PullRebase) &&
+            !await PrepareForWorkspaceChangeAsync())
+        {
+            gitStatus.Text = "Remote integration cancelled; unsaved documents remain open.";
+            return;
+        }
+        await RunAsync(async () =>
+        {
+            DeveloperGitRemotePreviewResult result = await developerGitService.PreviewRemoteAsync(new(
+                WorkbenchRequest(active), new(currentRemoteInspection.State.Fingerprint), action,
+                selected.Remote.Name, new(source), new(destination), policy), cancellationToken);
+            RenderGitRemotes(result.Inspection);
+            if (result.Preview is null)
+            {
+                gitStatus.Text = result.Error ?? "The Git remote operation preview is unavailable.";
+                return;
+            }
+            if (!await documentPrompt.ConfirmGitRemoteAsync(result.Preview, OwnerWindow()))
+            {
+                gitStatus.Text = "Git remote operation cancelled; no network or integration action ran.";
+                return;
+            }
+            DeveloperGitRemoteInspectionResult applied = await developerGitService.ApplyRemoteAsync(
+                result.Preview, cancellationToken);
+            RenderGitRemotes(applied);
+            if (applied.State is not null) RenderGitState(applied.Context, applied.State);
+            gitStatus.Text = applied.Error ?? $"Git {action} completed for {selected.Remote.Name.Value}.";
+            if (applied.Error is null &&
+                (action is DeveloperGitRemoteAction.PullMerge or DeveloperGitRemoteAction.PullRebase))
+                await refreshWorkspaceContext();
+        });
     }
 
     internal async ValueTask RefreshGitHistoryAsync(bool append = false)
@@ -2577,6 +2656,54 @@ internal sealed class WorkbenchDockHost
         Grid.SetRow(gitStashes, 2);
         stashPanel.Children.Add(gitStashes);
 
+        WrapPanel remoteActions = new() { Orientation = AvaloniaOrientation.Horizontal };
+        Button refreshRemotes = new() { Content = "Refresh remotes" };
+        Button fetchRemote = new() { Content = "Fetch…" };
+        Button pullRemote = new() { Content = "Integrate fetched…" };
+        Button pushRemote = new() { Content = "Push…" };
+        foreach (Button button in new[] { refreshRemotes, fetchRemote, pullRemote, pushRemote })
+            button.Margin = new Thickness(0, 0, 6, 6);
+        AutomationProperties.SetName(gitRemotes, "Configured Git remotes with sanitized URLs");
+        AutomationProperties.SetName(gitRemoteSource, "Git remote source branch");
+        AutomationProperties.SetName(gitRemoteDestination, "Git remote destination branch");
+        AutomationProperties.SetName(gitRemoteStatus, "Git remote divergence and observed commits");
+        AutomationProperties.SetName(refreshRemotes, "Refresh Git remotes and divergence");
+        AutomationProperties.SetName(fetchRemote, "Preview explicit Git fetch");
+        AutomationProperties.SetName(pullRemote, "Preview integration of already fetched commits");
+        AutomationProperties.SetName(pushRemote, "Preview explicit Git push");
+        AutomationProperties.SetName(rebaseGitPull, "Use rebase when integrating fetched commits");
+        AutomationProperties.SetName(forceWithLeaseGitPush, "Use force with exact lease for Git push");
+        refreshRemotes.Click += async (_, _) => await RefreshGitRemotesAsync();
+        fetchRemote.Click += async (_, _) => await SynchronizeGitRemoteAsync(DeveloperGitRemoteAction.Fetch);
+        pullRemote.Click += async (_, _) => await SynchronizeGitRemoteAsync(rebaseGitPull.IsChecked == true
+            ? DeveloperGitRemoteAction.PullRebase : DeveloperGitRemoteAction.PullMerge);
+        pushRemote.Click += async (_, _) => await SynchronizeGitRemoteAsync(DeveloperGitRemoteAction.Push);
+        remoteActions.Children.Add(refreshRemotes);
+        remoteActions.Children.Add(fetchRemote);
+        remoteActions.Children.Add(pullRemote);
+        remoteActions.Children.Add(pushRemote);
+        remoteActions.Children.Add(rebaseGitPull);
+        remoteActions.Children.Add(forceWithLeaseGitPush);
+        Grid remoteRefs = new() { ColumnDefinitions = new("*,*"), ColumnSpacing = 8 };
+        remoteRefs.Children.Add(gitRemoteSource);
+        Grid.SetColumn(gitRemoteDestination, 1);
+        remoteRefs.Children.Add(gitRemoteDestination);
+        Grid remotePanel = new() { RowDefinitions = new("Auto,Auto,Auto,*,Auto"), RowSpacing = 8 };
+        remotePanel.Children.Add(gitRemoteStatus);
+        Grid.SetRow(remoteRefs, 1);
+        remotePanel.Children.Add(remoteRefs);
+        Grid.SetRow(remoteActions, 2);
+        remotePanel.Children.Add(remoteActions);
+        Grid.SetRow(gitRemotes, 3);
+        remotePanel.Children.Add(gitRemotes);
+        TextBlock remoteGuidance = new()
+        {
+            Text = "Pull is deliberately split: Fetch first, review divergence, then integrate the fetched tracking ref.",
+            TextWrapping = TextWrapping.Wrap,
+        };
+        Grid.SetRow(remoteGuidance, 4);
+        remotePanel.Children.Add(remoteGuidance);
+
         WrapPanel historyActions = new() { Orientation = AvaloniaOrientation.Horizontal };
         Button refreshHistory = new() { Content = "Refresh history" };
         Button moreHistory = new() { Content = "Load more" };
@@ -2714,6 +2841,7 @@ internal sealed class WorkbenchDockHost
         TabItem stashesTab = new() { Header = "Stashes", Content = stashPanel };
         TabItem historyTab = new() { Header = "History", Content = historyPanel };
         TabItem conflictsTab = new() { Header = "Conflicts", Content = conflictPanel };
+        TabItem remotesTab = new() { Header = "Remotes", Content = remotePanel };
         AutomationProperties.SetName(changesTab, "Git changes tab");
         AutomationProperties.SetName(branchesTab, "Git branches tab");
         AutomationProperties.SetName(tagsTab, "Git tags tab");
@@ -2721,6 +2849,7 @@ internal sealed class WorkbenchDockHost
         AutomationProperties.SetName(stashesTab, "Git stashes tab");
         AutomationProperties.SetName(historyTab, "Git history, file timeline, and blame tab");
         AutomationProperties.SetName(conflictsTab, "Git three-way conflict editor tab");
+        AutomationProperties.SetName(remotesTab, "Git explicit remote synchronization tab");
         TabControl tabs = new();
         tabs.Items.Add(changesTab);
         tabs.Items.Add(branchesTab);
@@ -2729,6 +2858,7 @@ internal sealed class WorkbenchDockHost
         tabs.Items.Add(stashesTab);
         tabs.Items.Add(historyTab);
         tabs.Items.Add(conflictsTab);
+        tabs.Items.Add(remotesTab);
         tabs.SelectedIndex = 0;
         AutomationProperties.SetName(tabs, "Git workbench sections");
         Grid.SetRow(tabs, 2);
@@ -6144,6 +6274,11 @@ internal sealed class WorkbenchDockHost
             $"{Stash.Selector} · {Stash.CommitSha.Value[..Math.Min(8, Stash.CommitSha.Value.Length)]} · " +
             $"{Stash.CreatedAt.LocalDateTime:g} · {Stash.Message}" +
             (Stash.MessageIsTruncated ? "…" : string.Empty);
+    }
+
+    private sealed record RemoteChoice(DeveloperGitRemoteView Remote)
+    {
+        public override string ToString() => $"{Remote.Name.Value} · {Remote.SanitizedUrl}";
     }
 
     private static IReadOnlyList<HistoryChoice> BuildHistoryChoices(

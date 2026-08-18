@@ -406,6 +406,68 @@ public sealed record DeveloperGitPatchCommand(
     WorkbenchWorkspaceRequest Workspace,
     DeveloperGitStateFingerprint ExpectedFingerprint,
     string PatchUnitId);
+public enum DeveloperGitRemoteAction
+{
+    Fetch,
+    PullMerge,
+    PullRebase,
+    Push,
+}
+public enum DeveloperGitPushPolicy
+{
+    FastForwardOnly,
+    ForceWithLease,
+}
+public sealed record DeveloperGitRemoteName(string Value);
+public sealed record DeveloperGitReferenceName(string Value);
+public sealed record DeveloperGitRemoteView(
+    DeveloperGitRemoteName Name,
+    string SanitizedUrl,
+    IReadOnlyList<string> FetchRefspecs,
+    IReadOnlyList<string> PushRefspecs);
+public sealed record DeveloperGitRemoteInspectionResult(
+    WorkbenchWorkspaceContext Context,
+    WorkspaceGitStateView? State,
+    IReadOnlyList<DeveloperGitRemoteView> Remotes,
+    DeveloperGitReferenceName? LocalBranch,
+    DeveloperGitRemoteName? UpstreamRemote,
+    DeveloperGitReferenceName? UpstreamBranch,
+    string? LocalSha,
+    string? RemoteTrackingSha,
+    int? Ahead,
+    int? Behind,
+    string? ErrorCode,
+    string? Error);
+public sealed record DeveloperGitRemotePreviewId(string Value);
+public sealed record DeveloperGitRemotePreviewCommand(
+    WorkbenchWorkspaceRequest Workspace,
+    DeveloperGitStateFingerprint ExpectedFingerprint,
+    DeveloperGitRemoteAction Action,
+    DeveloperGitRemoteName Remote,
+    DeveloperGitReferenceName Source,
+    DeveloperGitReferenceName Destination,
+    DeveloperGitPushPolicy PushPolicy = DeveloperGitPushPolicy.FastForwardOnly);
+public sealed record DeveloperGitRemotePreviewView(
+    DeveloperGitRemotePreviewId Id,
+    WorkbenchWorkspaceContext Context,
+    DeveloperGitStateFingerprint Fingerprint,
+    DeveloperGitRemoteAction Action,
+    DeveloperGitRemoteName Remote,
+    DeveloperGitReferenceName Source,
+    DeveloperGitReferenceName Destination,
+    string? ExpectedLocalSha,
+    string? ExpectedRemoteTrackingSha,
+    DeveloperGitPushPolicy PushPolicy,
+    int? Ahead,
+    int? Behind,
+    string Consequence,
+    string CredentialSource,
+    string Recovery);
+public sealed record DeveloperGitRemotePreviewResult(
+    DeveloperGitRemotePreviewView? Preview,
+    DeveloperGitRemoteInspectionResult Inspection,
+    string? ErrorCode,
+    string? Error);
 
 public interface IDeveloperGitService
 {
@@ -529,5 +591,17 @@ public interface IDeveloperGitService
 
     ValueTask<DeveloperGitIndexCommandResult> StageConflictResultAsync(
         DeveloperGitConflictStageCommand command,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitRemoteInspectionResult> InspectRemotesAsync(
+        WorkbenchWorkspaceRequest workspace,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitRemotePreviewResult> PreviewRemoteAsync(
+        DeveloperGitRemotePreviewCommand command,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitRemoteInspectionResult> ApplyRemoteAsync(
+        DeveloperGitRemotePreviewView preview,
         CancellationToken cancellationToken = default);
 }

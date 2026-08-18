@@ -32,6 +32,9 @@ Delivered:
   CycloneDX 1.6 export;
 - Git-backed workspace registration, trust, status, diff, search, branches, and
   isolated goal worktrees;
+- a developer Git workbench for exact staging, cleanup, commit/amend, branches, tags,
+  linked worktrees, stashes, paged history/blame, three-way conflict editing, and
+  explicit fetch, reviewed merge/rebase integration, and push with force-with-lease;
 - an editable Avalonia source editor with diagnostics, completion, quick info,
   signature help, semantic classification, occurrence highlighting, folding,
   outline, breadcrumbs, workspace-symbol search, parameter and inferred-type inlay

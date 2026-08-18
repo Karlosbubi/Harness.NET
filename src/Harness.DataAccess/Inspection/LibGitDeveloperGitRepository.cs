@@ -1067,6 +1067,164 @@ internal sealed class LibGitDeveloperGitRepository(
             [request.Path]), cancellationToken);
     }
 
+    public ValueTask<DeveloperGitRemoteInspection> InspectRemotesAsync(
+        string repositoryRoot,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        string? repositoryPath = Repository.Discover(repositoryRoot);
+        if (repositoryPath is null)
+            return ValueTask.FromResult(RemoteInspectionFailure(
+                "repository_missing", "No Git repository was found."));
+        try
+        {
+            using Repository repository = new(repositoryPath);
+            if (!IsRepositoryRoot(repositoryRoot, repository))
+                return ValueTask.FromResult(RemoteInspectionFailure(
+                    "repository_mismatch", "The workspace root must be the Git repository root."));
+            WorkspaceGitState state = GitRepositoryStateReader.Read(repository, cancellationToken);
+            DeveloperGitRemote[] remotes = repository.Network.Remotes
+                .OrderBy(remote => remote.Name, StringComparer.Ordinal)
+                .Select(remote => new DeveloperGitRemote(
+                    new(remote.Name), SanitizeRemoteUrl(remote.Url),
+                    remote.FetchRefSpecs.Select(spec => spec.Specification).ToArray(),
+                    remote.PushRefSpecs.Select(spec => spec.Specification).ToArray()))
+                .ToArray();
+            Branch branch = repository.Head;
+            Branch? tracked = repository.Info.IsHeadDetached ? null : branch.TrackedBranch;
+            string? upstreamRemote = repository.Info.IsHeadDetached
+                ? null : branch.RemoteName;
+            string? upstreamBranch = tracked?.FriendlyName;
+            if (upstreamBranch is not null && upstreamRemote is not null &&
+                upstreamBranch.StartsWith(upstreamRemote + "/", StringComparison.Ordinal))
+                upstreamBranch = upstreamBranch[(upstreamRemote.Length + 1)..];
+            int? ahead = tracked is null ? null : branch.TrackingDetails.AheadBy;
+            int? behind = tracked is null ? null : branch.TrackingDetails.BehindBy;
+            return ValueTask.FromResult(new DeveloperGitRemoteInspection(
+                state, remotes,
+                repository.Info.IsHeadDetached ? null : new(branch.FriendlyName),
+                upstreamRemote is null ? null : new(upstreamRemote),
+                upstreamBranch is null ? null : new(upstreamBranch),
+                branch.Tip?.Sha, tracked?.Tip?.Sha,
+                ahead, behind,
+                null, null));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception exception) when (exception is LibGit2SharpException or IOException or
+                                           UnauthorizedAccessException or ArgumentException or
+                                           InvalidOperationException or UriFormatException)
+        {
+            return ValueTask.FromResult(RemoteInspectionFailure(
+                "git_remote_inspection_failed", "Git remotes could not be inspected."));
+        }
+    }
+
+    public async ValueTask<DeveloperGitRemoteResult> ApplyRemoteAsync(
+        DeveloperGitRemoteRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        DeveloperGitRemoteInspection before = await InspectRemotesAsync(
+            request.RepositoryRoot, cancellationToken);
+        if (before.State is null || before.Error is not null)
+            return new(before, before.ErrorCode, before.Error);
+        if (!CryptographicEquals(before.State.Fingerprint, request.ExpectedFingerprint.Value))
+            return new(before, "git_state_stale",
+                "Git references or working state changed after display. Refresh and retry.");
+        if (!before.Remotes.Any(candidate => candidate.Name == request.Remote))
+            return new(before, "git_remote_missing", "The selected remote no longer exists.");
+        if (!ValidBranchName(request.Source.Value) || !ValidBranchName(request.Destination.Value))
+            return new(before, "git_remote_reference_invalid",
+                "Remote synchronization accepts explicit local branch names only.");
+        if (!string.Equals(before.LocalSha, request.ExpectedLocalSha, StringComparison.Ordinal) ||
+            !string.Equals(before.RemoteTrackingSha, request.ExpectedRemoteTrackingSha,
+                StringComparison.Ordinal))
+            return new(before, "git_remote_observation_stale",
+                "The displayed local or remote-tracking commit changed. Refresh and retry.");
+        if ((request.Operation is DeveloperGitRemoteOperation.PullMerge or
+             DeveloperGitRemoteOperation.PullRebase) && before.State.Changes.Count > 0)
+            return new(before, "git_pull_dirty",
+                "Commit or stash working changes before integrating fetched commits.");
+        if (request.Operation == DeveloperGitRemoteOperation.Push &&
+            request.PushPolicy == DeveloperGitPushPolicy.ForceWithLease &&
+            request.ExpectedRemoteTrackingSha is null)
+            return new(before, "git_force_lease_unknown",
+                "Fetch the destination before using force-with-lease.");
+
+        string root = NormalizeRoot(request.RepositoryRoot);
+        List<string> arguments = request.Operation switch
+        {
+            DeveloperGitRemoteOperation.Fetch =>
+            [
+                "fetch", "--no-tags", "--", request.Remote.Value,
+                $"+refs/heads/{request.Source.Value}:refs/remotes/{request.Remote.Value}/{request.Destination.Value}",
+            ],
+            DeveloperGitRemoteOperation.PullMerge =>
+            ["merge", "--ff-only", $"refs/remotes/{request.Remote.Value}/{request.Destination.Value}"],
+            DeveloperGitRemoteOperation.PullRebase =>
+            ["rebase", $"refs/remotes/{request.Remote.Value}/{request.Destination.Value}"],
+            DeveloperGitRemoteOperation.Push =>
+            ["push", "--", request.Remote.Value,
+                $"refs/heads/{request.Source.Value}:refs/heads/{request.Destination.Value}"],
+            _ => throw new InvalidOperationException("Unsupported Git remote operation."),
+        };
+        if (request.Operation == DeveloperGitRemoteOperation.Push &&
+            request.PushPolicy == DeveloperGitPushPolicy.ForceWithLease)
+            arguments.Insert(1,
+                $"--force-with-lease=refs/heads/{request.Destination.Value}:{request.ExpectedRemoteTrackingSha}");
+        try
+        {
+            int exitCode = await RunGitAsync(root, arguments, cancellationToken);
+            DeveloperGitRemoteInspection after = await InspectRemotesAsync(
+                request.RepositoryRoot, CancellationToken.None);
+            if (exitCode != 0)
+                return new(after, RemoteFailureCode(request.Operation), RemoteFailureMessage(request.Operation));
+            return new(after, null, null);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or
+                                           ArgumentException or InvalidOperationException)
+        {
+            DeveloperGitRemoteInspection after = await InspectRemotesAsync(
+                request.RepositoryRoot, CancellationToken.None);
+            return new(after, RemoteFailureCode(request.Operation), RemoteFailureMessage(request.Operation));
+        }
+    }
+
+    private static bool ValidBranchName(string value) =>
+        !string.IsNullOrWhiteSpace(value) && value.Length <= 1024 &&
+        Reference.IsValidName($"refs/heads/{value}");
+
+    private static string RemoteFailureCode(DeveloperGitRemoteOperation operation) => operation switch
+    {
+        DeveloperGitRemoteOperation.Fetch => "git_fetch_failed",
+        DeveloperGitRemoteOperation.Push => "git_push_rejected",
+        _ => "git_pull_integration_failed",
+    };
+
+    private static string RemoteFailureMessage(DeveloperGitRemoteOperation operation) => operation switch
+    {
+        DeveloperGitRemoteOperation.Fetch =>
+            "Fetch failed or credentials were unavailable. Remote output was discarded to protect credential data.",
+        DeveloperGitRemoteOperation.Push =>
+            "Push was rejected or credentials were unavailable. Refresh remote state before retrying.",
+        _ => "Fetched commits could not be integrated. Inspect the repository state before retrying.",
+    };
+
+    private static DeveloperGitRemoteInspection RemoteInspectionFailure(string code, string error) =>
+        new(null, [], null, null, null, null, null, null, null, code, error);
+
+    private static string SanitizeRemoteUrl(string value)
+    {
+        if (!Uri.TryCreate(value, UriKind.Absolute, out Uri? uri))
+            return Bound(value, 2048) ?? string.Empty;
+        if (uri.Scheme is not ("http" or "https"))
+            return Bound($"{uri.Scheme}://{uri.Host}{uri.AbsolutePath}", 2048) ?? string.Empty;
+        UriBuilder builder = new(uri) { UserName = string.Empty, Password = string.Empty,
+            Query = string.Empty, Fragment = string.Empty };
+        return Bound(builder.Uri.ToString(), 2048) ?? string.Empty;
+    }
+
     private static DeveloperGitConflictDocumentResult InspectConflict(
         string repositoryRoot,
         string path,

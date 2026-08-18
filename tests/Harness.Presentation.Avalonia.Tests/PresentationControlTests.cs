@@ -4751,6 +4751,37 @@ public sealed class PresentationControlTests
                 ConflictState(), [command.Path], null, null));
         }
 
+        public ValueTask<DeveloperGitRemoteInspectionResult> InspectRemotesAsync(
+            WorkbenchWorkspaceRequest workspace,
+            CancellationToken cancellationToken = default)
+        {
+            var context = new WorkbenchWorkspaceContext(workspace.WorkspaceId, null, new("main"),
+                WorkbenchWorkspaceScope.OriginalWorkspace, "Original workspace");
+            return ValueTask.FromResult(new DeveloperGitRemoteInspectionResult(context,
+                new("main", new string('a', 40), [], "", false, null, null, "git-fingerprint"),
+                [new(new("origin"), "https://example.test/repository.git", [], [])],
+                new("main"), new("origin"), new("main"), new string('a', 40),
+                new string('a', 40), 0, 0, null, null));
+        }
+
+        public async ValueTask<DeveloperGitRemotePreviewResult> PreviewRemoteAsync(
+            DeveloperGitRemotePreviewCommand command,
+            CancellationToken cancellationToken = default)
+        {
+            DeveloperGitRemoteInspectionResult inspection = await InspectRemotesAsync(
+                command.Workspace, cancellationToken);
+            return new(new(new("remote-preview"), inspection.Context, command.ExpectedFingerprint,
+                command.Action, command.Remote, command.Source, command.Destination,
+                inspection.LocalSha, inspection.RemoteTrackingSha, command.PushPolicy,
+                inspection.Ahead, inspection.Behind, "Synchronize refs.",
+                "Configured Git helper.", "Recovery is not guaranteed."), inspection, null, null);
+        }
+
+        public ValueTask<DeveloperGitRemoteInspectionResult> ApplyRemoteAsync(
+            DeveloperGitRemotePreviewView preview,
+            CancellationToken cancellationToken = default) =>
+            InspectRemotesAsync(new(preview.Context.WorkspaceId, null), cancellationToken);
+
         private static DeveloperGitConflictDocumentResult ConflictDocument(
             WorkbenchWorkspaceRequest workspace,
             DeveloperGitPath path,
@@ -4928,6 +4959,11 @@ public sealed class PresentationControlTests
             GitStashDropPreviews.Add(preview);
             return ValueTask.FromResult(GitStashDropDecisions.TryDequeue(out bool decision) && decision);
         }
+
+
+        public ValueTask<bool> ConfirmGitRemoteAsync(
+            DeveloperGitRemotePreviewView preview,
+            Window? owner) => ValueTask.FromResult(false);
     }
 
     private sealed class CodeIntelligenceService : IWorkbenchCodeIntelligenceService

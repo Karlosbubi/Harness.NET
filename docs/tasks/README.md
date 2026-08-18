@@ -491,7 +491,7 @@ and Debug needs. Database, profiler, and notebook modules remain later slices.
 
 ### 050 — complete Git workbench
 
-Status: `In progress — local workflows, history, and conflict editing delivered`
+Status: `Completed`
 
 Dependencies: 023, 029, 035, 036, 039.
 
@@ -575,7 +575,17 @@ regions and bounded Roslyn diagnostics remain visible. Saving is bound to the co
 Git fingerprint and exact result hash, writes through the confined atomic editor, and
 does not resolve the index. Staging the exact saved result is a separate action.
 Unsaved result edits join the normal save/discard/cancel flow and automatic refresh
-cannot replace them. Remote synchronization remains open.
+cannot replace them. Explicit remote synchronization is delivered in a separate
+Remotes tab. Fetch names one remote and exact branch mapping and changes only the
+remote-tracking reference. Pull remains deliberately split: after fetch, the developer
+reviews exact local/tracking commits and ahead/behind state, then chooses fast-forward
+merge or rebase integration. Push names its source and destination and defaults to a
+non-forced update; force-with-lease is the only force policy and binds the displayed
+remote-tracking commit. Every operation has an exact preview and second confirmation,
+targets only the original workspace, supports cancellation and process-tree cleanup,
+uses configured Git helpers or SSH agents, sanitizes displayed URLs, and discards
+remote process output. See the
+[remote synchronization acceptance record](../acceptance/git-workbench-remotes-2026-08-18.md).
 
 ### 051 — developer terminal and structured tasks
 

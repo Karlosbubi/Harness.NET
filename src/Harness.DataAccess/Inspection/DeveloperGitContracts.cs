@@ -63,6 +63,20 @@ public enum DeveloperGitStashOperation
     Drop,
 }
 
+public enum DeveloperGitRemoteOperation
+{
+    Fetch,
+    PullMerge,
+    PullRebase,
+    Push,
+}
+
+public enum DeveloperGitPushPolicy
+{
+    FastForwardOnly,
+    ForceWithLease,
+}
+
 public sealed record DeveloperGitStateFingerprint(string Value);
 public sealed record DeveloperGitPath(string Value);
 public sealed record DeveloperGitIndexRequest(
@@ -329,6 +343,39 @@ public sealed record DeveloperGitConflictStageRequest(
     DeveloperGitStateFingerprint ExpectedFingerprint,
     DeveloperGitPath Path,
     DeveloperGitContentHash ExpectedResultHash);
+public sealed record DeveloperGitRemoteName(string Value);
+public sealed record DeveloperGitReferenceName(string Value);
+public sealed record DeveloperGitRemote(
+    DeveloperGitRemoteName Name,
+    string SanitizedUrl,
+    IReadOnlyList<string> FetchRefspecs,
+    IReadOnlyList<string> PushRefspecs);
+public sealed record DeveloperGitRemoteInspection(
+    WorkspaceGitState? State,
+    IReadOnlyList<DeveloperGitRemote> Remotes,
+    DeveloperGitReferenceName? LocalBranch,
+    DeveloperGitRemoteName? UpstreamRemote,
+    DeveloperGitReferenceName? UpstreamBranch,
+    string? LocalSha,
+    string? RemoteTrackingSha,
+    int? Ahead,
+    int? Behind,
+    string? ErrorCode,
+    string? Error);
+public sealed record DeveloperGitRemoteRequest(
+    string RepositoryRoot,
+    DeveloperGitStateFingerprint ExpectedFingerprint,
+    DeveloperGitRemoteOperation Operation,
+    DeveloperGitRemoteName Remote,
+    DeveloperGitReferenceName Source,
+    DeveloperGitReferenceName Destination,
+    string? ExpectedLocalSha,
+    string? ExpectedRemoteTrackingSha,
+    DeveloperGitPushPolicy PushPolicy);
+public sealed record DeveloperGitRemoteResult(
+    DeveloperGitRemoteInspection Inspection,
+    string? ErrorCode,
+    string? Error);
 
 public interface IDeveloperGitRepository
 {
@@ -412,5 +459,13 @@ public interface IDeveloperGitRepository
 
     ValueTask<DeveloperGitIndexResult> StageConflictResultAsync(
         DeveloperGitConflictStageRequest request,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitRemoteInspection> InspectRemotesAsync(
+        string repositoryRoot,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitRemoteResult> ApplyRemoteAsync(
+        DeveloperGitRemoteRequest request,
         CancellationToken cancellationToken = default);
 }
