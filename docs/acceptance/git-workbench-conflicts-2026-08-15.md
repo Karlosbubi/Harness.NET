@@ -58,3 +58,18 @@ Explicit fetch, pull, and push with remote authority and credential isolation re
 Submodule, network-failure, cancellation, restart, large-repository, AT-SPI, Linux x64
 publish, full deterministic verification, secret scanning, and the separate final goal
 commit remain open.
+
+## Handoff — 2026-08-18
+
+Work stopped at the developer's request so Task 050 can move to another environment.
+The conflict slice is committed and pushed as `afa4a32` (`Add exact three-way conflict
+editing`). The primary and `Harness.NET-live` worktrees were both fast-forwarded to
+that commit, and the live host started successfully on its configured loopback MCP
+endpoint before shutdown.
+
+Resume with remote synchronization. Implement fetch, pull, and push as explicit typed
+developer actions under ADR 024, including sanitized remote/refspec display,
+divergence preview, credential-source reporting without values, cancellation, network
+failure, fast-forward policy, and force-with-lease only. Then finish the remaining
+Task 050 acceptance matrix listed above. Do not mark Task 050 delivered based on this
+conflict-slice evidence alone.
