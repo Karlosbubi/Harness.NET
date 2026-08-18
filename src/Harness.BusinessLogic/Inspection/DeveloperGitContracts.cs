@@ -348,6 +348,60 @@ public sealed record DeveloperGitBlamePageView(
     int? NextStartLine,
     string? ErrorCode,
     string? Error);
+public sealed record DeveloperGitContentHash(string Value);
+public sealed record DeveloperGitConflictSideView(
+    DeveloperGitPath? Path,
+    DeveloperGitCommitSha? Blob,
+    string? Text,
+    bool IsMissing,
+    bool IsBinary,
+    bool IsTruncated);
+public sealed record DeveloperGitConflictRegionView(
+    int StartLine,
+    int? SeparatorLine,
+    int? EndLine,
+    string OursLabel,
+    string TheirsLabel,
+    bool IsComplete);
+public sealed record DeveloperGitConflictSummaryView(
+    DeveloperGitPath Path,
+    DeveloperGitCommitSha? BaseBlob,
+    DeveloperGitCommitSha? OursBlob,
+    DeveloperGitCommitSha? TheirsBlob,
+    bool IsBinary);
+public sealed record DeveloperGitConflictInspectionResult(
+    WorkbenchWorkspaceContext Context,
+    WorkspaceGitStateView? State,
+    IReadOnlyList<DeveloperGitConflictSummaryView> Conflicts,
+    bool IsTruncated,
+    string? ErrorCode,
+    string? Error);
+public sealed record DeveloperGitConflictDocumentView(
+    DeveloperGitPath Path,
+    DeveloperGitConflictSideView Base,
+    DeveloperGitConflictSideView Ours,
+    DeveloperGitConflictSideView Theirs,
+    string Result,
+    DeveloperGitContentHash ResultHash,
+    bool ResultIsTruncated,
+    IReadOnlyList<DeveloperGitConflictRegionView> UnresolvedRegions);
+public sealed record DeveloperGitConflictDocumentResult(
+    WorkbenchWorkspaceContext Context,
+    WorkspaceGitStateView? State,
+    DeveloperGitConflictDocumentView? Document,
+    string? ErrorCode,
+    string? Error);
+public sealed record DeveloperGitConflictSaveCommand(
+    WorkbenchWorkspaceRequest Workspace,
+    DeveloperGitStateFingerprint ExpectedFingerprint,
+    DeveloperGitPath Path,
+    DeveloperGitContentHash ExpectedResultHash,
+    string Result);
+public sealed record DeveloperGitConflictStageCommand(
+    WorkbenchWorkspaceRequest Workspace,
+    DeveloperGitStateFingerprint ExpectedFingerprint,
+    DeveloperGitPath Path,
+    DeveloperGitContentHash ExpectedResultHash);
 public sealed record DeveloperGitPatchCommand(
     WorkbenchWorkspaceRequest Workspace,
     DeveloperGitStateFingerprint ExpectedFingerprint,
@@ -458,5 +512,22 @@ public interface IDeveloperGitService
 
     ValueTask<DeveloperGitBlamePageView> InspectBlameAsync(
         DeveloperGitBlameRequest request,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitConflictInspectionResult> InspectConflictsAsync(
+        WorkbenchWorkspaceRequest workspace,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitConflictDocumentResult> InspectConflictAsync(
+        WorkbenchWorkspaceRequest workspace,
+        DeveloperGitPath path,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitConflictDocumentResult> SaveConflictResultAsync(
+        DeveloperGitConflictSaveCommand command,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitIndexCommandResult> StageConflictResultAsync(
+        DeveloperGitConflictStageCommand command,
         CancellationToken cancellationToken = default);
 }

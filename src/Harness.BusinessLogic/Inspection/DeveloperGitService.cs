@@ -758,6 +758,94 @@ internal sealed class DeveloperGitService(
             page.NextStartLine, page.ErrorCode, page.Error);
     }
 
+    public async ValueTask<DeveloperGitConflictInspectionResult> InspectConflictsAsync(
+        WorkbenchWorkspaceRequest workspace,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(workspace);
+        WorkbenchWorkspaceResolution resolution = await contextResolver.ResolveAsync(
+            workspace, cancellationToken);
+        if (resolution.RootPath is null || resolution.Error is not null)
+            return new(resolution.Context, null, [], false,
+                resolution.ErrorCode, resolution.Error);
+        Harness.DataAccess.Inspection.DeveloperGitConflictInspection inspection =
+            await Task.Run(async () => await repository.InspectConflictsAsync(
+                resolution.RootPath, cancellationToken), cancellationToken);
+        return new(resolution.Context,
+            inspection.State is null ? null : Map(inspection.State),
+            inspection.Conflicts.Select(MapConflictSummary).ToArray(),
+            inspection.IsTruncated,
+            inspection.ErrorCode,
+            inspection.Error);
+    }
+
+    public async ValueTask<DeveloperGitConflictDocumentResult> InspectConflictAsync(
+        WorkbenchWorkspaceRequest workspace,
+        DeveloperGitPath path,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(workspace);
+        ArgumentNullException.ThrowIfNull(path);
+        WorkbenchWorkspaceResolution resolution = await contextResolver.ResolveAsync(
+            workspace, cancellationToken);
+        if (resolution.RootPath is null || resolution.Error is not null)
+            return new(resolution.Context, null, null,
+                resolution.ErrorCode, resolution.Error);
+        Harness.DataAccess.Inspection.DeveloperGitConflictDocumentResult result =
+            await Task.Run(async () => await repository.InspectConflictAsync(
+                resolution.RootPath,
+                new Harness.DataAccess.Inspection.DeveloperGitPath(path.Value),
+                cancellationToken), cancellationToken);
+        return MapConflictDocument(resolution.Context, result);
+    }
+
+    public async ValueTask<DeveloperGitConflictDocumentResult> SaveConflictResultAsync(
+        DeveloperGitConflictSaveCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        WorkbenchWorkspaceResolution resolution = await contextResolver.ResolveAsync(
+            command.Workspace, cancellationToken);
+        if (resolution.RootPath is null || resolution.Error is not null)
+            return new(resolution.Context, null, null,
+                resolution.ErrorCode, resolution.Error);
+        Harness.DataAccess.Inspection.DeveloperGitConflictDocumentResult result =
+            await Task.Run(async () => await repository.SaveConflictResultAsync(new(
+                resolution.RootPath,
+                new Harness.DataAccess.Inspection.DeveloperGitStateFingerprint(
+                    command.ExpectedFingerprint.Value),
+                new Harness.DataAccess.Inspection.DeveloperGitPath(command.Path.Value),
+                new Harness.DataAccess.Inspection.DeveloperGitContentHash(
+                    command.ExpectedResultHash.Value),
+                command.Result), cancellationToken), cancellationToken);
+        return MapConflictDocument(resolution.Context, result);
+    }
+
+    public async ValueTask<DeveloperGitIndexCommandResult> StageConflictResultAsync(
+        DeveloperGitConflictStageCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        WorkbenchWorkspaceResolution resolution = await contextResolver.ResolveAsync(
+            command.Workspace, cancellationToken);
+        if (resolution.RootPath is null || resolution.Error is not null)
+            return new(resolution.Context, null, [],
+                resolution.ErrorCode, resolution.Error);
+        DeveloperGitIndexResult result = await Task.Run(async () =>
+            await repository.StageConflictResultAsync(new(
+                resolution.RootPath,
+                new Harness.DataAccess.Inspection.DeveloperGitStateFingerprint(
+                    command.ExpectedFingerprint.Value),
+                new Harness.DataAccess.Inspection.DeveloperGitPath(command.Path.Value),
+                new Harness.DataAccess.Inspection.DeveloperGitContentHash(
+                    command.ExpectedResultHash.Value)), cancellationToken), cancellationToken);
+        return new(resolution.Context,
+            result.State is null ? null : Map(result.State),
+            result.AffectedPaths.Select(path => new DeveloperGitPath(path.Value)).ToArray(),
+            result.ErrorCode,
+            result.Error);
+    }
+
     private static DeveloperGitBranchInspectionResult MapBranches(
         WorkbenchWorkspaceContext context,
         DeveloperGitBranchInspection inspection) => new(
@@ -806,6 +894,42 @@ internal sealed class DeveloperGitService(
             stash.CreatedAt,
             stash.Message,
             stash.MessageIsTruncated);
+
+    private static DeveloperGitConflictSummaryView MapConflictSummary(
+        Harness.DataAccess.Inspection.DeveloperGitConflictSummary conflict) => new(
+        new(conflict.Path.Value),
+        conflict.BaseBlob is null ? null : new(conflict.BaseBlob.Value),
+        conflict.OursBlob is null ? null : new(conflict.OursBlob.Value),
+        conflict.TheirsBlob is null ? null : new(conflict.TheirsBlob.Value),
+        conflict.IsBinary);
+
+    private static DeveloperGitConflictDocumentResult MapConflictDocument(
+        WorkbenchWorkspaceContext context,
+        Harness.DataAccess.Inspection.DeveloperGitConflictDocumentResult result) => new(
+        context,
+        result.State is null ? null : Map(result.State),
+        result.Document is null ? null : new(
+            new(result.Document.Path.Value),
+            MapConflictSide(result.Document.Base),
+            MapConflictSide(result.Document.Ours),
+            MapConflictSide(result.Document.Theirs),
+            result.Document.Result,
+            new(result.Document.ResultHash.Value),
+            result.Document.ResultIsTruncated,
+            result.Document.UnresolvedRegions.Select(region => new DeveloperGitConflictRegionView(
+                region.StartLine, region.SeparatorLine, region.EndLine,
+                region.OursLabel, region.TheirsLabel, region.IsComplete)).ToArray()),
+        result.ErrorCode,
+        result.Error);
+
+    private static DeveloperGitConflictSideView MapConflictSide(
+        Harness.DataAccess.Inspection.DeveloperGitConflictSide side) => new(
+        side.Path is null ? null : new(side.Path.Value),
+        side.Blob is null ? null : new(side.Blob.Value),
+        side.Text,
+        side.IsMissing,
+        side.IsBinary,
+        side.IsTruncated);
 
     private static DeveloperGitTagInspectionResult MapTags(
         WorkbenchWorkspaceContext context,

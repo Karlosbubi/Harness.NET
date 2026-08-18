@@ -374,6 +374,44 @@ public sealed class DeveloperGitServiceTests
         Assert.Equal("line", Assert.Single(blame.Lines).Text);
     }
 
+    [Fact]
+    public async Task Conflict_inspection_and_exact_save_follow_active_goal_context()
+    {
+        Repository repository = new();
+        var service = new DeveloperGitService(new ContextResolver(), repository, new GitInspector());
+        var workspace = new WorkbenchWorkspaceRequest(new("workspace-id"), new("goal-id"));
+
+        DeveloperGitConflictInspectionResult conflicts = await service.InspectConflictsAsync(workspace);
+        Harness.BusinessLogic.Inspection.DeveloperGitConflictDocumentResult document =
+            await service.InspectConflictAsync(workspace, new("first.cs"));
+        Harness.BusinessLogic.Inspection.DeveloperGitConflictDocumentResult saved =
+            await service.SaveConflictResultAsync(new(
+                workspace,
+                new("conflict-state"),
+                new("first.cs"),
+                document.Document!.ResultHash,
+                "resolved"));
+        DeveloperGitIndexCommandResult staged = await service.StageConflictResultAsync(new(
+            workspace,
+            new("conflict-state"),
+            new("first.cs"),
+            saved.Document!.ResultHash));
+
+        Assert.Equal(WorkbenchWorkspaceScope.ApprovedGoalWorktree, conflicts.Context.Scope);
+        Assert.Equal("first.cs", Assert.Single(conflicts.Conflicts).Path.Value);
+        Assert.Equal("ours", document.Document.Ours.Text);
+        Assert.Equal("resolved", saved.Document!.Result);
+        Assert.Equal("/state/worktrees/goal-id", repository.ConflictSaveRequest!.RepositoryRoot);
+        Assert.Equal("conflict-state", repository.ConflictSaveRequest.ExpectedFingerprint.Value);
+        Assert.Equal(document.Document.ResultHash.Value,
+            repository.ConflictSaveRequest.ExpectedResultHash.Value);
+        Assert.Null(staged.Error);
+        Assert.Equal("/state/worktrees/goal-id", repository.ConflictStageRequest!.RepositoryRoot);
+        Assert.Equal("conflict-state", repository.ConflictStageRequest.ExpectedFingerprint.Value);
+        Assert.Equal(saved.Document.ResultHash.Value,
+            repository.ConflictStageRequest.ExpectedResultHash.Value);
+    }
+
     private sealed class Repository : IDeveloperGitRepository
     {
         internal bool WorktreeIsDirty { get; init; }
@@ -386,6 +424,8 @@ public sealed class DeveloperGitServiceTests
         internal DeveloperGitTagRequest? TagRequest { get; private set; }
         internal DeveloperGitWorktreeRequest? WorktreeRequest { get; private set; }
         internal DeveloperGitStashRequest? StashRequest { get; private set; }
+        internal DeveloperGitConflictSaveRequest? ConflictSaveRequest { get; private set; }
+        internal DeveloperGitConflictStageRequest? ConflictStageRequest { get; private set; }
 
         public ValueTask<DeveloperGitIndexResult> UpdateIndexAsync(
             DeveloperGitIndexRequest request,
@@ -531,6 +571,54 @@ public sealed class DeveloperGitServiceTests
             ValueTask.FromResult(new DeveloperGitBlamePage(null, request.Path,
                 [new(1, new(new string('a', 40)), "Developer", DateTimeOffset.UnixEpoch,
                     request.Path, 1, "line")], null, null, null));
+
+        public ValueTask<DeveloperGitConflictInspection> InspectConflictsAsync(
+            string repositoryRoot,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new DeveloperGitConflictInspection(
+                new("harness/goal", new string('a', 40), [], "", false, null, null,
+                    "conflict-state"),
+                [new(new("first.cs"), new(new string('a', 40)), new(new string('b', 40)),
+                    new(new string('c', 40)), false)],
+                false, null, null));
+
+        public ValueTask<Harness.DataAccess.Inspection.DeveloperGitConflictDocumentResult>
+            InspectConflictAsync(
+                string repositoryRoot,
+                Harness.DataAccess.Inspection.DeveloperGitPath path,
+                CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(ConflictDocument(path, "<<<<<<< ours\n=======\n>>>>>>> theirs"));
+
+        public ValueTask<Harness.DataAccess.Inspection.DeveloperGitConflictDocumentResult>
+            SaveConflictResultAsync(
+                DeveloperGitConflictSaveRequest request,
+                CancellationToken cancellationToken = default)
+        {
+            ConflictSaveRequest = request;
+            return ValueTask.FromResult(ConflictDocument(request.Path, request.Result));
+        }
+
+        public ValueTask<DeveloperGitIndexResult> StageConflictResultAsync(
+            DeveloperGitConflictStageRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            ConflictStageRequest = request;
+            return ValueTask.FromResult(new DeveloperGitIndexResult(null, [request.Path], null, null));
+        }
+
+        private static Harness.DataAccess.Inspection.DeveloperGitConflictDocumentResult
+            ConflictDocument(Harness.DataAccess.Inspection.DeveloperGitPath path, string result) =>
+            new(
+                new("harness/goal", new string('a', 40), [], "", false, null, null,
+                    "conflict-state"),
+                new(path,
+                    new(path, new(new string('a', 40)), "base", false, false, false),
+                    new(path, new(new string('b', 40)), "ours", false, false, false),
+                    new(path, new(new string('c', 40)), "theirs", false, false, false),
+                    result, new(new string('d', 64)), false,
+                    [new(1, 2, 3, "ours", "theirs", true)]),
+                null,
+                null);
     }
 
     private sealed class GitInspector(WorkspaceGitState? state = null) : IWorkspaceGitInspector

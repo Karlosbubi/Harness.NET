@@ -3802,6 +3802,92 @@ public sealed class PresentationControlTests
     }
 
     [Fact]
+    public async Task Git_conflict_editor_saves_then_stages_exact_result_as_separate_actions()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            DeveloperGitService git = new();
+            CodeIntelligenceService code = new();
+            WorkbenchDockHost workbench = CreateWorkbench(
+                TrustedShell(), new(), codeIntelligence: code, developerGit: git);
+            Window window = new() { Content = workbench.Control };
+            window.Show();
+            workbench.RefreshGitAsync().AsTask().GetAwaiter().GetResult();
+            Control gitTool = Assert.IsAssignableFrom<Control>(
+                Find<IDockable>(workbench.Root, WorkbenchDockIds.GitTool).Context);
+            TabControl tabs = Assert.Single(gitTool.GetVisualDescendants().OfType<TabControl>(), item =>
+                AutomationProperties.GetName(item) == "Git workbench sections");
+            TabItem conflictsTab = Assert.IsType<TabItem>(tabs.Items.OfType<TabItem>().ElementAt(6));
+            Control conflictPanel = Assert.IsAssignableFrom<Control>(conflictsTab.Content);
+            TextEditor result = Assert.Single(
+                conflictPanel.GetLogicalDescendants().OfType<TextEditor>(), item =>
+                    AutomationProperties.GetName(item) == "Editable Git conflict result");
+            Assert.Contains("<<<<<<<", result.Text, StringComparison.Ordinal);
+            Assert.False(result.IsReadOnly);
+            Assert.Contains(code.Snapshots, snapshot =>
+                snapshot.Path.Value == "first.cs" &&
+                snapshot.Text.Value.Contains("<<<<<<<", StringComparison.Ordinal));
+            TextBlock diagnostics = Assert.Single(
+                conflictPanel.GetLogicalDescendants().OfType<TextBlock>(), item =>
+                    AutomationProperties.GetName(item) == "Git conflict result diagnostics");
+            Assert.Contains("Roslyn", diagnostics.Text, StringComparison.Ordinal);
+            Assert.Contains(conflictPanel.GetLogicalDescendants().OfType<TextEditor>(), item =>
+                AutomationProperties.GetName(item) == "Read-only Git conflict base" && item.IsReadOnly);
+            Assert.Contains(conflictPanel.GetLogicalDescendants().OfType<Button>(), item =>
+                AutomationProperties.GetName(item) ==
+                "Save exact merge result without resolving Git index conflict");
+            Assert.Contains(conflictPanel.GetLogicalDescendants().OfType<Button>(), item =>
+                AutomationProperties.GetName(item) ==
+                "Stage exact saved merge result and resolve selected Git index conflict");
+
+            result.Text = "resolved result\n";
+            workbench.SaveGitConflictResultAsync().AsTask().GetAwaiter().GetResult();
+
+            Assert.Equal("conflict-state", git.ConflictSaveCommand!.ExpectedFingerprint.Value);
+            Assert.Equal(new string('d', 64), git.ConflictSaveCommand.ExpectedResultHash.Value);
+            Assert.Equal("resolved result\n", git.ConflictSaveCommand.Result);
+            workbench.StageSavedGitConflictResultAsync().AsTask().GetAwaiter().GetResult();
+            Assert.Equal("first.cs", git.ConflictStageCommand!.Path.Value);
+            Assert.Equal("conflict-state", git.ConflictStageCommand.ExpectedFingerprint.Value);
+            Assert.Equal(new string('d', 64), git.ConflictStageCommand.ExpectedResultHash.Value);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Unsaved_merge_result_blocks_exit_until_user_saves_or_discards_it()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            DocumentPrompt prompt = new();
+            WorkbenchDockHost workbench = CreateWorkbench(
+                TrustedShell(), new(), prompt: prompt, developerGit: new DeveloperGitService());
+            Window window = new() { Content = workbench.Control };
+            window.Show();
+            workbench.RefreshGitAsync().AsTask().GetAwaiter().GetResult();
+            Control gitTool = Assert.IsAssignableFrom<Control>(
+                Find<IDockable>(workbench.Root, WorkbenchDockIds.GitTool).Context);
+            TextEditor result = Assert.Single(
+                gitTool.GetLogicalDescendants().OfType<TextEditor>(), item =>
+                    AutomationProperties.GetName(item) == "Editable Git conflict result");
+            result.Text = "unsaved choice\n";
+            prompt.UnsavedDecisions.Enqueue(WorkbenchUnsavedDecision.Cancel);
+
+            Assert.False(workbench.PrepareForShutdownAsync().AsTask().GetAwaiter().GetResult());
+            Assert.Equal("unsaved choice\n", result.Text);
+
+            prompt.UnsavedDecisions.Enqueue(WorkbenchUnsavedDecision.Discard);
+            Assert.True(workbench.PrepareForShutdownAsync().AsTask().GetAwaiter().GetResult());
+            Assert.Contains("<<<<<<<", result.Text, StringComparison.Ordinal);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
     public async Task Stash_delete_dialog_shows_exact_commit_and_requires_acknowledgement()
     {
         using HeadlessUnitTestSession session =
@@ -4317,6 +4403,8 @@ public sealed class PresentationControlTests
         internal DeveloperGitStashApplyCommand? StashApplyCommand { get; private set; }
         internal DeveloperGitStashDropPreviewCommand? StashDropCommand { get; private set; }
         internal DeveloperGitStashDropPreviewView? AppliedStashDrop { get; private set; }
+        internal DeveloperGitConflictSaveCommand? ConflictSaveCommand { get; private set; }
+        internal DeveloperGitConflictStageCommand? ConflictStageCommand { get; private set; }
 
         public ValueTask<DeveloperGitIndexCommandResult> UpdateIndexAsync(
             DeveloperGitIndexCommand command,
@@ -4622,6 +4710,67 @@ public sealed class PresentationControlTests
                 [new(1, new(new string('a', 40)), "Developer", DateTimeOffset.UnixEpoch,
                     request.Path, 1, "line")], null, null, null));
         }
+
+        public ValueTask<DeveloperGitConflictInspectionResult> InspectConflictsAsync(
+            WorkbenchWorkspaceRequest workspace,
+            CancellationToken cancellationToken = default)
+        {
+            var context = new WorkbenchWorkspaceContext(workspace.WorkspaceId, workspace.GoalId,
+                new("main"), WorkbenchWorkspaceScope.OriginalWorkspace, "Original workspace");
+            return ValueTask.FromResult(new DeveloperGitConflictInspectionResult(context,
+                ConflictState(),
+                [new(new("first.cs"), new(new string('a', 40)), new(new string('b', 40)),
+                    new(new string('c', 40)), false)],
+                false, null, null));
+        }
+
+        public ValueTask<DeveloperGitConflictDocumentResult> InspectConflictAsync(
+            WorkbenchWorkspaceRequest workspace,
+            DeveloperGitPath path,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(ConflictDocument(workspace, path,
+                "<<<<<<< ours\nours\n=======\ntheirs\n>>>>>>> theirs\n"));
+
+        public ValueTask<DeveloperGitConflictDocumentResult> SaveConflictResultAsync(
+            DeveloperGitConflictSaveCommand command,
+            CancellationToken cancellationToken = default)
+        {
+            ConflictSaveCommand = command;
+            return ValueTask.FromResult(ConflictDocument(
+                command.Workspace, command.Path, command.Result));
+        }
+
+        public ValueTask<DeveloperGitIndexCommandResult> StageConflictResultAsync(
+            DeveloperGitConflictStageCommand command,
+            CancellationToken cancellationToken = default)
+        {
+            ConflictStageCommand = command;
+            return ValueTask.FromResult(new DeveloperGitIndexCommandResult(
+                new(command.Workspace.WorkspaceId, command.Workspace.GoalId, new("main"),
+                    WorkbenchWorkspaceScope.OriginalWorkspace, "Original workspace"),
+                ConflictState(), [command.Path], null, null));
+        }
+
+        private static DeveloperGitConflictDocumentResult ConflictDocument(
+            WorkbenchWorkspaceRequest workspace,
+            DeveloperGitPath path,
+            string result)
+        {
+            var context = new WorkbenchWorkspaceContext(workspace.WorkspaceId, workspace.GoalId,
+                new("main"), WorkbenchWorkspaceScope.OriginalWorkspace, "Original workspace");
+            return new(context, ConflictState(), new(path,
+                new(path, new(new string('a', 40)), "base", false, false, false),
+                new(path, new(new string('b', 40)), "ours", false, false, false),
+                new(path, new(new string('c', 40)), "theirs", false, false, false),
+                result, new(new string('d', 64)), false,
+                result.Contains("<<<<<<<", StringComparison.Ordinal)
+                    ? [new(1, 3, 5, "ours", "theirs", true)] : []), null, null);
+        }
+
+        private static WorkspaceGitStateView ConflictState() => new(
+            "main", new string('a', 40),
+            [new("first.cs", "Conflicted", "Conflicted", "Conflicted", false, true, true)],
+            string.Empty, false, null, null, "conflict-state");
     }
 
     private sealed class RunOutputService : IRunOutputService

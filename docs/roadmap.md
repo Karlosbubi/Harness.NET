@@ -442,8 +442,12 @@ The Git panel now separates Changes, Branches, Tags, Worktrees, Stashes, and His
 into accessible tabs. History supplies a paged topological graph across reachable
 refs, an optional rename-following file timeline, exact commit details and bounded
 parent/child patches, and paged blame. Inspection follows the active original or
-approved-goal source context and runs off the UI thread with cancellation. Merge
-editing and remotes remain.
+approved-goal source context and runs off the UI thread with cancellation. The
+Conflicts tab now supplies bounded read-only base, ours, and theirs panes plus an
+editable result, unresolved marker regions, and isolated Roslyn diagnostics. Exact
+fingerprint/hash save and a separate stage action prevent silent resolution, while
+unsaved-result prompts prevent refresh, switch, or exit loss. Remote synchronization
+remains.
 
 ### Planned: Task 051 — developer terminal and structured tasks
 

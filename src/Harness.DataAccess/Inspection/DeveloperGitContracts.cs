@@ -277,6 +277,58 @@ public sealed record DeveloperGitBlamePage(
     int? NextStartLine,
     string? ErrorCode,
     string? Error);
+public sealed record DeveloperGitContentHash(string Value);
+public sealed record DeveloperGitConflictSide(
+    DeveloperGitPath? Path,
+    DeveloperGitCommitSha? Blob,
+    string? Text,
+    bool IsMissing,
+    bool IsBinary,
+    bool IsTruncated);
+public sealed record DeveloperGitConflictRegion(
+    int StartLine,
+    int? SeparatorLine,
+    int? EndLine,
+    string OursLabel,
+    string TheirsLabel,
+    bool IsComplete);
+public sealed record DeveloperGitConflictSummary(
+    DeveloperGitPath Path,
+    DeveloperGitCommitSha? BaseBlob,
+    DeveloperGitCommitSha? OursBlob,
+    DeveloperGitCommitSha? TheirsBlob,
+    bool IsBinary);
+public sealed record DeveloperGitConflictInspection(
+    WorkspaceGitState? State,
+    IReadOnlyList<DeveloperGitConflictSummary> Conflicts,
+    bool IsTruncated,
+    string? ErrorCode,
+    string? Error);
+public sealed record DeveloperGitConflictDocument(
+    DeveloperGitPath Path,
+    DeveloperGitConflictSide Base,
+    DeveloperGitConflictSide Ours,
+    DeveloperGitConflictSide Theirs,
+    string Result,
+    DeveloperGitContentHash ResultHash,
+    bool ResultIsTruncated,
+    IReadOnlyList<DeveloperGitConflictRegion> UnresolvedRegions);
+public sealed record DeveloperGitConflictDocumentResult(
+    WorkspaceGitState? State,
+    DeveloperGitConflictDocument? Document,
+    string? ErrorCode,
+    string? Error);
+public sealed record DeveloperGitConflictSaveRequest(
+    string RepositoryRoot,
+    DeveloperGitStateFingerprint ExpectedFingerprint,
+    DeveloperGitPath Path,
+    DeveloperGitContentHash ExpectedResultHash,
+    string Result);
+public sealed record DeveloperGitConflictStageRequest(
+    string RepositoryRoot,
+    DeveloperGitStateFingerprint ExpectedFingerprint,
+    DeveloperGitPath Path,
+    DeveloperGitContentHash ExpectedResultHash);
 
 public interface IDeveloperGitRepository
 {
@@ -343,5 +395,22 @@ public interface IDeveloperGitRepository
 
     ValueTask<DeveloperGitBlamePage> InspectBlameAsync(
         DeveloperGitBlameRequest request,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitConflictInspection> InspectConflictsAsync(
+        string repositoryRoot,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitConflictDocumentResult> InspectConflictAsync(
+        string repositoryRoot,
+        DeveloperGitPath path,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitConflictDocumentResult> SaveConflictResultAsync(
+        DeveloperGitConflictSaveRequest request,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperGitIndexResult> StageConflictResultAsync(
+        DeveloperGitConflictStageRequest request,
         CancellationToken cancellationToken = default);
 }

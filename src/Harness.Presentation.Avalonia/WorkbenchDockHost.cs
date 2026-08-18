@@ -130,6 +130,24 @@ internal sealed class WorkbenchDockHost
         string.Empty, isReadOnly: true, wordWrap: false, showLineNumbers: false,
         path: "git-history.patch");
     private DeveloperGitHistoryPageView? currentHistoryPage;
+    private readonly ListBox gitConflicts = new();
+    private readonly TextEditor gitConflictBase = CodeEditorView.Create(
+        string.Empty, isReadOnly: true, wordWrap: false, showLineNumbers: true,
+        path: "conflict-base.cs");
+    private readonly TextEditor gitConflictOurs = CodeEditorView.Create(
+        string.Empty, isReadOnly: true, wordWrap: false, showLineNumbers: true,
+        path: "conflict-ours.cs");
+    private readonly TextEditor gitConflictTheirs = CodeEditorView.Create(
+        string.Empty, isReadOnly: true, wordWrap: false, showLineNumbers: true,
+        path: "conflict-theirs.cs");
+    private readonly TextEditor gitConflictResult = CodeEditorView.Create(
+        string.Empty, isReadOnly: false, wordWrap: false, showLineNumbers: true,
+        path: "conflict-result.cs");
+    private readonly TextBlock gitConflictStatus = new() { TextWrapping = TextWrapping.Wrap };
+    private readonly TextBlock gitConflictDiagnostics = new() { TextWrapping = TextWrapping.Wrap };
+    private DeveloperGitConflictInspectionResult? currentConflictInspection;
+    private DeveloperGitConflictDocumentResult? currentConflictDocument;
+    private bool renderingConflict;
     private string gitFingerprint = string.Empty;
     private IReadOnlyList<DeveloperGitPatchUnitView> currentPatchUnits = [];
     private WorkbenchWorkspaceContext? currentGitContext;
@@ -172,6 +190,11 @@ internal sealed class WorkbenchDockHost
     private IDockable? activeDocument;
     private WorkbenchCodeSessionId? codeSessionId;
     private string? codeSessionKey;
+    private CancellationTokenSource? conflictDiagnosticsCancellation;
+    private long conflictDiagnosticsVersion;
+    private readonly SemaphoreSlim conflictCodeSessionGate = new(1, 1);
+    private WorkbenchCodeSessionId? conflictCodeSessionId;
+    private string? conflictCodeSessionKey;
     private EditorIntelligencePreferences editorIntelligencePreferences =
         EditorIntelligencePreferences.Default;
     private KeybindingSettingsSnapshot keybindingSettings = KeybindingSettingsSnapshot.Default;
@@ -551,6 +574,7 @@ internal sealed class WorkbenchDockHost
 
     internal async ValueTask<bool> PrepareForShutdownAsync()
     {
+        if (!await ResolveUnsavedConflictAsync(WorkbenchDocumentTransition.Exit)) return false;
         foreach (SourceDocumentSession session in sourceDocuments.Values
                      .Where(item => item.IsDirty)
                      .ToArray())
@@ -567,8 +591,11 @@ internal sealed class WorkbenchDockHost
         return true;
     }
 
-    internal ValueTask<bool> PrepareForWorkspaceChangeAsync() =>
-        CloseAllSourceDocumentsAsync(WorkbenchDocumentTransition.Switch);
+    internal async ValueTask<bool> PrepareForWorkspaceChangeAsync()
+    {
+        if (!await ResolveUnsavedConflictAsync(WorkbenchDocumentTransition.Switch)) return false;
+        return await CloseAllSourceDocumentsAsync(WorkbenchDocumentTransition.Switch);
+    }
 
     internal void Update(AvaloniaShellState snapshot)
     {
@@ -610,6 +637,10 @@ internal sealed class WorkbenchDockHost
             fileTreeTruncated = false;
             RenderFileTree();
             changes.ItemsSource = Array.Empty<ChangeChoice>();
+            currentConflictInspection = null;
+            currentConflictDocument = null;
+            gitConflicts.ItemsSource = Array.Empty<ConflictChoice>();
+            ClearGitConflictEditors();
             fileStatus.Text = string.Empty;
             gitStatus.Text = string.Empty;
             gitSummary.Text = active is null ? "No workspace selected." : "Refresh Git state.";
@@ -749,6 +780,14 @@ internal sealed class WorkbenchDockHost
                 : active.IsTrusted ? "Enter a relative file path." : "Trust the workspace before reading files.";
             return;
         }
+        if (currentConflictDocument?.Document is { } conflict &&
+            conflict.Path.Value.Equals(relativePath.Trim(), StringComparison.Ordinal) &&
+            currentConflictDocument.Context.GoalId == requestedGoalId)
+        {
+            fileStatus.Text = "That path is active in the Git conflict result editor. " +
+                "Save and stage it there before opening a second buffer.";
+            return;
+        }
 
         await RunAsync(async () =>
         {
@@ -835,7 +874,12 @@ internal sealed class WorkbenchDockHost
                 RenderGitStashes(stashes);
             }
             if (developerGitService is not null)
+            {
                 await RefreshGitHistoryCoreAsync(active, append: false);
+                if (!IsConflictDirty()) await RefreshGitConflictsCoreAsync(active);
+                else gitConflictStatus.Text =
+                    "Merge result has unsaved edits; automatic Git refresh preserved this buffer.";
+            }
         });
     }
 
@@ -858,7 +902,7 @@ internal sealed class WorkbenchDockHost
         UpdatePatchUnitChoices();
         gitStatus.Text = conflictCount > 0
             ? $"{conflictCount} unresolved Git conflict(s) block commit approval. " +
-              "Resolve and stage them with Git, then refresh this view."
+              "Use the Conflicts tab to inspect base, ours, and theirs; save the result, then stage it explicitly."
             : "Git state refreshed.";
     }
 
@@ -869,6 +913,11 @@ internal sealed class WorkbenchDockHost
             changes.SelectedItem is not ChangeChoice selected || string.IsNullOrEmpty(gitFingerprint))
         {
             gitStatus.Text = "Select a current Git change first.";
+            return;
+        }
+        if (action is DeveloperGitIndexAction.Stage && selected.Change.IsConflicted)
+        {
+            gitStatus.Text = "Use the Conflicts tab to inspect, save, and explicitly stage this merge result.";
             return;
         }
 
@@ -1420,6 +1469,299 @@ internal sealed class WorkbenchDockHost
                     $"\n\nBlame is paged; next line is {page.NextStartLine.Value}.");
             gitStatus.Text = page.Error ?? $"Showing blame for {path}.";
         });
+    }
+
+    internal async ValueTask RefreshGitConflictsAsync()
+    {
+        WorkspaceView? active = ActiveWorkspace();
+        if (busy || active is null || developerGitService is null) return;
+        if (!await ResolveUnsavedConflictAsync(WorkbenchDocumentTransition.Reload)) return;
+        await RunAsync(() => RefreshGitConflictsCoreAsync(active));
+    }
+
+    private async ValueTask RefreshGitConflictsCoreAsync(WorkspaceView active)
+    {
+        DeveloperGitConflictInspectionResult result =
+            await developerGitService!.InspectConflictsAsync(
+                WorkbenchRequest(active), cancellationToken);
+        currentConflictInspection = result;
+        gitConflicts.ItemsSource = result.Conflicts
+            .Select(conflict => new ConflictChoice(conflict)).ToArray();
+        gitConflicts.SelectedIndex = result.Conflicts.Count > 0 ? 0 : -1;
+        gitConflictStatus.Text = result.Error ?? (result.Conflicts.Count == 0
+            ? "No unresolved Git conflicts in this source context."
+            : $"{result.Conflicts.Count} unresolved path(s)" +
+              (result.IsTruncated ? " · list truncated" : string.Empty));
+        if (result.Conflicts.FirstOrDefault() is { } first)
+        {
+            DeveloperGitConflictDocumentResult document =
+                await developerGitService.InspectConflictAsync(
+                    WorkbenchRequest(active), first.Path, cancellationToken);
+            if (HasOpenSourceDocument(document.Context, first.Path))
+                gitConflictStatus.Text = $"Close the source editor for {first.Path.Value} before " +
+                    "opening its merge result; Harness keeps one semantic buffer per path.";
+            else
+                RenderGitConflict(document);
+        }
+        else
+        {
+            currentConflictDocument = null;
+            ClearGitConflictEditors();
+        }
+    }
+
+    private async ValueTask LoadSelectedGitConflictAsync()
+    {
+        WorkspaceView? active = ActiveWorkspace();
+        if (busy || active is null || developerGitService is null ||
+            gitConflicts.SelectedItem is not ConflictChoice selected) return;
+        if (currentConflictDocument?.Document is { } current && current.Path != selected.Conflict.Path &&
+            !await ResolveUnsavedConflictAsync(WorkbenchDocumentTransition.Switch)) return;
+        await RunAsync(async () =>
+        {
+            DeveloperGitConflictDocumentResult result =
+                await developerGitService.InspectConflictAsync(
+                    WorkbenchRequest(active), selected.Conflict.Path, cancellationToken);
+            if (HasOpenSourceDocument(result.Context, selected.Conflict.Path))
+                gitConflictStatus.Text = $"Close the source editor for {selected.Conflict.Path.Value} " +
+                    "before opening its merge result; Harness keeps one semantic buffer per path.";
+            else
+                RenderGitConflict(result);
+        });
+    }
+
+    private bool HasOpenSourceDocument(
+        WorkbenchWorkspaceContext context,
+        DeveloperGitPath path) => sourceDocuments.Values.Any(session =>
+        session.View.WorkspaceId == context.WorkspaceId &&
+        session.View.GoalId == context.GoalId &&
+        session.View.Path.Value.Equals(path.Value, StringComparison.Ordinal));
+
+    internal async ValueTask SaveGitConflictResultAsync()
+    {
+        if (renderingConflict || busy || developerGitService is null ||
+            currentConflictDocument?.Document is not { } document ||
+            currentConflictDocument.State is null || gitConflictResult.IsReadOnly)
+        {
+            gitConflictStatus.Text = "Select an editable text conflict first.";
+            return;
+        }
+        WorkspaceView? active = ActiveWorkspace();
+        if (active is null) return;
+        await RunAsync(async () =>
+        {
+            DeveloperGitConflictDocumentResult result =
+                await developerGitService.SaveConflictResultAsync(new(
+                    WorkbenchRequest(active),
+                    new(currentConflictDocument.State.Fingerprint),
+                    document.Path,
+                    document.ResultHash,
+                    gitConflictResult.Text), cancellationToken);
+            RenderGitConflict(result);
+        });
+    }
+
+    internal async ValueTask StageSavedGitConflictResultAsync()
+    {
+        if (busy || developerGitService is null || currentConflictDocument?.Document is not { } document ||
+            currentConflictDocument.State is null || gitConflictResult.Text != document.Result)
+        {
+            gitConflictStatus.Text = "Save the exact current merge result before staging it.";
+            return;
+        }
+        if (document.UnresolvedRegions.Count > 0)
+        {
+            gitConflictStatus.Text = "Remove every displayed conflict-marker region and save again before staging.";
+            return;
+        }
+        WorkspaceView? active = ActiveWorkspace();
+        if (active is null) return;
+        await RunAsync(async () =>
+        {
+            DeveloperGitIndexCommandResult result =
+                await developerGitService.StageConflictResultAsync(new(
+                    WorkbenchRequest(active),
+                    new(currentConflictDocument.State.Fingerprint),
+                    document.Path,
+                    document.ResultHash), cancellationToken);
+            if (result.State is not null) RenderGitState(result.Context, result.State);
+            if (result.Error is not null)
+            {
+                gitConflictStatus.Text = result.Error;
+                return;
+            }
+            currentConflictDocument = null;
+            ClearGitConflictEditors();
+            await RefreshGitConflictsCoreAsync(active);
+            int remaining = currentConflictInspection?.Conflicts.Count ?? 0;
+            gitConflictStatus.Text = $"Staged exact saved result for {document.Path.Value}. " +
+                $"{remaining} unresolved path(s) remain.";
+        });
+    }
+
+    private void RenderGitConflict(DeveloperGitConflictDocumentResult result)
+    {
+        currentConflictDocument = result;
+        renderingConflict = true;
+        try
+        {
+            if (result.Document is not { } document)
+            {
+                ClearGitConflictEditors();
+                gitConflictStatus.Text = result.Error ?? "The selected conflict is unavailable.";
+                return;
+            }
+            gitConflictBase.Text = ConflictSideText(document.Base, "base");
+            gitConflictOurs.Text = ConflictSideText(document.Ours, "ours");
+            gitConflictTheirs.Text = ConflictSideText(document.Theirs, "theirs");
+            gitConflictResult.Text = document.Result;
+            gitConflictResult.IsReadOnly = document.ResultIsTruncated ||
+                document.Base.IsBinary || document.Ours.IsBinary || document.Theirs.IsBinary;
+            gitConflictStatus.Text = ConflictStateText(document, isDirty: false);
+            gitConflictDiagnostics.Text = document.Path.Value.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)
+                ? "Checking the current merge result with Roslyn…"
+                : "Compiler diagnostics do not apply to this file type.";
+            ScheduleConflictDiagnostics(document, immediate: true);
+        }
+        finally
+        {
+            renderingConflict = false;
+        }
+    }
+
+    private void ClearGitConflictEditors()
+    {
+        conflictDiagnosticsCancellation?.Cancel();
+        renderingConflict = true;
+        gitConflictBase.Text = string.Empty;
+        gitConflictOurs.Text = string.Empty;
+        gitConflictTheirs.Text = string.Empty;
+        gitConflictResult.Text = string.Empty;
+        gitConflictResult.IsReadOnly = true;
+        gitConflictDiagnostics.Text = string.Empty;
+        renderingConflict = false;
+    }
+
+    private bool IsConflictDirty() => currentConflictDocument?.Document is { } document &&
+        gitConflictResult.Text != document.Result;
+
+    private async ValueTask<bool> ResolveUnsavedConflictAsync(
+        WorkbenchDocumentTransition transition)
+    {
+        if (!IsConflictDirty() || currentConflictDocument?.Document is not { } document) return true;
+        WorkbenchUnsavedDecision decision = await documentPrompt.DecideUnsavedAsync(
+            new($"Merge result · {document.Path.Value}", transition), OwnerWindow());
+        if (decision is WorkbenchUnsavedDecision.Cancel) return false;
+        if (decision is WorkbenchUnsavedDecision.Save)
+        {
+            await SaveGitConflictResultAsync();
+            return !IsConflictDirty();
+        }
+        WorkspaceView? active = ActiveWorkspace();
+        if (active is null || developerGitService is null) return false;
+        DeveloperGitConflictDocumentResult refreshed = await developerGitService.InspectConflictAsync(
+            WorkbenchRequest(active), document.Path, cancellationToken);
+        RenderGitConflict(refreshed);
+        return refreshed.Document is not null;
+    }
+
+    private static string ConflictSideText(DeveloperGitConflictSideView side, string label) =>
+        side.IsMissing ? $"[{label} side does not contain this path]" :
+        side.IsBinary ? $"[{label} side is binary · blob {side.Blob?.Value}]" :
+        side.IsTruncated ? $"[{label} side exceeds the 1 MiB editor limit]" :
+        side.Text ?? string.Empty;
+
+    private void UseConflictSide(DeveloperGitConflictSideView side, string label)
+    {
+        if (side.IsMissing || side.IsBinary || side.IsTruncated || side.Text is null ||
+            gitConflictResult.IsReadOnly)
+        {
+            gitConflictStatus.Text = $"The {label} side is not editable text and cannot replace the result here.";
+            return;
+        }
+        gitConflictResult.Text = side.Text;
+        gitConflictResult.Focus();
+    }
+
+    private static string ConflictStateText(
+        DeveloperGitConflictDocumentView document,
+        bool isDirty) =>
+        $"{document.Path.Value} · {(isDirty ? "unsaved result" : $"saved {document.ResultHash.Value}")} · " +
+        $"{document.UnresolvedRegions.Count} unresolved marker region(s). " +
+        "Saving does not resolve the index; stage the exact saved result separately.";
+
+    private void ScheduleConflictDiagnostics(
+        DeveloperGitConflictDocumentView document,
+        bool immediate = false)
+    {
+        conflictDiagnosticsCancellation?.Cancel();
+        conflictDiagnosticsCancellation?.Dispose();
+        conflictDiagnosticsCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken);
+        if (!document.Path.Value.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) ||
+            gitConflictResult.IsReadOnly)
+        {
+            return;
+        }
+        long version = Interlocked.Increment(ref conflictDiagnosticsVersion);
+        _ = SynchronizeConflictDiagnosticsAsync(
+            document, gitConflictResult.Text, version,
+            conflictDiagnosticsCancellation.Token, immediate);
+    }
+
+    private async Task SynchronizeConflictDiagnosticsAsync(
+        DeveloperGitConflictDocumentView document,
+        string text,
+        long version,
+        CancellationToken token,
+        bool immediate)
+    {
+        try
+        {
+            if (!immediate) await Task.Delay(TimeSpan.FromMilliseconds(250), token);
+            WorkspaceView? active = ActiveWorkspace();
+            DeveloperGitConflictDocumentResult? selected = currentConflictDocument;
+            if (active is null || selected?.Document?.Path != document.Path ||
+                version != conflictDiagnosticsVersion) return;
+            WorkbenchCodeSessionId? sessionId = await EnsureConflictCodeSessionAsync(
+                active, selected.Context.GoalId, selected.Context.Branch, token);
+            if (sessionId is null || version != conflictDiagnosticsVersion) return;
+            WorkbenchCodeDiagnosticView diagnostics = await codeIntelligenceService.SynchronizeAsync(new(
+                sessionId,
+                new(document.Path.Value),
+                new(document.ResultHash.Value),
+                new(version),
+                new(text)), token);
+            if (version != conflictDiagnosticsVersion ||
+                diagnostics.State is WorkbenchCodeResultState.Cancelled or
+                    WorkbenchCodeResultState.Stale) return;
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (version != conflictDiagnosticsVersion) return;
+                if (diagnostics.Diagnostics.Count == 0)
+                {
+                    gitConflictDiagnostics.Text = diagnostics.Issues.Count == 0
+                        ? "Roslyn: no diagnostics in the current merge result."
+                        : $"Roslyn unavailable · {diagnostics.Issues[0].Message.Value}";
+                    return;
+                }
+                gitConflictDiagnostics.Text = "Roslyn diagnostics:\n" + string.Join('\n',
+                    diagnostics.Diagnostics.Take(100).Select(item =>
+                        $"{item.Severity} {item.Id.Value} " +
+                        $"({item.Range.Start.Line + 1},{item.Range.Start.Character + 1}): " +
+                        item.Message.Value)) +
+                    (diagnostics.Diagnostics.Count > 100 ? "\n[diagnostics truncated]" : string.Empty);
+            });
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or IOException or ArgumentException)
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+                gitConflictDiagnostics.Text = $"Roslyn diagnostics failed · {exception.Message}");
+        }
     }
 
     internal async ValueTask PreviewAndApplyGitDestructiveAsync(DeveloperGitDestructiveAction action)
@@ -2263,18 +2605,122 @@ internal sealed class WorkbenchDockHost
         Grid.SetRow(gitHistoryDetails, 3);
         historyPanel.Children.Add(gitHistoryDetails);
 
+        WrapPanel conflictActions = new() { Orientation = AvaloniaOrientation.Horizontal };
+        Button refreshConflicts = new() { Content = "Refresh conflicts" };
+        Button saveConflictResult = new() { Content = "Save result" };
+        Button stageConflictResult = new() { Content = "Stage saved result" };
+        Button useConflictBase = new() { Content = "Use base" };
+        Button useConflictOurs = new() { Content = "Use ours" };
+        Button useConflictTheirs = new() { Content = "Use theirs" };
+        foreach (Button button in new[] { refreshConflicts, saveConflictResult, stageConflictResult,
+                     useConflictBase, useConflictOurs, useConflictTheirs })
+            button.Margin = new Thickness(0, 0, 6, 6);
+        AutomationProperties.SetName(refreshConflicts, "Refresh unresolved Git conflicts");
+        AutomationProperties.SetName(saveConflictResult,
+            "Save exact merge result without resolving Git index conflict");
+        AutomationProperties.SetName(stageConflictResult,
+            "Stage exact saved merge result and resolve selected Git index conflict");
+        AutomationProperties.SetName(useConflictBase, "Replace merge result with text from base");
+        AutomationProperties.SetName(useConflictOurs, "Replace merge result with text from ours");
+        AutomationProperties.SetName(useConflictTheirs, "Replace merge result with text from theirs");
+        AutomationProperties.SetName(gitConflicts, "Unresolved Git conflict paths");
+        AutomationProperties.SetName(gitConflictBase, "Read-only Git conflict base");
+        AutomationProperties.SetName(gitConflictOurs, "Read-only Git conflict ours");
+        AutomationProperties.SetName(gitConflictTheirs, "Read-only Git conflict theirs");
+        AutomationProperties.SetName(gitConflictResult, "Editable Git conflict result");
+        AutomationProperties.SetName(gitConflictStatus, "Git conflict exact save state");
+        AutomationProperties.SetName(gitConflictDiagnostics, "Git conflict result diagnostics");
+        refreshConflicts.Click += async (_, _) => await RefreshGitConflictsAsync();
+        saveConflictResult.Click += async (_, _) => await SaveGitConflictResultAsync();
+        stageConflictResult.Click += async (_, _) => await StageSavedGitConflictResultAsync();
+        useConflictBase.Click += (_, _) =>
+        {
+            if (currentConflictDocument?.Document is { } document)
+                UseConflictSide(document.Base, "base");
+        };
+        useConflictOurs.Click += (_, _) =>
+        {
+            if (currentConflictDocument?.Document is { } document)
+                UseConflictSide(document.Ours, "ours");
+        };
+        useConflictTheirs.Click += (_, _) =>
+        {
+            if (currentConflictDocument?.Document is { } document)
+                UseConflictSide(document.Theirs, "theirs");
+        };
+        gitConflicts.SelectionChanged += async (_, _) => await LoadSelectedGitConflictAsync();
+        gitConflictResult.TextChanged += (_, _) =>
+        {
+            if (!renderingConflict && currentConflictDocument?.Document is { } document)
+            {
+                gitConflictStatus.Text = ConflictStateText(
+                    document, gitConflictResult.Text != document.Result);
+                ScheduleConflictDiagnostics(document);
+            }
+        };
+        conflictActions.Children.Add(refreshConflicts);
+        conflictActions.Children.Add(saveConflictResult);
+        conflictActions.Children.Add(stageConflictResult);
+        conflictActions.Children.Add(useConflictBase);
+        conflictActions.Children.Add(useConflictOurs);
+        conflictActions.Children.Add(useConflictTheirs);
+        Grid conflictSides = new()
+        {
+            ColumnDefinitions = new("*,*,*"),
+            ColumnSpacing = 8,
+        };
+        Grid basePanel = new() { RowDefinitions = new("Auto,*"), RowSpacing = 4 };
+        basePanel.Children.Add(new TextBlock { Text = "Base" });
+        Grid.SetRow(gitConflictBase, 1);
+        basePanel.Children.Add(gitConflictBase);
+        Grid oursPanel = new() { RowDefinitions = new("Auto,*"), RowSpacing = 4 };
+        oursPanel.Children.Add(new TextBlock { Text = "Ours" });
+        Grid.SetRow(gitConflictOurs, 1);
+        oursPanel.Children.Add(gitConflictOurs);
+        Grid theirsPanel = new() { RowDefinitions = new("Auto,*"), RowSpacing = 4 };
+        theirsPanel.Children.Add(new TextBlock { Text = "Theirs" });
+        Grid.SetRow(gitConflictTheirs, 1);
+        theirsPanel.Children.Add(gitConflictTheirs);
+        conflictSides.Children.Add(basePanel);
+        Grid.SetColumn(oursPanel, 1);
+        conflictSides.Children.Add(oursPanel);
+        Grid.SetColumn(theirsPanel, 2);
+        conflictSides.Children.Add(theirsPanel);
+        Grid resultPanel = new() { RowDefinitions = new("Auto,*"), RowSpacing = 4 };
+        resultPanel.Children.Add(new TextBlock { Text = "Result" });
+        Grid.SetRow(gitConflictResult, 1);
+        resultPanel.Children.Add(gitConflictResult);
+        Grid conflictPanel = new()
+        {
+            RowDefinitions = new("Auto,Auto,120,2*,2*,Auto"),
+            RowSpacing = 8,
+        };
+        conflictPanel.Children.Add(gitConflictStatus);
+        Grid.SetRow(conflictActions, 1);
+        conflictPanel.Children.Add(conflictActions);
+        Grid.SetRow(gitConflicts, 2);
+        conflictPanel.Children.Add(gitConflicts);
+        Grid.SetRow(conflictSides, 3);
+        conflictPanel.Children.Add(conflictSides);
+        Grid.SetRow(resultPanel, 4);
+        conflictPanel.Children.Add(resultPanel);
+        Grid.SetRow(gitConflictDiagnostics, 5);
+        conflictPanel.Children.Add(gitConflictDiagnostics);
+
         TabItem changesTab = new() { Header = "Changes", Content = changePanel };
         TabItem branchesTab = new() { Header = "Branches", Content = branchPanel };
         TabItem tagsTab = new() { Header = "Tags", Content = tagPanel };
         TabItem worktreesTab = new() { Header = "Worktrees", Content = worktreePanel };
         TabItem stashesTab = new() { Header = "Stashes", Content = stashPanel };
         TabItem historyTab = new() { Header = "History", Content = historyPanel };
+        TabItem conflictsTab = new() { Header = "Conflicts", Content = conflictPanel };
         AutomationProperties.SetName(changesTab, "Git changes tab");
         AutomationProperties.SetName(branchesTab, "Git branches tab");
         AutomationProperties.SetName(tagsTab, "Git tags tab");
         AutomationProperties.SetName(worktreesTab, "Git worktrees tab");
         AutomationProperties.SetName(stashesTab, "Git stashes tab");
         AutomationProperties.SetName(historyTab, "Git history, file timeline, and blame tab");
+        AutomationProperties.SetName(conflictsTab, "Git three-way conflict editor tab");
         TabControl tabs = new();
         tabs.Items.Add(changesTab);
         tabs.Items.Add(branchesTab);
@@ -2282,6 +2728,7 @@ internal sealed class WorkbenchDockHost
         tabs.Items.Add(worktreesTab);
         tabs.Items.Add(stashesTab);
         tabs.Items.Add(historyTab);
+        tabs.Items.Add(conflictsTab);
         tabs.SelectedIndex = 0;
         AutomationProperties.SetName(tabs, "Git workbench sections");
         Grid.SetRow(tabs, 2);
@@ -2650,8 +3097,79 @@ internal sealed class WorkbenchDockHost
             return null;
         }
 
-        string key = $"{active.Id}:{document.View.GoalId?.Value ?? "original"}:" +
-                     $"{document.View.Branch?.Value ?? active.Branch}:{active.EntryPoint}";
+        return await EnsureCodeSessionAsync(
+            active, document.View.GoalId, document.View.Branch, requestCancellation);
+    }
+
+    private async ValueTask<WorkbenchCodeSessionId?> EnsureConflictCodeSessionAsync(
+        WorkspaceView active,
+        GoalId? goalId,
+        WorkspaceBranchName? branch,
+        CancellationToken requestCancellation)
+    {
+        string key = $"{active.Id}:{goalId?.Value ?? "original"}:" +
+                     $"{branch?.Value ?? active.Branch}:{active.EntryPoint}";
+        await conflictCodeSessionGate.WaitAsync(requestCancellation);
+        try
+        {
+            if (conflictCodeSessionId is not null &&
+                string.Equals(conflictCodeSessionKey, key, StringComparison.Ordinal))
+                return conflictCodeSessionId;
+            if (conflictCodeSessionId is not null)
+                await codeIntelligenceService.StopAsync(conflictCodeSessionId, requestCancellation);
+            conflictCodeSessionId = null;
+            conflictCodeSessionKey = null;
+            string entryPoint = Path.IsPathRooted(active.EntryPoint)
+                ? Path.GetRelativePath(active.RootPath, active.EntryPoint)
+                : active.EntryPoint;
+            if (entryPoint == ".." ||
+                entryPoint.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+                return null;
+            WorkbenchCodeSessionView started = await codeIntelligenceService.StartAsync(
+                new(new(active.Id), goalId, new(entryPoint)),
+                new UiLoadProgress(gitConflictDiagnostics),
+                requestCancellation);
+            conflictCodeSessionId = started.SessionId;
+            conflictCodeSessionKey = started.SessionId is null ? null : key;
+            return started.SessionId;
+        }
+        finally
+        {
+            conflictCodeSessionGate.Release();
+        }
+    }
+
+    private async ValueTask StopConflictCodeSessionAsync()
+    {
+        bool entered = false;
+        try
+        {
+            await conflictCodeSessionGate.WaitAsync(cancellationToken);
+            entered = true;
+            if (conflictCodeSessionId is not null)
+                await codeIntelligenceService.StopAsync(conflictCodeSessionId, cancellationToken);
+            conflictCodeSessionId = null;
+            conflictCodeSessionKey = null;
+            conflictDiagnosticsVersion = 0;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            if (entered) conflictCodeSessionGate.Release();
+        }
+    }
+
+    private async ValueTask<WorkbenchCodeSessionId?> EnsureCodeSessionAsync(
+        WorkspaceView active,
+        GoalId? goalId,
+        WorkspaceBranchName? branch,
+        CancellationToken requestCancellation)
+    {
+
+        string key = $"{active.Id}:{goalId?.Value ?? "original"}:" +
+                     $"{branch?.Value ?? active.Branch}:{active.EntryPoint}";
         await codeSessionGate.WaitAsync(requestCancellation);
         try
         {
@@ -2682,7 +3200,7 @@ internal sealed class WorkbenchDockHost
             WorkbenchCodeSessionView started = await codeIntelligenceService.StartAsync(
                 new(
                     new(active.Id),
-                    document.View.GoalId,
+                    goalId,
                     new(entryPoint)),
                 progress,
                 requestCancellation);
@@ -2709,6 +3227,10 @@ internal sealed class WorkbenchDockHost
 
     private async ValueTask InvalidateCodeIntelligenceAsync()
     {
+        conflictDiagnosticsCancellation?.Cancel();
+        conflictDiagnosticsCancellation?.Dispose();
+        conflictDiagnosticsCancellation = null;
+        await StopConflictCodeSessionAsync();
         try
         {
             await codeSessionGate.WaitAsync(cancellationToken);
@@ -5659,6 +6181,18 @@ internal sealed class WorkbenchDockHost
             return $"{Graph} {sha} · {Commit.Subject} · {Commit.AuthorName} · " +
                    $"{Commit.AuthoredAt.LocalDateTime:g}{references}{merge}";
         }
+    }
+
+    private sealed record ConflictChoice(DeveloperGitConflictSummaryView Conflict)
+    {
+        public override string ToString() =>
+            $"{(Conflict.IsBinary ? "BINARY" : "TEXT")} · {Conflict.Path.Value} · " +
+            $"base {Short(Conflict.BaseBlob)} · ours {Short(Conflict.OursBlob)} · " +
+            $"theirs {Short(Conflict.TheirsBlob)}";
+
+        private static string Short(DeveloperGitCommitSha? value) => value is null
+            ? "missing"
+            : value.Value[..Math.Min(8, value.Value.Length)];
     }
 
     private abstract record RunOutputChoiceBase(DateTimeOffset StartedAt);

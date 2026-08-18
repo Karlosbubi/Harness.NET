@@ -491,7 +491,7 @@ and Debug needs. Database, profiler, and notebook modules remain later slices.
 
 ### 050 — complete Git workbench
 
-Status: `In progress — local workflows and paged history inspection delivered`
+Status: `In progress — local workflows, history, and conflict editing delivered`
 
 Dependencies: 023, 029, 035, 036, 039.
 
@@ -568,8 +568,14 @@ warning and acknowledgement. A paged topological history graph now covers commit
 reachable from repository refs, with an optional rename-following file timeline,
 exact commit metadata, bounded diffs from each parent to the selected child, and paged
 line blame. Heavy inspection runs away from the UI thread, observes cancellation, and
-carries the active original or approved-goal source context. Merge editing and remotes
-remain open.
+carries the active original or approved-goal source context. Three-way text conflict
+editing is now delivered as a separate Conflicts tab: exact index stages supply
+read-only base, ours, and theirs panes; only the result is editable; common unresolved
+regions and bounded Roslyn diagnostics remain visible. Saving is bound to the complete
+Git fingerprint and exact result hash, writes through the confined atomic editor, and
+does not resolve the index. Staging the exact saved result is a separate action.
+Unsaved result edits join the normal save/discard/cancel flow and automatic refresh
+cannot replace them. Remote synchronization remains open.
 
 ### 051 — developer terminal and structured tasks
 

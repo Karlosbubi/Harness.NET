@@ -836,6 +836,108 @@ public sealed class LibGitDeveloperGitRepositoryTests : IDisposable
     }
 
     [Fact]
+    public async Task Inspects_three_way_conflict_and_finds_unresolved_result_regions()
+    {
+        await CreateConflictAsync();
+        var sut = new LibGitDeveloperGitRepository();
+
+        DeveloperGitConflictInspection conflicts = await sut.InspectConflictsAsync(root);
+        DeveloperGitConflictDocumentResult result = await sut.InspectConflictAsync(
+            root, new("first.txt"));
+
+        DeveloperGitConflictSummary summary = Assert.Single(conflicts.Conflicts);
+        Assert.Equal("first.txt", summary.Path.Value);
+        Assert.NotNull(summary.BaseBlob);
+        Assert.NotNull(summary.OursBlob);
+        Assert.NotNull(summary.TheirsBlob);
+        Assert.False(summary.IsBinary);
+        DeveloperGitConflictDocument document = Assert.IsType<DeveloperGitConflictDocument>(
+            result.Document);
+        Assert.Equal("first\n", document.Base.Text);
+        Assert.Equal("main version\n", document.Ours.Text);
+        Assert.Equal("branch version\n", document.Theirs.Text);
+        Assert.Contains("<<<<<<<", document.Result, StringComparison.Ordinal);
+        DeveloperGitConflictRegion region = Assert.Single(document.UnresolvedRegions);
+        Assert.True(region.IsComplete);
+        Assert.Equal(1, region.StartLine);
+        Assert.NotNull(region.SeparatorLine);
+        Assert.NotNull(region.EndLine);
+        Assert.Equal(64, document.ResultHash.Value.Length);
+        Assert.True(result.State!.Changes.Single(change => change.Path == "first.txt").IsConflicted);
+    }
+
+    [Fact]
+    public async Task Saves_exact_conflict_result_without_resolving_until_separately_staged()
+    {
+        await CreateConflictAsync();
+        var sut = new LibGitDeveloperGitRepository();
+        DeveloperGitConflictDocumentResult displayed = await sut.InspectConflictAsync(
+            root, new("first.txt"));
+        DeveloperGitConflictDocument document = Assert.IsType<DeveloperGitConflictDocument>(
+            displayed.Document);
+
+        DeveloperGitConflictDocumentResult saved = await sut.SaveConflictResultAsync(new(
+            root,
+            new(displayed.State!.Fingerprint),
+            new("first.txt"),
+            document.ResultHash,
+            "resolved version\n"));
+
+        Assert.Null(saved.Error);
+        Assert.Equal("resolved version\n", saved.Document!.Result);
+        Assert.Empty(saved.Document.UnresolvedRegions);
+        Assert.True(saved.State!.Changes.Single(change => change.Path == "first.txt").IsConflicted);
+        DeveloperGitIndexResult staged = await sut.StageConflictResultAsync(new(
+            root,
+            new(saved.State.Fingerprint),
+            new("first.txt"),
+            saved.Document.ResultHash));
+        Assert.Null(staged.Error);
+        Assert.DoesNotContain(staged.State!.Changes, change => change.Path == "first.txt" &&
+            change.IsConflicted);
+        Assert.Equal("resolved version\n", ReadIndexText("first.txt"));
+    }
+
+    [Fact]
+    public async Task Refuses_to_stage_a_saved_result_while_conflict_markers_remain()
+    {
+        await CreateConflictAsync();
+        var sut = new LibGitDeveloperGitRepository();
+        DeveloperGitConflictDocumentResult displayed = await sut.InspectConflictAsync(
+            root, new("first.txt"));
+
+        DeveloperGitIndexResult result = await sut.StageConflictResultAsync(new(
+            root,
+            new(displayed.State!.Fingerprint),
+            new("first.txt"),
+            displayed.Document!.ResultHash));
+
+        Assert.Equal("git_conflict_markers_remain", result.ErrorCode);
+        Assert.True(result.State!.Changes.Single(change => change.Path == "first.txt").IsConflicted);
+    }
+
+    [Fact]
+    public async Task Rejects_stale_conflict_result_without_overwriting_newer_content()
+    {
+        await CreateConflictAsync();
+        var sut = new LibGitDeveloperGitRepository();
+        DeveloperGitConflictDocumentResult displayed = await sut.InspectConflictAsync(
+            root, new("first.txt"));
+        await File.WriteAllTextAsync(Path.Combine(root, "first.txt"), "newer manual edit\n");
+
+        DeveloperGitConflictDocumentResult result = await sut.SaveConflictResultAsync(new(
+            root,
+            new(displayed.State!.Fingerprint),
+            new("first.txt"),
+            displayed.Document!.ResultHash,
+            "stale replacement\n"));
+
+        Assert.Equal("git_state_stale", result.ErrorCode);
+        Assert.Equal("newer manual edit\n", await File.ReadAllTextAsync(
+            Path.Combine(root, "first.txt")));
+    }
+
+    [Fact]
     public async Task Pages_history_and_file_timeline_with_exact_commit_cursor()
     {
         await InitializeAsync();
@@ -951,6 +1053,25 @@ public sealed class LibGitDeveloperGitRepositoryTests : IDisposable
         Commands.Stage(repository, "*");
         Signature signature = new("Harness Tests", "tests@harness.local", DateTimeOffset.UtcNow);
         repository.Commit("initial", signature, signature);
+    }
+
+    private async Task CreateConflictAsync()
+    {
+        await InitializeAsync();
+        using Repository repository = new(root);
+        Signature signature = new("Harness Tests", "tests@harness.local", DateTimeOffset.UtcNow);
+        string originalBranch = repository.Head.FriendlyName;
+        Branch branch = repository.CreateBranch("conflicting-branch");
+        await File.WriteAllTextAsync(Path.Combine(root, "first.txt"), "main version\n");
+        Commands.Stage(repository, "first.txt");
+        repository.Commit("main change", signature, signature);
+        Commands.Checkout(repository, branch);
+        await File.WriteAllTextAsync(Path.Combine(root, "first.txt"), "branch version\n");
+        Commands.Stage(repository, "first.txt");
+        repository.Commit("branch change", signature, signature);
+        Commands.Checkout(repository, originalBranch);
+        MergeResult result = repository.Merge(branch, signature);
+        Assert.Equal(MergeStatus.Conflicts, result.Status);
     }
 
     private string NewWorktreePath()

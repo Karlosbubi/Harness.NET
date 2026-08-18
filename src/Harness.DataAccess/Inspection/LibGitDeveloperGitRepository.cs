@@ -2,14 +2,20 @@ using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using Harness.DataAccess.Configuration;
+using Harness.DataAccess.Mutations;
 using LibGit2Sharp;
 
 namespace Harness.DataAccess.Inspection;
 
-internal sealed class LibGitDeveloperGitRepository(IApplicationPaths? applicationPaths = null)
+internal sealed class LibGitDeveloperGitRepository(
+    IApplicationPaths? applicationPaths = null,
+    IWorkspaceFileEditor? workspaceFileEditor = null)
     : IDeveloperGitRepository
 {
     private const int PatchUnitIdLength = 64;
+    private const int MaximumConflictContentBytes = 1024 * 1024;
+    private readonly IWorkspaceFileEditor fileEditor =
+        workspaceFileEditor ?? new AtomicWorkspaceFileEditor();
     public ValueTask<DeveloperGitIndexResult> UpdateIndexAsync(
         DeveloperGitIndexRequest request,
         CancellationToken cancellationToken = default)
@@ -924,6 +930,181 @@ internal sealed class LibGitDeveloperGitRepository(IApplicationPaths? applicatio
         }
     }
 
+    public ValueTask<DeveloperGitConflictInspection> InspectConflictsAsync(
+        string repositoryRoot,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        string? repositoryPath = Repository.Discover(repositoryRoot);
+        if (repositoryPath is null)
+            return ValueTask.FromResult(ConflictInspectionFailure(
+                "repository_missing", "No Git repository was found."));
+        try
+        {
+            using Repository repository = new(repositoryPath);
+            if (!IsRepositoryRoot(repositoryRoot, repository))
+                return ValueTask.FromResult(ConflictInspectionFailure(
+                    "repository_mismatch", "The workspace root must be the Git repository root."));
+            WorkspaceGitState state = GitRepositoryStateReader.Read(repository, cancellationToken);
+            string[] names = repository.Index.Conflicts
+                .Select(ConflictPath)
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)
+                .Take(501)
+                .ToArray();
+            bool truncated = names.Length > 500;
+            DeveloperGitConflictSummary[] conflicts = names.Take(500).Select(name =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                Conflict conflict = repository.Index.Conflicts[name];
+                return new DeveloperGitConflictSummary(
+                    new(name),
+                    Sha(conflict.Ancestor),
+                    Sha(conflict.Ours),
+                    Sha(conflict.Theirs),
+                    IsBinary(repository, conflict.Ancestor) ||
+                    IsBinary(repository, conflict.Ours) ||
+                    IsBinary(repository, conflict.Theirs));
+            }).ToArray();
+            return ValueTask.FromResult(new DeveloperGitConflictInspection(
+                state, conflicts, truncated, null, null));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception exception) when (exception is LibGit2SharpException or IOException or
+                                           UnauthorizedAccessException or ArgumentException or
+                                           InvalidOperationException)
+        {
+            return ValueTask.FromResult(ConflictInspectionFailure(
+                "git_conflict_inspection_failed", "Git conflicts could not be inspected."));
+        }
+    }
+
+    public ValueTask<DeveloperGitConflictDocumentResult> InspectConflictAsync(
+        string repositoryRoot,
+        DeveloperGitPath path,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!TryValidatePaths(repositoryRoot, [path], out string[] paths, out string? pathError))
+            return ValueTask.FromResult(ConflictDocumentFailure(
+                "git_conflict_path_invalid", pathError!));
+        return ValueTask.FromResult(InspectConflict(repositoryRoot, paths[0], cancellationToken));
+    }
+
+    public async ValueTask<DeveloperGitConflictDocumentResult> SaveConflictResultAsync(
+        DeveloperGitConflictSaveRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (Encoding.UTF8.GetByteCount(request.Result) > MaximumConflictContentBytes)
+            return ConflictDocumentFailure("git_conflict_result_too_large",
+                "The merge result cannot exceed 1 MiB.");
+        if (!TryValidatePaths(request.RepositoryRoot, [request.Path], out string[] paths,
+                out string? pathError))
+            return ConflictDocumentFailure("git_conflict_path_invalid", pathError!);
+        string? repositoryPath = Repository.Discover(request.RepositoryRoot);
+        if (repositoryPath is null)
+            return ConflictDocumentFailure("repository_missing", "No Git repository was found.");
+        try
+        {
+            using (Repository repository = new(repositoryPath))
+            {
+                if (!IsRepositoryRoot(request.RepositoryRoot, repository))
+                    return ConflictDocumentFailure("repository_mismatch",
+                        "The workspace root must be the Git repository root.");
+                WorkspaceGitState before = GitRepositoryStateReader.Read(repository, cancellationToken);
+                if (!CryptographicEquals(before.Fingerprint, request.ExpectedFingerprint.Value))
+                    return new(before, null, "git_state_stale",
+                        "Git state changed after the conflict was displayed. Refresh and retry.");
+                if (repository.Index.Conflicts[paths[0]] is null)
+                    return new(before, null, "git_conflict_resolved",
+                        "The selected path is no longer conflicted.");
+            }
+
+            WorkspaceFileEditResult saved = await fileEditor.ApplyAsync(
+                request.RepositoryRoot,
+                new(paths[0], request.ExpectedResultHash.Value, request.Result),
+                cancellationToken);
+            if (saved.Error is not null)
+                return ConflictDocumentFailure(
+                    saved.ErrorCode ?? "git_conflict_save_failed", saved.Error);
+            return InspectConflict(request.RepositoryRoot, paths[0], cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception exception) when (exception is LibGit2SharpException or IOException or
+                                           UnauthorizedAccessException or ArgumentException or
+                                           InvalidOperationException)
+        {
+            return ConflictDocumentFailure(
+                "git_conflict_save_failed", "The merge result could not be saved.");
+        }
+    }
+
+    public async ValueTask<DeveloperGitIndexResult> StageConflictResultAsync(
+        DeveloperGitConflictStageRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        DeveloperGitConflictDocumentResult inspected = await InspectConflictAsync(
+            request.RepositoryRoot, request.Path, cancellationToken);
+        if (inspected.Document is null || inspected.State is null)
+            return new(inspected.State, [], inspected.ErrorCode, inspected.Error);
+        if (!CryptographicEquals(inspected.State.Fingerprint, request.ExpectedFingerprint.Value))
+            return new(inspected.State, [], "git_state_stale",
+                "Git state changed after the merge result was displayed. Refresh and retry.");
+        if (!CryptographicEquals(
+                inspected.Document.ResultHash.Value, request.ExpectedResultHash.Value))
+            return new(inspected.State, [], "content_changed",
+                "The merge result no longer matches the displayed content hash.");
+        if (inspected.Document.UnresolvedRegions.Count > 0)
+            return new(inspected.State, [], "git_conflict_markers_remain",
+                "Remove every conflict-marker region and save the result before staging it.");
+        return await UpdateIndexAsync(new(
+            request.RepositoryRoot,
+            request.ExpectedFingerprint,
+            DeveloperGitIndexOperation.Stage,
+            [request.Path]), cancellationToken);
+    }
+
+    private static DeveloperGitConflictDocumentResult InspectConflict(
+        string repositoryRoot,
+        string path,
+        CancellationToken cancellationToken)
+    {
+        string? repositoryPath = Repository.Discover(repositoryRoot);
+        if (repositoryPath is null)
+            return ConflictDocumentFailure("repository_missing", "No Git repository was found.");
+        using Repository repository = new(repositoryPath);
+        if (!IsRepositoryRoot(repositoryRoot, repository))
+            return ConflictDocumentFailure(
+                "repository_mismatch", "The workspace root must be the Git repository root.");
+        WorkspaceGitState state = GitRepositoryStateReader.Read(repository, cancellationToken);
+        Conflict? conflict = repository.Index.Conflicts[path];
+        if (conflict is null)
+            return new(state, null, "git_conflict_missing", "The selected path is not conflicted.");
+        string absolute = Path.Combine(NormalizeRoot(repository.Info.WorkingDirectory), path);
+        if (!File.Exists(absolute))
+            return new(state, null, "git_conflict_result_missing",
+                "The conflicted working result does not exist.");
+        FileInfo file = new(absolute);
+        if (file.Length > MaximumConflictContentBytes)
+            return new(state, null, "git_conflict_result_too_large",
+                "The conflicted working result exceeds 1 MiB.");
+        byte[] bytes = File.ReadAllBytes(absolute);
+        string result = new UTF8Encoding(false, true).GetString(bytes);
+        var document = new DeveloperGitConflictDocument(
+            new(path),
+            MapConflictSide(repository, conflict.Ancestor),
+            MapConflictSide(repository, conflict.Ours),
+            MapConflictSide(repository, conflict.Theirs),
+            result,
+            new(Convert.ToHexStringLower(SHA256.HashData(bytes))),
+            ResultIsTruncated: false,
+            FindConflictRegions(result));
+        return new(state, document, null, null);
+    }
+
     private static DeveloperGitHistoryCommit MapHistoryCommit(Repository repository, Commit commit)
     {
         const int maximumSubjectLength = 1024;
@@ -932,6 +1113,70 @@ internal sealed class LibGitDeveloperGitRepository(IApplicationPaths? applicatio
         return new(new(commit.Sha),
             commit.Parents.Select(parent => new DeveloperGitCommitSha(parent.Sha)).ToArray(),
             commit.Author.Name, commit.Author.When, subject, ReferencesFor(repository, commit.Sha));
+    }
+
+    private static bool IsRepositoryRoot(string requestedRoot, Repository repository) =>
+        NormalizeRoot(requestedRoot).Equals(
+            NormalizeRoot(repository.Info.WorkingDirectory), StringComparison.Ordinal);
+
+    private static string ConflictPath(Conflict conflict) =>
+        conflict.Ours?.Path ?? conflict.Theirs?.Path ?? conflict.Ancestor?.Path ??
+        throw new InvalidOperationException("A Git conflict has no index path.");
+
+    private static DeveloperGitCommitSha? Sha(IndexEntry? entry) =>
+        entry is null ? null : new(entry.Id.Sha);
+
+    private static bool IsBinary(Repository repository, IndexEntry? entry) =>
+        entry is not null && repository.Lookup<Blob>(entry.Id)?.IsBinary == true;
+
+    private static DeveloperGitConflictSide MapConflictSide(
+        Repository repository,
+        IndexEntry? entry)
+    {
+        if (entry is null)
+            return new(null, null, null, IsMissing: true, IsBinary: false, IsTruncated: false);
+        Blob? blob = repository.Lookup<Blob>(entry.Id);
+        if (blob is null)
+            return new(new(entry.Path), new(entry.Id.Sha), null,
+                IsMissing: false, IsBinary: false, IsTruncated: true);
+        bool binary = blob.IsBinary;
+        bool truncated = blob.Size > MaximumConflictContentBytes;
+        string? text = binary || truncated ? null : blob.GetContentText();
+        return new(new(entry.Path), new(entry.Id.Sha), text,
+            IsMissing: false, binary, truncated);
+    }
+
+    private static DeveloperGitConflictRegion[] FindConflictRegions(string text)
+    {
+        string[] lines = text.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        var regions = new List<DeveloperGitConflictRegion>();
+        for (int index = 0; index < lines.Length; index++)
+        {
+            if (!lines[index].StartsWith("<<<<<<<", StringComparison.Ordinal)) continue;
+            int start = index;
+            int separator = -1;
+            int end = -1;
+            for (int candidate = index + 1; candidate < lines.Length; candidate++)
+            {
+                if (separator < 0 && lines[candidate].StartsWith("=======", StringComparison.Ordinal))
+                    separator = candidate;
+                else if (lines[candidate].StartsWith(">>>>>>>", StringComparison.Ordinal))
+                {
+                    end = candidate;
+                    break;
+                }
+            }
+            string ours = Bound(lines[start][7..].Trim(), 256) ?? "ours";
+            string theirs = end >= 0 ? Bound(lines[end][7..].Trim(), 256) ?? "theirs" : "theirs";
+            regions.Add(new(start + 1,
+                separator < 0 ? null : separator + 1,
+                end < 0 ? null : end + 1,
+                ours,
+                theirs,
+                separator >= 0 && end >= 0));
+            if (end >= 0) index = end;
+        }
+        return [.. regions];
     }
 
     private static string[] ReferencesFor(Repository repository, string sha) =>
@@ -966,6 +1211,10 @@ internal sealed class LibGitDeveloperGitRepository(IApplicationPaths? applicatio
         new(null, null, code, error);
     private static DeveloperGitBlamePage BlameFailure(
         DeveloperGitPath path, string code, string error) => new(null, path, [], null, code, error);
+    private static DeveloperGitConflictInspection ConflictInspectionFailure(
+        string code, string error) => new(null, [], false, code, error);
+    private static DeveloperGitConflictDocumentResult ConflictDocumentFailure(
+        string code, string error) => new(null, null, code, error);
 
     private static string? ValidateWorktreeCreate(
         Repository repository,
