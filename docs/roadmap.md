@@ -78,6 +78,7 @@ typed agent tools, and personal configuration.
   references, implementations, and the Agent tools catalog page.
 - Task 045: consented single-frame XDG portal capture, private goal evidence,
   developer preview, agent request/inspect tools, and remote-disclosure policy.
+- Task 050: complete local and remote developer Git workbench.
 
 ### Completed: Task 045 — controlled visual verification
 
@@ -396,7 +397,7 @@ parity requirements. Task 052 covers the relevant project, Run, Test, and Debug
 workflows without changing the product into a LINQPad clone. Database, profiler, and
 notebook modules remain later independent slices.
 
-### In progress: Task 050 — complete Git workbench
+### Completed: Task 050 — complete Git workbench
 
 Turn the current status and diff support into the daily Git workflow. Add staging and
 unstaging by file, line, and hunk; safe discard; commit and amend; branch and worktree
@@ -446,8 +447,13 @@ approved-goal source context and runs off the UI thread with cancellation. The
 Conflicts tab now supplies bounded read-only base, ours, and theirs panes plus an
 editable result, unresolved marker regions, and isolated Roslyn diagnostics. Exact
 fingerprint/hash save and a separate stage action prevent silent resolution, while
-unsaved-result prompts prevent refresh, switch, or exit loss. Remote synchronization
-remains.
+unsaved-result prompts prevent refresh, switch, or exit loss. The Remotes tab completes
+the task with explicit fetch, reviewed merge/rebase integration of fetched tracking
+refs, and explicit push. Typed previews bind the remote, source, destination, local and
+remote-tracking observations, divergence, credential source, and recovery limits.
+Push defaults to fast-forward and permits only exact force-with-lease as its force
+policy. URLs and errors are credential-safe, process output is not retained, operations
+are cancellable, and remote authority is never exposed to goals or agents.
 
 ### Planned: Task 051 — developer terminal and structured tasks
 

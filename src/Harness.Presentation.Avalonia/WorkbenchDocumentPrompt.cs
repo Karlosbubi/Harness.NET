@@ -73,6 +73,10 @@ internal interface IWorkbenchDocumentPrompt
     ValueTask<bool> ConfirmGitStashDropAsync(
         DeveloperGitStashDropPreviewView preview,
         Window? owner);
+
+    ValueTask<bool> ConfirmGitRemoteAsync(
+        DeveloperGitRemotePreviewView preview,
+        Window? owner);
 }
 
 internal sealed record DeveloperGitCommitDraft(
@@ -160,6 +164,63 @@ internal sealed class AvaloniaWorkbenchDocumentPrompt : IWorkbenchDocumentPrompt
     {
         if (owner is null) return false;
         return await new GitStashDropConfirmationDialog(preview).ShowDialog<bool>(owner);
+    }
+
+    public async ValueTask<bool> ConfirmGitRemoteAsync(
+        DeveloperGitRemotePreviewView preview,
+        Window? owner)
+    {
+        if (owner is null) return false;
+        return await new GitRemoteConfirmationDialog(preview).ShowDialog<bool>(owner);
+    }
+}
+
+internal sealed class GitRemoteConfirmationDialog : Window
+{
+    internal GitRemoteConfirmationDialog(DeveloperGitRemotePreviewView preview)
+    {
+        Title = $"Confirm Git {preview.Action}";
+        Width = 720;
+        SizeToContent = SizeToContent.Height;
+        WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        AutomationProperties.SetName(this, "Confirm exact Git remote synchronization");
+        Button confirm = new() { Content = preview.Action.ToString(), IsEnabled = false, MinWidth = 110 };
+        Button cancel = new() { Content = "Cancel", IsCancel = true, MinWidth = 88 };
+        CheckBox acknowledge = new()
+        {
+            Content = "I reviewed the exact refs, network action, credential source, and recovery limits.",
+        };
+        AutomationProperties.SetName(acknowledge, "Acknowledge Git remote operation consequences");
+        AutomationProperties.SetName(confirm, "Confirm exact Git remote operation");
+        acknowledge.IsCheckedChanged += (_, _) => confirm.IsEnabled = acknowledge.IsChecked == true;
+        confirm.Click += (_, _) => Close(true);
+        cancel.Click += (_, _) => Close(false);
+        Content = new StackPanel
+        {
+            Margin = new Thickness(24), Spacing = 12,
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = $"Remote: {preview.Remote.Value}\nSource: {preview.Source.Value}\n" +
+                           $"Destination: {preview.Destination.Value}\nPolicy: {preview.PushPolicy}\n" +
+                           $"Local: {preview.ExpectedLocalSha ?? "unborn"}\n" +
+                           $"Observed remote tracking: {preview.ExpectedRemoteTrackingSha ?? "unknown"}\n" +
+                           $"Divergence: ahead {preview.Ahead?.ToString() ?? "?"}, behind {preview.Behind?.ToString() ?? "?"}",
+                    FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap,
+                },
+                new TextBlock { Text = preview.Consequence, TextWrapping = TextWrapping.Wrap },
+                new TextBlock { Text = preview.CredentialSource, TextWrapping = TextWrapping.Wrap },
+                new TextBlock { Text = preview.Recovery, TextWrapping = TextWrapping.Wrap },
+                acknowledge,
+                new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    Spacing = 8, Children = { cancel, confirm },
+                },
+            },
+        };
     }
 }
 

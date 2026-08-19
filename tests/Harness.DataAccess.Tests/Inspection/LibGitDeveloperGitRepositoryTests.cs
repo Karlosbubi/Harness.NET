@@ -1024,6 +1024,89 @@ public sealed class LibGitDeveloperGitRepositoryTests : IDisposable
         Assert.Null(blame.NextStartLine);
     }
 
+    [Fact]
+    public async Task Fetch_then_fast_forward_integration_and_push_use_exact_remote_observations()
+    {
+        await InitializeAsync();
+        string remoteRoot = NewWorktreePath();
+        Repository.Init(remoteRoot, isBare: true);
+        string peerRoot = NewWorktreePath();
+        string branchName;
+        using (Repository repository = new(root))
+        {
+            branchName = repository.Head.FriendlyName;
+            Remote remote = repository.Network.Remotes.Add("origin", remoteRoot);
+            repository.Network.Push(remote,
+                $"refs/heads/{branchName}:refs/heads/{branchName}", new PushOptions());
+            Commands.Fetch(repository, "origin", [], new FetchOptions(), null);
+            repository.Branches.Update(repository.Head, updater =>
+            {
+                updater.Remote = "origin";
+                updater.UpstreamBranch = $"refs/heads/{branchName}";
+            });
+        }
+        Repository.Clone(remoteRoot, peerRoot);
+        using (Repository peer = new(peerRoot))
+        {
+            peer.Config.Set("user.name", "Remote Developer");
+            peer.Config.Set("user.email", "remote@harness.local");
+            await File.WriteAllTextAsync(Path.Combine(peerRoot, "first.txt"), "remote change\n");
+            Commands.Stage(peer, "first.txt");
+            Signature signature = new("Remote Developer", "remote@harness.local", DateTimeOffset.UtcNow);
+            peer.Commit("remote change", signature, signature);
+            peer.Network.Push(peer.Network.Remotes["origin"],
+                $"refs/heads/{branchName}:refs/heads/{branchName}", new PushOptions());
+        }
+
+        var sut = new LibGitDeveloperGitRepository();
+        DeveloperGitRemoteInspection before = await sut.InspectRemotesAsync(root);
+        DeveloperGitRemoteResult fetched = await sut.ApplyRemoteAsync(new(
+            root, new(before.State!.Fingerprint), DeveloperGitRemoteOperation.Fetch,
+            new("origin"), new(branchName), new(branchName), before.LocalSha,
+            before.RemoteTrackingSha, DeveloperGitPushPolicy.FastForwardOnly));
+        DeveloperGitRemoteResult pulled = await sut.ApplyRemoteAsync(new(
+            root, new(fetched.Inspection.State!.Fingerprint), DeveloperGitRemoteOperation.PullMerge,
+            new("origin"), new(branchName), new(branchName), fetched.Inspection.LocalSha,
+            fetched.Inspection.RemoteTrackingSha, DeveloperGitPushPolicy.FastForwardOnly));
+
+        Assert.Null(fetched.Error);
+        Assert.Equal(1, fetched.Inspection.Behind);
+        Assert.Null(pulled.Error);
+        Assert.Equal("remote change\n", await File.ReadAllTextAsync(Path.Combine(root, "first.txt")));
+        Assert.Equal(0, pulled.Inspection.Behind);
+
+        await File.WriteAllTextAsync(Path.Combine(root, "second.txt"), "local push\n");
+        using (Repository repository = new(root))
+        {
+            Commands.Stage(repository, "second.txt");
+            Signature signature = new("Harness Tests", "tests@harness.local", DateTimeOffset.UtcNow);
+            repository.Commit("local push", signature, signature);
+        }
+        DeveloperGitRemoteInspection pushBefore = await sut.InspectRemotesAsync(root);
+        DeveloperGitRemoteResult pushed = await sut.ApplyRemoteAsync(new(
+            root, new(pushBefore.State!.Fingerprint), DeveloperGitRemoteOperation.Push,
+            new("origin"), new(branchName), new(branchName), pushBefore.LocalSha,
+            pushBefore.RemoteTrackingSha, DeveloperGitPushPolicy.FastForwardOnly));
+        Assert.Null(pushed.Error);
+    }
+
+    [Fact]
+    public async Task Remote_inspection_sanitizes_http_credentials_and_query()
+    {
+        await InitializeAsync();
+        using (Repository repository = new(root))
+            repository.Network.Remotes.Add("origin",
+                "https://user:secret@example.test/repository.git?token=hidden#fragment");
+
+        DeveloperGitRemoteInspection result =
+            await new LibGitDeveloperGitRepository().InspectRemotesAsync(root);
+
+        string url = Assert.Single(result.Remotes).SanitizedUrl;
+        Assert.DoesNotContain("secret", url, StringComparison.Ordinal);
+        Assert.DoesNotContain("token", url, StringComparison.Ordinal);
+        Assert.Equal("https://example.test/repository.git", url.TrimEnd('/'));
+    }
+
     [Theory]
     [InlineData("../outside.txt")]
     [InlineData(".git/config")]

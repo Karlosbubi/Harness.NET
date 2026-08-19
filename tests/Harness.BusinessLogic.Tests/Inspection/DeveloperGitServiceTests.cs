@@ -412,6 +412,34 @@ public sealed class DeveloperGitServiceTests
             repository.ConflictStageRequest.ExpectedResultHash.Value);
     }
 
+    [Fact]
+    public async Task Remote_push_preview_and_apply_bind_exact_observations_and_force_lease()
+    {
+        Repository repository = new();
+        DeveloperGitService service = new(
+            new ContextResolver(goalContext: false), repository, new GitInspector());
+
+        DeveloperGitRemoteInspectionResult inspected = await service.InspectRemotesAsync(
+            new(new("workspace-id"), null));
+        DeveloperGitRemotePreviewResult result = await service.PreviewRemoteAsync(new(
+            new(new("workspace-id"), null), new("remote-state"), DeveloperGitRemoteAction.Push,
+            new("origin"), new("main"), new("main"),
+            Harness.BusinessLogic.Inspection.DeveloperGitPushPolicy.ForceWithLease));
+        DeveloperGitRemotePreviewView preview = Assert.IsType<DeveloperGitRemotePreviewView>(result.Preview);
+
+        Assert.Equal("https://example.test/repository.git", Assert.Single(inspected.Remotes).SanitizedUrl);
+        Assert.Equal(new string('b', 40), preview.ExpectedRemoteTrackingSha);
+        Assert.Contains("lease", preview.Consequence, StringComparison.OrdinalIgnoreCase);
+
+        DeveloperGitRemoteInspectionResult applied = await service.ApplyRemoteAsync(preview);
+
+        Assert.Null(applied.Error);
+        Assert.Equal(DeveloperGitRemoteOperation.Push, repository.RemoteRequest!.Operation);
+        Assert.Equal(Harness.DataAccess.Inspection.DeveloperGitPushPolicy.ForceWithLease,
+            repository.RemoteRequest.PushPolicy);
+        Assert.Equal(new string('b', 40), repository.RemoteRequest.ExpectedRemoteTrackingSha);
+    }
+
     private sealed class Repository : IDeveloperGitRepository
     {
         internal bool WorktreeIsDirty { get; init; }
@@ -426,6 +454,7 @@ public sealed class DeveloperGitServiceTests
         internal DeveloperGitStashRequest? StashRequest { get; private set; }
         internal DeveloperGitConflictSaveRequest? ConflictSaveRequest { get; private set; }
         internal DeveloperGitConflictStageRequest? ConflictStageRequest { get; private set; }
+        internal DeveloperGitRemoteRequest? RemoteRequest { get; private set; }
 
         public ValueTask<DeveloperGitIndexResult> UpdateIndexAsync(
             DeveloperGitIndexRequest request,
@@ -604,6 +633,28 @@ public sealed class DeveloperGitServiceTests
         {
             ConflictStageRequest = request;
             return ValueTask.FromResult(new DeveloperGitIndexResult(null, [request.Path], null, null));
+        }
+
+        public ValueTask<DeveloperGitRemoteInspection> InspectRemotesAsync(
+            string repositoryRoot,
+            CancellationToken cancellationToken = default) => ValueTask.FromResult(
+            new DeveloperGitRemoteInspection(
+                new("main", new string('a', 40), [], "", false, null, null, "remote-state"),
+                [new(new("origin"), "https://example.test/repository.git",
+                    ["+refs/heads/*:refs/remotes/origin/*"], [])],
+                new("main"), new("origin"), new("main"), new string('a', 40),
+                new string('b', 40), 1, 2, null, null));
+
+        public ValueTask<DeveloperGitRemoteResult> ApplyRemoteAsync(
+            DeveloperGitRemoteRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            RemoteRequest = request;
+            return ValueTask.FromResult(new DeveloperGitRemoteResult(
+                new(new("main", new string('a', 40), [], "", false, null, null, "after-remote"),
+                    [new(new("origin"), "https://example.test/repository.git", [], [])],
+                    new("main"), new("origin"), new("main"), new string('a', 40),
+                    new string('a', 40), 0, 0, null, null), null, null));
         }
 
         private static Harness.DataAccess.Inspection.DeveloperGitConflictDocumentResult
