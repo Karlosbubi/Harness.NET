@@ -610,6 +610,13 @@ matrix this task turns green. Independent of Task 060 and may run in parallel wi
 it; landing both before Tasks 053–056 means their new surfaces are born under the
 enforced rules instead of migrated later.
 
+## Candidate work
+
+[The DX/UX review](dx-ux-review.md) collects measured, unregistered improvement
+candidates for working in and on Harness.NET, with suggested packaging into
+existing or new tasks. Promote accepted items to numbered tasks; do not implement
+directly from the review.
+
 ## Ongoing work
 
 - Repeat hands-on Avalonia usability checks after changes to workspace, editor, goals,
