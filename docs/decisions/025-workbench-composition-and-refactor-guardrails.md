@@ -1,6 +1,6 @@
 # ADR 025: Workbench composition and refactoring guardrails
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-24
 - Extends: [ADR 001](001-layered-feature-architecture.md), [ADR 009](009-avalonia-presentation-toolkit.md), [ADR 010](010-docked-desktop-workbench.md), [ADR 011](011-private-workbench-layout-state.md), [ADR 021](021-typed-keybindings-and-modal-input.md)
 

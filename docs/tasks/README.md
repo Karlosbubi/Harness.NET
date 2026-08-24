@@ -881,7 +881,8 @@ Acceptance criteria:
 
 ### 060 — workbench composition refactor
 
-Status: `Planned`
+Status: `In progress` — slice 060.0 and the shrink-only budget infrastructure are
+implemented in PR #2; extraction slices 060.1–060.8 remain.
 
 Dependencies: 049, 050. Coordinates with in-progress 052.
 
@@ -929,7 +930,7 @@ Acceptance criteria:
 
 ### 061 — architecture enforcement and composition seams
 
-Status: `Planned`
+Status: `Complete`
 
 Dependencies: none (independent of 060; shares only the ADR 025 size-budget test
 infrastructure). May run in parallel with 060 — it touches Analyzers, Host, and
@@ -945,6 +946,12 @@ feature slice edits.
 Groundwork: [ADR 026](../decisions/026-translation-boundary-and-architecture-enforcement.md)
 fixes the rules; [architecture.md](../architecture.md) records the measurements and
 the enforcement matrix this task turns green.
+
+Completion evidence (2026-08-24): `HARNESS003` is enforced at error severity with
+positive and negative analyzer coverage; the architecture suite pins 35 existing
+cross-feature service edges; Host registrations are split across five internal
+modules, `Program.cs` is 179 lines, and the Host parity test pins all 138 service
+descriptors by module count and combined fingerprint.
 
 Acceptance criteria:
 

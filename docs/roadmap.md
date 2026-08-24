@@ -579,7 +579,7 @@ execution. Dev-container or Compose compatibility requires a separate format,
 security, provenance, and execution decision; Harness.NET still adds no private
 metadata directory to user repositories.
 
-### Planned: Task 060 — workbench composition refactor
+### In progress: Task 060 — workbench composition refactor
 
 Decompose the accreted Avalonia Presentation classes — `WorkbenchDockHost`,
 `AvaloniaPresentationStore`, `SettingsWindow`, and `GoalDialog` — into per-tool and
@@ -592,23 +592,21 @@ and acceptance evidence per slice.
 
 The [refactor baseline](refactor-baseline.md) records the 2026-08-24 measurements,
 target structure, ordered slices 060.0–060.8, and delegation protocol. Slice 060.0
-(SDK pin, ignore rules, continuous verification) should land immediately; extraction
-slices are sequential and coordinate with in-progress Task 052 before touching run
-output and document surfaces. Landing this before Tasks 053 and 055 keeps their new
-UI from growing files this task is shrinking.
+(SDK pin, ignore rules, continuous verification) and the shrink-only source budget
+are implemented in PR #2. Extraction slices 060.1–060.8 remain sequential and
+coordinate with in-progress Task 052 before touching run output and document
+surfaces.
 
-### Planned: Task 061 — architecture enforcement and composition seams
+### Completed: Task 061 — architecture enforcement and composition seams
 
 Turn the measured but unenforced architecture conventions into mechanisms under
 [ADR 026](decisions/026-translation-boundary-and-architecture-enforcement.md):
-analyzer rule `HARNESS003` making the Business Logic translation boundary a compile
-error, an architecture test pinning the value-contracts-only cross-feature coupling
-shape, and per-feature registration modules that shrink the 537-line composition
-root to a bounded orchestrator. No runtime behavior changes.
+analyzer rule `HARNESS003` makes the Business Logic translation boundary a compile
+error, an architecture test pins the cross-feature service inventory, and five
+feature-area registration modules shrink the 537-line composition root to a
+179-line bounded orchestrator. No runtime behavior changes.
 [architecture.md](architecture.md) carries the measurements and the enforcement
-matrix this task turns green. Independent of Task 060 and may run in parallel with
-it; landing both before Tasks 053–056 means their new surfaces are born under the
-enforced rules instead of migrated later.
+matrix this task turned green.
 
 ## Ongoing work
 

@@ -102,7 +102,7 @@ third-party notices are in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 ## Requirements
 
 - Linux x64 is the current release target.
-- .NET SDK 10.0.201 is pinned by `global.json`.
+- .NET SDK 10.0.100 or a later .NET 10 feature band is selected by `global.json`.
 - The solution uses the XML `.slnx` format.
 
 ## Build and run

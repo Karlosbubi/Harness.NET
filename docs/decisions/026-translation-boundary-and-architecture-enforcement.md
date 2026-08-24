@@ -1,6 +1,6 @@
 # ADR 026: Translation boundary and architecture enforcement
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-24
 - Extends: [ADR 001](001-layered-feature-architecture.md), [ADR 007](007-semantic-contract-types.md), [ADR 025](025-workbench-composition-and-refactor-guardrails.md)
 

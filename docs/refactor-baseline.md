@@ -7,6 +7,10 @@ implementer executes. The binding constraints live in
 acceptance criteria live in [the task ledger](tasks/README.md#060--workbench-composition-refactor).
 This plan changes structure and developer experience, not behavior.
 
+Implementation status (PR #2): slice 060.0 is implemented, and the shrink-only
+source-size test shared with Task 061 is active. Slices 060.1–060.8 remain and must
+continue to follow the sequencing and evidence rules below.
+
 ## Measured baseline (2026-08-24)
 
 Commit `16f3085`, Linux x64, SDK `10.0.400` (forced past the stale `global.json`

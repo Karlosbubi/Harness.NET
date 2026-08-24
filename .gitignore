@@ -11,6 +11,9 @@ artifacts/
 .idea/
 .vs/
 .vscode/
+.codex/
+.agents/
+.claude/
 *.suo
 *.user
 *.userosscache
