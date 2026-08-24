@@ -25,4 +25,6 @@ jobs:
       - name: Build with warnings as errors
         run: dotnet build Harness.slnx --no-restore
       - name: Run deterministic tests
-        run: dotnet test Harness.slnx --no-build --no-restore
+        # Avalonia.Headless owns process-global session state; running test projects
+        # concurrently can race during HeadlessUnitTestSession.Dispose.
+        run: dotnet test Harness.slnx --no-build --no-restore --maxcpucount:1
