@@ -926,3 +926,53 @@ Acceptance criteria:
 10. Each slice lands as its own reviewed pull request with full-suite results,
     the acceptance evidence named in its exit criteria, and a before/after
     line-count table; slices touching Task 052 surfaces are sequenced behind it.
+
+### 061 — architecture enforcement and composition seams
+
+Status: `Planned`
+
+Dependencies: none (independent of 060; shares only the ADR 025 size-budget test
+infrastructure). May run in parallel with 060 — it touches Analyzers, Host, and
+architecture tests, none of 060's presentation surface.
+
+Problem: The 2026-08-24 architecture review found the layer rules holding with zero
+exceptions, but three load-bearing conventions are unenforced: the Business Logic
+translation boundary (27 deliberate mirror-record families; nothing prevents a Data
+Access type leaking into a Business Logic public signature), the value-contracts-only
+cross-feature coupling shape, and the 537-line linear composition root that every
+feature slice edits.
+
+Groundwork: [ADR 026](../decisions/026-translation-boundary-and-architecture-enforcement.md)
+fixes the rules; [architecture.md](../architecture.md) records the measurements and
+the enforcement matrix this task turns green.
+
+Acceptance criteria:
+
+1. ADR 026 is accepted before implementation; no runtime behavior changes in any
+   slice.
+2. `HARNESS003` reports a public Business Logic symbol whose signature reachably
+   mentions a `Harness.DataAccess` type as a compile error, covering methods,
+   properties, constructor parameters, generic arguments, tuple elements, and
+   base interfaces.
+3. `Harness.Analyzers.Tests` proves `HARNESS003` on positive and negative cases,
+   including generic and nested-generic signatures and allowed BCL and
+   Microsoft.Extensions types.
+4. The six Business Logic contract files importing Data Access namespaces are
+   audited under the rule; any violation is fixed by introducing the missing
+   mirror type, never by weakening the rule.
+5. An architecture test asserts the cross-feature service-reference inventory
+   inside Business Logic, seeded from the measured current state; extending the
+   inventory is a one-line reviewed change with a stated reason.
+6. Host gains internal per-feature registration modules; `Program.cs` keeps
+   ordering, configuration, run mode, and shutdown, at or under 200 lines,
+   enforced by the ADR 025 size-budget test.
+7. Registration parity is proven: the composed service collection before and after
+   the Host split resolves the same service set (a test composes both and
+   compares).
+8. `architecture.md`'s enforcement matrix is updated in the same slice as each
+   mechanism lands; no rule flips to Enforced before its mechanism merges.
+9. The full deterministic suite passes; analyzer changes introduce no new
+   warnings anywhere in the solution.
+10. Each slice lands as its own reviewed draft pull request per AGENTS.md, with
+    before/after evidence for the composition-root split (line counts, module
+    list, parity test result).

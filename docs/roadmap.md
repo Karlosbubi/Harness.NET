@@ -597,6 +597,19 @@ slices are sequential and coordinate with in-progress Task 052 before touching r
 output and document surfaces. Landing this before Tasks 053 and 055 keeps their new
 UI from growing files this task is shrinking.
 
+### Planned: Task 061 — architecture enforcement and composition seams
+
+Turn the measured but unenforced architecture conventions into mechanisms under
+[ADR 026](decisions/026-translation-boundary-and-architecture-enforcement.md):
+analyzer rule `HARNESS003` making the Business Logic translation boundary a compile
+error, an architecture test pinning the value-contracts-only cross-feature coupling
+shape, and per-feature registration modules that shrink the 537-line composition
+root to a bounded orchestrator. No runtime behavior changes.
+[architecture.md](architecture.md) carries the measurements and the enforcement
+matrix this task turns green. Independent of Task 060 and may run in parallel with
+it; landing both before Tasks 053–056 means their new surfaces are born under the
+enforced rules instead of migrated later.
+
 ## Ongoing work
 
 - Repeat hands-on Avalonia usability checks after changes to workspace, editor, goals,

@@ -154,6 +154,12 @@ Slice 060.0 is independent and should land first and fast. Slices 060.1–060.5 
 strictly sequential. 060.6 and 060.7 may proceed in parallel with each other after
 060.5. 060.8 closes the task.
 
+Task 061 (architecture enforcement and composition seams, ADR 026) is a separate
+track over Analyzers, Host, and architecture tests. It shares no files with 060's
+presentation slices and may run fully in parallel; only the size-budget test
+infrastructure from 060.1 is shared, and whichever task lands it first, the other
+reuses it.
+
 ## Delegation protocol
 
 - One slice per feature branch (`refactor/060-<n>-<slug>`), draft PR per AGENTS.md.
