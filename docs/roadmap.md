@@ -579,6 +579,24 @@ execution. Dev-container or Compose compatibility requires a separate format,
 security, provenance, and execution decision; Harness.NET still adds no private
 metadata directory to user repositories.
 
+### Planned: Task 060 — workbench composition refactor
+
+Decompose the accreted Avalonia Presentation classes — `WorkbenchDockHost`,
+`AvaloniaPresentationStore`, `SettingsWindow`, and `GoalDialog` — into per-tool and
+per-section composition units under the guardrails of
+[ADR 025](decisions/025-workbench-composition-and-refactor-guardrails.md), and fix
+the measured developer-experience gaps: SDK pin portability, hosted pull-request
+verification, and ignored local agent credentials. Structure changes only; behavior,
+layers, contracts, and toolkits are unchanged, proven by layout, AT-SPI, keybinding,
+and acceptance evidence per slice.
+
+The [refactor baseline](refactor-baseline.md) records the 2026-08-24 measurements,
+target structure, ordered slices 060.0–060.8, and delegation protocol. Slice 060.0
+(SDK pin, ignore rules, continuous verification) should land immediately; extraction
+slices are sequential and coordinate with in-progress Task 052 before touching run
+output and document surfaces. Landing this before Tasks 053 and 055 keeps their new
+UI from growing files this task is shrinking.
+
 ## Ongoing work
 
 - Repeat hands-on Avalonia usability checks after changes to workspace, editor, goals,
