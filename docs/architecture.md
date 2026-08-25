@@ -83,7 +83,9 @@ Measured intra-layer coupling in Business Logic has a deliberate two-tier shape:
 
 Keep it that way: cross-feature reuse of value contracts is free; a new lateral
 service dependency between features is an architectural event that needs a reason.
-This rule is currently convention, not enforcement — see the gap table below.
+`BusinessLogicServiceDependencyTests` pins the reviewed inventory of 35 existing
+consumer-to-service edges and fails when a new edge appears without an explicit
+inventory update.
 
 ## Translation boundary
 
@@ -106,18 +108,19 @@ files (`AgentToolExposureSettingsService`, `AgentToolActivationService`,
 `InboundMcpApplicationService`, `InboundMcpSettingsService`,
 `EditorIntelligenceSettings`, `KeybindingSettings`). Spot checks show the imports
 serve internal implementation, and public signatures expose Business Logic types.
-Nothing mechanical proves that today; the proposed
-[ADR 026](decisions/026-translation-boundary-and-architecture-enforcement.md)
-closes this with an analyzer rule.
+`HARNESS003` now walks every reachable public-signature type and rejects a Data
+Access leak at error severity. The six imports above compile under that rule and
+therefore remain implementation-only.
 
 ## Composition root
 
-`Harness.Host` composes everything: `Program.cs` (537 lines) performs ~138 DI
-registrations linearly, plus configuration loading (`Harness.Host/Configuration`),
-observability bootstrap, run-mode resolution (Avalonia, Terminal, or isolated MCP
-evaluation via `--mcp-evaluation-root`), and shutdown signal ownership. The linear
-registration list is readable but has no per-feature seams; ADR 026 proposes
-feature-scoped registration modules inside Host without changing layer rules.
+`Harness.Host` composes everything. `Program.cs` is a 179-line orchestrator retaining
+configuration loading, registration order, observability bootstrap, run-mode
+resolution (Avalonia, Terminal, or isolated MCP evaluation via
+`--mcp-evaluation-root`), and shutdown ownership. Its 138 DI registrations live in
+five internal modules: Infrastructure, Integrations, Workspace, Goals, and
+Presentation. Architecture tests enforce the 200-line entry-point budget, while
+Host tests pin each module count and the combined service-type/lifetime inventory.
 
 ## Core records
 
@@ -245,9 +248,10 @@ enforced only by review is a gap, not a guarantee.
 | Presentation cannot name Data Access types | `HARNESS001` | Enforced; verified zero usings |
 | Nullable + warnings as errors | `Directory.Build.props` | Enforced |
 | UI toolkit references no runtime layer | `HARNESS001` + reference tests | Enforced |
-| Business Logic public surface exposes only Business Logic types | none (convention) | **Gap** — proposed `HARNESS003`, ADR 026 |
-| Cross-feature coupling limited to value contracts | none (convention, currently true by measurement) | **Gap** — proposed architecture test, ADR 026 |
-| Presentation file-size budget | none | **Planned** — ADR 025 / Task 060 |
+| Business Logic public surface exposes only Business Logic types | `HARNESS003` (semantic, error) | Enforced |
+| Cross-feature service coupling is explicitly inventoried | `BusinessLogicServiceDependencyTests` | Enforced; 35 reviewed edges |
+| Production and test source-size budget | `SourceSizeBudgetTests` | Enforced; shrink-only legacy allowlist |
+| Host entry point stays at or under 200 lines | `SourceSizeBudgetTests` | Enforced |
 | Semantic types over primitives | review | Convention (deliberate; subjective calls stay human) |
 | No unrestricted shell; typed tools only | code shape + review + model-input rejection (`WorkspaceMutationService`) | Structural, partially enforced |
 | Migration ordering and idempotent startup | DbUp sequential scripts + tests | Enforced |

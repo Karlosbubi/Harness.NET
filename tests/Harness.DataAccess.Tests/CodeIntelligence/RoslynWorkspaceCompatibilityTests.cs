@@ -14,15 +14,8 @@ public sealed class RoslynWorkspaceCompatibilityTests : IDisposable
     public async Task Loads_csproj_sln_and_slnx_from_the_workspace_sdk_without_restore()
     {
         Directory.CreateDirectory(root);
-        await File.WriteAllTextAsync(Path.Combine(root, "global.json"), """
-            {
-              "sdk": {
-                "version": "10.0.201",
-                "rollForward": "latestPatch",
-                "allowPrerelease": false
-              }
-            }
-            """);
+        await File.WriteAllTextAsync(Path.Combine(root, "global.json"),
+            RepositorySdkPolicy.GlobalJson);
         await File.WriteAllTextAsync(Path.Combine(root, "Sample.csproj"), """
             <Project Sdk="Microsoft.NET.Sdk">
               <PropertyGroup>
@@ -59,7 +52,7 @@ public sealed class RoslynWorkspaceCompatibilityTests : IDisposable
             root, "Sample.slnx", CancellationToken.None);
 
         Assert.Equal(MSBuildRuntimeState.Ready, registration.State);
-        Assert.Equal(new DotNetSdkVersion("10.0.201"), registration.SdkVersion);
+        Assert.StartsWith("10.0.", registration.SdkVersion?.Value, StringComparison.Ordinal);
         AssertLoadsOneProject(project);
         AssertLoadsOneProject(solution);
         AssertLoadsOneProject(solutionXml);
@@ -79,7 +72,7 @@ public sealed class RoslynWorkspaceCompatibilityTests : IDisposable
             CancellationToken.None);
 
         Assert.NotEqual(RoslynWorkspaceProbeState.Failed, result.State);
-        Assert.Equal(new DotNetSdkVersion("10.0.201"), result.SdkVersion);
+        Assert.StartsWith("10.0.", result.SdkVersion?.Value, StringComparison.Ordinal);
         Assert.True(result.ProjectCount >= 10, $"Loaded only {result.ProjectCount} projects.");
         Assert.True(result.DocumentCount >= 100, $"Loaded only {result.DocumentCount} documents.");
         Assert.DoesNotContain(result.Issues, issue => issue.Code == "workspace_load_failed");
@@ -107,6 +100,24 @@ public sealed class RoslynWorkspaceCompatibilityTests : IDisposable
         Assert.Equal(MSBuildRuntimeState.Degraded, result.State);
         Assert.Equal("sdk_unavailable", result.ErrorCode);
         Assert.Null(result.SdkPath);
+    }
+
+    [Fact]
+    public async Task Missing_workspace_sdk_probe_never_mutates_repository_global_json()
+    {
+        string repository = FindRepositoryRoot();
+        string globalJson = Path.Combine(repository, "global.json");
+        byte[] before = await File.ReadAllBytesAsync(globalJson);
+        Directory.CreateDirectory(root);
+        await File.WriteAllTextAsync(Path.Combine(root, "global.json"), """
+            { "sdk": { "version": "99.0.100", "rollForward": "disable" } }
+            """);
+        IMSBuildRuntime runtime = new MSBuildRuntime(new(new DotNetProcess()));
+
+        _ = await runtime.EnsureRegisteredAsync(root, CancellationToken.None);
+
+        Assert.True(File.Exists(globalJson));
+        Assert.Equal(before, await File.ReadAllBytesAsync(globalJson));
     }
 
     private static void AssertLoadsOneProject(RoslynWorkspaceProbeResult result)

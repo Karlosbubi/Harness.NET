@@ -11,6 +11,7 @@ public sealed class LayerBoundaryAnalyzer : DiagnosticAnalyzer
 {
     public const string InvalidLayerUsageId = "HARNESS001";
     public const string InvalidBoundaryTypeId = "HARNESS002";
+    public const string DataAccessLeakId = "HARNESS003";
 
     private static readonly DiagnosticDescriptor InvalidLayerUsage = new(
         InvalidLayerUsageId,
@@ -28,8 +29,16 @@ public sealed class LayerBoundaryAnalyzer : DiagnosticAnalyzer
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
+    private static readonly DiagnosticDescriptor DataAccessLeak = new(
+        DataAccessLeakId,
+        "Business Logic public contract cannot expose Data Access types",
+        "Public Business Logic contract '{0}' exposes Data Access type '{1}'",
+        "Architecture",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics =>
-        [InvalidLayerUsage, InvalidBoundaryType];
+        [InvalidLayerUsage, InvalidBoundaryType, DataAccessLeak];
 
     public override void Initialize(AnalysisContext context)
     {
@@ -53,7 +62,69 @@ public sealed class LayerBoundaryAnalyzer : DiagnosticAnalyzer
             {
                 startContext.RegisterSymbolAction(AnalyzePublicType, SymbolKind.NamedType);
             }
+
+
+            if (currentLayer is Layer.BusinessLogic)
+            {
+                startContext.RegisterSymbolAction(AnalyzeBusinessLogicContract, SymbolKind.NamedType);
+            }
         });
+    }
+
+    private static void AnalyzeBusinessLogicContract(SymbolAnalysisContext context)
+    {
+        INamedTypeSymbol contract = (INamedTypeSymbol)context.Symbol;
+        if (!IsEffectivelyPublic(contract)) return;
+
+        IEnumerable<ITypeSymbol> exposedTypes = contract.Interfaces.Cast<ITypeSymbol>();
+        if (contract.BaseType is { SpecialType: not SpecialType.System_Object } baseType)
+            exposedTypes = exposedTypes.Append(baseType);
+        exposedTypes = exposedTypes.Concat(contract.GetMembers()
+            .Where(IsEffectivelyPublicMember)
+            .SelectMany(MemberSignatureTypes));
+
+        ITypeSymbol? leaked = exposedTypes.Select(FindDataAccessType)
+            .FirstOrDefault(static type => type is not null);
+        if (leaked is null) return;
+
+        Location? location = contract.Locations.FirstOrDefault(static item => item.IsInSource);
+        if (location is not null)
+            context.ReportDiagnostic(Diagnostic.Create(
+                DataAccessLeak, location, contract.Name, leaked.ToDisplayString()));
+    }
+
+    private static bool IsEffectivelyPublicMember(ISymbol member) =>
+        member.DeclaredAccessibility is Accessibility.Public &&
+        member.Kind is SymbolKind.Method or SymbolKind.Property or SymbolKind.Field or SymbolKind.Event;
+
+    private static IEnumerable<ITypeSymbol> MemberSignatureTypes(ISymbol member) => member switch
+    {
+        IMethodSymbol method => method.Parameters.Select(static parameter => parameter.Type)
+            .Prepend(method.ReturnType)
+            .Concat(method.TypeParameters.SelectMany(static parameter => parameter.ConstraintTypes)),
+        IPropertySymbol property => property.Parameters.Select(static parameter => parameter.Type)
+            .Prepend(property.Type),
+        IFieldSymbol field => [field.Type],
+        IEventSymbol @event => [@event.Type],
+        _ => [],
+    };
+
+    private static ITypeSymbol? FindDataAccessType(ITypeSymbol type)
+    {
+        if (type.ContainingAssembly?.Name == "Harness.DataAccess") return type;
+        return type switch
+        {
+            IArrayTypeSymbol array => FindDataAccessType(array.ElementType),
+            IPointerTypeSymbol pointer => FindDataAccessType(pointer.PointedAtType),
+            IFunctionPointerTypeSymbol function =>
+                function.Signature.Parameters.Select(static parameter => parameter.Type)
+                    .Prepend(function.Signature.ReturnType)
+                    .Select(FindDataAccessType)
+                    .FirstOrDefault(static item => item is not null),
+            INamedTypeSymbol named => named.TypeArguments.Select(FindDataAccessType)
+                .FirstOrDefault(static item => item is not null),
+            _ => null,
+        };
     }
 
     private static void AnalyzeNameUsage(SyntaxNodeAnalysisContext context, Layer currentLayer)
