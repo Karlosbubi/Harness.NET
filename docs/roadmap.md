@@ -597,7 +597,7 @@ are implemented in PR #2. Extraction slices 060.1–060.8 remain sequential and
 coordinate with in-progress Task 052 before touching run output and document
 surfaces.
 
-### Completed: Task 061 — architecture enforcement and composition seams
+### Implemented, pending PR #2 review and merge: Task 061 — architecture enforcement and composition seams
 
 Turn the measured but unenforced architecture conventions into mechanisms under
 [ADR 026](decisions/026-translation-boundary-and-architecture-enforcement.md):

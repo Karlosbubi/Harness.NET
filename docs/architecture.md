@@ -120,7 +120,8 @@ resolution (Avalonia, Terminal, or isolated MCP evaluation via
 `--mcp-evaluation-root`), and shutdown ownership. Its 138 DI registrations live in
 five internal modules: Infrastructure, Integrations, Workspace, Goals, and
 Presentation. Architecture tests enforce the 200-line entry-point budget, while
-Host tests pin each module count and the combined service-type/lifetime inventory.
+Host tests compare each module count and the combined service-type/key/lifetime
+inventory to the reviewed pre-split baseline at commit `16f3085`.
 
 ## Core records
 

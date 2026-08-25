@@ -930,7 +930,7 @@ Acceptance criteria:
 
 ### 061 — architecture enforcement and composition seams
 
-Status: `Complete`
+Status: `Implemented — pending PR #2 review and merge`
 
 Dependencies: none (independent of 060; shares only the ADR 025 size-budget test
 infrastructure). May run in parallel with 060 — it touches Analyzers, Host, and
@@ -947,11 +947,12 @@ Groundwork: [ADR 026](../decisions/026-translation-boundary-and-architecture-enf
 fixes the rules; [architecture.md](../architecture.md) records the measurements and
 the enforcement matrix this task turns green.
 
-Completion evidence (2026-08-24): `HARNESS003` is enforced at error severity with
+Implementation evidence (2026-08-24): `HARNESS003` is enforced at error severity with
 positive and negative analyzer coverage; the architecture suite pins 35 existing
 cross-feature service edges; Host registrations are split across five internal
-modules, `Program.cs` is 179 lines, and the Host parity test pins all 138 service
-descriptors by module count and combined fingerprint.
+modules, `Program.cs` is 179 lines, and the Host parity test compares all 138 service
+descriptors by module count and normalized service-type/key/lifetime fingerprint to
+the reviewed pre-split baseline at commit `16f3085`.
 
 Acceptance criteria:
 
@@ -973,9 +974,9 @@ Acceptance criteria:
 6. Host gains internal per-feature registration modules; `Program.cs` keeps
    ordering, configuration, run mode, and shutdown, at or under 200 lines,
    enforced by the ADR 025 size-budget test.
-7. Registration parity is proven: the composed service collection before and after
-   the Host split resolves the same service set (a test composes both and
-   compares).
+7. Registration parity is proven against the reviewed pre-split baseline: the
+   modular service collection preserves all 138 registrations by module count and
+   normalized service-type/key/lifetime fingerprint captured at commit `16f3085`.
 8. `architecture.md`'s enforcement matrix is updated in the same slice as each
    mechanism lands; no rule flips to Enforced before its mechanism merges.
 9. The full deterministic suite passes; analyzer changes introduce no new
