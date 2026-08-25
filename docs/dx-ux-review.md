@@ -6,9 +6,10 @@ already delegated in [ADR 025](decisions/025-workbench-composition-and-refactor-
 [ADR 026](decisions/026-translation-boundary-and-architecture-enforcement.md)/
 [Task 061](tasks/README.md#061--architecture-enforcement-and-composition-seams).
 Findings are dated 2026-08-24 (branch `docs/task-060-refactor-baseline`); each names
-its evidence. Items here are **candidates** — none is registered as a task. On
-acceptance, promote selected items to numbered tasks (062+) with normal acceptance
-criteria; several small ones can share one task.
+its evidence. They were accepted for packaging on 2026-08-25: contributor items
+D1–D6 are completed by [Task 062](tasks/README.md#062--contributor-verification-and-repository-governance),
+and product items U1–U6 are registered as Tasks 063–068 with normal sequencing and
+acceptance criteria.
 
 Two audiences, two parts:
 
@@ -18,6 +19,18 @@ Two audiences, two parts:
 Everything proposed stays inside the accepted ideals: local-first, typed contracts,
 no web UI, no telemetry by default, no repository metadata, fiscally conservative
 tests.
+
+## Disposition
+
+| Finding | Result |
+|---|---|
+| D1–D6 | Implemented by Task 062 and fixed by [ADR 027](decisions/027-contributor-verification-and-dependency-governance.md). Historical ignored output was absent, so the accepted evidence policy is machine-local description rather than inventing or publishing it. |
+| U1 | [Task 063](tasks/README.md#063--transient-workbench-event-surface), before Task 053 attention states. |
+| U2 | [Task 064](tasks/README.md#064--running-remote-spend-visibility). |
+| U3 | [Task 065](tasks/README.md#065--command-palette-fuzzy-ranking-and-recency), coordinated with Task 060.8. |
+| U4 | [Task 066](tasks/README.md#066--live-keyboard-reference-overlay), after Task 060.1. |
+| U5 | [Task 067](tasks/README.md#067--vim-search-and-named-registers); macros remain decision-gated. |
+| U6 | [Task 068](tasks/README.md#068--explicit-split-editor-groups), after Task 060.5. |
 
 ## Part I — working in Harness.NET
 
@@ -132,12 +145,11 @@ acceptance record" — follows a link to nothing. For a repository whose working
 agreement treats acceptance evidence as a completion gate, that evidence being
 unversioned is a real integrity gap.
 
-**Proposal.** Decide the evidence policy explicitly, then enforce it: either
-(a) commit bounded, redaction-checked evidence into `docs/acceptance/evidence/`
-(small PNGs and text logs; no secrets; size-budgeted), or (b) declare evidence
-machine-local and rewrite acceptance records to describe rather than link. A
-link-checker over `docs/` in the Task 060.0 verification workflow keeps it true
-either way. Option (a) fits the auditability principle better and is recommended.
+**Accepted result.** ADR 027 chooses machine-local description for ignored output.
+The historical files do not exist and were never redaction-reviewed, so reconstructing
+or publishing them would create false evidence. New bounded, reviewed evidence may
+still be committed deliberately below `docs/acceptance/`. CI checks local links and
+acceptance labels.
 
 ### D2. Test taxonomy and the fast inner loop
 
@@ -209,7 +221,7 @@ SDK sentence in the same slice as the pin change, and add a short CONTRIBUTING.m
 that points at AGENTS.md as the working agreement, states the branch → draft PR →
 evidence flow, and links D4's docs map. No duplicated rules — pointers only.
 
-## Suggested packaging
+## Original suggested packaging
 
 | Candidate | Size | Natural home |
 |---|---|---|
@@ -224,9 +236,8 @@ evidence flow, and links D4's docs map. No duplicated rules — pointers only.
 | U6 split editor groups | M | New task; after 060.5 |
 | D1 evidence policy decision | S + ADR-lite | Needs an explicit user decision |
 
-Recommended first wave: the three S-sized DX folds into 060.0, then D2 (it makes
-every subsequent slice cheaper to verify), then U1/U2 (they compound with Tasks
-052/053 rather than competing with them).
+The accepted disposition above implements the contributor wave as Task 062 and
+registers the product work without bundling unrelated UI behavior into this PR.
 
 ## Non-goals
 

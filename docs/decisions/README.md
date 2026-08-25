@@ -41,5 +41,6 @@ records in both directions.
 | [022](022-project-user-secrets.md) | Accepted | Project User Secrets management |
 | [023](023-typed-developer-dotnet-execution.md) | Accepted | Typed developer .NET execution |
 | [024](024-developer-git-workbench.md) | Accepted | Developer Git workbench authority and state |
-| [025](025-workbench-composition-and-refactor-guardrails.md) | Proposed | Workbench composition and refactoring guardrails |
-| [026](026-translation-boundary-and-architecture-enforcement.md) | Proposed | Translation boundary and architecture enforcement |
+| [025](025-workbench-composition-and-refactor-guardrails.md) | Accepted | Workbench composition and refactoring guardrails |
+| [026](026-translation-boundary-and-architecture-enforcement.md) | Accepted | Translation boundary and architecture enforcement |
+| [027](027-contributor-verification-and-dependency-governance.md) | Accepted | Contributor verification and dependency governance |

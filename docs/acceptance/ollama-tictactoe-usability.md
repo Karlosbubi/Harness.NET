@@ -75,7 +75,8 @@ and cleanup. See
 
 ## Accepted run: 2026-08-09
 
-Artifact: `artifacts/usability/ollama-tictactoe-20260809T090534Z`
+Machine-local run output (not retained as repository evidence):
+`artifacts/usability/ollama-tictactoe-20260809T090534Z`
 
 Models:
 
@@ -97,7 +98,8 @@ Most time was spent on local full-file correction inference.
 
 ## Failed run: 2026-08-10
 
-Artifact: `artifacts/usability/ollama-tictactoe-20260810T121124Z`
+Machine-local run output (not retained as repository evidence):
+`artifacts/usability/ollama-tictactoe-20260810T121124Z`
 
 This run found and fixed test-harness issues: correction prompts had dropped the goal,
 stack traces referenced source not supplied to correction, and prose could reach the
