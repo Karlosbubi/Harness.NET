@@ -53,7 +53,8 @@ Delivered:
 - masked developer-only Project User Secrets management over the standard .NET store,
   with separate reveal, copy, add, change, and delete actions and a visual-capture
   interlock;
-- Roslyn validation before model-authored source writes;
+- Roslyn validation before model-authored source writes, including a bounded
+  compiler-proven missing-import repair before an unnecessary model retry;
 - typed, role-scoped agent tools for files, Git, .NET metadata, Build/Test, semantic
   retrieval, diagnostics, symbols, navigation, edits, rename, and closed Roslyn
   action discovery/preview/apply;

@@ -1265,7 +1265,7 @@ See the [slice acceptance record](../acceptance/live-agent-activity-status-2026-
 
 ### 072 — deterministic compiler repair before model retry
 
-Status: `In progress — architecture recorded`
+Status: `Complete`
 
 Dependencies: 012, 038, 042, 047, and 070.
 
@@ -1289,3 +1289,10 @@ Acceptance criteria:
 5. Deterministic tests prove unique, ambiguous, still-invalid, bounded, stale, and
    ordinary valid/rejected candidate behavior, plus a warning-free build and a
    measured comparison against local inference latency.
+
+Implementation evidence (2026-08-28): model-authored C# file edits now run the closed
+repair stage inside their existing Roslyn session. A unique missing import updates only
+the in-memory candidate, is fully revalidated, crosses the same exact-baseline atomic
+write and persisted validation boundaries, and appears in typed tool evidence. Every
+ambiguous, stale, over-bound, or still-invalid case retains the original rejection.
+See the [acceptance record](../acceptance/deterministic-compiler-repair-2026-08-28.md).

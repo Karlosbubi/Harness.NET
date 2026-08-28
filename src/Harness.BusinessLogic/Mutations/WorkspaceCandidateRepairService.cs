@@ -6,7 +6,7 @@ internal sealed partial class WorkspaceMutationService
 {
     private const int MaximumDeterministicCandidateRepairs = 4;
 
-    internal async ValueTask<CandidateRepairOutcome> TryRepairCandidateAsync(
+    private async ValueTask<CandidateRepairOutcome> TryRepairCandidateAsync(
         WorkbenchCodeSessionId sessionId,
         WorkbenchCodeDocumentPath path,
         WorkbenchCodeBaselineHash baseline,
@@ -122,7 +122,7 @@ internal sealed partial class WorkspaceMutationService
         diagnostic.Diagnostic.Path == path &&
         diagnostic.Diagnostic.Id.Value is "CS0246" or "CS0103";
 
-    internal sealed record CandidateRepairOutcome(
+    private sealed record CandidateRepairOutcome(
         WorkbenchCodeText Content,
         WorkbenchCodeValidationView Validation,
         IReadOnlyList<FileEditDeterministicRepairView> Repairs);

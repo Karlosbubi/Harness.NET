@@ -84,6 +84,9 @@ platform types stay inside their owning adapters.
 - Use deterministic compiler or IDE operations when they can answer the question.
 - Apply C# candidates in memory first.
 - Reject a candidate that introduces a compiler error.
+- Before rejection, a model-authored C# candidate may receive the closed deterministic
+  missing-import repair from ADR 012 only when Roslyn returns exactly one namespace;
+  the repaired candidate must still pass the complete warning-free validation boundary.
 - Record introduced warnings and analyzer findings as typed evidence.
 - Apply accepted multi-file changes atomically with exact baseline checks.
 - Validate the persisted result.
