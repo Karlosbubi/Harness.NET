@@ -878,3 +878,109 @@ Acceptance criteria:
    Harness repository metadata is added.
 10. Deterministic adapter tests plus opt-in local integration cover paths, latency,
     disconnects, cancellation, trust, privacy, accessibility, and Linux publish.
+
+### 060 — workbench composition refactor
+
+Status: `In progress` — slice 060.0 and the shrink-only budget infrastructure are
+implemented in PR #2; extraction slices 060.1–060.8 remain.
+
+Dependencies: 049, 050. Coordinates with in-progress 052.
+
+Problem: The runtime layers are healthy, but the Avalonia Presentation layer has
+accreted: `WorkbenchDockHost` (6,389 lines, 85 fields) owns every dock tool and
+appears in half of recent commits, with `AvaloniaPresentationStore`, `SettingsWindow`,
+and `GoalDialog` close behind. Every Stage 3 task grows these same files. Developer
+experience has verified gaps: a stale SDK pin that fails clean machines, no
+continuous verification, and unignored local agent credentials.
+
+Groundwork: [ADR 025](../decisions/025-workbench-composition-and-refactor-guardrails.md)
+fixes the guardrails; [the refactor baseline](../refactor-baseline.md) records the
+2026-08-24 measurements, target structure, ordered slices 060.0–060.8, delegation
+protocol, and risks.
+
+Acceptance criteria:
+
+1. ADR 025 is accepted before any slice merges, and every slice observes its
+   scope limits: structure changes only, no behavior, layer, contract, or
+   toolkit changes.
+2. `global.json` builds on any supported major-version SDK; the 52
+   environment-dependent Roslyn test failures measured in the baseline are gone.
+3. Every pull request runs restore, build with warnings as errors, and the full
+   deterministic test suite on hosted Linux x64; live and paid tests stay excluded.
+4. Local agent working directories (`.codex/` and equivalents) are Git-ignored;
+   no credential-bearing file in the working tree is one `git add -A` from history.
+5. Each workbench tool, settings section, and goal-dialog aspect is one
+   composition unit in one file at or under 800 lines, receiving shared services
+   through a typed context rather than constructor spread.
+6. `WorkbenchDockHost` retains only dock arrangement, layout persistence, and
+   cross-tool navigation; the size-budget architecture test passes with an empty
+   burn-down allowlist before the task closes.
+7. A layout saved before each slice restores identically after it; automation
+   identifiers, AT-SPI structure, keybindings, command palette, and Vim behavior
+   are preserved and re-verified with the existing `eng/` scripts.
+8. Test classes map one-to-one to composition units; `PresentationControlTests`
+   and `AvaloniaPresentationStoreTests` are decomposed alongside their sources
+   with no reduction in executed test count.
+9. Every tool action is reachable through the command palette and appears in the
+   keybindings catalog; tool panels share uniform chrome and empty, busy, and
+   error presentation.
+10. Each slice lands as its own reviewed pull request with full-suite results,
+    the acceptance evidence named in its exit criteria, and a before/after
+    line-count table; slices touching Task 052 surfaces are sequenced behind it.
+
+### 061 — architecture enforcement and composition seams
+
+Status: `Implemented — pending PR #2 review and merge`
+
+Dependencies: none (independent of 060; shares only the ADR 025 size-budget test
+infrastructure). May run in parallel with 060 — it touches Analyzers, Host, and
+architecture tests, none of 060's presentation surface.
+
+Problem: The 2026-08-24 architecture review found the layer rules holding with zero
+exceptions, but three load-bearing conventions are unenforced: the Business Logic
+translation boundary (27 deliberate mirror-record families; nothing prevents a Data
+Access type leaking into a Business Logic public signature), the value-contracts-only
+cross-feature coupling shape, and the 537-line linear composition root that every
+feature slice edits.
+
+Groundwork: [ADR 026](../decisions/026-translation-boundary-and-architecture-enforcement.md)
+fixes the rules; [architecture.md](../architecture.md) records the measurements and
+the enforcement matrix this task turns green.
+
+Implementation evidence (2026-08-24): `HARNESS003` is enforced at error severity with
+positive and negative analyzer coverage; the architecture suite pins 35 existing
+cross-feature service edges; Host registrations are split across five internal
+modules, `Program.cs` is 179 lines, and the Host parity test compares all 138 service
+descriptors by module count and normalized service-type/key/lifetime fingerprint to
+the reviewed pre-split baseline at commit `16f3085`.
+
+Acceptance criteria:
+
+1. ADR 026 is accepted before implementation; no runtime behavior changes in any
+   slice.
+2. `HARNESS003` reports a public Business Logic symbol whose signature reachably
+   mentions a `Harness.DataAccess` type as a compile error, covering methods,
+   properties, constructor parameters, generic arguments, tuple elements, and
+   base interfaces.
+3. `Harness.Analyzers.Tests` proves `HARNESS003` on positive and negative cases,
+   including generic and nested-generic signatures and allowed BCL and
+   Microsoft.Extensions types.
+4. The six Business Logic contract files importing Data Access namespaces are
+   audited under the rule; any violation is fixed by introducing the missing
+   mirror type, never by weakening the rule.
+5. An architecture test asserts the cross-feature service-reference inventory
+   inside Business Logic, seeded from the measured current state; extending the
+   inventory is a one-line reviewed change with a stated reason.
+6. Host gains internal per-feature registration modules; `Program.cs` keeps
+   ordering, configuration, run mode, and shutdown, at or under 200 lines,
+   enforced by the ADR 025 size-budget test.
+7. Registration parity is proven against the reviewed pre-split baseline: the
+   modular service collection preserves all 138 registrations by module count and
+   normalized service-type/key/lifetime fingerprint captured at commit `16f3085`.
+8. `architecture.md`'s enforcement matrix is updated in the same slice as each
+   mechanism lands; no rule flips to Enforced before its mechanism merges.
+9. The full deterministic suite passes; analyzer changes introduce no new
+   warnings anywhere in the solution.
+10. Each slice lands as its own reviewed draft pull request per AGENTS.md, with
+    before/after evidence for the composition-root split (line counts, module
+    list, parity test result).

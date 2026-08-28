@@ -1766,15 +1766,8 @@ public sealed class RoslynCodeIntelligenceEngineTests(ITestOutputHelper output) 
     private async ValueTask CreateProjectAsync(string source)
     {
         Directory.CreateDirectory(root);
-        await File.WriteAllTextAsync(Path.Combine(root, "global.json"), """
-            {
-              "sdk": {
-                "version": "10.0.201",
-                "rollForward": "latestPatch",
-                "allowPrerelease": false
-              }
-            }
-            """);
+        await File.WriteAllTextAsync(Path.Combine(root, "global.json"),
+            RepositorySdkPolicy.GlobalJson);
         await File.WriteAllTextAsync(Path.Combine(root, "Sample.csproj"), """
             <Project Sdk="Microsoft.NET.Sdk">
               <PropertyGroup>
@@ -1815,15 +1808,8 @@ public sealed class RoslynCodeIntelligenceEngineTests(ITestOutputHelper output) 
     {
         Directory.CreateDirectory(Path.Combine(root, "First"));
         Directory.CreateDirectory(Path.Combine(root, "Second"));
-        await File.WriteAllTextAsync(Path.Combine(root, "global.json"), """
-            {
-              "sdk": {
-                "version": "10.0.201",
-                "rollForward": "latestPatch",
-                "allowPrerelease": false
-              }
-            }
-            """);
+        await File.WriteAllTextAsync(Path.Combine(root, "global.json"),
+            RepositorySdkPolicy.GlobalJson);
         const string project = """
             <Project Sdk="Microsoft.NET.Sdk">
               <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
@@ -1853,15 +1839,8 @@ public sealed class RoslynCodeIntelligenceEngineTests(ITestOutputHelper output) 
     {
         Directory.CreateDirectory(Path.Combine(root, "Contracts"));
         Directory.CreateDirectory(Path.Combine(root, "Consumer"));
-        await File.WriteAllTextAsync(Path.Combine(root, "global.json"), """
-            {
-              "sdk": {
-                "version": "10.0.201",
-                "rollForward": "latestPatch",
-                "allowPrerelease": false
-              }
-            }
-            """);
+        await File.WriteAllTextAsync(Path.Combine(root, "global.json"),
+            RepositorySdkPolicy.GlobalJson);
         await File.WriteAllTextAsync(Path.Combine(root, "Contracts", "Contracts.csproj"), """
             <Project Sdk="Microsoft.NET.Sdk">
               <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>

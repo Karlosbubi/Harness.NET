@@ -54,6 +54,79 @@ public sealed class LayerBoundaryAnalyzerTests
             diagnostic.Id == LayerBoundaryAnalyzer.InvalidLayerUsageId);
     }
 
+    [Theory]
+    [InlineData("public interface IService { IDataStore Read(); }")]
+    [InlineData("public interface IService { IDataStore Value { get; } }")]
+    [InlineData("public interface IService { void Write(IDataStore value); }")]
+    [InlineData("public interface IService { System.Collections.Generic.List<IDataStore> Read(); }")]
+    [InlineData("public interface IService { System.Threading.Tasks.Task<System.Collections.Generic.List<IDataStore>> Read(); }")]
+    [InlineData("public interface IService { (IDataStore Store, string Name) Read(); }")]
+    [InlineData("public record Result(IDataStore Store);")]
+    [InlineData("public interface IService : IDataStore { }")]
+    public async Task Business_logic_public_contract_cannot_reach_data_access_type(string declaration)
+    {
+        MetadataReference dataAccess = CreateReference(
+            "Harness.DataAccess",
+            "namespace Harness.DataAccess; public interface IDataStore { }");
+        string source = $$"""
+            using Harness.DataAccess;
+            namespace Harness.BusinessLogic;
+            {{declaration}}
+            """;
+
+        ImmutableArray<Diagnostic> diagnostics = await AnalyzeAsync(
+            "Harness.BusinessLogic", source, dataAccess);
+
+        Assert.Contains(diagnostics, diagnostic =>
+            diagnostic.Id == LayerBoundaryAnalyzer.DataAccessLeakId &&
+            diagnostic.Severity == DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public async Task Business_logic_private_implementation_may_use_data_access_type()
+    {
+        MetadataReference dataAccess = CreateReference(
+            "Harness.DataAccess",
+            "namespace Harness.DataAccess; public interface IDataStore { }");
+        const string source = """
+            using Harness.DataAccess;
+            namespace Harness.BusinessLogic;
+            public interface IService { string Read(); }
+            internal sealed class Service(IDataStore store) : IService
+            {
+                public string Read() => store.ToString();
+            }
+            """;
+
+        ImmutableArray<Diagnostic> diagnostics = await AnalyzeAsync(
+            "Harness.BusinessLogic", source, dataAccess);
+
+        Assert.DoesNotContain(diagnostics, diagnostic =>
+            diagnostic.Id == LayerBoundaryAnalyzer.DataAccessLeakId);
+    }
+
+    [Fact]
+    public async Task Business_logic_contract_may_expose_bcl_and_microsoft_extensions_types()
+    {
+        MetadataReference logging = CreateReference(
+            "Microsoft.Extensions.Logging.Abstractions",
+            "namespace Microsoft.Extensions.Logging; public interface ILogger { }");
+        const string source = """
+            namespace Harness.BusinessLogic;
+            public interface IService
+            {
+                System.Threading.Tasks.Task<string> ReadAsync(
+                    Microsoft.Extensions.Logging.ILogger logger);
+            }
+            """;
+
+        ImmutableArray<Diagnostic> diagnostics = await AnalyzeAsync(
+            "Harness.BusinessLogic", source, logging);
+
+        Assert.DoesNotContain(diagnostics, diagnostic =>
+            diagnostic.Id == LayerBoundaryAnalyzer.DataAccessLeakId);
+    }
+
     [Fact]
     public async Task Public_layer_class_is_rejected()
     {

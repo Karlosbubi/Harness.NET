@@ -1,22 +1,38 @@
 # Architecture
 
+This is the system map. The engineering rules live in [framework.md](framework.md);
+binding decisions live in [the decision records](decisions/README.md). Measured
+figures in this document are dated 2026-08-24 (commit `16f3085`); re-measure before
+relying on them.
+
 ## Projects and references
 
 Harness.NET is a single-process modular application.
 
-```text
-Data Access -> Business Logic -> Presentation -> Harness.UI.Avalonia
-      \              |              /
-       +----------- Host -----------+
+```mermaid
+graph LR
+    DA[Harness.DataAccess<br/>317 files] --> BL[Harness.BusinessLogic<br/>332 files]
+    BL --> PA[Harness.Presentation.Avalonia<br/>44 files]
+    BL --> PT[Harness.Presentation.Terminal<br/>14 files]
+    UI[Harness.UI.Avalonia<br/>app-neutral toolkit] --> PA
+    DA --> H[Harness.Host<br/>composition root]
+    BL --> H
+    PA --> H
+    PT --> H
+    AN[Harness.Analyzers] -.enforces.-> DA
+    AN -.enforces.-> BL
+    AN -.enforces.-> PA
 ```
 
-- Data Access contains persistence and external adapters.
+- Data Access contains persistence and external adapters and defines upward
+  contracts.
 - Business Logic contains policy, use cases, and workflow state.
-- Presentation contains Avalonia and Terminal.Gui adapters.
+- Presentation contains Avalonia and Terminal.Gui adapters and no business rules.
 - `Harness.UI.Avalonia` contains app-neutral Avalonia controls and themes and
   references no Harness runtime project.
-- Host is the composition root.
-- The analyzer project enforces references and public boundary types.
+- Host is the composition root and the only project that references every layer.
+- The analyzer project enforces reference direction and public boundary shape at
+  compile time; `Harness.Architecture.Tests` re-asserts the project-reference graph.
 
 Only interfaces, records, and enums cross runtime layer boundaries. Prefer enums for
 closed sets and single-value records for values with distinct domain meaning.
@@ -25,6 +41,87 @@ Implementations remain internal except where DI construction requires visibility
 Provider and MCP SDK types remain in Data Access. Microsoft Agent Framework types
 remain behind the Business Logic role interface. Roslyn, MSBuild, and future LSP
 types remain in the code-intelligence adapter.
+
+## Module map
+
+Both runtime layers are organized as feature namespaces. Business Logic and Data
+Access average roughly 70–90 lines per file; the granularity problem is confined to
+the Avalonia Presentation layer and is being addressed under
+[ADR 025](decisions/025-workbench-composition-and-refactor-guardrails.md) /
+[the refactor baseline](refactor-baseline.md).
+
+| Feature area | Business Logic | Data Access |
+|---|---|---|
+| Agents, roles, tools | `Agents` (48), `Tools` (1) | `Agents` (8), `Tools` (1) |
+| Goals, plans, approvals | `Goals` (33), `Approvals` (11) | `Goals` (15), `Approvals` (7) |
+| Workflow execution | `Workflows` (33), `Acceptance` (20), `Operations` (16) | `Workflows` (26), `Commits` (22), `Worktrees` (4) |
+| Workspace and Git | `Workspaces` (12), `Inspection` (23) | `Workspaces` (6), `Inspection` (28) |
+| Code intelligence | `CodeIntelligence` (11), `Mutations` (10), `Editor` (2) | `CodeIntelligence` (23), `Mutations` (6), `Editor` (4) |
+| Models and providers | `Costs` (7) | `Models` (42, Ollama/OpenRouter subtrees) |
+| Retrieval and research | `Retrieval` (26), `Research` (5) | `SemanticIndex` (15), `Research` (8) |
+| MCP | `Mcp` (7) | `Mcp` (8) |
+| Persistence and state | `Layouts` (6), `Documents` (9) | `Persistence` (22), `Conversations` (4), `Layouts` (6) |
+| Evidence and capture | `Evidence` (11), `VisualCapture` (2), `Dashboard` (8) | `Evidence` (7), `VisualCapture` (7), `Observability` (3) |
+| Settings and platform | `Appearance` (14), `Framework` (11), `ProjectSecrets` (2), `Privacy` (2), `Execution` (2) | `Appearance` (11), `Framework` (7), `Configuration` (3), `Secrets` (6), `ProjectSecrets` (3), `Execution` (9) |
+
+Contract surface: 67 public interfaces in Data Access, 50 in Business Logic. No
+public class exists in either runtime layer — the boundary-shape rule holds with
+zero exceptions.
+
+## Coupling topology
+
+Measured intra-layer coupling in Business Logic has a deliberate two-tier shape:
+
+- **Shared identifier kernel.** Semantic value records and enums (`GoalId`,
+  `WorkspaceId`, `ToolCorrelationId`, spend modes, …) are referenced freely across
+  features. `GoalId` appears in 78 files outside `Goals`; the most-imported
+  namespaces (`Goals` 49, `Workspaces` 20, `Tools` 16) are imported almost entirely
+  for these value types.
+- **Feature-local services.** Service interfaces stay inside their feature and are
+  consumed by Presentation or Host, not laterally: `IGoalService` is referenced by
+  only 3 Business Logic files outside its own namespace.
+
+Keep it that way: cross-feature reuse of value contracts is free; a new lateral
+service dependency between features is an architectural event that needs a reason.
+`BusinessLogicServiceDependencyTests` pins the reviewed inventory of 35 existing
+consumer-to-service edges and fails when a new edge appears without an explicit
+inventory update.
+
+## Translation boundary
+
+Data Access defines upward contracts consumed by Business Logic. Business Logic
+does not re-expose them: its public surface presents Business-Logic-defined records
+and enums, translating at the service implementation. As a result, 27 record
+families exist deliberately in both layers under the same name
+(`DeveloperGitPath`, `DeveloperGitStateFingerprint`, `ApplicationBackupResult`,
+`ToolCorrelationId`, …). This is an anti-corruption boundary, not accidental
+duplication: it keeps Presentation unable to name Data Access types (verified: zero
+`Harness.DataAccess` usings across all Presentation projects) and lets each layer
+version its contracts independently.
+
+Costs, accepted: mirror records plus mapping code, and name collisions at the
+composition root, which Host resolves with using-aliases
+(`OperationsBackupResult = Harness.BusinessLogic.Operations.ApplicationBackupResult`).
+
+Six Business Logic files import Data Access namespaces inside contract-bearing
+files (`AgentToolExposureSettingsService`, `AgentToolActivationService`,
+`InboundMcpApplicationService`, `InboundMcpSettingsService`,
+`EditorIntelligenceSettings`, `KeybindingSettings`). Spot checks show the imports
+serve internal implementation, and public signatures expose Business Logic types.
+`HARNESS003` now walks every reachable public-signature type and rejects a Data
+Access leak at error severity. The six imports above compile under that rule and
+therefore remain implementation-only.
+
+## Composition root
+
+`Harness.Host` composes everything. `Program.cs` is a 179-line orchestrator retaining
+configuration loading, registration order, observability bootstrap, run-mode
+resolution (Avalonia, Terminal, or isolated MCP evaluation via
+`--mcp-evaluation-root`), and shutdown ownership. Its 138 DI registrations live in
+five internal modules: Infrastructure, Integrations, Workspace, Goals, and
+Presentation. Architecture tests enforce the 200-line entry-point budget, while
+Host tests compare each module count and the combined service-type/key/lifetime
+inventory to the reviewed pre-split baseline at commit `16f3085`.
 
 ## Core records
 
@@ -58,12 +155,18 @@ version-bound text. Business Logic validates context. Data Access computes seman
 results. Presentation discards stale context or buffer versions. Roslyn does not run
 on the UI thread.
 
+Reactive state lives at the Presentation boundary: the Avalonia store reduces one
+`AvaloniaShellState` behind an Rx `BehaviorSubject`. Business Logic and Data Access
+are async-first (`Task`/`ValueTask` with `CancellationToken`), not stream-based;
+Rx appears below Presentation only where a contract genuinely models a stream.
+
 ## Storage
 
 - XDG configuration: provider/MCP modules, documentation/package sources, framework
   settings, and themes.
 - SQLite: goals, conversations, prompts, outputs, tools, approvals, checkpoints,
-  usage, artifacts, vectors, summaries, overlays, and preferences.
+  usage, artifacts, vectors, summaries, overlays, and preferences — 30 sequential
+  DbUp migrations, Dapper, explicit SQL.
 - XDG state: logs, worktree state, workbench layout, and private bounded visual captures.
 - XDG cache: disposable documentation evidence keyed by source, version, query, schema,
   and privacy mode.
@@ -131,8 +234,28 @@ separate saved opt-in.
 Linux is the release target. Presentation owns windows, pickers, clipboard,
 notifications, shortcuts, screen geometry, and accessibility. Data Access owns XDG,
 filesystem, Secret Service, process behavior, and the replaceable Linux portal
-adapter. Host composes these focused
-capabilities. Business Logic contains no platform checks.
+adapter. Host composes these focused capabilities. Business Logic contains no
+platform checks.
+
+## Enforcement matrix
+
+Each architectural rule with its enforcement mechanism and current status. A rule
+enforced only by review is a gap, not a guarantee.
+
+| Rule | Mechanism | Status |
+|---|---|---|
+| Layer reference direction | `HARNESS001` (semantic, error) + `LayerReferenceTests` | Enforced |
+| Public boundary types are interface/record/enum | `HARNESS002` (error) | Enforced; verified zero exceptions |
+| Presentation cannot name Data Access types | `HARNESS001` | Enforced; verified zero usings |
+| Nullable + warnings as errors | `Directory.Build.props` | Enforced |
+| UI toolkit references no runtime layer | `HARNESS001` + reference tests | Enforced |
+| Business Logic public surface exposes only Business Logic types | `HARNESS003` (semantic, error) | Enforced |
+| Cross-feature service coupling is explicitly inventoried | `BusinessLogicServiceDependencyTests` | Enforced; 35 reviewed edges |
+| Production and test source-size budget | `SourceSizeBudgetTests` | Enforced; shrink-only legacy allowlist |
+| Host entry point stays at or under 200 lines | `SourceSizeBudgetTests` | Enforced |
+| Semantic types over primitives | review | Convention (deliberate; subjective calls stay human) |
+| No unrestricted shell; typed tools only | code shape + review + model-input rejection (`WorkspaceMutationService`) | Structural, partially enforced |
+| Migration ordering and idempotent startup | DbUp sequential scripts + tests | Enforced |
 
 ## Required checks
 

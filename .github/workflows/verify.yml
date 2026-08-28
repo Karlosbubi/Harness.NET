@@ -1,0 +1,30 @@
+name: Verify
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  deterministic-linux-x64:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: Directory.Packages.props
+      - name: Restore locked dependency graph
+        run: dotnet restore Harness.slnx
+      - name: Build with warnings as errors
+        run: dotnet build Harness.slnx --no-restore
+      - name: Run deterministic tests
+        # Avalonia.Headless owns process-global session state; running test projects
+        # concurrently can race during HeadlessUnitTestSession.Dispose.
+        run: dotnet test Harness.slnx --no-build --no-restore --maxcpucount:1
