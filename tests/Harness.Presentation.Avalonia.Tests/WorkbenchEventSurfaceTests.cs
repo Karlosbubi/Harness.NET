@@ -3,7 +3,11 @@ using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Harness.BusinessLogic.Agents;
+using Harness.BusinessLogic.Costs;
 using Harness.BusinessLogic.Events;
+using Harness.BusinessLogic.Goals;
+using Harness.BusinessLogic.Workspaces;
 
 namespace Harness.Presentation.Avalonia.Tests;
 
@@ -56,6 +60,40 @@ public sealed class WorkbenchEventSurfaceTests
         Assert.Throws<ArgumentException>(() => new WorkbenchEventMessage(" "));
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             new WorkbenchEventMessage(new string('x', WorkbenchEventMessage.MaximumLength + 1)));
+    }
+
+    [Fact]
+    public async Task Goal_workflow_completion_publishes_the_shared_semantic_event()
+    {
+        using AvaloniaPresentationStore store = AvaloniaPresentationStoreTests.CreateStore();
+        List<WorkbenchEvent> published = [];
+        store.WorkbenchEventPublished += published.Add;
+        await store.LoadAsync(CancellationToken.None);
+        store.SetRepositoryPath("/work/repository");
+        await store.InspectWorkspaceAsync(CancellationToken.None);
+        await store.RegisterWorkspaceAsync(
+            Assert.Single(store.Current.Workspaces.EntryPoints), CancellationToken.None);
+        WorkspaceView workspace = Assert.Single(store.Current.Workspaces.Registered);
+        await store.CreateGoalAsync(new(
+            workspace.Id,
+            "Run production workflow",
+            "Plan and implement through bounded roles.",
+            new(3),
+            new MicroUsdAmount(2_000_000)), CancellationToken.None);
+        GoalView goal = Assert.Single(store.Current.Goals.Items);
+        await store.DiscoverGoalModelsAsync(goal.Id, CancellationToken.None);
+        GoalModelCandidate remote = Assert.Single(
+            store.Current.Goals.ModelCatalog!.Models,
+            candidate => candidate.Access is ModelAccess.Remote);
+
+        await store.StartGoalWorkflowAsync(goal.Id, remote, CancellationToken.None);
+
+        WorkbenchEvent workbenchEvent = Assert.Single(published);
+        Assert.Equal(WorkbenchEventSeverity.Success, workbenchEvent.Severity);
+        Assert.Equal(WorkbenchEventSource.Goal, workbenchEvent.Source);
+        Assert.Equal(WorkbenchEventNavigationTarget.Conversation,
+            workbenchEvent.NavigationTarget);
+        Assert.Equal("Lead planning completed.", workbenchEvent.Message.Value);
     }
 
     [Fact]
