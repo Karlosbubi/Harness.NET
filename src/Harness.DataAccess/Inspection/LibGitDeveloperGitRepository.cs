@@ -1818,13 +1818,13 @@ internal sealed class LibGitDeveloperGitRepository(
         if (!process.Start()) return -1;
         Task standardError = DrainAsync(process.StandardError, cancellationToken);
         Task standardOutput = DrainAsync(process.StandardOutput, cancellationToken);
-        await process.StandardInput.WriteAsync(request.Message.AsMemory(), cancellationToken);
-        await process.StandardInput.FlushAsync(cancellationToken);
-        process.StandardInput.Close();
         try
         {
+            IOException? inputFailure = await GitStandardInputWriter.WriteAndCloseAsync(
+                process.StandardInput, request.Message, cancellationToken);
             await process.WaitForExitAsync(cancellationToken);
             await Task.WhenAll(standardError, standardOutput);
+            if (process.ExitCode == 0 && inputFailure is not null) throw inputFailure;
             return process.ExitCode;
         }
         catch (OperationCanceledException)

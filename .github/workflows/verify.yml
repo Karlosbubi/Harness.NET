@@ -2,7 +2,6 @@ name: Verify
 
 on:
   pull_request:
-    branches: [main]
   push:
     branches: [main]
 
@@ -20,11 +19,15 @@ jobs:
           dotnet-version: 10.0.x
           cache: true
           cache-dependency-path: Directory.Packages.props
+      - name: Verify repository documentation and metadata
+        run: python3 eng/verify-repository-metadata.py
       - name: Restore locked dependency graph
         run: dotnet restore Harness.slnx
       - name: Build with warnings as errors
         run: dotnet build Harness.slnx --no-restore
+      - name: Run fast deterministic tier
+        run: dotnet test Harness.slnx --no-build --no-restore --filter Tier=Fast --maxcpucount:1
       - name: Run deterministic tests
         # Avalonia.Headless owns process-global session state; running test projects
         # concurrently can race during HeadlessUnitTestSession.Dispose.
-        run: dotnet test Harness.slnx --no-build --no-restore --maxcpucount:1
+        run: dotnet test Harness.slnx --no-build --no-restore --filter Tier!=Live --maxcpucount:1

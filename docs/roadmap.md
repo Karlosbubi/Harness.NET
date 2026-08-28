@@ -608,6 +608,15 @@ feature-area registration modules shrink the 537-line composition root to a
 [architecture.md](architecture.md) carries the measurements and the enforcement
 matrix this task turned green.
 
+## Contributor and workbench experience
+
+[The DX/UX review](dx-ux-review.md) records the evidence and accepted disposition.
+Task 062 completes contributor verification, documentation/evidence navigation, test
+tiers, and dependency governance. Tasks 063–068 now track the transient event surface,
+running spend visibility, command-palette fuzzy/recency ranking, keyboard reference,
+Vim search/registers, and split editor groups with dependencies on the relevant Task
+060 slices.
+
 ## Ongoing work
 
 - Repeat hands-on Avalonia usability checks after changes to workspace, editor, goals,
