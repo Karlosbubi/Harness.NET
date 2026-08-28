@@ -84,6 +84,8 @@ internal sealed partial class WorkspaceMutationService(
 
         WorkbenchCodeValidationView? validation = null;
         WorkbenchCodeSessionId? validationSession = null;
+        string acceptedContent = request.Content;
+        IReadOnlyList<FileEditDeterministicRepairView> deterministicRepairs = [];
         bool requiresCompilerValidation = request.Origin is FileEditOrigin.Model &&
             CompilerInputExtensions.Contains(Path.GetExtension(request.Path));
         if (request.Origin is FileEditOrigin.Model)
@@ -164,6 +166,16 @@ internal sealed partial class WorkspaceMutationService(
                         WorkbenchCodeValidationPhase.Candidate,
                         [new(new(request.Path), new(request.ExpectedSha256), new(request.Content))]),
                     cancellationToken);
+                CandidateRepairOutcome repaired = await TryRepairCandidateAsync(
+                    validationSession,
+                    new(request.Path),
+                    new(request.ExpectedSha256),
+                    new(request.Content),
+                    validation,
+                    cancellationToken);
+                acceptedContent = repaired.Content.Value;
+                validation = repaired.Validation;
+                deterministicRepairs = repaired.Repairs;
                 if (!IsWarningFreeModelEdit(validation))
                 {
                     FileEditView rejected = new(
@@ -177,7 +189,10 @@ internal sealed partial class WorkspaceMutationService(
                         "compiler_validation_rejected",
                         validation.Issues.FirstOrDefault()?.Message.Value ??
                             "The candidate introduced a compiler warning or error.",
-                        validation);
+                        validation)
+                    {
+                        DeterministicRepairs = deterministicRepairs,
+                    };
                     await CompleteEvidenceAsync(
                         started.ToolCall.Id,
                         ToolCallState.Failed,
@@ -193,7 +208,7 @@ internal sealed partial class WorkspaceMutationService(
 
         WorkspaceFileEditResult result = await fileEditor.ApplyAsync(
             worktree.Path,
-            new(request.Path, request.ExpectedSha256, request.Content),
+            new(request.Path, request.ExpectedSha256, acceptedContent),
             cancellationToken);
         FileEditView view = new(
             goal.Id,
@@ -205,7 +220,10 @@ internal sealed partial class WorkspaceMutationService(
             result.WasCreated,
             result.ErrorCode,
             result.Error,
-            validation);
+            validation)
+        {
+            DeterministicRepairs = deterministicRepairs,
+        };
 
         if (result.ErrorCode is null && requiresCompilerValidation &&
             codeIntelligenceService is not null && validationSession is not null &&
@@ -215,7 +233,7 @@ internal sealed partial class WorkspaceMutationService(
                 new(
                     validationSession,
                     WorkbenchCodeValidationPhase.Applied,
-                    [new(new(result.Path), new(result.NewSha256), new(request.Content))]),
+                    [new(new(result.Path), new(result.NewSha256), new(acceptedContent))]),
                 cancellationToken);
             view = view with { AppliedCodeValidation = applied };
             if (!IsWarningFreeModelEdit(applied))

@@ -1263,7 +1263,41 @@ multi-operation coalescing, Task 063 completion handoff, and graphical/live acce
 remain open.
 See the [slice acceptance record](../acceptance/live-agent-activity-status-2026-08-28.md).
 
-### 072 — bounded Ollama context and GPU recovery
+### 072 — deterministic compiler repair before model retry
+
+Status: `Complete`
+
+Dependencies: 012, 038, 042, 047, and 070.
+
+Problem: On modest local hardware, asking an Implementer model to repeat an otherwise
+valid C# edit merely to add one unambiguous namespace costs tens of seconds or minutes.
+Harness already owns a compiler-proven missing-import transformation, but model-authored
+file edits currently reject the candidate before that deterministic capability can help.
+
+Acceptance criteria:
+
+1. A model-authored C# candidate rejected solely by at most four introduced `CS0246`
+   or `CS0103` diagnostics receives a bounded in-memory Roslyn repair attempt before
+   any model retry.
+2. Each repair requires exactly one compiler-proven namespace and the existing closed
+   `AddMissingImport` preview; ambiguity, unsupported files, multi-file output, or
+   additional diagnostics fail closed without changing the candidate on disk.
+3. The repaired candidate passes the existing warning-free candidate validation,
+   exact-baseline atomic write, and persisted-result validation boundaries.
+4. Typed evidence names applied deterministic repairs without storing hidden reasoning
+   or creating a generic AST/code-action executor.
+5. Deterministic tests prove unique, ambiguous, still-invalid, bounded, stale, and
+   ordinary valid/rejected candidate behavior, plus a warning-free build and a
+   measured comparison against local inference latency.
+
+Implementation evidence (2026-08-28): model-authored C# file edits now run the closed
+repair stage inside their existing Roslyn session. A unique missing import updates only
+the in-memory candidate, is fully revalidated, crosses the same exact-baseline atomic
+write and persisted validation boundaries, and appears in typed tool evidence. Every
+ambiguous, stale, over-bound, or still-invalid case retains the original rejection.
+See the [acceptance record](../acceptance/deterministic-compiler-repair-2026-08-28.md).
+
+### 073 — bounded Ollama context and GPU recovery
 
 Status: `Complete`
 

@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-07-29
+- Amended: 2026-08-28
 - Extends: [ADR 005](005-isolated-goal-execution.md), [ADR 007](007-semantic-contract-types.md), [ADR 010](010-docked-desktop-workbench.md)
 
 ## Context
@@ -103,6 +104,32 @@ external targets, inconsistent linked files, more than 100 files, and previews o
 cross-document providers; all other providers remain document-confined.
 
 Do not provide generic “execute Roslyn action” or model-authored text-search rename.
+
+#### Amendment: bounded candidate repair before model retry
+
+Before rejecting a model-authored C# candidate, Business Logic may ask the existing
+closed Roslyn transformation path to repair an introduced missing-type diagnostic.
+This is a deterministic compiler stage, not another agent role or a probabilistic
+classifier.
+
+The stage is deliberately narrow:
+
+- it considers only introduced compiler `CS0246` or `CS0103` diagnostics in the
+  candidate document;
+- it examines at most four diagnostics and requires exactly one compiler-proven
+  missing-import namespace at each position;
+- it applies only the existing `AddMissingImport` preview to the in-memory candidate,
+  preserves the original exact baseline and delegated file-area checks, and records
+  every applied namespace as typed mutation evidence;
+- it accepts the resulting candidate only after the normal complete candidate
+  validation reports no introduced compiler warning or error.
+
+Zero or several candidates, multi-file output, a changed preview, unsupported source,
+or any remaining diagnostic keeps the original fail-closed behavior and leaves the
+decision to the Implementer or developer. The stage does not repair nullable-flow
+warnings, tests, behavior, arbitrary syntax, or select among general code actions.
+Expanding that scope requires measured acceptance evidence and another reviewed
+decision amendment.
 
 ### Virtual source navigation
 
