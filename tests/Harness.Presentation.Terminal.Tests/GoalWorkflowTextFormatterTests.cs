@@ -19,7 +19,8 @@ public sealed class GoalWorkflowTextFormatterTests
                 new("- Focused tests pass"), GoalTaskState.Completed,
                 new("Verified locally."))],
             [new(1, GoalWorkflowCheckpointKind.UserDirectionRequired,
-                WorkflowActor.System, new("Uncertain call was not replayed."))],
+                WorkflowActor.System, new("Uncertain call was not replayed."),
+                DateTimeOffset.UtcNow)],
             [new(1, new("Recovery notice"), new("Inspect cost evidence."))],
             CanResume: false,
             RequiresUserDirection: true);

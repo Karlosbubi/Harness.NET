@@ -1452,7 +1452,8 @@ public sealed class AvaloniaPresentationStoreTests
             state,
             new(0),
             [],
-            [new(1, GoalWorkflowCheckpointKind.Started, WorkflowActor.System, new(summary))],
+            [new(1, GoalWorkflowCheckpointKind.Started, WorkflowActor.System, new(summary),
+                DateTimeOffset.UtcNow)],
             [],
             canResume,
             RequiresUserDirection: false);

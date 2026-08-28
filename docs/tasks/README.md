@@ -589,7 +589,7 @@ remote process output. See the
 
 ### 051 — developer terminal and structured tasks
 
-Status: `Planned`
+Status: `In progress — durable workflow status slice delivered`
 
 Dependencies: 015, 026, 029, 033, 037.
 
@@ -1251,3 +1251,11 @@ Acceptance criteria:
 6. Reduced-motion, keyboard, compact-layout, screen-reader, fake-clock, stalled-call,
    recovery, and bounded live-local-model acceptance coverage prove the widget remains
    informative without becoming distracting.
+
+Implementation evidence (2026-08-28): the header status pill now reports the active
+workflow phase/role, elapsed time, and last durable-checkpoint age; its flyout shows a
+bounded timestamped checkpoint timeline and the existing cancellation action. The
+Business Logic activity contract now carries the persisted checkpoint timestamp.
+Provider-stream and individual typed-tool progress, navigation, multi-operation
+coalescing, Task 063 completion handoff, and graphical/live acceptance remain open.
+See the [slice acceptance record](../acceptance/live-agent-activity-status-2026-08-28.md).

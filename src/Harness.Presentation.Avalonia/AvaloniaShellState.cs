@@ -116,6 +116,8 @@ internal sealed record GoalManagementState(
     IReadOnlyList<CapabilityApprovalView> CapabilityApprovals,
     bool IsBusy,
     bool IsWorkflowRunning,
+    string? WorkflowOperationName,
+    DateTimeOffset? WorkflowOperationStartedAt,
     bool IsSemanticRunning,
     string? Status)
 {
@@ -135,6 +137,8 @@ internal sealed record GoalManagementState(
         CapabilityApprovals: [],
         IsBusy: false,
         IsWorkflowRunning: false,
+        WorkflowOperationName: null,
+        WorkflowOperationStartedAt: null,
         IsSemanticRunning: false,
         Status: null);
 

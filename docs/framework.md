@@ -222,6 +222,9 @@ requires clarification.
 
 - Conversation is the primary goal surface. Typed cards show plans, authority,
   progress, partial completion, recovery, evidence, Restore, commit, and handoff.
+- While a goal operation is active, the header shows elapsed time and the age of the
+  latest observable workflow checkpoint. On-demand detail is bounded and never
+  fabricates percentage progress or exposes hidden reasoning.
 - Natural language does not authorize consequential work.
 - Settings owns ordinary application defaults. Goal overrides remain explicit and
   available on demand.

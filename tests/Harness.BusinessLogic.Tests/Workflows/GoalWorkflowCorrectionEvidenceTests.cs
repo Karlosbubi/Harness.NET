@@ -39,6 +39,8 @@ public sealed partial class GoalWorkflowServiceTests
             service.ResumeAsync(new(goals.Goal.Id))))[^1];
 
         Assert.Equal(GoalWorkflowState.AwaitingAcceptance, result.State);
+        Assert.All(result.Activities, activity => Assert.Equal(
+            DateTimeOffset.Parse("2026-07-28T18:00:00Z"), activity.OccurredAt));
         Assert.Equal([DotNetOperation.Build, DotNetOperation.Test], validation.Operations);
         Assert.Equal([AgentRole.Lead, AgentRole.Implementer, AgentRole.Reviewer],
             agents.Requests.Select(request => request.Role));

@@ -1263,7 +1263,8 @@ internal sealed partial class GoalWorkflowService(
                     StoredActor.Reviewer => WorkflowActor.Reviewer,
                     _ => throw new ArgumentOutOfRangeException(nameof(snapshot)),
                 },
-                new(checkpoint.Summary.Value))).ToArray(),
+                new(checkpoint.Summary.Value),
+                checkpoint.CreatedAt)).ToArray(),
             snapshot.Checkpoints.Where(checkpoint => checkpoint.EvidenceTitle is not null)
                 .Select(checkpoint => new WorkflowEvidenceView(
                     checkpoint.Sequence,

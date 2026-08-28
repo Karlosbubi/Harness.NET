@@ -57,6 +57,8 @@ Delivered:
 - typed, role-scoped agent tools for files, Git, .NET metadata, Build/Test, semantic
   retrieval, diagnostics, symbols, navigation, edits, rename, and closed Roslyn
   action discovery/preview/apply;
+- a low-noise live agent activity indicator with elapsed time, last observable update,
+  bounded durable-checkpoint detail, and direct cancellation;
 - XDG Desktop Portal visual verification with per-frame consent, private goal-scoped
   evidence, exact-byte developer preview, typed agent tools, retention, revocation,
   and remote-disclosure controls;

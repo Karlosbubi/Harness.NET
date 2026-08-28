@@ -137,7 +137,8 @@ public sealed class PresentationControlTests
             new(0),
             [],
             [new(1, GoalWorkflowCheckpointKind.UserDirectionRequired,
-                WorkflowActor.System, new("Provider unavailable; inspect cost evidence."))],
+                WorkflowActor.System, new("Provider unavailable; inspect cost evidence."),
+                DateTimeOffset.UtcNow)],
             [new(1, new("Recovery notice"), new("Provider unavailable; inspect cost evidence."))],
             CanResume: false,
             RequiresUserDirection: true,
@@ -150,7 +151,6 @@ public sealed class PresentationControlTests
         ConversationWorkflowCard runCard = Assert.Single(
             ConversationWorkflowProjector.Project(state),
             card => card.Id == "run.run-retry");
-
         ConversationWorkflowAction[] actions =
             ConversationWorkflowActionProjector.Project(runCard, state).ToArray();
 

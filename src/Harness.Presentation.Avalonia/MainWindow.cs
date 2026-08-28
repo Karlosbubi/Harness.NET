@@ -30,7 +30,7 @@ using Harness.UI.Avalonia;
 
 namespace Harness.Presentation.Avalonia;
 
-internal sealed class MainWindow : Window
+internal sealed partial class MainWindow : Window
 {
     private readonly AvaloniaPresentationStore store;
     private readonly HarnessThemeController themeController;
@@ -141,6 +141,7 @@ internal sealed class MainWindow : Window
         this.projectUserSecretsService = projectUserSecretsService;
         this.developerExecutionService = developerExecutionService;
         this.cancellationToken = cancellationToken;
+        agentActivityStatus.CancelRequested += store.CancelGoalWorkflow;
         Title = "Harness.NET";
         Width = 1280;
         Height = 800;
@@ -164,7 +165,7 @@ internal sealed class MainWindow : Window
             })));
         Opened += OnOpened;
         Closing += OnClosing;
-        Closed += (_, _) => subscriptions.Dispose();
+        Closed += OnClosed;
     }
 
     private Control BuildContent()
@@ -273,6 +274,7 @@ internal sealed class MainWindow : Window
             Children =
             {
                 inboundMcpIndicator,
+                agentActivityStatus.Control,
                 Cluster(showConversation, modelPicker, refreshProvider),
                 Cluster(openSettings),
             },
@@ -454,20 +456,6 @@ internal sealed class MainWindow : Window
         AutomationProperties.SetName(inspectGoalContext, "Inspect selected goal semantic context");
         AutomationProperties.SetName(panel, "Goal context and evidence details");
         return new ScrollViewer { Content = panel };
-    }
-
-    private Control BuildFooter()
-    {
-        Grid grid = new()
-        {
-            ColumnDefinitions = new("*,Auto"),
-            Margin = new(10, 3),
-        };
-        AutomationProperties.SetName(status, "Application status");
-        grid.Children.Add(status);
-        Grid.SetColumn(budget, 1);
-        grid.Children.Add(budget);
-        return grid;
     }
 
     private void WireInteractions()
@@ -894,6 +882,7 @@ internal sealed class MainWindow : Window
             send.IsEnabled = !state.IsLoading && !state.IsStreaming &&
                              !string.IsNullOrWhiteSpace(state.ComposerText);
             cancel.IsVisible = state.IsStreaming;
+            agentActivityStatus.Update(state.Goals);
             inboundMcpIndicator.IsVisible = state.Settings.InboundMcpSettings?.Status.IsRunning == true;
             if (state.Settings.InboundMcpSettings?.Status is { IsRunning: true } inbound)
             {
