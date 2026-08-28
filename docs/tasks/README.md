@@ -984,3 +984,175 @@ Acceptance criteria:
 10. Each slice lands as its own reviewed draft pull request per AGENTS.md, with
     before/after evidence for the composition-root split (line counts, module
     list, parity test result).
+
+### 062 — contributor verification and repository governance
+
+Status: `Complete`
+
+Dependencies: 060.0, 061.
+
+Problem: Contributor entry points, acceptance-evidence ownership, test tiers,
+verification scripts, documentation navigation, and dependency review were implicit.
+Ignored run output was described like durable evidence, while the sole production
+preview dependency had no recorded exit condition.
+
+Decision: [ADR 027](../decisions/027-contributor-verification-and-dependency-governance.md)
+fixes the machine-local evidence boundary, test taxonomy, dependency cadence, notices
+consistency, and SqliteVec exit condition.
+
+Completion evidence (2026-08-25): contributor, documentation, acceptance, dependency,
+and verification maps are versioned; CI checks local links, ADR statuses, acceptance
+labels, notice versions, and preview exit records; every xUnit assembly declares a
+Fast or Adapter tier and live tests declare Live; CI runs 319 Fast tests first and
+then all 823 non-live deterministic tests with serialized Avalonia ownership.
+The first read-only NuGet.org review reported no known vulnerable packages; available
+updates were deferred to dedicated compatibility PRs, with the next review due by
+2026-09-25.
+
+Acceptance criteria:
+
+1. `CONTRIBUTING.md` points to, but does not duplicate, the working agreement and
+   branch → verification → commit → push → draft-PR flow.
+2. `docs/README.md`, `docs/acceptance/README.md`, and `eng/README.md` provide cold-start
+   maps with evidence ownership and prerequisites.
+3. Ignored `artifacts/` output is labeled machine-local; only deliberately redacted,
+   bounded files below `docs/acceptance/` count as durable repository evidence.
+4. CI rejects missing local Markdown targets, ADR status drift, ambiguous acceptance
+   artifact labels, notice/version drift, and unrecorded preview dependencies.
+5. Tests expose `Tier=Fast`, `Tier=Adapter`, and explicit `Tier=Live` selection; hosted
+   verification fails fast on Fast and excludes Live from the complete deterministic
+   gate.
+6. Avalonia.Headless tests cannot race through solution-level or test-collection
+   parallel teardown.
+7. A documented monthly dependency review is human-controlled and records evidence;
+   no dependency-update bot is introduced.
+8. The exact `Microsoft.SemanticKernel.Connectors.SqliteVec` preview pin has a stable
+   release or reviewed replacement exit condition and dedicated-update evidence.
+
+### 063 — transient workbench event surface
+
+Status: `Planned`
+
+Dependencies: Task 060 slice 060.1. Deliver before 053 attention states.
+
+Problem: Long operations complete or fail only inside their originating panel, so a
+developer focused in the editor can miss goal, Git, indexing, execution, or backup
+state changes.
+
+Acceptance criteria:
+
+1. Business Logic exposes a bounded immutable `WorkbenchEvent` contract with typed
+   severity, source, message, timestamp, and optional closed navigation target.
+2. Presentation owns a session-only bounded queue; events never enter user
+   repositories, prompts, logs, backups, or telemetry by implication.
+3. Avalonia renders non-modal, keyboard-dismissible notifications that never steal
+   focus and announce through AT-SPI exactly once.
+4. Repeated events coalesce deterministically; overflow, expiry, navigation, and
+   dismissal are tested without timers that make the suite flaky.
+5. Goal and later Task 053 attention states consume the same surface rather than
+   introducing a second notification channel.
+
+### 064 — running remote-spend visibility
+
+Status: `Planned`
+
+Dependencies: 014, 040.
+
+Problem: Remote reservations, reconciliation, and caps are enforced but are not
+glanceable while a goal is running.
+
+Acceptance criteria:
+
+1. Existing cost reports feed immutable per-goal display contracts; no accounting is
+   duplicated in Presentation.
+2. Active workflow and running-goal surfaces show reconciled and reserved spend plus
+   remaining cap for Capped goals, with provider/model detail on explicit inspection.
+3. Micro-USD stays below the UI boundary and rendering uses USD consistently.
+4. Unlimited, Capped, LocalOnly, unknown pricing, released reservation, overage, and
+   completed-run states have deterministic tests and accessible labels.
+5. Visibility introduces no new spend authority, provider call, telemetry, or
+   persistence.
+
+### 065 — command-palette fuzzy ranking and recency
+
+Status: `Planned`
+
+Dependencies: Task 060 slice 060.1; coordinate final coverage with 060.8.
+
+Problem: Substring and word-prefix scoring misses common abbreviated/subsequence
+queries, and frequently used commands have no session-aware ranking advantage.
+
+Acceptance criteria:
+
+1. Deterministic subsequence scoring includes word-boundary, adjacency, prefix, and
+   exact-match bonuses with stable tie-breaking.
+2. Queries such as `git wt` and `gwt` find and rank `Git: Worktrees` predictably.
+3. A bounded private recency model affects ranking only after textual relevance and
+   never stores repository content or telemetry.
+4. Corrupt recency state fails closed, and Settings/documentation disclose ownership
+   if recency persists beyond the session.
+5. Unit tests cover ranking, normalization, ties, recency bounds, reset, and the full
+   command catalog without weakening Task 060.8 coverage.
+
+### 066 — live keyboard reference overlay
+
+Status: `Planned`
+
+Dependencies: 049 and Task 060 slice 060.1.
+
+Problem: Typed keybindings are discoverable in Settings but not available as a quick,
+searchable workbench reference.
+
+Acceptance criteria:
+
+1. A read-only searchable overlay renders the live validated binding snapshot grouped
+   by category, including intentionally unbound commands.
+2. Its default invocation is added through ADR 021's closed catalog and complete
+   conflict validation, not hard-coded control handling.
+3. Vim mode notes reflect current state without replacing the standard catalog.
+4. Opening, searching, navigation, dismissal, focus return, screen sizing, and AT-SPI
+   structure have deterministic and graphical acceptance coverage.
+5. The overlay introduces no new persisted state or executable command strings.
+
+### 067 — Vim search and named registers
+
+Status: `Planned`
+
+Dependencies: 049.
+
+Problem: Vim mode lacks its primary search motions and named registers; macros would
+multiply the binding/state matrix before those foundations are proven.
+
+Acceptance criteria:
+
+1. Deliver `/`, `?`, `n`, and `N` incremental search first, including counts,
+   wrap/no-match state, cancellation, visual selection, and operator composition.
+2. Named registers `a`–`z` follow in a separate slice; the `+` register maps only to
+   the existing clipboard boundary.
+3. Search and registers preserve IME composition, undo, dirty state, Roslyn document
+   identity, configured command precedence, and accessible mode/status text.
+4. Controller tests cover motion/operator matrices and Unicode without coupling to
+   Avalonia framework types.
+5. Macros (`q`, `@`) remain deferred until a separate accepted decision defines
+   recording scope, recursion/bounds, authority, and accessibility.
+
+### 068 — explicit split editor groups
+
+Status: `Planned`
+
+Dependencies: Task 060 slice 060.5.
+
+Problem: Dock dragging can place documents side by side, but there are no discoverable
+split/move commands or explicit persisted editor-group semantics.
+
+Acceptance criteria:
+
+1. Typed commands split right/down and move the current document between named editor
+   groups over the existing Dock model.
+2. ADR 011 layout persistence round-trips groups without changing existing dock or
+   document identifiers and migrates any necessary codec state explicitly.
+3. Dirty buffers, diagnostics, active-document state, navigation, close prompts, and
+   document switcher ownership remain singular across moves.
+4. Commands appear in the palette and keybinding catalog with conflict validation.
+5. Headless layout, keyboard/focus, compact-screen, AT-SPI, and save-before/
+   restore-after acceptance evidence cover both split directions.

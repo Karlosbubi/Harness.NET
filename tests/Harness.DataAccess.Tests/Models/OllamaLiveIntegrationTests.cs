@@ -7,6 +7,7 @@ public sealed class OllamaLiveIntegrationTests
 {
     [Fact]
     [Trait("Category", "LiveIntegration")]
+    [Trait("Tier", "Live")]
     public async Task Discovers_and_streams_from_configured_server()
     {
         string? configuredEndpoint = Environment.GetEnvironmentVariable(
@@ -51,6 +52,7 @@ public sealed class OllamaLiveIntegrationTests
 
     [Fact]
     [Trait("Category", "OllamaLiveIntegration")]
+    [Trait("Tier", "Live")]
     public async Task Ornith_combines_reasoning_with_a_typed_tool_call()
     {
         if (Environment.GetEnvironmentVariable("HARNESS_RUN_OLLAMA_LIVE_TESTS") != "1")

@@ -8,6 +8,7 @@ public sealed class OpenRouterLiveIntegrationTests
 {
     [Fact]
     [Trait("Category", "OpenRouterLiveIntegration")]
+    [Trait("Tier", "Live")]
     public async Task Discovers_chat_and_embedding_catalogs_without_inference_spend()
     {
         string? apiKey = Environment.GetEnvironmentVariable("OPENROUTER_API_KEY");
@@ -42,6 +43,7 @@ public sealed class OpenRouterLiveIntegrationTests
 
     [Fact]
     [Trait("Category", "OpenRouterPaidLiveIntegration")]
+    [Trait("Tier", "Live")]
     public async Task Embeds_one_short_input_under_a_five_microdollar_ceiling()
     {
         string? apiKey = Environment.GetEnvironmentVariable("OPENROUTER_API_KEY");
@@ -81,6 +83,7 @@ public sealed class OpenRouterLiveIntegrationTests
 
     [Fact]
     [Trait("Category", "OpenRouterPaidLiveIntegration")]
+    [Trait("Tier", "Live")]
     public async Task DeepSeek_v4_flash_combines_reasoning_with_a_typed_tool_call()
     {
         string? apiKey = Environment.GetEnvironmentVariable("OPENROUTER_API_KEY");

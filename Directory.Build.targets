@@ -1,0 +1,15 @@
+<Project>
+  <PropertyGroup Condition="'$(IsTestProject)' == 'true'">
+    <HarnessTestTier Condition="'$(MSBuildProjectName)' == 'Harness.Analyzers.Tests' Or
+                                '$(MSBuildProjectName)' == 'Harness.Architecture.Tests' Or
+                                '$(MSBuildProjectName)' == 'Harness.BusinessLogic.Tests'">Fast</HarnessTestTier>
+    <HarnessTestTier Condition="'$(HarnessTestTier)' == ''">Adapter</HarnessTestTier>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(IsTestProject)' == 'true'">
+    <AssemblyAttribute Include="Xunit.AssemblyTraitAttribute">
+      <_Parameter1>Tier</_Parameter1>
+      <_Parameter2>$(HarnessTestTier)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+</Project>

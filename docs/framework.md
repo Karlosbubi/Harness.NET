@@ -18,7 +18,7 @@ This file defines the current engineering and agent rules for Harness.NET.
 | Reactivity | Rx.NET where streams or state reduction benefit from it. |
 | Persistence | SQLite, Dapper, explicit SQL, and DbUp migrations. |
 | Logging | `ILogger` at DI boundaries; Serilog implementation; optional OTLP. |
-| Testing | xUnit, architecture tests, integration tests, deterministic fakes, and opt-in live tests. |
+| Testing | xUnit with Fast/Adapter/Live tiers, architecture tests, deterministic fakes, and explicitly authorized live tests. |
 | UI | Avalonia default; Terminal.Gui retained; no web frontend. |
 | Process | One process until a measured problem requires separation. |
 | Code intelligence | In-process Roslyn behind implementation-neutral contracts; future local LSP remains replaceable. |
