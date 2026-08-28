@@ -37,10 +37,6 @@
 - Never commit credentials, machine-specific paths, model blobs, or conversation
   content that has not been deliberately persisted by the user.
 - Update or add a decision record when a choice constrains future architecture.
-- Finish completed repository work by committing it, pushing its feature branch, and
-  opening a pull request. Never develop or push changes directly on the default branch;
-  create a dedicated branch first so `main` can remain protected. Open pull requests as
-  drafts unless the user explicitly requests ready-for-review publication.
 
 Harness.NET must not add custom metadata directories to user repositories. Prefer
 existing `AGENTS.md` and documentation; keep private state in Harness.NET storage.
