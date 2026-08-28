@@ -121,6 +121,7 @@ internal sealed partial class MainWindow : Window
         HarnessThemeController themeController,
         IRunOutputService runOutputService,
         IToolEvidenceService toolEvidenceService,
+        IAgentActivityReader agentActivityReader,
         IWorkbenchInspectionService inspectionService,
         IDeveloperGitService developerGitService,
         IWorkbenchDocumentService documentService,
@@ -143,9 +144,11 @@ internal sealed partial class MainWindow : Window
         this.projectUserSecretsService = projectUserSecretsService;
         this.developerExecutionService = developerExecutionService;
         this.cancellationToken = cancellationToken;
-        agentActivityStatus = new(toolEvidenceService);
+        agentActivityStatus = new(toolEvidenceService, agentActivityReader);
         workbenchEvents = new(NavigateToWorkbenchEvent);
         agentActivityStatus.CancelRequested += store.CancelGoalWorkflow;
+        agentActivityStatus.GoalRequested += ShowConversation;
+        agentActivityStatus.EvidenceRequested += () => workbench?.OpenEvidence();
         store.WorkbenchEventPublished += OnWorkbenchEventPublished;
         Title = "Harness.NET";
         Width = 1280;

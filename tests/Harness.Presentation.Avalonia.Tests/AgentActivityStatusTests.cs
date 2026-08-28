@@ -2,6 +2,9 @@ using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Interactivity;
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
+using Harness.BusinessLogic.Agents;
 using Harness.BusinessLogic.Evidence;
 using Harness.BusinessLogic.Workflows;
 
@@ -134,20 +137,98 @@ public sealed class AgentActivityStatusTests
     }
 
     [Fact]
+    public void Provider_stream_and_read_only_tool_activity_are_truthful_and_payload_free()
+    {
+        DateTimeOffset started = Now.AddMinutes(-1);
+        GoalManagementState goals = GoalManagementState.Initial with
+        {
+            SelectedGoalId = new("goal-status"),
+            IsWorkflowRunning = true,
+            WorkflowOperationStartedAt = started,
+        };
+        AgentActivitySnapshot provider = new([
+            new(new("activity-1"), new("goal-status"), AgentRole.Implementer,
+                AgentActivityKind.ProviderRequest, new("model_response"),
+                AgentActivityPhase.ReceivingResponse, Now.AddSeconds(-8), Now.AddSeconds(-2)),
+        ]);
+
+        AgentActivityStatusView receiving = AgentActivityStatusProjector.Project(
+            goals, Now, sessionActivity: provider);
+
+        Assert.Equal("Implementer · receiving response · 1m 00s", receiving.CompactText);
+        Assert.Contains("last observable update just now", receiving.Details,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("model_response", receiving.Details, StringComparison.Ordinal);
+
+        AgentActivitySnapshot coalesced = new([
+            .. provider.Items,
+            new(new("activity-2"), new("goal-status"), AgentRole.Implementer,
+                AgentActivityKind.ToolInvocation, new("read_file_range"),
+                AgentActivityPhase.Running, Now.AddSeconds(-1), Now.AddSeconds(-1)),
+        ]);
+        AgentActivityStatusView multiple = AgentActivityStatusProjector.Project(
+            goals, Now, sessionActivity: coalesced);
+
+        Assert.Equal("2 agent operations · active · 1m 00s", multiple.CompactText);
+        Assert.Contains("Read file range · running", multiple.Details,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Review_correction_is_identified_as_an_implementer_retry()
+    {
+        DateTimeOffset started = Now.AddMinutes(-1);
+        GoalManagementState goals = GoalManagementState.Initial with
+        {
+            SelectedGoalId = new("goal-status"),
+            IsWorkflowRunning = true,
+            WorkflowOperationStartedAt = started,
+            Workflow = Workflow(
+                new(1, GoalWorkflowCheckpointKind.ReviewCompleted, WorkflowActor.Reviewer,
+                    new("Reviewer requested a correction."), started.AddSeconds(1)),
+                new(2, GoalWorkflowCheckpointKind.ImplementerCallStarted,
+                    WorkflowActor.Implementer, new("Correction call started."),
+                    started.AddSeconds(2))),
+        };
+        AgentActivitySnapshot activity = new([
+            new(new("activity-retry"), new("goal-status"), AgentRole.Implementer,
+                AgentActivityKind.ProviderRequest, new("model_response"),
+                AgentActivityPhase.WaitingForResponse, started.AddSeconds(2),
+                started.AddSeconds(2)),
+        ]);
+
+        AgentActivityStatusView view = AgentActivityStatusProjector.Project(
+            goals, Now, sessionActivity: activity);
+
+        Assert.StartsWith("Implementer retry · contacting model", view.CompactText,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Status_control_is_accessible_expandable_and_uses_existing_cancellation()
     {
         using HeadlessUnitTestSession session =
             HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
         await session.Dispatch(() =>
         {
-            using AgentActivityStatusControl control = new(new ToolEvidenceService());
+            using AgentActivityStatusControl control = new(
+                new ToolEvidenceService(), new AgentActivityReader());
             bool cancelled = false;
+            bool goalRequested = false;
+            bool evidenceRequested = false;
             control.CancelRequested += () => cancelled = true;
+            control.GoalRequested += () => goalRequested = true;
+            control.EvidenceRequested += () => evidenceRequested = true;
             control.Update(GoalManagementState.Initial with
             {
+                SelectedGoalId = new("goal-status"),
                 IsWorkflowRunning = true,
                 WorkflowOperationName = "Generate plan",
                 WorkflowOperationStartedAt = TimeProvider.System.GetUtcNow(),
+                Workflow = Workflow() with
+                {
+                    Evidence = [new(1, new("Build"), new("Build passed."))],
+                },
             });
 
             Button button = Assert.IsType<Button>(control.Control);
@@ -156,9 +237,20 @@ public sealed class AgentActivityStatusTests
                 StringComparison.Ordinal);
             Flyout flyout = Assert.IsType<Flyout>(button.Flyout);
             StackPanel content = Assert.IsType<StackPanel>(flyout.Content);
-            Button cancel = Assert.IsType<Button>(content.Children[^1]);
+            StackPanel actions = Assert.IsType<StackPanel>(content.Children[^1]);
+            Button openGoal = Assert.IsType<Button>(actions.Children[0]);
+            Button openEvidence = Assert.IsType<Button>(actions.Children[1]);
+            Button cancel = Assert.IsType<Button>(actions.Children[2]);
+            Assert.Equal("Open active goal conversation", AutomationProperties.GetName(openGoal));
+            Assert.Equal("Open active goal workflow evidence",
+                AutomationProperties.GetName(openEvidence));
+            Assert.True(openEvidence.IsEnabled);
+            openGoal.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            openEvidence.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             cancel.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
 
+            Assert.True(goalRequested);
+            Assert.True(evidenceRequested);
             Assert.True(cancelled);
         }, CancellationToken.None);
     }
@@ -171,7 +263,7 @@ public sealed class AgentActivityStatusTests
         await session.Dispatch(() =>
         {
             ToolEvidenceService evidence = new();
-            using AgentActivityStatusControl control = new(evidence);
+            using AgentActivityStatusControl control = new(evidence, new AgentActivityReader());
 
             control.Update(GoalManagementState.Initial with
             {
@@ -181,6 +273,46 @@ public sealed class AgentActivityStatusTests
             });
 
             Assert.Equal(1, evidence.CallCount);
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Status_renders_at_compact_width_without_stealing_focus_and_hides_on_recovery()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            TextBox composer = new() { Text = "Keep focus here" };
+            using AgentActivityStatusControl control = new(
+                new ToolEvidenceService(), new AgentActivityReader());
+            Window window = new()
+            {
+                Width = 320,
+                Height = 180,
+                Content = new StackPanel { Children = { composer, control.Control } },
+            };
+            window.Show();
+            composer.Focus();
+            control.Update(GoalManagementState.Initial with
+            {
+                SelectedGoalId = new("goal-status"),
+                IsWorkflowRunning = true,
+                WorkflowOperationName = "Generate plan",
+                WorkflowOperationStartedAt = TimeProvider.System.GetUtcNow(),
+            });
+            Dispatcher.UIThread.RunJobs();
+
+            Button button = Assert.IsType<Button>(control.Control);
+            using Bitmap rendered = Assert.IsAssignableFrom<Bitmap>(window.CaptureRenderedFrame());
+            Assert.True(rendered.PixelSize.Width > 0);
+            Assert.True(button.Bounds.Width <= window.ClientSize.Width);
+            Assert.True(composer.IsFocused);
+
+            control.Update(GoalManagementState.Initial);
+            Dispatcher.UIThread.RunJobs();
+            Assert.False(button.IsVisible);
+            window.Close();
         }, CancellationToken.None);
     }
 
@@ -207,5 +339,14 @@ public sealed class AgentActivityStatusTests
             CallCount++;
             return ValueTask.FromResult(new ToolEvidenceSnapshot([], null, null));
         }
+    }
+
+    private sealed class AgentActivityReader : IAgentActivityReader
+    {
+        public event Action? Changed;
+
+        public AgentActivitySnapshot GetSnapshot() => new([]);
+
+        internal void Publish() => Changed?.Invoke();
     }
 }

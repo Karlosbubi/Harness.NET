@@ -19,7 +19,9 @@ internal sealed class ModelProviderChatClient(
     AgentRole role,
     bool implementerInspectionBootstrapped = false,
     bool structuredLocalFileEditProposal = false,
-    AgentReasoningPolicy reasoningPolicy = AgentReasoningPolicy.ProviderDefault) : IChatClient
+    AgentReasoningPolicy reasoningPolicy = AgentReasoningPolicy.ProviderDefault,
+    GoalId? activityGoalId = null,
+    AgentActivityService? activityService = null) : IChatClient
 {
     private readonly ConcurrentDictionary<string, byte> calledTools =
         new(StringComparer.Ordinal);
@@ -163,7 +165,11 @@ internal sealed class ModelProviderChatClient(
                 new(tool.JsonSchema.GetRawText())))
             .ToArray() ?? [];
 
-        await foreach (ChatStreamEvent item in provider.StreamChatAsync(
+        using AgentActivityLease? providerActivity =
+            activityGoalId is null || activityService is null
+                ? null
+                : activityService.BeginProvider(activityGoalId, role);
+        await using IAsyncEnumerator<ChatStreamEvent> providerStream = provider.StreamChatAsync(
             new ChatRequest(
                 model.Value,
                 providerMessages,
@@ -200,10 +206,34 @@ internal sealed class ModelProviderChatClient(
                     reasoningPolicy is AgentReasoningPolicy.Disabled
                     ? ModelReasoningEffort.None
                     : ModelReasoningEffort.ProviderDefault),
-            cancellationToken))
+            cancellationToken).GetAsyncEnumerator(cancellationToken);
+        while (true)
         {
+            bool hasNext;
+            try
+            {
+                hasNext = await providerStream.MoveNextAsync();
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                providerActivity?.Cancel();
+                throw;
+            }
+            catch (Exception)
+            {
+                providerActivity?.Fail();
+                throw;
+            }
+            if (!hasNext)
+            {
+                break;
+            }
+
+            ChatStreamEvent item = providerStream.Current;
+            providerActivity?.MarkReceiving();
             if (item.Error is not null)
             {
+                providerActivity?.Fail();
                 throw new InvalidOperationException(
                     $"Model provider error '{item.Error.Code}': {item.Error.Message}");
             }
@@ -240,6 +270,7 @@ internal sealed class ModelProviderChatClient(
                 yield return new(AIChatRole.Assistant, contents);
             }
         }
+        providerActivity?.Complete();
     }
 
     private static IEnumerable<ProviderChatMessage> MapMessage(

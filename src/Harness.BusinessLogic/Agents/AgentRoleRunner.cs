@@ -23,13 +23,15 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
     private readonly ILoggerFactory loggerFactory;
     private readonly IGoalWorkspaceInspectionService? inspectionService;
     private readonly IWorkspaceMutationService? mutationService;
+    private readonly AgentActivityService? activityService;
 
     public AgentRoleRunner(
         IGoalModelRouteResolver routeResolver,
         IAgentToolFactory toolFactory,
         ILoggerFactory loggerFactory,
         IGoalWorkspaceInspectionService? inspectionService = null,
-        IWorkspaceMutationService? mutationService = null)
+        IWorkspaceMutationService? mutationService = null,
+        AgentActivityService? activityService = null)
     {
         ArgumentNullException.ThrowIfNull(routeResolver);
         ArgumentNullException.ThrowIfNull(toolFactory);
@@ -39,6 +41,7 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
         this.loggerFactory = loggerFactory;
         this.inspectionService = inspectionService;
         this.mutationService = mutationService;
+        this.activityService = activityService;
     }
 
     public async ValueTask<AgentRunResult> RunAsync(
@@ -85,7 +88,9 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
                 route.Access is ModelAccess.Remote ? route.GoalId : null,
                 route.Role,
                 inspectionBootstrapped, structuredLocalFileEdit,
-                route.ReasoningPolicy);
+                route.ReasoningPolicy,
+                request.GoalId,
+                activityService);
             IChatClient chatClient = new ChatClientBuilder(providerClient)
                 .UseFunctionInvocation(loggerFactory, functionClient =>
                 {

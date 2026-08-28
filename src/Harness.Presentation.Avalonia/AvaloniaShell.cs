@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Threading;
+using Harness.BusinessLogic.Agents;
 using Harness.BusinessLogic.CodeIntelligence;
 using Harness.BusinessLogic.Documents;
 using Harness.BusinessLogic.Evidence;
@@ -19,6 +20,7 @@ internal sealed class AvaloniaShell(
     HarnessThemeController themeController,
     IRunOutputService runOutputService,
     IToolEvidenceService toolEvidenceService,
+    IAgentActivityReader agentActivityReader,
     IWorkbenchInspectionService inspectionService,
     IDeveloperGitService developerGitService,
     IWorkbenchDocumentService documentService,
@@ -37,6 +39,7 @@ internal sealed class AvaloniaShell(
                 themeController,
                 runOutputService,
                 toolEvidenceService,
+                agentActivityReader,
                 inspectionService,
                 developerGitService,
                 documentService,

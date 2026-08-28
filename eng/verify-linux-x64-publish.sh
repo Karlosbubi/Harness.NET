@@ -124,7 +124,7 @@ test "$(sqlite3 "$recovered_database" \
   "SELECT COUNT(*) FROM conversations WHERE id='release-proof';")" = "1"
 
 sqlite3 "$recovered_database" \
-  "DROP TABLE appearance_preferences; DROP TABLE agent_role_defaults; DROP TABLE goal_budget_extensions; DROP TABLE remote_spend_preferences; DROP TABLE visual_capture_preferences; DROP TABLE editor_intelligence_preferences; DROP TABLE keybinding_preferences; DROP TABLE keybinding_configuration; DROP TABLE developer_dotnet_executions; DELETE FROM SchemaVersions WHERE ScriptName LIKE '%018_AppearancePreferences.sql' OR ScriptName LIKE '%019_AgentRoleDefaults.sql' OR ScriptName LIKE '%020_RenameEvidence.sql' OR ScriptName LIKE '%021_GoalBudgetExtensions.sql' OR ScriptName LIKE '%022_RemoteSpendPreferences.sql' OR ScriptName LIKE '%023_AgentOutputTokenLimits.sql' OR ScriptName LIKE '%024_RemoveAgentOutputTokenLimits.sql' OR ScriptName LIKE '%025_VisualCapturePreferences.sql' OR ScriptName LIKE '%026_EditorIntelligencePreferences.sql' OR ScriptName LIKE '%027_EditorFormattingPreferences.sql' OR ScriptName LIKE '%028_KeybindingPreferences.sql' OR ScriptName LIKE '%029_EditorInputMode.sql' OR ScriptName LIKE '%030_DeveloperDotNetExecutions.sql'; UPDATE application_metadata SET value='17' WHERE key='schema_version';"
+  "DROP TABLE appearance_preferences; DROP TABLE agent_role_defaults; DROP TABLE goal_budget_extensions; DROP TABLE remote_spend_preferences; DROP TABLE visual_capture_preferences; DROP TABLE editor_intelligence_preferences; DROP TABLE keybinding_preferences; DROP TABLE keybinding_configuration; DROP TABLE developer_dotnet_executions; DELETE FROM SchemaVersions WHERE ScriptName LIKE '%018_AppearancePreferences.sql' OR ScriptName LIKE '%019_AgentRoleDefaults.sql' OR ScriptName LIKE '%020_RenameEvidence.sql' OR ScriptName LIKE '%021_GoalBudgetExtensions.sql' OR ScriptName LIKE '%022_RemoteSpendPreferences.sql' OR ScriptName LIKE '%023_AgentOutputTokenLimits.sql' OR ScriptName LIKE '%024_RemoveAgentOutputTokenLimits.sql' OR ScriptName LIKE '%025_VisualCapturePreferences.sql' OR ScriptName LIKE '%026_EditorIntelligencePreferences.sql' OR ScriptName LIKE '%027_EditorFormattingPreferences.sql' OR ScriptName LIKE '%028_KeybindingPreferences.sql' OR ScriptName LIKE '%029_EditorInputMode.sql' OR ScriptName LIKE '%030_DeveloperDotNetExecutions.sql' OR ScriptName LIKE '%031_AgentReasoningPolicy.sql'; UPDATE application_metadata SET value='17' WHERE key='schema_version';"
 env -i \
   PATH="$recovery_root/no-installed-tools" \
   DOTNET_ROOT="$recovery_root/no-installed-dotnet" \
@@ -133,7 +133,10 @@ env -i \
   XDG_STATE_HOME="$recovery_root/state" \
   XDG_CACHE_HOME="$recovery_root/cache" \
   "$publish_root/Harness.Host" --no-ui >"$recovery_root/upgrade.log" 2>&1
-grep -q "Harness.NET ready (schema $schema_version)" "$recovery_root/upgrade.log"
+if ! grep -q "Harness.NET ready (schema $schema_version)" "$recovery_root/upgrade.log"; then
+  sed -n '1,120p' "$recovery_root/upgrade.log"
+  exit 1
+fi
 test -n "$(find "$recovery_root/data/harness.net/backups" \
   -type f -name 'pre-upgrade-*.zip' -print -quit)"
 test "$(sqlite3 "$recovered_database" \

@@ -117,11 +117,13 @@ therefore remain implementation-only.
 `Harness.Host` composes everything. `Program.cs` is a 179-line orchestrator retaining
 configuration loading, registration order, observability bootstrap, run-mode
 resolution (Avalonia, Terminal, or isolated MCP evaluation via
-`--mcp-evaluation-root`), and shutdown ownership. Its 138 DI registrations live in
+`--mcp-evaluation-root`), and shutdown ownership. Its 140 DI registrations live in
 five internal modules: Infrastructure, Integrations, Workspace, Goals, and
-Presentation. Architecture tests enforce the 200-line entry-point budget, while
-Host tests compare each module count and the combined service-type/key/lifetime
-inventory to the reviewed pre-split baseline at commit `16f3085`.
+Presentation. Architecture tests enforce the 200-line entry-point budget. Host tests
+compare the combined service-type/key/lifetime inventory to the reviewed 138-entry
+pre-split baseline at commit `16f3085`, then separately assert Task 071's two reviewed
+singleton additions: the session activity owner and its read-only Presentation
+boundary.
 
 ## Core records
 

@@ -11,9 +11,15 @@ public sealed class ServiceRegistrationTests
     private const string PreSplitBaselineCommit = "16f3085";
     private const string PreSplitServiceInventoryFingerprint =
         "9A3F83881023EB185BBD19F7E6B2D3EB901D948384CB194791142E4008338365";
+    private static readonly IReadOnlySet<string> Task071GoalRegistrations = new HashSet<string>(
+        [
+            "Harness.BusinessLogic.Agents.AgentActivityService",
+            "Harness.BusinessLogic.Agents.IAgentActivityReader",
+        ],
+        StringComparer.Ordinal);
 
     [Fact]
-    public void Feature_modules_match_the_reviewed_pre_split_registration_inventory()
+    public void Feature_modules_preserve_the_baseline_plus_reviewed_feature_registrations()
     {
         ApplicationPaths current = new(
             "/tmp/harness-config",
@@ -47,13 +53,23 @@ public sealed class ServiceRegistrationTests
                     ("Infrastructure", 14),
                     ("Integrations", 31),
                     ("Workspace", 70),
-                    ("Goals", 14),
+                    ("Goals", 16),
                     ("Presentation", 9),
                 }),
             "Registration inventory changed: " +
             string.Join(", ", actual.Select(item => $"{item.Name}={item.Count}")));
 
+        ServiceDescriptor[] task071 = services
+            .Where(descriptor => Task071GoalRegistrations.Contains(
+                descriptor.ServiceType.FullName ?? string.Empty))
+            .ToArray();
+        Assert.Equal(Task071GoalRegistrations.Count, task071.Length);
+        Assert.All(task071, descriptor =>
+            Assert.Equal(ServiceLifetime.Singleton, descriptor.Lifetime));
+
         string serviceInventory = string.Join('\n', services
+            .Where(descriptor => !Task071GoalRegistrations.Contains(
+                descriptor.ServiceType.FullName ?? string.Empty))
             .Select(descriptor => string.Join('|',
                 descriptor.ServiceType.FullName,
                 descriptor.ServiceKey,
@@ -63,7 +79,8 @@ public sealed class ServiceRegistrationTests
             serviceInventory)));
         Assert.True(
             string.Equals(PreSplitServiceInventoryFingerprint, fingerprint, StringComparison.Ordinal),
-            $"Registration inventory differs from pre-split commit {PreSplitBaselineCommit}: " +
+            $"Registration inventory beyond Task 071 differs from pre-split commit " +
+            $"{PreSplitBaselineCommit}: " +
             $"expected {PreSplitServiceInventoryFingerprint}, actual {fingerprint}.\n" +
             serviceInventory);
 

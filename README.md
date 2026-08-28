@@ -59,7 +59,8 @@ Delivered:
   retrieval, diagnostics, symbols, navigation, edits, rename, and closed Roslyn
   action discovery/preview/apply;
 - a low-noise live agent activity indicator with elapsed time, last observable update,
-  bounded durable-checkpoint detail, and direct cancellation;
+  bounded provider/tool/checkpoint detail, goal and evidence navigation, deterministic
+  multi-operation coalescing, and direct cancellation;
 - bounded, session-only workbench notifications for goal outcomes, with deterministic
   coalescing, expiry, keyboard dismissal, accessible announcements, and direct
   navigation back to Conversation;

@@ -37,6 +37,9 @@ internal static class GoalServiceRegistration
         HarnessConfiguration configuration)
     {
         services.AddSingleton<IGoalAcceptanceService, GoalAcceptanceService>();
+        services.AddSingleton<AgentActivityService>();
+        services.AddSingleton<IAgentActivityReader>(provider =>
+            provider.GetRequiredService<AgentActivityService>());
         foreach (ModelProviderConfiguration provider in configuration.Providers.Values)
         {
             services.AddKeyedSingleton<IModelProvider>(
@@ -96,10 +99,12 @@ internal static class GoalServiceRegistration
                 provider.GetRequiredService<IDependencyResearchService>(),
                 provider.GetRequiredService<IAgentToolActivationService>(),
                 provider.GetRequiredService<IChangedSetQualityService>(),
-                provider.GetRequiredService<IInboundMcpUiBridge>()),
+                provider.GetRequiredService<IInboundMcpUiBridge>(),
+                provider.GetRequiredService<AgentActivityService>()),
             provider.GetRequiredService<ILoggerFactory>(),
             provider.GetRequiredService<IGoalWorkspaceInspectionService>(),
-            provider.GetRequiredService<IWorkspaceMutationService>()));
+            provider.GetRequiredService<IWorkspaceMutationService>(),
+            provider.GetRequiredService<AgentActivityService>()));
         services.AddSingleton<IGoalWorkflowService>(provider => new GoalWorkflowService(
             provider.GetRequiredService<IGoalWorkflowStore>(),
             provider.GetRequiredService<IGoalWorkflowTaskStore>(),

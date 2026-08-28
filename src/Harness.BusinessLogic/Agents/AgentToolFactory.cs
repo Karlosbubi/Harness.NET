@@ -25,7 +25,8 @@ internal sealed class AgentToolFactory(
     IDependencyResearchService? dependencyResearchService = null,
     IAgentToolActivationService? activationService = null,
     IChangedSetQualityService? qualityService = null,
-    IInboundMcpUiBridge? uiBridge = null) : IAgentToolFactory
+    IInboundMcpUiBridge? uiBridge = null,
+    AgentActivityService? activityService = null) : IAgentToolFactory
 {
     public IList<AITool> Create(
         AgentRole role,
@@ -51,6 +52,14 @@ internal sealed class AgentToolFactory(
         {
             tools.AddRange(mcpToolService.EligibleToolsFor(role).Select(tool =>
                 (AITool)new McpAgentFunction(tool, mcpToolService)));
+        }
+        if (activityService is not null)
+        {
+            tools = tools.Select(tool => tool is AIFunction function
+                    ? (AITool)new ObservedAgentFunction(
+                        function, activityService, goalId, role)
+                    : tool)
+                .ToList();
         }
         return tools;
     }

@@ -3,6 +3,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml.Styling;
 using Avalonia.Themes.Fluent;
 using Dock.Avalonia.Themes.Fluent;
+using Harness.BusinessLogic.Agents;
 using Harness.BusinessLogic.CodeIntelligence;
 using Harness.BusinessLogic.Documents;
 using Harness.BusinessLogic.Evidence;
@@ -20,6 +21,7 @@ internal sealed class HarnessApplication(
     HarnessThemeController themeController,
     IRunOutputService runOutputService,
     IToolEvidenceService toolEvidenceService,
+    IAgentActivityReader agentActivityReader,
     IWorkbenchInspectionService inspectionService,
     IDeveloperGitService developerGitService,
     IWorkbenchDocumentService documentService,
@@ -57,6 +59,7 @@ internal sealed class HarnessApplication(
                 themeController,
                 runOutputService,
                 toolEvidenceService,
+                agentActivityReader,
                 inspectionService,
                 developerGitService,
                 documentService,

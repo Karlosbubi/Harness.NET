@@ -1221,7 +1221,7 @@ Acceptance criteria:
 
 ### 071 — live agent activity status
 
-Status: `In progress — durable workflow and typed-operation status slices delivered`
+Status: `Complete`
 
 Dependencies: 040, 063, and Task 060's relevant Conversation/header composition
 slice.
@@ -1252,15 +1252,15 @@ Acceptance criteria:
    recovery, and bounded live-local-model acceptance coverage prove the widget remains
    informative without becoming distracting.
 
-Implementation evidence (2026-08-28): the header status pill now reports the active
-workflow phase/role, elapsed time, and last durable-checkpoint age; its flyout shows a
-bounded timestamped checkpoint timeline, current typed edit/Build/Test operations,
-and the existing cancellation action. It loads evidence immediately, refreshes while
-active, and rejects results from an operation that is no longer current. The Business
-Logic activity contract now carries the persisted checkpoint timestamp. Provider-stream
-progress, navigation,
-multi-operation coalescing, Task 063 completion handoff, and graphical/live acceptance
-remain open.
+Implementation evidence (2026-08-28): the header status pill reports the active
+workflow phase/role, elapsed time, and age of the latest observable update. Its flyout
+shows bounded durable checkpoints, typed evidence, and sanitized session-only provider
+and tool lifecycles; it retains no prompt, response, reasoning, argument, or result
+payload. Concurrent operations coalesce deterministically, review corrections are
+identified as retries, and the existing cancellation plus goal/evidence navigation
+remain reachable. Completed and failed workflows hand off to Task 063 events. Fixed-
+clock, stalled-call, recovery, compact rendered-frame, focus, accessibility, lifecycle,
+and bounded live Ollama coverage are recorded in the acceptance record.
 See the [slice acceptance record](../acceptance/live-agent-activity-status-2026-08-28.md).
 
 ### 072 — deterministic compiler repair before model retry
