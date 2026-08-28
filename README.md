@@ -59,6 +59,9 @@ Delivered:
   action discovery/preview/apply;
 - a low-noise live agent activity indicator with elapsed time, last observable update,
   bounded durable-checkpoint detail, and direct cancellation;
+- bounded, session-only workbench notifications for goal outcomes, with deterministic
+  coalescing, expiry, keyboard dismissal, accessible announcements, and direct
+  navigation back to Conversation;
 - XDG Desktop Portal visual verification with per-frame consent, private goal-scoped
   evidence, exact-byte developer preview, typed agent tools, retention, revocation,
   and remote-disclosure controls;
