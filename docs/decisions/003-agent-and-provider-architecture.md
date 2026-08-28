@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-07-26
-- Amended: 2026-08-08, 2026-08-10
+- Amended: 2026-08-08, 2026-08-10, 2026-08-28
 
 ## Context
 
@@ -60,9 +60,21 @@ Guidance does not expand file, tool, mutation, or spending authority.
 
 ### Reasoning and tool calls
 
-Tool availability does not disable model reasoning. `ProviderDefault` omits a
-reasoning override. The deterministic structured local-file proposal path requests
+Tool availability does not by itself disable model reasoning. The role policy
+controls ordinary calls: `ProviderDefault` omits a reasoning override and `Disabled`
+requests none. The deterministic structured local-file proposal path always requests
 no reasoning because it expects a small machine-readable result.
+
+Ordinary role defaults also own a portable two-state reasoning policy:
+`ProviderDefault` or `Disabled`. Fresh routes retain `ProviderDefault` because forcing
+reasoning off can suppress structured planning or a model's action/tool protocol. This
+quality-preserving default applies to local and remote providers. Existing persisted
+routes also migrate to `ProviderDefault`, so an upgrade does not silently change
+established behavior. Settings exposes and persists the policy beside each role model,
+letting measured local latency justify an explicit `Disabled` choice. Goal-specific
+model selection changes the model route, while the role reasoning policy remains in
+force. Provider-specific effort levels are not exposed as portable choices because
+support and semantics differ by model.
 
 Harness carries reasoning text and optional provider-specific JSON through typed
 records. Business Logic maps opaque JSON to Microsoft protected reasoning content and
@@ -80,6 +92,8 @@ completed call once, including when a provider sends a later usage-only chunk.
 - OpenRouter reserves cost before a call and reconciles returned cost afterward.
 - Semantic indexes remain partitioned by provider and model configuration.
 - Opaque reasoning state is scoped to the active provider conversation.
+- Every role preserves provider planning and action/tool behavior by default, while an
+  explicit per-role setting can trade deliberation for local responsiveness.
 - Typed tools, workspace scope, privacy, approval, monetary controls, and Roslyn
   validation are unchanged by reasoning support.
 

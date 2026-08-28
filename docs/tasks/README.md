@@ -1156,3 +1156,35 @@ Acceptance criteria:
 4. Commands appear in the palette and keybinding catalog with conflict validation.
 5. Headless layout, keyboard/focus, compact-screen, AT-SPI, and save-before/
    restore-after acceptance evidence cover both split directions.
+
+### 069 — bounded per-role reasoning policy
+
+Status: `Complete`
+
+Dependencies: 003, 038, 040.
+
+Problem: Thinking-capable local models inherit provider-default reasoning on every
+ordinary role call. On modest hardware, a single typed inspection step can therefore
+spend minutes generating hidden reasoning before the next tool call, with no
+developer-visible way to choose responsiveness over depth.
+
+Decision: [ADR 003](../decisions/003-agent-and-provider-architecture.md) owns a
+portable two-state role policy. Fresh routes retain provider behavior because models
+can bind planning and native tool protocols to reasoning mode. Settings persists an
+explicit opt-out per Lead, Implementer, and Reviewer when measured latency warrants
+the quality tradeoff. Full role profiles remain in Task 056.
+
+Acceptance criteria:
+
+1. Business Logic owns immutable role-default and route contracts carrying either
+   `Disabled` or `ProviderDefault`; Data Access maps that policy to provider requests.
+2. Fresh local and remote routes keep provider behavior, existing saved routes migrate
+   without a silent behavior change, and an explicit per-role opt-out requests no
+   optional reasoning.
+3. Settings → Models & roles exposes, validates, persists, and reports the effective
+   policy beside each role model.
+4. The deterministic structured local-file proposal continues to force reasoning off
+   independently of the ordinary role policy.
+5. Migration, routing, provider-request mapping, Settings state, build, deterministic
+   tests, and a bounded live Ollama comparison are recorded in the
+   [acceptance record](../acceptance/local-role-reasoning-policy-2026-08-28.md).

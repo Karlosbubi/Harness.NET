@@ -1059,9 +1059,8 @@ internal sealed class AvaloniaPresentationStore(
         }
     }
 
-    internal async ValueTask UpdateAgentDefaultAsync(
-        AgentRole role,
-        GoalModelCandidate candidate,
+    internal async ValueTask UpdateAgentDefaultAsync(AgentRole role, GoalModelCandidate candidate,
+        AgentReasoningPolicy reasoningPolicy,
         CancellationToken cancellationToken)
     {
         Publish(Current with
@@ -1074,7 +1073,8 @@ internal sealed class AvaloniaPresentationStore(
             AgentRoleDefaultUpdateResult result = await agentDefaultsService.UpdateAsync(new(
                 role,
                 candidate.Provider,
-                candidate.Model), cancellationToken);
+                candidate.Model,
+                reasoningPolicy), cancellationToken);
             if (result.Value is null)
             {
                 Publish(Current with

@@ -351,6 +351,13 @@ def parse_args() -> argparse.Namespace:
         help="additional tool-capable Ollama model selectable for Implementer recovery; may be repeated",
     )
     parser.add_argument(
+        "--reasoning-off-role",
+        action="append",
+        default=[],
+        choices=["lead", "implementer", "reviewer"],
+        help="persist an explicit reasoning-off role default before the evaluation; may be repeated",
+    )
+    parser.add_argument(
         "--output-root",
         type=Path,
         help="persistent diagnostic directory (default: artifacts/usability/timestamp)",
@@ -615,6 +622,31 @@ def latest_workflow_state(database: Path) -> str | None:
             "SELECT state FROM goal_workflow_runs ORDER BY updated_at DESC LIMIT 1"
         ).fetchone()
     return None if row is None else str(row[0])
+
+
+def persist_reasoning_opt_outs(
+    database: Path,
+    roles: list[str],
+    models: dict[str, Any],
+) -> None:
+    routes = {
+        "lead": ("Lead", "LeadOllama", models["lead"]),
+        "implementer": ("Implementer", "ImplementerOllama", models["implementer"]),
+        "reviewer": ("Reviewer", "ReviewerOllama", models["reviewer"]),
+    }
+    now = datetime.now(timezone.utc).isoformat()
+    with sqlite3.connect(database) as connection:
+        for requested in dict.fromkeys(roles):
+            role, provider, model = routes[requested]
+            connection.execute(
+                "INSERT INTO agent_role_defaults "
+                "(role, provider, model, reasoning_policy, updated_at) "
+                "VALUES (?, ?, ?, 'Disabled', ?) "
+                "ON CONFLICT(role) DO UPDATE SET provider=excluded.provider, "
+                "model=excluded.model, reasoning_policy=excluded.reasoning_policy, "
+                "updated_at=excluded.updated_at",
+                (role, provider, model, now),
+            )
 
 
 def latest_workflow_status(database: Path) -> tuple[str, str] | None:
@@ -1239,6 +1271,7 @@ def main() -> int:
             "reviewer": args.reviewer_model or args.model,
             "recovery_implementers": args.recovery_implementer_model,
         },
+        "reasoning_off_roles": args.reasoning_off_role,
         "result": "running",
     }
     report_path = root / "usability-report.json"
@@ -1325,6 +1358,7 @@ def main() -> int:
         with measured(report, "mcp_startup"):
             application = wait_for_mcp(client, process, args.timeout_seconds)
             workspace = client.call("harness_workspace", {})
+        persist_reasoning_opt_outs(database, args.reasoning_off_role, report["models"])
         with measured(report, "mcp_goal_workflow"):
             goal_id, goal = drive_goal_with_mcp(
                 client,

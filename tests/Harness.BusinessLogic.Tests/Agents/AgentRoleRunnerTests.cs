@@ -141,7 +141,7 @@ public sealed class AgentRoleRunnerTests
                     role,
                     new("OpenRouter"),
                     new("remote-model"),
-                    ModelAccess.Remote,
+                    ModelAccess.Remote, AgentReasoningPolicy.ProviderDefault,
                     provider),
                 ErrorCode: null,
                 Error: null)),
@@ -460,7 +460,7 @@ public sealed class AgentRoleRunnerTests
             role,
             new("Local"),
             new(model),
-            ModelAccess.Local,
+            ModelAccess.Local, AgentReasoningPolicy.ProviderDefault,
             provider),
         ErrorCode: null,
         Error: null);

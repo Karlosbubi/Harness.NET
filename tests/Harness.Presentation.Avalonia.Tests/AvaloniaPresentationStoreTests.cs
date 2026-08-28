@@ -313,14 +313,13 @@ public sealed class AvaloniaPresentationStoreTests
         await store.DiscoverAgentDefaultsAsync(CancellationToken.None);
         GoalModelCandidate candidate = Assert.Single(
             store.Current.Settings.AgentDefaults!.Models);
-        await store.UpdateAgentDefaultAsync(
-            AgentRole.Reviewer,
-            candidate,
-            CancellationToken.None);
+        await store.UpdateAgentDefaultAsync(AgentRole.Reviewer, candidate,
+            AgentReasoningPolicy.ProviderDefault, CancellationToken.None);
 
         AgentRoleDefault reviewer = store.Current.Settings.AgentDefaults!.Roles
             .Single(item => item.Role is AgentRole.Reviewer);
         Assert.True(reviewer.IsPersisted);
+        Assert.Equal(AgentReasoningPolicy.ProviderDefault, reviewer.ReasoningPolicy);
         Assert.Equal("Saved Reviewer defaults.", store.Current.Settings.Status);
     }
 
@@ -1324,7 +1323,7 @@ public sealed class AvaloniaPresentationStoreTests
                 role,
                 Local.Provider,
                 Local.Model,
-                Local.Access,
+                Local.Access, AgentReasoningPolicy.Disabled,
                 IsPersisted: false,
                 UpdatedAt: null));
 
@@ -1349,7 +1348,7 @@ public sealed class AvaloniaPresentationStoreTests
                 request.Role,
                 request.Provider,
                 request.Model,
-                Local.Access,
+                Local.Access, request.ReasoningPolicy,
                 IsPersisted: true,
                 DateTimeOffset.UtcNow);
             values[request.Role] = value;

@@ -14,7 +14,9 @@ internal sealed class SqliteAgentRoleDefaultStore(IApplicationPaths applicationP
         await using SqliteConnection connection = await OpenAsync(cancellationToken);
         IEnumerable<RoleDefaultRow> rows = await connection.QueryAsync<RoleDefaultRow>(
             new CommandDefinition("""
-                SELECT role, provider, model, updated_at AS UpdatedAt
+                SELECT role, provider, model,
+                       reasoning_policy AS ReasoningPolicy,
+                       updated_at AS UpdatedAt
                 FROM agent_role_defaults
                 ORDER BY CASE role WHEN 'Lead' THEN 0 WHEN 'Implementer' THEN 1 ELSE 2 END;
                 """, cancellationToken: cancellationToken));
@@ -29,18 +31,23 @@ internal sealed class SqliteAgentRoleDefaultStore(IApplicationPaths applicationP
         await using SqliteConnection connection = await OpenAsync(cancellationToken);
         RoleDefaultRow row = await connection.QuerySingleAsync<RoleDefaultRow>(
             new CommandDefinition("""
-                INSERT INTO agent_role_defaults (role, provider, model, updated_at)
-                VALUES (@Role, @Provider, @Model, @UpdatedAt)
+                INSERT INTO agent_role_defaults (
+                    role, provider, model, reasoning_policy, updated_at)
+                VALUES (@Role, @Provider, @Model, @ReasoningPolicy, @UpdatedAt)
                 ON CONFLICT (role) DO UPDATE SET
                     provider = excluded.provider,
                     model = excluded.model,
+                    reasoning_policy = excluded.reasoning_policy,
                     updated_at = excluded.updated_at
-                RETURNING role, provider, model, updated_at AS UpdatedAt;
+                RETURNING role, provider, model,
+                          reasoning_policy AS ReasoningPolicy,
+                          updated_at AS UpdatedAt;
                 """, new
             {
                 Role = value.Role.ToString(),
                 Provider = value.Provider.Value,
                 Model = value.Model.Value,
+                ReasoningPolicy = value.ReasoningPolicy.ToString(),
                 UpdatedAt = value.UpdatedAt.ToString("O", CultureInfo.InvariantCulture),
             }, cancellationToken: cancellationToken));
         return row.ToRecord();
@@ -67,12 +74,15 @@ internal sealed class SqliteAgentRoleDefaultStore(IApplicationPaths applicationP
 
         public string Model { get; init; } = string.Empty;
 
+        public string ReasoningPolicy { get; init; } = string.Empty;
+
         public string UpdatedAt { get; init; } = string.Empty;
 
         internal StoredAgentRoleDefault ToRecord() => new(
             Enum.Parse<AgentDefaultRole>(Role),
             new(Provider),
             new(Model),
+            Enum.Parse<AgentDefaultReasoningPolicy>(ReasoningPolicy),
             DateTimeOffset.Parse(UpdatedAt, CultureInfo.InvariantCulture));
     }
 }

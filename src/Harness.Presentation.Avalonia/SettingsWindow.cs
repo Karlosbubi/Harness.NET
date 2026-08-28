@@ -725,10 +725,13 @@ internal sealed class SettingsWindow : Window
         {
             foreach (AgentRoleDefault roleDefault in snapshot.Roles.OrderBy(item => item.Role))
             {
-                roles.Children.Add(RoleDefaultCard(
+                roles.Children.Add(AgentRoleDefaultCard.Create(
                     roleDefault,
                     snapshot.Models,
-                    snapshot.DefaultIssues.FirstOrDefault(issue => issue.Role == roleDefault.Role)));
+                    snapshot.DefaultIssues.FirstOrDefault(issue => issue.Role == roleDefault.Role),
+                    settingsState.IsBusy,
+                    (role, candidate, reasoningPolicy) => store.UpdateAgentDefaultAsync(
+                        role, candidate, reasoningPolicy, cancellationToken)));
             }
         }
 
@@ -856,93 +859,6 @@ internal sealed class SettingsWindow : Window
                     },
                 },
             });
-    }
-
-    private Control RoleDefaultCard(
-        AgentRoleDefault roleDefault,
-        IReadOnlyList<GoalModelCandidate> candidates,
-        AgentRoleDefaultIssue? defaultIssue)
-    {
-        GoalModelCandidate[] choices = ModelSelectionCatalog.ForRole(
-            candidates, roleDefault.Role);
-        GoalModelCandidate? selected = choices.FirstOrDefault(item =>
-            item.Provider == roleDefault.Provider &&
-            item.Model == roleDefault.Model);
-        SearchableModelPicker model = new()
-        {
-            MinWidth = 260,
-            IsEnabled = !settingsState.IsBusy && choices.Length > 0,
-            IsVisible = choices.Length > 0,
-        };
-        model.SetCandidates(choices, selected);
-        model.SetAutomationName($"{roleDefault.Role} default model");
-        Button save = new()
-        {
-            Content = "Save default",
-            IsEnabled = !settingsState.IsBusy && model.SelectedCandidate is not null,
-            IsVisible = choices.Length > 0,
-        };
-        save.Classes.Add("command");
-        AutomationProperties.SetName(save, $"Save {roleDefault.Role} agent defaults");
-        model.SelectionChanged += (_, _) => save.IsEnabled =
-            !settingsState.IsBusy && model.SelectedCandidate is not null;
-        save.Click += async (_, _) =>
-        {
-            if (model.SelectedCandidate is { } candidate)
-            {
-                await store.UpdateAgentDefaultAsync(
-                    roleDefault.Role,
-                    candidate,
-                    cancellationToken);
-            }
-        };
-
-        Border unavailable = new()
-        {
-            Classes = { "editor-access" },
-            IsVisible = choices.Length == 0,
-            Child = new TextBlock
-            {
-                Text = "Discover available models to edit this route.",
-                TextWrapping = TextWrapping.Wrap,
-            },
-        };
-        Grid fields = new()
-        {
-            RowDefinitions = new("Auto,Auto"),
-            RowSpacing = 8,
-            ColumnSpacing = 10,
-            Children = { model, unavailable },
-        };
-        Grid.SetRow(save, 1);
-        fields.Children.Add(save);
-        return new Border
-        {
-            Classes = { "card", "row" },
-            Child = new StackPanel
-            {
-                Spacing = 8,
-                Children =
-                {
-                    new TextBlock
-                    {
-                        Text = roleDefault.Role.ToString(),
-                        FontWeight = FontWeight.SemiBold,
-                    },
-                    new TextBlock
-                    {
-                        Text = defaultIssue is null
-                            ? $"Effective: {roleDefault.Access} · {roleDefault.Provider.Value}/{roleDefault.Model.Value}" +
-                              (roleDefault.IsPersisted ? " · Saved" : " · Host fallback")
-                            : $"Needs attention: {defaultIssue.Message}",
-                        Classes = { "muted" },
-                        FontSize = 11,
-                        TextWrapping = TextWrapping.Wrap,
-                    },
-                    fields,
-                },
-            },
-        };
     }
 
     private Control ModelProvidersPage()

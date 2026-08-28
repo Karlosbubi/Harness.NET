@@ -222,11 +222,11 @@ internal sealed class GoalModelService :
                 goalId.Value,
                 cancellationToken))
             .SingleOrDefault(item => ParseRole(item.Role) == role);
+        AgentRoleDefault effectiveDefault = await DefaultAsync(role, cancellationToken);
         GoalModelProviderRegistration provider;
         AgentModel model;
         if (selected is null)
         {
-            AgentRoleDefault effectiveDefault = await DefaultAsync(role, cancellationToken);
             provider = Provider(effectiveDefault.Provider.Value);
             model = effectiveDefault.Model;
             if (provider.Access is ModelAccess.Remote)
@@ -268,8 +268,19 @@ internal sealed class GoalModelService :
                 $"Configured model '{provider.Name.Value}/{model.Value}' does not fully support {role}.");
         }
 
+        AgentReasoningPolicy reasoningPolicy = effectiveDefault.IsPersisted
+            ? effectiveDefault.ReasoningPolicy
+            : AgentReasoningPolicy.ProviderDefault;
+
         return new(
-            new(goalId, role, provider.Name, model, provider.Access, provider.Provider),
+            new(
+                goalId,
+                role,
+                provider.Name,
+                model,
+                provider.Access,
+                reasoningPolicy,
+                provider.Provider),
             ErrorCode: null,
             Error: null);
     }
@@ -307,11 +318,12 @@ internal sealed class GoalModelService :
             request.Provider is null ||
             string.IsNullOrWhiteSpace(request.Provider.Value) ||
             request.Model is null ||
-            string.IsNullOrWhiteSpace(request.Model.Value))
+            string.IsNullOrWhiteSpace(request.Model.Value) ||
+            !Enum.IsDefined(request.ReasoningPolicy))
         {
             return DefaultFailure(
                 "invalid_agent_default",
-                "A role, provider, and model are required.");
+                "A role, provider, model, and reasoning policy are required.");
         }
 
         if (!providers.TryGetValue(request.Provider.Value, out GoalModelProviderRegistration? provider))
@@ -345,6 +357,7 @@ internal sealed class GoalModelService :
             MapRole(request.Role),
             new(provider.Name.Value),
             new(model.Model.Value),
+            MapReasoningPolicy(request.ReasoningPolicy),
             timeProvider.GetUtcNow()), cancellationToken);
         return new(MapDefault(stored), ErrorCode: null, Error: null);
     }
@@ -395,6 +408,7 @@ internal sealed class GoalModelService :
                 provider.Name,
                 provider.DefaultModel,
                 provider.Access,
+                AgentReasoningPolicy.ProviderDefault,
                 IsPersisted: false,
                 UpdatedAt: null);
         });
@@ -409,9 +423,28 @@ internal sealed class GoalModelService :
             provider.Name,
             new(value.Model.Value),
             provider.Access,
+            MapReasoningPolicy(value.ReasoningPolicy),
             IsPersisted: true,
             value.UpdatedAt);
     }
+
+    private static AgentDefaultReasoningPolicy MapReasoningPolicy(
+        AgentReasoningPolicy policy) => policy switch
+        {
+            AgentReasoningPolicy.ProviderDefault =>
+                AgentDefaultReasoningPolicy.ProviderDefault,
+            AgentReasoningPolicy.Disabled => AgentDefaultReasoningPolicy.Disabled,
+            _ => throw new ArgumentOutOfRangeException(nameof(policy)),
+        };
+
+    private static AgentReasoningPolicy MapReasoningPolicy(
+        AgentDefaultReasoningPolicy policy) => policy switch
+        {
+            AgentDefaultReasoningPolicy.ProviderDefault =>
+                AgentReasoningPolicy.ProviderDefault,
+            AgentDefaultReasoningPolicy.Disabled => AgentReasoningPolicy.Disabled,
+            _ => throw new ArgumentOutOfRangeException(nameof(policy)),
+        };
 
     private async ValueTask<ModelDiscoverySnapshot> DiscoverModelsAsync(
         bool forceRefresh,

@@ -29,6 +29,10 @@ def parse_args() -> argparse.Namespace:
                         help="optional Implementer route for every live comparison")
     parser.add_argument("--reviewer-model",
                         help="optional Reviewer route for every live comparison")
+    parser.add_argument(
+        "--reasoning-off-role", action="append", default=[],
+        choices=["lead", "implementer", "reviewer"],
+        help="persist an explicit reasoning-off role default for live evaluation; may be repeated")
     parser.add_argument("--ollama-endpoint", default="http://127.0.0.1:11434")
     parser.add_argument("--baseline", type=Path)
     parser.add_argument("--output-root", type=Path)
@@ -122,6 +126,8 @@ def main() -> int:
                     command.extend(["--implementer-model", args.implementer_model])
                 if args.reviewer_model:
                     command.extend(["--reviewer-model", args.reviewer_model])
+                for role in args.reasoning_off_role:
+                    command.extend(["--reasoning-off-role", role])
                 if index > 0:
                     command.append("--skip-host-build")
                 result = subprocess.run(

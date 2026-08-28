@@ -3,4 +3,5 @@ namespace Harness.BusinessLogic.Agents;
 public sealed record AgentRoleDefaultUpdate(
     AgentRole Role,
     ModelProviderName Provider,
-    AgentModel Model);
+    AgentModel Model,
+    AgentReasoningPolicy ReasoningPolicy);
