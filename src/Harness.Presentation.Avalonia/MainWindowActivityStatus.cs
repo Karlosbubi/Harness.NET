@@ -23,6 +23,8 @@ internal sealed partial class MainWindow
 
     private void OnClosed(object? sender, EventArgs eventArgs)
     {
+        store.WorkbenchEventPublished -= OnWorkbenchEventPublished;
+        workbenchEvents.Dispose();
         agentActivityStatus.Dispose();
         subscriptions.Dispose();
     }

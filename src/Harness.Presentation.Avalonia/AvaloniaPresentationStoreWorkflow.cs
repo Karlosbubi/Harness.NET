@@ -1,4 +1,5 @@
 using Harness.BusinessLogic.Costs;
+using Harness.BusinessLogic.Events;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Workflows;
 using Microsoft.Extensions.Logging;
@@ -55,16 +56,31 @@ internal sealed partial class AvaloniaPresentationStore
                     ? $"{operationName} returned no workflow snapshot."
                     : WorkflowStatus(Current.Goals.Workflow),
                 workflowExecution.Token);
+            PublishWorkbenchEvent(
+                WorkbenchEventSeverity.Success,
+                WorkbenchEventSource.Goal,
+                $"{operationName} completed.",
+                WorkbenchEventNavigationTarget.Conversation);
         }
         catch (OperationCanceledException) when (workflowExecution.IsCancellationRequested)
         {
             logger.LogInformation("{Operation} cancelled", operationName);
             PublishGoalStatus($"{operationName} cancelled.");
+            PublishWorkbenchEvent(
+                WorkbenchEventSeverity.Information,
+                WorkbenchEventSource.Goal,
+                $"{operationName} cancelled.",
+                WorkbenchEventNavigationTarget.Conversation);
         }
         catch (Exception exception)
         {
             logger.LogError(exception, "{Operation} failed", operationName);
             PublishGoalStatus(exception.Message);
+            PublishWorkbenchEvent(
+                WorkbenchEventSeverity.Error,
+                WorkbenchEventSource.Goal,
+                $"{operationName} failed. Open Conversation for details.",
+                WorkbenchEventNavigationTarget.Conversation);
         }
         finally
         {

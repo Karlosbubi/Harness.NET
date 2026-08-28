@@ -8,6 +8,7 @@ using Harness.BusinessLogic.Approvals;
 using Harness.BusinessLogic.Costs;
 using Harness.BusinessLogic.Dashboard;
 using Harness.BusinessLogic.Editor;
+using Harness.BusinessLogic.Events;
 using Harness.BusinessLogic.Framework;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Mcp;
@@ -465,6 +466,8 @@ public sealed class AvaloniaPresentationStoreTests
             new CapabilityApprovalService(),
             new FrameworkService(),
             NullLogger<AvaloniaPresentationStore>.Instance);
+        List<WorkbenchEvent> workbenchEvents = [];
+        store.WorkbenchEventPublished += workbenchEvents.Add;
         await store.LoadAsync(CancellationToken.None);
         store.SetRepositoryPath("/work/repository");
         await store.InspectWorkspaceAsync(CancellationToken.None);
@@ -495,6 +498,16 @@ public sealed class AvaloniaPresentationStoreTests
         Assert.Equal(remote.Model, models.Selections[AgentRole.Lead].Model);
         Assert.Equal(GoalWorkflowState.Completed, store.Current.Goals.Workflow?.State);
         Assert.False(store.Current.Goals.IsWorkflowRunning);
+        Assert.Collection(
+            workbenchEvents,
+            item =>
+            {
+                Assert.Equal(WorkbenchEventSeverity.Success, item.Severity);
+                Assert.Equal(WorkbenchEventSource.Goal, item.Source);
+                Assert.Equal(WorkbenchEventNavigationTarget.Conversation, item.NavigationTarget);
+                Assert.Equal("Lead planning completed.", item.Message.Value);
+            },
+            item => Assert.Equal("Production workflow completed.", item.Message.Value));
         ConversationWorkflowCard runCard = Assert.Single(
             ConversationWorkflowProjector.Project(store.Current.Goals),
             card => card.Id == $"run.{store.Current.Goals.Workflow?.Id.Value}");
