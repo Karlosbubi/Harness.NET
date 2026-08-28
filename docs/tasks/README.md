@@ -1218,3 +1218,36 @@ Acceptance criteria:
    operations and reports the durable error.
 7. Deterministic tests, a warning-free build, and bounded Ollama dogfood evidence are
    recorded in the [acceptance record](../acceptance/local-tool-loop-liveness-2026-08-28.md).
+
+### 071 — live agent activity status
+
+Status: `Planned`
+
+Dependencies: 040, 063, and Task 060's relevant Conversation/header composition
+slice.
+
+Problem: Active model calls are intentionally quiet, but a long local inference can
+look indistinguishable from a stalled workflow. Users and dogfood testers need calm,
+truthful reassurance that work is still active and an on-demand way to inspect its
+latest observable progress.
+
+Acceptance criteria:
+
+1. A compact, persistent status affordance appears while a goal operation is active
+   and shows the current typed phase or role, elapsed time, and age of the latest
+   observable update without stealing focus.
+2. Expanding it shows a bounded activity timeline sourced only from real workflow
+   checkpoints, provider stream state, and typed tool calls/results, with navigation
+   to the originating goal and durable evidence where available.
+3. The quiet default does not stream hidden reasoning, prompts, credentials, raw
+   provider payloads, or token-by-token noise. It distinguishes waiting for inference,
+   executing a typed tool, validating, retrying, and requiring direction.
+4. Progress indicators never fabricate percentage completion. A lack of observable
+   updates is reported as an increasing age rather than an animated claim that work
+   is advancing, and existing cancellation/recovery controls remain reachable.
+5. Multiple operations coalesce into a truthful summary with deterministic selection
+   of details; completed and failed activity hands off to Task 063 notifications
+   instead of creating a second event system.
+6. Reduced-motion, keyboard, compact-layout, screen-reader, fake-clock, stalled-call,
+   recovery, and bounded live-local-model acceptance coverage prove the widget remains
+   informative without becoming distracting.
