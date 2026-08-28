@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-07-29
-- Amended: 2026-08-08
+- Amended: 2026-08-28
 - Extends: [ADR 009](009-avalonia-presentation-toolkit.md), [ADR 010](010-docked-desktop-workbench.md)
 
 ## Context
@@ -87,6 +87,19 @@ Linux is the current product gate.
 - Host selects platform implementations.
 
 Do not create one unrestricted platform service or put OS checks in Business Logic.
+
+### Transient workbench events
+
+Long-running features publish immutable semantic events through a shared Business
+Logic contract. Presentation owns a small session-only queue and the native,
+non-modal notification surface. Events are bounded, coalesced, and expired there;
+they are not durable workflow history and do not enter repositories, prompts, logs,
+backups, or telemetry by implication.
+
+Navigation is a closed semantic target interpreted by the active Presentation
+adapter. Creating a notification never moves focus. Assistive-technology
+announcements occur once when an event enters the visible queue; subsequent expiry
+checks do not recreate or reannounce unchanged content.
 
 ### Stuck goals
 

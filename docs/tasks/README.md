@@ -1031,7 +1031,7 @@ Acceptance criteria:
 
 ### 063 — transient workbench event surface
 
-Status: `Planned`
+Status: `In progress`
 
 Dependencies: Task 060 slice 060.1. Deliver before 053 attention states.
 
