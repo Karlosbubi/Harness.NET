@@ -3,6 +3,7 @@ using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Harness.BusinessLogic.Evidence;
 using Harness.BusinessLogic.Workflows;
 
 namespace Harness.Presentation.Avalonia;
@@ -27,7 +28,8 @@ internal static class AgentActivityStatusProjector
 
     internal static AgentActivityStatusView Project(
         GoalManagementState goals,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        ToolEvidenceSnapshot? evidence = null)
     {
         if (!goals.IsWorkflowRunning)
         {
@@ -40,10 +42,23 @@ internal static class AgentActivityStatusProjector
                 activity.OccurredAt >= goals.WorkflowOperationStartedAt.Value);
         DateTimeOffset startedAt = goals.WorkflowOperationStartedAt ??
             latest?.OccurredAt ?? now;
-        DateTimeOffset updatedAt = latest?.OccurredAt ?? startedAt;
+        ToolEvidenceView[] currentTools = evidence?.Items
+            .Where(item => goals.SelectedGoalId?.Value == item.GoalId &&
+                item.StartedAt >= startedAt)
+            .OrderBy(item => item.StartedAt)
+            .ToArray() ?? [];
+        ToolEvidenceView? runningTool = currentTools.LastOrDefault(item =>
+            item.State is ToolEvidenceState.Running);
+        DateTimeOffset toolUpdatedAt = currentTools
+            .Select(item => item.CompletedAt ?? item.StartedAt)
+            .DefaultIfEmpty(startedAt)
+            .Max();
+        DateTimeOffset updatedAt = new[] { latest?.OccurredAt ?? startedAt, toolUpdatedAt }.Max();
         TimeSpan elapsed = NonNegative(now - startedAt);
         TimeSpan updateAge = NonNegative(now - updatedAt);
-        string phase = Phase(latest?.Kind);
+        string phase = runningTool is null
+            ? Phase(latest?.Kind)
+            : $"{ToolLabel(runningTool.Tool)} · running";
         string elapsedText = Duration(elapsed);
         string ageText = updateAge < TimeSpan.FromSeconds(5)
             ? "just now"
@@ -59,6 +74,17 @@ internal static class AgentActivityStatusProjector
             : "No durable workflow checkpoint has arrived yet.";
         string details = $"{operation}\n{phase}\nElapsed {elapsedText} · " +
             $"last observable update {ageText}\n\nRecent durable activity\n{timeline}";
+        if (currentTools.Length > 0)
+        {
+            details += "\n\nRecent typed operations\n" + string.Join('\n', currentTools
+                .TakeLast(MaximumTimelineItems)
+                .Select(item => $"{item.StartedAt:HH:mm:ss} · {ToolLabel(item.Tool)} · " +
+                    item.State));
+        }
+        else if (evidence?.Error is { Length: > 0 } error)
+        {
+            details += $"\n\nTyped operation status unavailable · {Bounded(error)}";
+        }
         string accessibleName = $"Agent activity: {phase}. Elapsed {elapsedText}. " +
             $"Last observable update {ageText}. Activate for details.";
 
@@ -98,10 +124,24 @@ internal static class AgentActivityStatusProjector
         summary.Length <= MaximumSummaryCharacters
             ? summary
             : summary[..MaximumSummaryCharacters] + "…";
+
+    private static string ToolLabel(ToolKind tool) => tool switch
+    {
+        ToolKind.FileEdit => "File edit",
+        ToolKind.Rename => "Rename",
+        ToolKind.DocumentTransformation => "Code transformation",
+        ToolKind.Build => "Build",
+        ToolKind.Test => "Test",
+        ToolKind.Restore => "Restore",
+        ToolKind.VisualCapture => "Visual capture",
+        ToolKind.ToolsetGrant => "Toolset grant",
+        _ => tool.ToString(),
+    };
 }
 
 internal sealed class AgentActivityStatusControl : IDisposable
 {
+    private readonly IToolEvidenceService evidenceService;
     private readonly Button button = new();
     private readonly TextBlock details = new()
     {
@@ -111,9 +151,13 @@ internal sealed class AgentActivityStatusControl : IDisposable
     private readonly Button cancel = new() { Content = "Cancel workflow" };
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromSeconds(1) };
     private GoalManagementState goals = GoalManagementState.Initial;
+    private ToolEvidenceSnapshot? evidence;
+    private CancellationTokenSource? evidenceRefresh;
+    private int refreshInProgress;
 
-    internal AgentActivityStatusControl()
+    internal AgentActivityStatusControl(IToolEvidenceService evidenceService)
     {
+        this.evidenceService = evidenceService;
         button.Classes.Add("command");
         button.IsVisible = false;
         button.Flyout = new Flyout
@@ -129,7 +173,7 @@ internal sealed class AgentActivityStatusControl : IDisposable
         AutomationProperties.SetName(details, "Current agent activity details");
         AutomationProperties.SetName(cancel, "Cancel active agent workflow");
         cancel.Click += (_, _) => CancelRequested?.Invoke();
-        timer.Tick += (_, _) => Render(TimeProvider.System.GetUtcNow());
+        timer.Tick += OnTimerTick;
     }
 
     internal event Action? CancelRequested;
@@ -138,15 +182,25 @@ internal sealed class AgentActivityStatusControl : IDisposable
 
     internal void Update(GoalManagementState state)
     {
+        if (goals.SelectedGoalId != state.SelectedGoalId ||
+            goals.WorkflowOperationStartedAt != state.WorkflowOperationStartedAt)
+        {
+            evidence = null;
+        }
         goals = state;
         Render(TimeProvider.System.GetUtcNow());
     }
 
-    public void Dispose() => timer.Stop();
+    public void Dispose()
+    {
+        timer.Stop();
+        evidenceRefresh?.Cancel();
+        evidenceRefresh?.Dispose();
+    }
 
     private void Render(DateTimeOffset now)
     {
-        AgentActivityStatusView view = AgentActivityStatusProjector.Project(goals, now);
+        AgentActivityStatusView view = AgentActivityStatusProjector.Project(goals, now, evidence);
         button.IsVisible = view.IsVisible;
         button.Content = view.CompactText;
         details.Text = view.Details;
@@ -160,6 +214,36 @@ internal sealed class AgentActivityStatusControl : IDisposable
         else if (!view.IsVisible && timer.IsEnabled)
         {
             timer.Stop();
+        }
+    }
+
+    private async void OnTimerTick(object? sender, EventArgs eventArgs)
+    {
+        Render(TimeProvider.System.GetUtcNow());
+        if (!goals.IsWorkflowRunning || goals.SelectedGoalId is null ||
+            Interlocked.Exchange(ref refreshInProgress, 1) != 0)
+        {
+            return;
+        }
+
+        evidenceRefresh?.Dispose();
+        evidenceRefresh = new();
+        try
+        {
+            ToolEvidenceSnapshot refreshed = await evidenceService.ListAsync(
+                goals.SelectedGoalId.Value, evidenceRefresh.Token);
+            if (!evidenceRefresh.IsCancellationRequested)
+            {
+                evidence = refreshed;
+                Render(TimeProvider.System.GetUtcNow());
+            }
+        }
+        catch (OperationCanceledException) when (evidenceRefresh.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            Interlocked.Exchange(ref refreshInProgress, 0);
         }
     }
 }

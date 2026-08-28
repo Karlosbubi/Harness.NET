@@ -5,7 +5,7 @@ namespace Harness.Presentation.Avalonia;
 
 internal sealed partial class MainWindow
 {
-    private readonly AgentActivityStatusControl agentActivityStatus = new();
+    private readonly AgentActivityStatusControl agentActivityStatus;
 
     private Control BuildFooter()
     {

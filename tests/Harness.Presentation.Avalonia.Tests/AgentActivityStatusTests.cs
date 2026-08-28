@@ -2,6 +2,7 @@ using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Interactivity;
+using Harness.BusinessLogic.Evidence;
 using Harness.BusinessLogic.Workflows;
 
 namespace Harness.Presentation.Avalonia.Tests;
@@ -85,13 +86,40 @@ public sealed class AgentActivityStatusTests
     }
 
     [Fact]
+    public void Running_typed_operation_overrides_waiting_phase_without_exposing_payloads()
+    {
+        DateTimeOffset started = Now.AddMinutes(-1);
+        GoalManagementState goals = GoalManagementState.Initial with
+        {
+            SelectedGoalId = new("goal-status"),
+            IsWorkflowRunning = true,
+            WorkflowOperationStartedAt = started,
+            Workflow = Workflow(new GoalWorkflowActivityView(
+                1, GoalWorkflowCheckpointKind.ImplementerCallStarted,
+                WorkflowActor.Implementer, new("Implementer call started."), started)),
+        };
+        ToolEvidenceSnapshot evidence = new(
+            [new(new("tool-1"), "goal-status", new("correlation-1"), ToolKind.Build,
+                "sensitive request", ToolEvidenceState.Running, "sensitive result",
+                Now.AddSeconds(-5), CompletedAt: null)],
+            null,
+            null);
+
+        AgentActivityStatusView view = AgentActivityStatusProjector.Project(goals, Now, evidence);
+
+        Assert.Equal("Build · running · 1m 00s", view.CompactText);
+        Assert.Contains("Build · Running", view.Details, StringComparison.Ordinal);
+        Assert.DoesNotContain("sensitive", view.Details, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Status_control_is_accessible_expandable_and_uses_existing_cancellation()
     {
         using HeadlessUnitTestSession session =
             HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
         await session.Dispatch(() =>
         {
-            using AgentActivityStatusControl control = new();
+            using AgentActivityStatusControl control = new(new ToolEvidenceService());
             bool cancelled = false;
             control.CancelRequested += () => cancelled = true;
             control.Update(GoalManagementState.Initial with
@@ -125,4 +153,12 @@ public sealed class AgentActivityStatusTests
         [],
         CanResume: false,
         RequiresUserDirection: false);
+
+    private sealed class ToolEvidenceService : IToolEvidenceService
+    {
+        public ValueTask<ToolEvidenceSnapshot> ListAsync(
+            string goalId,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new ToolEvidenceSnapshot([], null, null));
+    }
 }

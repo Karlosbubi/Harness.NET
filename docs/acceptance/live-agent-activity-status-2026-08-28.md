@@ -10,7 +10,11 @@ without presenting synthetic progress.
 - The pill reports the current durable phase or role, elapsed operation time, and the
   age of the latest checkpoint observed during this operation.
 - Expanding the pill shows the operation name and at most eight timestamped durable
-  workflow checkpoints. Before the first checkpoint it says so explicitly.
+  workflow checkpoints plus at most eight typed operation states. Before the first
+  checkpoint it says so explicitly.
+- While an edit, transformation, Build, Test, Restore, visual capture, or toolset grant
+  has durable `Running` evidence, that operation replaces the coarser waiting phase.
+  The display never includes its request or result payload.
 - The flyout exposes the existing bounded workflow cancellation action.
 - Business Logic now carries each persisted checkpoint timestamp in
   `GoalWorkflowActivityView`; Presentation does not infer it from render time.
@@ -19,9 +23,9 @@ without presenting synthetic progress.
 
 ## Scope still open
 
-Provider streaming state and individual typed-tool start/result events are not yet
-part of the Presentation state stream, so this slice does not pretend to distinguish
-those sub-phases. Goal/evidence navigation, multi-operation coalescing, completion
+Provider streaming state and read-only inspection calls are not yet part of the
+Presentation state stream, so this slice does not pretend to distinguish those
+sub-phases. Goal/evidence navigation, multi-operation coalescing, completion
 notifications through Task 063, graphical accessibility evidence, and a bounded live
 local-model capture remain for later Task 071 slices.
 
@@ -30,7 +34,7 @@ local-model capture remain for later Task 071 slices.
 Pure projection coverage uses fixed timestamps for idle, active, stalled, pre-first-
 checkpoint, elapsed-time, last-update-age, no-percentage, and bounded-timeline states.
 Workflow tests verify that persisted checkpoint timestamps cross the Business Logic
-boundary. All 4 status-focused tests, 313 Business Logic tests, 174 Avalonia
+boundary. All 5 status-focused tests, 313 Business Logic tests, 175 Avalonia
 Presentation tests, 22 terminal Presentation tests, and 4 architecture tests pass.
 The complete solution builds with zero warnings and errors, the repository metadata
 check passes, and `git diff --check` is clean.

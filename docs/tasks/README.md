@@ -1254,8 +1254,9 @@ Acceptance criteria:
 
 Implementation evidence (2026-08-28): the header status pill now reports the active
 workflow phase/role, elapsed time, and last durable-checkpoint age; its flyout shows a
-bounded timestamped checkpoint timeline and the existing cancellation action. The
-Business Logic activity contract now carries the persisted checkpoint timestamp.
-Provider-stream and individual typed-tool progress, navigation, multi-operation
-coalescing, Task 063 completion handoff, and graphical/live acceptance remain open.
+bounded timestamped checkpoint timeline, current typed edit/Build/Test operations,
+and the existing cancellation action. The Business Logic activity contract now
+carries the persisted checkpoint timestamp. Provider-stream progress, navigation,
+multi-operation coalescing, Task 063 completion handoff, and graphical/live acceptance
+remain open.
 See the [slice acceptance record](../acceptance/live-agent-activity-status-2026-08-28.md).

@@ -119,6 +119,7 @@ internal sealed partial class MainWindow : Window
         AvaloniaPresentationStore store,
         HarnessThemeController themeController,
         IRunOutputService runOutputService,
+        IToolEvidenceService toolEvidenceService,
         IWorkbenchInspectionService inspectionService,
         IDeveloperGitService developerGitService,
         IWorkbenchDocumentService documentService,
@@ -141,6 +142,7 @@ internal sealed partial class MainWindow : Window
         this.projectUserSecretsService = projectUserSecretsService;
         this.developerExecutionService = developerExecutionService;
         this.cancellationToken = cancellationToken;
+        agentActivityStatus = new(toolEvidenceService);
         agentActivityStatus.CancelRequested += store.CancelGoalWorkflow;
         Title = "Harness.NET";
         Width = 1280;
