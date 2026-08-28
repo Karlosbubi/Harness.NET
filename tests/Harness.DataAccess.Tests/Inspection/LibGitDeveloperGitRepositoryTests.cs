@@ -1179,7 +1179,7 @@ public sealed class LibGitDeveloperGitRepositoryTests : IDisposable
     public void Dispose()
     {
         foreach (string path in linkedWorktreePaths)
-            if (Directory.Exists(path)) Directory.Delete(path, recursive: true);
-        if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+            TestDirectoryCleanup.Delete(path);
+        TestDirectoryCleanup.Delete(root);
     }
 }
