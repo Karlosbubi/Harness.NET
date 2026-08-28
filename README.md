@@ -18,8 +18,8 @@ Delivered:
 - Avalonia desktop UI and retained Terminal.Gui UI;
 - chat-based goal planning, approval, implementation, review, recovery, and commit;
 - Ollama and OpenRouter chat and embedding providers;
-- provider discovery, per-role model routing, searchable model selection, and
-  monetary controls for remote inference;
+- provider discovery, per-role model and reasoning routing, searchable model
+  selection, and monetary controls for remote inference;
 - stateless MCP 2.x connections with Settings management, read-only tool policy, and
   an explicit loopback Harness-to-Harness Lead delegation mode;
 - an optional unauthenticated, loopback-only MCP 2.x server for typed dogfooding and isolated

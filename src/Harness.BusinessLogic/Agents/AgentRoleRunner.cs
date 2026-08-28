@@ -84,8 +84,8 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
                 route.Model,
                 route.Access is ModelAccess.Remote ? route.GoalId : null,
                 route.Role,
-                inspectionBootstrapped,
-                structuredLocalFileEdit);
+                inspectionBootstrapped, structuredLocalFileEdit,
+                route.ReasoningPolicy);
             IChatClient chatClient = new ChatClientBuilder(providerClient)
                 .UseFunctionInvocation(loggerFactory, functionClient =>
                 {

@@ -37,6 +37,27 @@
 - Never commit credentials, machine-specific paths, model blobs, or conversation
   content that has not been deliberately persisted by the user.
 - Update or add a decision record when a choice constrains future architecture.
+- Finish repository changes on a dedicated branch: commit them, push the branch, and
+  open a pull request. Do not push changes directly to `main` unless the user explicitly
+  requests that exception and confirms branch protection is suspended.
+
+## Local AI dogfooding
+
+- Optimize for verified end-to-end workflow output, not model size, benchmark scores,
+  novelty, or the number of integrated tools.
+- Freely evaluate hardware-fitting open-weight models and role-specialized multi-model
+  routes. Keep a pipeline only when repeatable Harness.NET evidence shows that it
+  improves quality, reliability, or useful throughput over a simpler route.
+- Local supporting services such as language servers, MCP servers, document stores,
+  relational or vector databases, and retrieval indexes are in scope for evaluation.
+  Add one only with a concrete use case and measurable benefit; remove experiments
+  that add maintenance, latency, or context pressure without improving outcomes.
+- Prompt/profile tuning and post-training are valid options. Preserve base models and
+  record reproducible evaluation evidence; never commit model blobs or machine-specific
+  paths.
+- These allowances do not create an unrestricted model-facing shell. Agent workspace
+  access remains typed and bounded unless an accepted decision record changes that
+  architecture.
 
 Harness.NET must not add custom metadata directories to user repositories. Prefer
 existing `AGENTS.md` and documentation; keep private state in Harness.NET storage.

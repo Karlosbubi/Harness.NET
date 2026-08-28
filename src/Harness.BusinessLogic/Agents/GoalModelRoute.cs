@@ -9,6 +9,7 @@ internal sealed record GoalModelRoute(
     ModelProviderName ProviderName,
     AgentModel Model,
     ModelAccess Access,
+    AgentReasoningPolicy ReasoningPolicy,
     IModelProvider Provider);
 
 internal sealed record GoalModelRouteResult(

@@ -122,7 +122,10 @@ New goals default to `Unlimited` remote spend. Users may select `Capped` or
 - Models are selected per role through provider-neutral records.
 - Current production roles require chat and `tools` capability.
 - Startup discovers configured catalogs without inference and validates saved routes.
-- Provider default reasoning remains enabled for tool calls.
+- Role defaults own a portable reasoning policy. Fresh routes retain provider behavior
+  because forcing reasoning off can suppress planning and action/tool protocols on some
+  models. Settings can explicitly disable reasoning per role when measured latency makes
+  that quality tradeoff worthwhile.
 - Reasoning text and protected provider details survive tool loops. Protected details
   return only to the originating provider and are not ordinary assistant output.
 - The deterministic structured local-file proposal path disables reasoning.

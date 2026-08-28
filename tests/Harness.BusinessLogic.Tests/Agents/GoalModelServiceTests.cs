@@ -53,6 +53,52 @@ public sealed class GoalModelServiceTests
     }
 
     [Fact]
+    public async Task Fresh_role_fallback_preserves_provider_reasoning_until_user_overrides()
+    {
+        GoalModelService service = CreateService(
+            Goal(remoteBudget: null),
+            new CatalogProvider([Model("local", ModelPurpose.Chat)]),
+            new CatalogProvider([]));
+
+        AgentRoleDefault lead = (await service.GetAsync()).Roles
+            .Single(item => item.Role is AgentRole.Lead);
+        AgentRoleDefault implementer = (await service.GetAsync()).Roles
+            .Single(item => item.Role is AgentRole.Implementer);
+        GoalModelRouteResult leadRoute = await service.ResolveAsync(
+            new("goal-1"),
+            AgentRole.Lead);
+        GoalModelRouteResult implementerRoute = await service.ResolveAsync(
+            new("goal-1"),
+            AgentRole.Implementer);
+
+        Assert.Equal(AgentReasoningPolicy.ProviderDefault, lead.ReasoningPolicy);
+        Assert.Equal(AgentReasoningPolicy.ProviderDefault, leadRoute.Route?.ReasoningPolicy);
+        Assert.Equal(AgentReasoningPolicy.ProviderDefault, implementer.ReasoningPolicy);
+        Assert.Equal(
+            AgentReasoningPolicy.ProviderDefault,
+            implementerRoute.Route?.ReasoningPolicy);
+    }
+
+    [Fact]
+    public async Task Explicit_local_role_default_can_disable_provider_reasoning()
+    {
+        GoalModelService service = CreateService(
+            Goal(remoteBudget: null),
+            new CatalogProvider([Model("local", ModelPurpose.Chat)]),
+            new CatalogProvider([]));
+
+        AgentRoleDefaultUpdateResult updated = await service.UpdateAsync(new(
+            AgentRole.Lead,
+            new("Ollama"),
+            new("local"),
+            AgentReasoningPolicy.Disabled));
+        GoalModelRouteResult route = await service.ResolveAsync(new("goal-1"), AgentRole.Lead);
+
+        Assert.Equal(AgentReasoningPolicy.Disabled, updated.Value?.ReasoningPolicy);
+        Assert.Equal(AgentReasoningPolicy.Disabled, route.Route?.ReasoningPolicy);
+    }
+
+    [Fact]
     public async Task Explicit_remote_selection_requires_a_cap_and_resolves_only_for_the_goal_role()
     {
         MemorySelectionStore selections = new();
@@ -89,8 +135,14 @@ public sealed class GoalModelServiceTests
         Assert.True(selected.Selection?.IsExplicit);
         Assert.Equal(ModelAccess.Remote, reviewer.Route?.Access);
         Assert.Equal("remote", reviewer.Route?.Model.Value);
+        Assert.Equal(
+            AgentReasoningPolicy.ProviderDefault,
+            reviewer.Route?.ReasoningPolicy);
         Assert.Equal(ModelAccess.Local, implementer.Route?.Access);
         Assert.Equal("local", implementer.Route?.Model.Value);
+        Assert.Equal(
+            AgentReasoningPolicy.ProviderDefault,
+            implementer.Route?.ReasoningPolicy);
     }
 
     [Fact]
@@ -123,13 +175,17 @@ public sealed class GoalModelServiceTests
         AgentRoleDefaultUpdateResult updated = await service.UpdateAsync(new(
             AgentRole.Lead,
             new("OpenRouter"),
-            new("remote")));
+            new("remote"),
+            AgentReasoningPolicy.ProviderDefault));
         AgentDefaultsSnapshot snapshot = await service.GetAsync();
         GoalModelRouteResult route = await service.ResolveAsync(new("goal-1"), AgentRole.Lead);
 
         Assert.NotNull(updated.Value);
         Assert.True(snapshot.Roles.Single(item => item.Role is AgentRole.Lead).IsPersisted);
         Assert.Equal("remote", snapshot.Roles.Single(item => item.Role is AgentRole.Lead).Model.Value);
+        Assert.Equal(
+            AgentReasoningPolicy.ProviderDefault,
+            snapshot.Roles.Single(item => item.Role is AgentRole.Lead).ReasoningPolicy);
         Assert.Equal("remote_model_not_selected", route.ErrorCode?.Value);
     }
 
@@ -206,7 +262,8 @@ public sealed class GoalModelServiceTests
         AgentRoleDefaultUpdateResult updated = await service.UpdateAsync(new(
             AgentRole.Reviewer,
             new("Ollama"),
-            new("plain-chat")));
+            new("plain-chat"),
+            AgentReasoningPolicy.Disabled));
 
         Assert.Equal("model_role_unsupported", selected.ErrorCode);
         Assert.Equal("model_role_unsupported", updated.ErrorCode);
@@ -222,6 +279,7 @@ public sealed class GoalModelServiceTests
             AgentDefaultRole.Lead,
             new("Ollama"),
             new("plain-chat"),
+            AgentDefaultReasoningPolicy.Disabled,
             DateTimeOffset.UtcNow));
         GoalModelService service = CreateService(
             Goal(remoteBudget: null),
@@ -264,6 +322,7 @@ public sealed class GoalModelServiceTests
             AgentDefaultRole.Lead,
             new("removed-provider"),
             new("removed-model"),
+            AgentDefaultReasoningPolicy.ProviderDefault,
             DateTimeOffset.UtcNow));
         GoalModelService service = CreateService(
             Goal(remoteBudget: null),
@@ -275,6 +334,7 @@ public sealed class GoalModelServiceTests
             .Single(item => item.Role is AgentRole.Lead);
 
         Assert.Equal("Ollama", lead.Provider.Value);
+        Assert.Equal(AgentReasoningPolicy.ProviderDefault, lead.ReasoningPolicy);
         Assert.False(lead.IsPersisted);
     }
 

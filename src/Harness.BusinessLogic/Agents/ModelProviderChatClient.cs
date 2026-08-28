@@ -17,7 +17,8 @@ internal sealed class ModelProviderChatClient(
     GoalId? remoteGoalId,
     AgentRole role,
     bool implementerInspectionBootstrapped = false,
-    bool structuredLocalFileEditProposal = false) : IChatClient
+    bool structuredLocalFileEditProposal = false,
+    AgentReasoningPolicy reasoningPolicy = AgentReasoningPolicy.ProviderDefault) : IChatClient
 {
     private int toolCallCount;
     private const string LeadResponseSchema = """
@@ -190,7 +191,8 @@ internal sealed class ModelProviderChatClient(
                     }
                     : null,
                 remoteGoalId is null ? 0 : null,
-                structuredLocalFileEditProposal
+                structuredLocalFileEditProposal ||
+                    reasoningPolicy is AgentReasoningPolicy.Disabled
                     ? ModelReasoningEffort.None
                     : ModelReasoningEffort.ProviderDefault),
             cancellationToken))

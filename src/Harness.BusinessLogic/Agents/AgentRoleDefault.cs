@@ -5,5 +5,6 @@ public sealed record AgentRoleDefault(
     ModelProviderName Provider,
     AgentModel Model,
     ModelAccess Access,
+    AgentReasoningPolicy ReasoningPolicy,
     bool IsPersisted,
     DateTimeOffset? UpdatedAt);

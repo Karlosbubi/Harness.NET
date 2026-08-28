@@ -11,6 +11,26 @@ namespace Harness.BusinessLogic.Tests.Agents;
 public sealed class ModelProviderChatClientTests
 {
     [Fact]
+    public async Task Maps_disabled_role_reasoning_to_no_provider_reasoning()
+    {
+        CapturingReasoningProvider provider = new();
+        ModelProviderChatClient client = new(
+            provider,
+            new("local-model"),
+            remoteGoalId: null,
+            AgentRole.Lead,
+            reasoningPolicy: AgentReasoningPolicy.Disabled);
+
+        _ = await client.GetResponseAsync([
+            new Microsoft.Extensions.AI.ChatMessage(AIChatRole.User, "Plan the task."),
+        ]);
+
+        Assert.Equal(
+            ModelReasoningEffort.None,
+            Assert.Single(provider.Requests).ReasoningEffort);
+    }
+
+    [Fact]
     public async Task Preserves_reasoning_and_tool_identity_across_the_tool_loop()
     {
         CapturingReasoningProvider provider = new();
@@ -36,6 +56,9 @@ public sealed class ModelProviderChatClientTests
         _ = await client.GetResponseAsync([user, assistant, tool]);
 
         Assert.Equal(2, provider.Requests.Count);
+        Assert.All(provider.Requests, request => Assert.Equal(
+            ModelReasoningEffort.ProviderDefault,
+            request.ReasoningEffort));
         Harness.DataAccess.Models.ChatMessage reasoningMessage = Assert.Single(
             provider.Requests[1].Messages,
             message => message.Reasoning is not null);

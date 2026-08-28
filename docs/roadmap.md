@@ -79,6 +79,7 @@ typed agent tools, and personal configuration.
 - Task 045: consented single-frame XDG portal capture, private goal evidence,
   developer preview, agent request/inspect tools, and remote-disclosure policy.
 - Task 050: complete local and remote developer Git workbench.
+- Task 069: bounded per-role reasoning policy for responsive local tool loops.
 
 ### Completed: Task 045 — controlled visual verification
 
