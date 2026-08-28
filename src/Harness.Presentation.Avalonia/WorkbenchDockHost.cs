@@ -26,6 +26,7 @@ using Harness.BusinessLogic.Mcp;
 using Harness.BusinessLogic.Mutations;
 using Harness.BusinessLogic.Tools;
 using Harness.BusinessLogic.Workspaces;
+using Harness.Presentation.Avalonia.Workbench;
 using Harness.UI.Avalonia;
 using AvaloniaOrientation = Avalonia.Layout.Orientation;
 using DockAlignment = Dock.Model.Core.Alignment;
@@ -90,11 +91,7 @@ internal sealed class WorkbenchDockHost
         Content = "Project User Secrets",
         IsVisible = false,
     };
-    private readonly TextBox fileFilter = new();
-    private readonly TreeView fileTree = new();
-    private readonly TextBox query = new();
-    private readonly ListBox searchResults = new();
-    private readonly TextBlock fileStatus = new() { TextWrapping = TextWrapping.Wrap };
+    private readonly FilesTool filesTool;
     private readonly ListBox changes = new();
     private readonly ListBox patchUnits = new();
     private readonly TextBlock gitSummary = new() { TextWrapping = TextWrapping.Wrap };
@@ -177,12 +174,6 @@ internal sealed class WorkbenchDockHost
     private string? runOutputFingerprint;
     private bool busy;
     private bool runOutputBusy;
-    private bool fileTreeBusy;
-    private int fileTreeContextVersion;
-    private IReadOnlyList<WorkbenchDocumentPath> trackedFiles = [];
-    private string? fileTreeError;
-    private string? fileTreeContext;
-    private bool fileTreeTruncated;
     private bool suppressDocumentActivation;
     private bool renderingDocumentSwitcher;
     private bool resolvingDocumentTransition;
@@ -266,8 +257,15 @@ internal sealed class WorkbenchDockHost
         this.cancellationToken = cancellationToken;
         factory.HideToolsOnClose = true;
         layoutCodec = new(factory);
+        filesTool = new(new(
+            inspectionService,
+            state,
+            () => busy,
+            RunAsync,
+            OpenFileAsync,
+            cancellationToken));
 
-        Control files = BuildFilesTool();
+        Control files = filesTool.Content;
         Control sourceControl = BuildSourceControlTool();
         Control runOutput = BuildRunOutputTool();
         Control problemsContent = BuildProblemsTool();
@@ -288,7 +286,7 @@ internal sealed class WorkbenchDockHost
                 .WithTitle("Workspace")
                 .WithCanClose(true)
                 .WithContext(navigation))
-            .Tool(out ITool? filesTool, item => item
+            .Tool(out ITool? filesDockTool, item => item
                 .WithId(WorkbenchDockIds.FilesTool)
                 .WithTitle("Files")
                 .WithCanClose(true)
@@ -366,7 +364,7 @@ internal sealed class WorkbenchDockHost
         right!.WithProportion(0.22);
         bottom!.WithProportion(0.45);
         root = rootDock ?? throw new InvalidOperationException("Dock did not create the workbench root.");
-        left.VisibleDockables = factory.CreateList<IDockable>(navigationTool!, filesTool!);
+        left.VisibleDockables = factory.CreateList<IDockable>(navigationTool!, filesDockTool!);
         left.ActiveDockable = navigationTool;
         right.VisibleDockables = factory.CreateList<IDockable>(contextTool!, gitTool!);
         right.ActiveDockable = contextTool;
@@ -378,7 +376,7 @@ internal sealed class WorkbenchDockHost
         documents.VisibleDockables = factory.CreateList<IDockable>(overviewDocument);
         documents.ActiveDockable = overviewDocument;
         WorkbenchDockContent.Attach(navigationTool!, navigation);
-        WorkbenchDockContent.Attach(filesTool!, files);
+        WorkbenchDockContent.Attach(filesDockTool!, files);
         WorkbenchDockContent.Attach(contextTool!, context);
         WorkbenchDockContent.Attach(gitTool!, sourceControl);
         WorkbenchDockContent.Attach(conversationTool!, conversation);
@@ -433,8 +431,8 @@ internal sealed class WorkbenchDockHost
     internal Control? LastRequestedFocusTarget { get; private set; }
     internal int SourceDocumentCount => sourceDocuments.Count;
     internal int VirtualDocumentCount => virtualDocuments.Count;
-    internal TreeView FileTree => fileTree;
-    internal TextBox FileFilter => fileFilter;
+    internal TreeView FileTree => filesTool.Tree;
+    internal TextBox FileFilter => filesTool.Filter;
     internal TextEditor? ActiveSourceEditor => activeDocument?.Id is { } id &&
                                                sourceDocuments.TryGetValue(id, out SourceDocumentSession? session)
         ? session.NativeEditor
@@ -574,7 +572,7 @@ internal sealed class WorkbenchDockHost
         Update(state());
         if (ActiveWorkspace() is { IsTrusted: true })
         {
-            await RefreshFilesAsync();
+            await filesTool.RefreshAsync();
             await RefreshGitAsync();
         }
     }
@@ -606,6 +604,7 @@ internal sealed class WorkbenchDockHost
 
     internal void Update(AvaloniaShellState snapshot)
     {
+        filesTool.Update(snapshot);
         EditorIntelligencePreferences nextEditorPreferences = snapshot.Settings
             .EditorIntelligenceSettings?.Preferences ?? EditorIntelligencePreferences.Default;
         bool editorPreferencesChanged = nextEditorPreferences != editorIntelligencePreferences;
@@ -631,30 +630,17 @@ internal sealed class WorkbenchDockHost
         WorkspaceView? active = snapshot.Workspaces.Registered.FirstOrDefault(item => item.IsActive);
         if (!string.Equals(workspaceId, active?.Id, StringComparison.Ordinal))
         {
-            fileTreeContextVersion++;
             workspaceId = active?.Id;
             Dispatcher.UIThread.Post(async () =>
                 await CloseAllSourceDocumentsAsync(WorkbenchDocumentTransition.Close));
             Dispatcher.UIThread.Post(async () => await InvalidateCodeIntelligenceAsync());
-            searchResults.ItemsSource = Array.Empty<SearchChoice>();
-            searchResults.IsVisible = false;
-            trackedFiles = [];
-            fileTreeError = null;
-            fileTreeContext = null;
-            fileTreeTruncated = false;
-            RenderFileTree();
             changes.ItemsSource = Array.Empty<ChangeChoice>();
             currentConflictInspection = null;
             currentConflictDocument = null;
             gitConflicts.ItemsSource = Array.Empty<ConflictChoice>();
             ClearGitConflictEditors();
-            fileStatus.Text = string.Empty;
             gitStatus.Text = string.Empty;
             gitSummary.Text = active is null ? "No workspace selected." : "Refresh Git state.";
-            if (active is { IsTrusted: true })
-            {
-                Dispatcher.UIThread.Post(async () => await RefreshFilesAsync());
-            }
         }
 
         GoalView? selectedGoal = snapshot.Goals.SelectedGoal;
@@ -664,26 +650,16 @@ internal sealed class WorkbenchDockHost
             : null;
         if (!string.Equals(selectedGoalId, nextGoalId, StringComparison.Ordinal))
         {
-            fileTreeContextVersion++;
             selectedGoalId = nextGoalId;
             Dispatcher.UIThread.Post(async () => await InvalidateCodeIntelligenceAsync());
-            searchResults.ItemsSource = Array.Empty<SearchChoice>();
-            searchResults.IsVisible = false;
             changes.ItemsSource = Array.Empty<ChangeChoice>();
-            fileStatus.Text = nextGoalId is null
-                ? "Source context: original workspace."
-                : "Source context changed; refreshing the selected goal worktree.";
             gitStatus.Text = string.Empty;
             gitSummary.Text = active is null
                 ? "No workspace selected."
                 : "Refreshing Git state for the current source context…";
             if (active is { IsTrusted: true })
             {
-                Dispatcher.UIThread.Post(async () =>
-                {
-                    await RefreshFilesAsync();
-                    await RefreshGitAsync();
-                });
+                Dispatcher.UIThread.Post(async () => await RefreshGitAsync());
             }
         }
 
@@ -733,7 +709,7 @@ internal sealed class WorkbenchDockHost
             item.View.GoalId == goalId);
         return opened is not null
             ? new(new("document.open"), true, null, null)
-            : new(new("document.open"), false, "document_open_failed", fileStatus.Text);
+            : new(new("document.open"), false, "document_open_failed", filesTool.StatusText);
     }
 
     /// <summary>
@@ -742,57 +718,26 @@ internal sealed class WorkbenchDockHost
     /// Files panel shows rather than a separate scan.
     /// </summary>
     internal async ValueTask<IReadOnlyList<PaletteCommand>> BuildFileCommandsAsync()
-    {
-        WorkspaceView? active = ActiveWorkspace();
-        if (active is null || !active.IsTrusted)
-        {
-            return [];
-        }
-
-        if (trackedFiles.Count == 0 && fileTreeError is null)
-        {
-            await RefreshFilesAsync();
-        }
-
-        return
-        [
-            .. trackedFiles.Select(path => new PaletteCommand(
-                $"file:{path.Value}",
-                Directory(path.Value),
-                Name(path.Value),
-                () => OpenFileAsync(path.Value),
-                MatchText: path.Value))
-        ];
-    }
-
-    private static string Directory(string path)
-    {
-        int separator = path.LastIndexOf('/');
-        return separator <= 0 ? "(repository root)" : path[..separator];
-    }
-
-    private static string Name(string path)
-    {
-        int separator = path.LastIndexOf('/');
-        return separator < 0 ? path : path[(separator + 1)..];
-    }
+        => await filesTool.BuildFileCommandsAsync();
 
     private async ValueTask OpenFileAsync(string relativePath, GoalId? requestedGoalId)
     {
         WorkspaceView? active = ActiveWorkspace();
         if (busy || active is null || !active.IsTrusted || string.IsNullOrWhiteSpace(relativePath))
         {
-            fileStatus.Text = active is null
+            filesTool.ReportStatus(active is null
                 ? "Select a workspace first."
-                : active.IsTrusted ? "Enter a relative file path." : "Trust the workspace before reading files.";
+                : active.IsTrusted
+                    ? "Enter a relative file path."
+                    : "Trust the workspace before reading files.");
             return;
         }
         if (currentConflictDocument?.Document is { } conflict &&
             conflict.Path.Value.Equals(relativePath.Trim(), StringComparison.Ordinal) &&
             currentConflictDocument.Context.GoalId == requestedGoalId)
         {
-            fileStatus.Text = "That path is active in the Git conflict result editor. " +
-                "Save and stage it there before opening a second buffer.";
+            filesTool.ReportStatus("That path is active in the Git conflict result editor. " +
+                                   "Save and stage it there before opening a second buffer.");
             return;
         }
 
@@ -806,7 +751,7 @@ internal sealed class WorkbenchDockHost
                 cancellationToken);
             if (file.Error is not null)
             {
-                fileStatus.Text = file.Error;
+                filesTool.ReportStatus(file.Error);
                 return;
             }
 
@@ -815,7 +760,7 @@ internal sealed class WorkbenchDockHost
             {
                 if (await TrySwitchDocumentAsync(existing.Document))
                 {
-                    fileStatus.Text = $"Activated {file.Path.Value}.";
+                    filesTool.ReportStatus($"Activated {file.Path.Value}.");
                 }
 
                 return;
@@ -823,16 +768,16 @@ internal sealed class WorkbenchDockHost
 
             if (!await PrepareActiveDocumentTransitionAsync(WorkbenchDocumentTransition.Switch))
             {
-                fileStatus.Text = $"Kept unsaved changes; {file.Path.Value} was not opened.";
+                filesTool.ReportStatus($"Kept unsaved changes; {file.Path.Value} was not opened.");
                 return;
             }
 
             SourceDocumentSession session = CreateSourceDocument(id, file);
             documents.AddDocument(session.Document);
             SetActiveDocument(session.Document);
-            fileStatus.Text = $"Opened {file.Path.Value} · {file.Size.Value:N0} bytes · " +
-                              file.AccessDescription.TrimEnd('.') +
-                              (file.IsTruncated ? " · truncated." : ".");
+            filesTool.ReportStatus($"Opened {file.Path.Value} · {file.Size.Value:N0} bytes · " +
+                                   file.AccessDescription.TrimEnd('.') +
+                                   (file.IsTruncated ? " · truncated." : "."));
         });
     }
 
@@ -2250,213 +2195,7 @@ internal sealed class WorkbenchDockHost
                new PixelRect(0, 0, 1920, 1080);
     }
 
-    private Control BuildFilesTool()
-    {
-        Grid grid = new()
-        {
-            RowDefinitions = new("Auto,*,Auto,Auto,Auto"),
-            Margin = new Thickness(8),
-            RowSpacing = 6,
-        };
-        Grid filterRow = new() { ColumnDefinitions = new("*,Auto"), ColumnSpacing = 4 };
-        fileFilter.PlaceholderText = "Filter repository files";
-        fileFilter.Classes.Add("workspace-input");
-        AutomationProperties.SetName(fileFilter, "Filter repository file tree");
-        fileFilter.TextChanged += (_, _) => RenderFileTree();
-        AccessibleIconButton refresh = new()
-        {
-            Content = "↻",
-            AccessibleName = "Refresh repository file tree",
-        };
-        refresh.Classes.Add("icon");
-        refresh.Click += async (_, _) => await RefreshFilesAsync();
-        filterRow.Children.Add(fileFilter);
-        Grid.SetColumn(refresh, 1);
-        filterRow.Children.Add(refresh);
-        grid.Children.Add(filterRow);
-
-        fileTree.ItemTemplate = new FuncTreeDataTemplate<FileTreeNode>(
-            (node, _) =>
-            {
-                if (node.Path is { } filePath)
-                {
-                    Button file = new()
-                    {
-                        Content = node.Name,
-                        HorizontalAlignment = HorizontalAlignment.Stretch,
-                        HorizontalContentAlignment = HorizontalAlignment.Left,
-                    };
-                    file.Classes.Add("tree-file");
-                    AutomationProperties.SetName(file, filePath.Value);
-                    file.Click += async (_, _) => await OpenFileAsync(filePath.Value);
-                    return file;
-                }
-
-                TextBlock label = new()
-                {
-                    Text = node.Name,
-                    TextTrimming = TextTrimming.CharacterEllipsis,
-                    VerticalAlignment = VerticalAlignment.Center,
-                };
-                return label;
-            },
-            node => node.Children);
-        AutomationProperties.SetName(fileTree, "Repository file tree");
-        Grid.SetRow(fileTree, 1);
-        grid.Children.Add(fileTree);
-
-        Grid searchRow = new() { ColumnDefinitions = new("*,Auto"), ColumnSpacing = 6 };
-        query.PlaceholderText = "Search file contents";
-        query.Classes.Add("workspace-input");
-        AutomationProperties.SetName(query, "Search tracked workspace text");
-        AccessibleIconButton search = new()
-        {
-            Content = "⌕",
-            AccessibleName = "Run tracked workspace search",
-        };
-        search.Classes.Add("icon");
-        AutomationProperties.SetName(search, "Run tracked workspace search");
-        search.Click += async (_, _) => await SearchAsync();
-        query.KeyDown += async (_, args) =>
-        {
-            if (args.Key is Key.Enter)
-            {
-                args.Handled = true;
-                await SearchAsync();
-            }
-        };
-        searchRow.Children.Add(query);
-        Grid.SetColumn(search, 1);
-        searchRow.Children.Add(search);
-        Grid.SetRow(searchRow, 2);
-        grid.Children.Add(searchRow);
-
-        AutomationProperties.SetName(searchResults, "Tracked-text search results");
-        searchResults.MaxHeight = 180;
-        searchResults.IsVisible = false;
-        searchResults.DoubleTapped += async (_, _) =>
-        {
-            if (searchResults.SelectedItem is SearchChoice choice)
-            {
-                await OpenFileAsync(choice.Match.Path, choice.GoalId);
-            }
-        };
-        Grid.SetRow(searchResults, 3);
-        grid.Children.Add(searchResults);
-        fileStatus.Classes.Add("muted");
-        Grid.SetRow(fileStatus, 4);
-        grid.Children.Add(fileStatus);
-        return grid;
-    }
-
-    internal async ValueTask RefreshFilesAsync()
-    {
-        WorkspaceView? active = ActiveWorkspace();
-        if (fileTreeBusy)
-        {
-            return;
-        }
-
-        if (active is null || !active.IsTrusted)
-        {
-            trackedFiles = [];
-            fileTreeError = active is null
-                ? "Select a workspace to browse its files."
-                : "Trust the workspace to browse its files.";
-            fileTreeTruncated = false;
-            fileTreeContext = null;
-            RenderFileTree();
-            return;
-        }
-
-        int contextVersion = fileTreeContextVersion;
-        fileTreeBusy = true;
-        fileTreeError = null;
-        fileStatus.Text = "Loading repository files…";
-        try
-        {
-            WorkbenchFileCatalogResult result = await inspectionService.ListFilesAsync(
-                WorkbenchRequest(active),
-                cancellationToken);
-            if (contextVersion != fileTreeContextVersion)
-            {
-                return;
-            }
-
-            trackedFiles = result.Catalog.Files;
-            fileTreeTruncated = result.Catalog.IsTruncated;
-            fileTreeError = result.Catalog.Error;
-            fileTreeContext = result.Context.Description;
-            RenderFileTree();
-        }
-        catch (OperationCanceledException)
-        {
-            if (contextVersion == fileTreeContextVersion)
-            {
-                fileTreeError = "Repository file loading was cancelled.";
-                RenderFileTree();
-            }
-        }
-        catch (Exception exception)
-        {
-            if (contextVersion == fileTreeContextVersion)
-            {
-                fileTreeError = exception.Message;
-                RenderFileTree();
-            }
-        }
-        finally
-        {
-            fileTreeBusy = false;
-            if (contextVersion != fileTreeContextVersion)
-            {
-                Dispatcher.UIThread.Post(async () => await RefreshFilesAsync());
-            }
-        }
-    }
-
-    private void RenderFileTree()
-    {
-        string filter = fileFilter.Text?.Trim() ?? string.Empty;
-        IReadOnlyList<WorkbenchDocumentPath> visible = filter.Length == 0
-            ? trackedFiles
-            : trackedFiles
-                .Where(file => file.Value.Contains(filter, StringComparison.OrdinalIgnoreCase))
-                .ToArray();
-        fileTree.ItemsSource = BuildFileTree(visible);
-        fileStatus.Text = fileTreeError ?? (trackedFiles.Count == 0
-            ? "No tracked files are available in the current source context."
-            : filter.Length == 0
-                ? $"{trackedFiles.Count:N0} tracked files" +
-                  (fileTreeTruncated ? " · list truncated" : string.Empty) +
-                  (string.IsNullOrWhiteSpace(fileTreeContext) ? string.Empty : $" · {fileTreeContext}")
-                : $"{visible.Count:N0} of {trackedFiles.Count:N0} tracked files");
-    }
-
-    private static IReadOnlyList<FileTreeNode> BuildFileTree(
-        IReadOnlyList<WorkbenchDocumentPath> paths)
-    {
-        FileTreeBuilder root = new(string.Empty);
-        foreach (WorkbenchDocumentPath path in paths)
-        {
-            string[] segments = path.Value.Split('/', StringSplitOptions.RemoveEmptyEntries);
-            if (segments.Length == 0)
-            {
-                continue;
-            }
-
-            FileTreeBuilder parent = root;
-            foreach (string directory in segments[..^1])
-            {
-                parent = parent.Directory(directory);
-            }
-
-            parent.Files.Add(new(segments[^1], path, []));
-        }
-
-        return root.ToNodes();
-    }
-
+    internal ValueTask RefreshFilesAsync() => filesTool.RefreshAsync();
     private Control BuildSourceControlTool()
     {
         Grid grid = new()
@@ -3674,35 +3413,6 @@ internal sealed class WorkbenchDockHost
                 },
             },
         };
-    }
-
-    private async ValueTask SearchAsync()
-    {
-        WorkspaceView? active = ActiveWorkspace();
-        if (busy || active is null || !active.IsTrusted || string.IsNullOrWhiteSpace(query.Text))
-        {
-            fileStatus.Text = active is null
-                ? "Select a workspace first."
-                : active.IsTrusted ? "Enter text to search." : "Trust the workspace before searching files.";
-            return;
-        }
-
-        await RunAsync(async () =>
-        {
-            WorkbenchTextSearchResult inspected = await inspectionService.SearchTextAsync(
-                WorkbenchRequest(active),
-                query.Text.Trim(),
-                cancellationToken);
-            WorkspaceTextSearchView result = inspected.Search;
-            searchResults.ItemsSource = result.Matches
-                .Select(match => new SearchChoice(match, inspected.Context.GoalId))
-                .ToArray();
-            searchResults.IsVisible = result.Matches.Count > 0;
-            fileStatus.Text = result.Error ??
-                              $"{inspected.Context.Description} · {result.Matches.Count} match(es) " +
-                              $"in {result.FilesScanned} file(s)" +
-                              (result.IsTruncated ? " · truncated." : ".");
-        });
     }
 
     private SourceDocumentSession CreateSourceDocument(
@@ -5496,7 +5206,8 @@ internal sealed class WorkbenchDockHost
             {
                 session.AllowClose = true;
                 factory.CloseDockable(session.Document);
-                fileStatus.Text = $"{session.View.Path.Value} no longer exists; the stale document was closed.";
+                filesTool.ReportStatus(
+                    $"{session.View.Path.Value} no longer exists; the stale document was closed.");
                 return true;
             }
 
@@ -6166,58 +5877,18 @@ internal sealed class WorkbenchDockHost
         }
         catch (OperationCanceledException)
         {
-            fileStatus.Text = "Workspace operation cancelled.";
+            filesTool.ReportStatus("Workspace operation cancelled.");
             gitStatus.Text = "Workspace operation cancelled.";
         }
         catch (Exception exception)
         {
-            fileStatus.Text = exception.Message;
+            filesTool.ReportStatus(exception.Message);
             gitStatus.Text = exception.Message;
         }
         finally
         {
             busy = false;
         }
-    }
-
-    private sealed record SearchChoice(WorkspaceTextMatchView Match, GoalId? GoalId)
-    {
-        public override string ToString() => $"{Match.Path}:{Match.LineNumber}  {Match.Text}";
-    }
-
-    internal sealed record FileTreeNode(
-        string Name,
-        WorkbenchDocumentPath? Path,
-        IReadOnlyList<FileTreeNode> Children);
-
-    private sealed class FileTreeBuilder(string name)
-    {
-        private readonly Dictionary<string, FileTreeBuilder> directories =
-            new(StringComparer.Ordinal);
-
-        internal List<FileTreeNode> Files { get; } = [];
-        internal string Name { get; } = name;
-
-        internal FileTreeBuilder Directory(string directory)
-        {
-            if (!directories.TryGetValue(directory, out FileTreeBuilder? child))
-            {
-                child = new(directory);
-                directories.Add(directory, child);
-            }
-
-            return child;
-        }
-
-        internal IReadOnlyList<FileTreeNode> ToNodes() =>
-            directories.Values
-                .OrderBy(directory => directory.Name, StringComparer.OrdinalIgnoreCase)
-                .Select(directory => new FileTreeNode(
-                    directory.Name,
-                    Path: null,
-                    directory.ToNodes()))
-                .Concat(Files.OrderBy(file => file.Name, StringComparer.OrdinalIgnoreCase))
-                .ToArray();
     }
 
     private sealed record ChangeChoice(WorkspaceGitFileChangeView Change, GoalId? GoalId)

@@ -1177,46 +1177,6 @@ public sealed class PresentationControlTests
     }
 
     [Fact]
-    public async Task Files_tool_builds_and_filters_a_repository_tree()
-    {
-        using HeadlessUnitTestSession session =
-            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
-        await session.Dispatch(() =>
-        {
-            AvaloniaShellState shell = TrustedShell();
-            WorkbenchDockHost workbench = CreateWorkbench(shell, new());
-            Window window = new() { Width = 1280, Height = 800, Content = workbench.Control };
-            window.Show();
-
-            workbench.RefreshFilesAsync().AsTask().GetAwaiter().GetResult();
-            WorkbenchDockHost.FileTreeNode[] roots = Assert
-                .IsAssignableFrom<IEnumerable<WorkbenchDockHost.FileTreeNode>>(
-                    workbench.FileTree.ItemsSource)
-                .ToArray();
-
-            Assert.Equal(["src", "README.md"], roots.Select(node => node.Name));
-            WorkbenchDockHost.FileTreeNode source = roots[0];
-            Assert.Null(source.Path);
-            Assert.Equal(
-                ["App.cs", "Feature.cs"],
-                source.Children.Select(node => node.Name));
-            Assert.Equal("src/App.cs", source.Children[0].Path?.Value);
-
-            workbench.FileFilter.Text = "feature";
-            Dispatcher.UIThread.RunJobs();
-            roots = Assert
-                .IsAssignableFrom<IEnumerable<WorkbenchDockHost.FileTreeNode>>(
-                    workbench.FileTree.ItemsSource)
-                .ToArray();
-            source = Assert.Single(roots);
-            Assert.Equal("src", source.Name);
-            Assert.Equal("Feature.cs", Assert.Single(source.Children).Name);
-            Assert.Equal("Repository file tree", AutomationProperties.GetName(workbench.FileTree));
-            window.Close();
-        }, CancellationToken.None);
-    }
-
-    [Fact]
     public async Task Approved_goal_document_tracks_real_dirty_state_and_saves_with_its_baseline()
     {
         using HeadlessUnitTestSession session =

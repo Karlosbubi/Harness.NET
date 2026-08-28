@@ -7,9 +7,11 @@ implementer executes. The binding constraints live in
 acceptance criteria live in [the task ledger](tasks/README.md#060--workbench-composition-refactor).
 This plan changes structure and developer experience, not behavior.
 
-Implementation status (PR #2): slice 060.0 is implemented, and the shrink-only
-source-size test shared with Task 061 is active. Slices 060.1–060.8 remain and must
-continue to follow the sequencing and evidence rules below.
+Implementation status: PR #2 merged slice 060.0 and activated the shrink-only
+source-size test shared with Task 061. Slice 060.1 is implemented: `FilesTool`,
+`SearchTool`, and `WorkbenchToolContext` now own the Files panel behavior and focused
+tests. Slices 060.2–060.8 remain and continue to follow the sequencing and evidence
+rules below.
 
 ## Measured baseline (2026-08-24)
 
@@ -145,7 +147,7 @@ slices that touch `WorkbenchDockHost`.
 | Slice | Scope | Exit criteria |
 |---|---|---|
 | 060.0 | DX baseline: `global.json` → major-pin with `latestFeature`; deduplicate the SDK version out of test assertions and fixtures (gap 6); reproduce and fix the `global.json` working-tree deletion (gap 7); ignore `.codex/` and local agent dirs; remove empty `.agents/` or document it; add hosted Linux x64 PR verification (restore, build, deterministic tests). | Plain `dotnet build` succeeds on a machine with any 10.x SDK ≥ pin; the 52 environment-dependent test failures are gone; a failing-SDK suite run leaves the working tree clean; first green PR run recorded. |
-| 060.1 | Introduce `Workbench/` folder, `WorkbenchToolContext`, and the size-budget architecture test with the initial burn-down allowlist. Extract **FilesTool** and **SearchTool** as the pattern-setting units, with their tests split out. | Allowlist created; extracted units ≤ 800 lines; layout saved before the slice restores identically; AT-SPI script passes. |
+| 060.1 — implemented | Introduce `Workbench/` folder, `WorkbenchToolContext`, and the size-budget architecture test with the initial burn-down allowlist. Extract **FilesTool** and **SearchTool** as the pattern-setting units, with their tests split out. | Extracted units are ≤ 800 lines; the host budget tightened from 6,389 to 6,060 lines and the monolithic test budget from 5,523 to 5,410; layout round-trip and production AT-SPI evidence re-verified. |
 | 060.2 | Extract **GitChangesTool** (staging, patch units, destructive previews). | Git staging acceptance evidence re-verified; fingerprint plumbing unchanged. |
 | 060.3 | Extract **GitBranchesTool**, **GitWorktreesTool** (branches, tags, worktrees, stashes). | Matching acceptance records re-verified. |
 | 060.4 | Extract **GitRemotesTool**, **GitHistoryTool**, **GitConflictsTool**. | Remote/history/conflict acceptance records re-verified. |

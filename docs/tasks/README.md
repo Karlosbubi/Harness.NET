@@ -881,8 +881,9 @@ Acceptance criteria:
 
 ### 060 — workbench composition refactor
 
-Status: `In progress` — slice 060.0 and the shrink-only budget infrastructure are
-implemented in PR #2; extraction slices 060.1–060.8 remain.
+Status: `In progress` — PR #2 merged slice 060.0 and the shrink-only budget
+infrastructure. Slice 060.1 extracted the Files/Search units and their focused tests;
+extraction slices 060.2–060.8 remain.
 
 Dependencies: 049, 050. Coordinates with in-progress 052.
 
@@ -930,7 +931,7 @@ Acceptance criteria:
 
 ### 061 — architecture enforcement and composition seams
 
-Status: `Implemented — pending PR #2 review and merge`
+Status: `Complete`
 
 Dependencies: none (independent of 060; shares only the ADR 025 size-budget test
 infrastructure). May run in parallel with 060 — it touches Analyzers, Host, and

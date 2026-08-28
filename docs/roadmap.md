@@ -592,13 +592,13 @@ layers, contracts, and toolkits are unchanged, proven by layout, AT-SPI, keybind
 and acceptance evidence per slice.
 
 The [refactor baseline](refactor-baseline.md) records the 2026-08-24 measurements,
-target structure, ordered slices 060.0–060.8, and delegation protocol. Slice 060.0
-(SDK pin, ignore rules, continuous verification) and the shrink-only source budget
-are implemented in PR #2. Extraction slices 060.1–060.8 remain sequential and
-coordinate with in-progress Task 052 before touching run output and document
-surfaces.
+target structure, ordered slices 060.0–060.8, and delegation protocol. PR #2 merged
+slice 060.0 (SDK pin, ignore rules, continuous verification) and the shrink-only
+source budget. Slice 060.1 extracted Files and Search into bounded composition units
+with focused tests. Extraction slices 060.2–060.8 remain sequential and coordinate
+with in-progress Task 052 before touching run output and document surfaces.
 
-### Implemented, pending PR #2 review and merge: Task 061 — architecture enforcement and composition seams
+### Complete: Task 061 — architecture enforcement and composition seams
 
 Turn the measured but unenforced architecture conventions into mechanisms under
 [ADR 026](decisions/026-translation-boundary-and-architecture-enforcement.md):
