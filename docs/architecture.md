@@ -83,7 +83,7 @@ Measured intra-layer coupling in Business Logic has a deliberate two-tier shape:
 
 Keep it that way: cross-feature reuse of value contracts is free; a new lateral
 service dependency between features is an architectural event that needs a reason.
-`BusinessLogicServiceDependencyTests` pins the reviewed inventory of 35 existing
+`BusinessLogicServiceDependencyTests` pins the reviewed inventory of 36 existing
 consumer-to-service edges and fails when a new edge appears without an explicit
 inventory update.
 
@@ -180,6 +180,14 @@ Harness.NET does not create a metadata directory in a user repository.
 Lead reads the trusted original workspace and cannot mutate it. Implementer reads and
 writes only an approved goal worktree and delegated file areas. Reviewer reads the
 same worktree and evidence but cannot write, Build, or Test.
+
+The workflow, rather than either model role, owns the deterministic Build/Test gate
+after all delegated implementation tasks and after each review correction. Every
+changed implementation state is validated before independent review. One failed gate
+may authorize one bounded Implementer repair against the cited diagnostics;
+persistent failure becomes explicit retryable direction. Reviewer decisions require
+typed diff and evidence inspection, with one in-session correction for a text-only
+response.
 
 Agents receive typed tools, not shell strings. Paths are canonicalized and confined.
 Restore, package work, commit, external access, and destructive operations remain

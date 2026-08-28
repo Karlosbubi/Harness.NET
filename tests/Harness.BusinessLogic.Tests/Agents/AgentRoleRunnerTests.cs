@@ -10,7 +10,7 @@ using ProviderChatResponseFormat = Harness.DataAccess.Models.ChatResponseFormat;
 
 namespace Harness.BusinessLogic.Tests.Agents;
 
-public sealed class AgentRoleRunnerTests
+public sealed partial class AgentRoleRunnerTests
 {
     [Theory]
     [InlineData(AgentRole.Lead, "lead-model", "lead agent")]
@@ -202,32 +202,6 @@ public sealed class AgentRoleRunnerTests
         Assert.Contains("edit applied", editResult.Result.Value, StringComparison.Ordinal);
         Assert.Equal(ProviderChatResponseFormat.Json, provider.Requests[2].ResponseFormat);
         Assert.Contains("\"remaining\"", provider.Requests[2].ResponseSchema?.Value,
-            StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task Gives_implementer_one_in_session_correction_when_it_narrates_without_tools()
-    {
-        NarratingThenToolCallingModelProvider provider = new();
-        CapturingAgentToolFactory tools = new();
-        AgentRoleRunner runner = new(
-            new StubRouteResolver(role => Route(role, "tool-model", provider)),
-            tools,
-            NullLoggerFactory.Instance);
-
-        AgentRunResult result = await runner.RunAsync(new(
-            new("goal-tools"),
-            AgentRole.Implementer,
-            new("implement"),
-            [new("src")]));
-
-        Assert.Null(result.Error);
-        Assert.Equal("finished after correction tool", result.Output?.Value);
-        Assert.Equal("src/Program.cs", tools.RelativePath);
-        Assert.Equal(3, provider.Requests.Count);
-        Assert.Contains("TOOL EXECUTION REQUIRED",
-            provider.Requests[1].Messages[^1].Content, StringComparison.Ordinal);
-        Assert.Contains("BOUNDED TASK", provider.Requests[1].Messages[^1].Content,
             StringComparison.Ordinal);
     }
 
@@ -489,6 +463,7 @@ public sealed class AgentRoleRunnerTests
         internal string? RelativePath { get; private set; }
         internal string? EditedContent { get; private set; }
         internal bool ReturnWorkspaceFileView { get; init; }
+        internal string? WorkspaceFileErrorCode { get; init; }
 
         public IList<AITool> Create(
             AgentRole role,
@@ -503,12 +478,14 @@ public sealed class AgentRoleRunnerTests
                     return ReturnWorkspaceFileView
                         ? (object)new WorkspaceFileView(
                             relativePath,
-                            "bounded file",
-                            new string('a', 64),
-                            12,
+                            WorkspaceFileErrorCode is null ? "bounded file" : string.Empty,
+                            WorkspaceFileErrorCode is null ? new string('a', 64) : null,
+                            WorkspaceFileErrorCode is null ? 12 : 0,
                             IsTruncated: false,
-                            ErrorCode: null,
-                            Error: null)
+                            WorkspaceFileErrorCode,
+                            WorkspaceFileErrorCode is null
+                                ? null
+                                : "The requested file does not exist.")
                         : "bounded file";
                 },
                 new()
@@ -556,7 +533,7 @@ public sealed class AgentRoleRunnerTests
         ];
     }
 
-    private sealed class ToolCallingModelProvider : IModelProvider
+    private sealed class ToolCallingModelProvider(bool emptyFinalResponse = false) : IModelProvider
     {
         internal List<ChatRequest> Requests { get; } = [];
 
@@ -599,7 +576,7 @@ public sealed class AgentRoleRunnerTests
             }
 
             yield return new(
-                "finished after edit",
+                emptyFinalResponse ? string.Empty : "finished after edit",
                 string.Empty,
                 Done: true,
                 DoneReason: "stop",

@@ -15,13 +15,13 @@ using Harness.BusinessLogic.Retrieval;
 using Harness.BusinessLogic.VisualCapture;
 using Harness.BusinessLogic.Workflows;
 using Harness.BusinessLogic.Workspaces;
+using Harness.DataAccess.Agents;
+using Harness.DataAccess.Goals;
 using Harness.DataAccess.Models;
 using Harness.DataAccess.Models.Ollama;
 using Harness.DataAccess.Models.OpenRouter;
-using Harness.DataAccess.Agents;
-using Harness.DataAccess.Goals;
-using Harness.DataAccess.SemanticIndex;
 using Harness.DataAccess.Secrets;
+using Harness.DataAccess.SemanticIndex;
 using Harness.DataAccess.Workflows;
 using Harness.DataAccess.Workspaces;
 using Harness.Host.Configuration;
@@ -106,7 +106,8 @@ internal static class GoalServiceRegistration
             provider.GetRequiredService<IGoalService>(),
             provider.GetRequiredService<IAgentRoleRunner>(),
             provider.GetRequiredService<IToolEvidenceService>(),
-            provider.GetRequiredService<TimeProvider>()));
+            provider.GetRequiredService<TimeProvider>(),
+            provider.GetRequiredService<IWorkspaceMutationService>()));
 
         ModelProviderConfiguration embeddingProvider =
             configuration.Providers[configuration.Routing.Embedding];

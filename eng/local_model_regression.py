@@ -190,6 +190,10 @@ class LiveGoalDriver:
     WORKFLOW_PARTIAL = 4
     WORKFLOW_COMPLETED = 5
     WORKFLOW_ABORTED = 6
+    OPERATION_RUNNING = 0
+    OPERATION_COMPLETED = 1
+    OPERATION_CANCELLED = 2
+    OPERATION_FAILED = 3
 
     def __init__(
         self,
@@ -294,8 +298,18 @@ class LiveGoalDriver:
             workflow = goal.get("workflow")
             operation = goal.get("inboundOperation")
             workflow_state = None if workflow is None else int(workflow["state"])
+            operation_state = (
+                None if operation is None else int(operation.get("state", 0))
+            )
+            if operation_state == self.OPERATION_FAILED:
+                detail = operation.get("error") or "no failure detail was returned"
+                raise RuntimeError(
+                    f"Harness inbound goal operation failed: {detail}"
+                )
+            if operation_state == self.OPERATION_CANCELLED:
+                raise RuntimeError("Harness inbound goal operation was cancelled")
             operation_running = (
-                operation is not None and int(operation.get("state", 0)) == 0
+                operation_state == self.OPERATION_RUNNING
             )
             if workflow_state in states and not (
                 workflow_state == self.WORKFLOW_RUNNING and operation_running

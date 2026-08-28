@@ -49,8 +49,13 @@ platform types stay inside their owning adapters.
 - Plan approval creates an isolated goal branch and worktree.
 - Implementer receives one task per call. Writes outside its normalized file areas
   fail before mutation.
+- After every delegated task is durably complete, and again after a review correction,
+  Harness runs one typed Build/Test validation sequence before independent review. A
+  concrete failure receives one bounded Implementer repair before the workflow pauses
+  for direction.
 - Reviewer inspects the worktree diff and durable evidence but cannot mutate, Build,
-  or Test.
+  or Test. A text-only review is corrected once in-session and must inspect the diff
+  and tool evidence before deciding.
 - Review findings may cause bounded correction cycles. Reaching the configured limit
   pauses for user input.
 - Completed task reports are reconciled after interruption. Uncertain calls are not

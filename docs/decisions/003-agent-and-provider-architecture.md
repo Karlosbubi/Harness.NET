@@ -14,6 +14,21 @@ Model selection, tool compatibility, privacy, and spending need explicit policy.
 Use Microsoft Agent Framework behind a Business Logic role interface for Lead,
 Implementer, and Reviewer. Keep Microsoft types behind that interface.
 
+### Workflow-owned validation
+
+The Business Logic goal workflow owns the deterministic final Build/Test boundary.
+It invokes the existing typed workspace-mutation service after every delegated
+implementation task is durably complete and after each review correction, records the
+resulting tool evidence, and permits at most one bounded Implementer repair against
+concrete failed diagnostics before requiring direction. Build and Test authority
+therefore remains outside both model roles; Reviewer remains read-only and must
+inspect typed diff and evidence.
+
+This adds one deliberate lateral Business Logic service dependency from Workflows to
+Mutations. The dependency reuses the existing trusted-workspace, goal-worktree, and
+typed-operation authority checks instead of duplicating execution policy in the
+workflow or granting execution to a model.
+
 Data Access owns Ollama and OpenRouter chat and embedding adapters. Provider payloads
 map to Harness records before crossing the boundary. Models are configurable per
 role. OpenRouter catalogs are discovered at runtime.
@@ -94,6 +109,8 @@ completed call once, including when a provider sends a later usage-only chunk.
 - Opaque reasoning state is scoped to the active provider conversation.
 - Every role preserves provider planning and action/tool behavior by default, while an
   explicit per-role setting can trade deliberation for local responsiveness.
+- Final repository validation is deterministic, workflow-owned, and bounded rather
+  than dependent on an Implementer completion claim or Reviewer execution authority.
 - Typed tools, workspace scope, privacy, approval, monetary controls, and Roslyn
   validation are unchanged by reasoning support.
 
