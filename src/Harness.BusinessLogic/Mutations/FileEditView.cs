@@ -14,4 +14,7 @@ public sealed record FileEditView(
     string? ErrorCode,
     string? Error,
     WorkbenchCodeValidationView? CandidateCodeValidation = null,
-    WorkbenchCodeValidationView? AppliedCodeValidation = null);
+    WorkbenchCodeValidationView? AppliedCodeValidation = null)
+{
+    public IReadOnlyList<FileEditDeterministicRepairView> DeterministicRepairs { get; init; } = [];
+}
