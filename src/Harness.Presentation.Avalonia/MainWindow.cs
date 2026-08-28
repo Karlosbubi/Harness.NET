@@ -490,7 +490,11 @@ internal sealed partial class MainWindow : Window
                 store.CancelSubmission();
             }
         };
-        send.Click += async (_, _) => await store.SubmitComposerAsync(cancellationToken);
+        send.Click += async (_, _) =>
+        {
+            store.SetComposerText(composer.Text ?? string.Empty);
+            await store.SubmitComposerAsync(cancellationToken);
+        };
         cancel.Click += (_, _) => store.CancelSubmission();
         modelPicker.SelectionChanged += async (_, _) =>
         {
@@ -886,8 +890,8 @@ internal sealed partial class MainWindow : Window
                 ? "Describe the goal you want Harness to pursue"
                 : "Message Harness about the selected goal";
             send.Content = createsGoal ? "Create goal" : "Send";
-            send.IsEnabled = !state.IsLoading && !state.IsStreaming &&
-                             !string.IsNullOrWhiteSpace(state.ComposerText);
+            // Automation edits synchronize at click; the store still rejects empty or active submissions.
+            send.IsEnabled = true;
             cancel.IsVisible = state.IsStreaming;
             agentActivityStatus.Update(state.Goals);
             inboundMcpIndicator.IsVisible = state.Settings.InboundMcpSettings?.Status.IsRunning == true;

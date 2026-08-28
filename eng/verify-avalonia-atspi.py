@@ -471,11 +471,18 @@ def register_workspace(application: AtSpiApplication, repository: Path) -> None:
 
 def create_and_approve_goal(application: AtSpiApplication) -> None:
     application.invoke("Conversation", "page tab")
+    application.focus("Goal or message composer", "entry")
+    description = (
+        "AT-SPI representative change: add one real source change and preserve "
+        "deterministic verification."
+    )
     application.set_text(
         "Goal or message composer",
-        "AT-SPI representative change: add one real source change and preserve deterministic verification.",
+        description,
     )
-    application.invoke("Submit composer")
+    if application.text("Goal or message composer", "entry") != description:
+        raise AssertionError("AT-SPI composer text did not round-trip after editing")
+    application.wait_and_invoke("Submit composer", "push button")
     application.wait_for_name_containing(
         "Goal: AT-SPI representative change", "panel"
     )
