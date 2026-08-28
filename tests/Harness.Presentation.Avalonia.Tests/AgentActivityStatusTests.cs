@@ -86,6 +86,27 @@ public sealed class AgentActivityStatusTests
     }
 
     [Fact]
+    public void Timeline_excludes_checkpoints_from_an_earlier_operation()
+    {
+        DateTimeOffset started = Now.AddMinutes(-1);
+        GoalManagementState goals = GoalManagementState.Initial with
+        {
+            IsWorkflowRunning = true,
+            WorkflowOperationStartedAt = started,
+            Workflow = Workflow(
+                new(1, GoalWorkflowCheckpointKind.Accepted, WorkflowActor.System,
+                    new("Earlier operation accepted."), started.AddSeconds(-1)),
+                new(2, GoalWorkflowCheckpointKind.Started, WorkflowActor.System,
+                    new("Current operation started."), started)),
+        };
+
+        AgentActivityStatusView view = AgentActivityStatusProjector.Project(goals, Now);
+
+        Assert.DoesNotContain("Earlier operation", view.Details, StringComparison.Ordinal);
+        Assert.Contains("Current operation started.", view.Details, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Running_typed_operation_overrides_waiting_phase_without_exposing_payloads()
     {
         DateTimeOffset started = Now.AddMinutes(-1);
@@ -142,6 +163,27 @@ public sealed class AgentActivityStatusTests
         }, CancellationToken.None);
     }
 
+    [Fact]
+    public async Task Status_control_loads_typed_evidence_immediately()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            ToolEvidenceService evidence = new();
+            using AgentActivityStatusControl control = new(evidence);
+
+            control.Update(GoalManagementState.Initial with
+            {
+                SelectedGoalId = new("goal-status"),
+                IsWorkflowRunning = true,
+                WorkflowOperationStartedAt = TimeProvider.System.GetUtcNow(),
+            });
+
+            Assert.Equal(1, evidence.CallCount);
+        }, CancellationToken.None);
+    }
+
     private static GoalWorkflowSnapshot Workflow(
         params GoalWorkflowActivityView[] activities) => new(
         new("run-status"),
@@ -156,9 +198,14 @@ public sealed class AgentActivityStatusTests
 
     private sealed class ToolEvidenceService : IToolEvidenceService
     {
+        internal int CallCount { get; private set; }
+
         public ValueTask<ToolEvidenceSnapshot> ListAsync(
             string goalId,
-            CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(new ToolEvidenceSnapshot([], null, null));
+            CancellationToken cancellationToken = default)
+        {
+            CallCount++;
+            return ValueTask.FromResult(new ToolEvidenceSnapshot([], null, null));
+        }
     }
 }

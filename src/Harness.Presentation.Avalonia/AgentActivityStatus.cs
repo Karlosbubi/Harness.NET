@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Harness.BusinessLogic.Evidence;
+using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Workflows;
 
 namespace Harness.Presentation.Avalonia;
@@ -65,8 +66,11 @@ internal static class AgentActivityStatusProjector
             : $"{Duration(updateAge)} ago";
         string operation = goals.WorkflowOperationName ?? "Agent workflow";
 
-        string timeline = goals.Workflow?.Activities.Count > 0
-            ? string.Join('\n', goals.Workflow.Activities
+        GoalWorkflowActivityView[] currentActivities = goals.Workflow?.Activities
+            .Where(activity => activity.OccurredAt >= startedAt)
+            .ToArray() ?? [];
+        string timeline = currentActivities.Length > 0
+            ? string.Join('\n', currentActivities
                 .TakeLast(MaximumTimelineItems)
                 .Select(activity =>
                     $"{activity.OccurredAt:HH:mm:ss} · {activity.Actor} · " +
@@ -182,13 +186,19 @@ internal sealed class AgentActivityStatusControl : IDisposable
 
     internal void Update(GoalManagementState state)
     {
-        if (goals.SelectedGoalId != state.SelectedGoalId ||
-            goals.WorkflowOperationStartedAt != state.WorkflowOperationStartedAt)
+        bool operationChanged = goals.SelectedGoalId != state.SelectedGoalId ||
+            goals.WorkflowOperationStartedAt != state.WorkflowOperationStartedAt;
+        if (operationChanged)
         {
+            evidenceRefresh?.Cancel();
             evidence = null;
         }
         goals = state;
         Render(TimeProvider.System.GetUtcNow());
+        if (operationChanged && state.IsWorkflowRunning)
+        {
+            _ = RefreshEvidenceAsync();
+        }
     }
 
     public void Dispose()
@@ -220,30 +230,54 @@ internal sealed class AgentActivityStatusControl : IDisposable
     private async void OnTimerTick(object? sender, EventArgs eventArgs)
     {
         Render(TimeProvider.System.GetUtcNow());
+        await RefreshEvidenceAsync();
+    }
+
+    private async Task RefreshEvidenceAsync()
+    {
         if (!goals.IsWorkflowRunning || goals.SelectedGoalId is null ||
             Interlocked.Exchange(ref refreshInProgress, 1) != 0)
         {
             return;
         }
 
-        evidenceRefresh?.Dispose();
-        evidenceRefresh = new();
+        GoalId goalId = goals.SelectedGoalId;
+        DateTimeOffset? operationStartedAt = goals.WorkflowOperationStartedAt;
+        CancellationTokenSource refresh = new();
+        evidenceRefresh = refresh;
         try
         {
             ToolEvidenceSnapshot refreshed = await evidenceService.ListAsync(
-                goals.SelectedGoalId.Value, evidenceRefresh.Token);
-            if (!evidenceRefresh.IsCancellationRequested)
+                goalId.Value, refresh.Token);
+            if (!refresh.IsCancellationRequested && IsCurrentOperation(goalId, operationStartedAt))
             {
                 evidence = refreshed;
                 Render(TimeProvider.System.GetUtcNow());
             }
         }
-        catch (OperationCanceledException) when (evidenceRefresh.IsCancellationRequested)
+        catch (OperationCanceledException) when (refresh.IsCancellationRequested)
         {
+        }
+        catch (Exception exception)
+        {
+            if (IsCurrentOperation(goalId, operationStartedAt))
+            {
+                evidence = new([], null, exception.Message);
+                Render(TimeProvider.System.GetUtcNow());
+            }
         }
         finally
         {
+            if (ReferenceEquals(evidenceRefresh, refresh))
+            {
+                evidenceRefresh = null;
+            }
+            refresh.Dispose();
             Interlocked.Exchange(ref refreshInProgress, 0);
         }
     }
+
+    private bool IsCurrentOperation(GoalId goalId, DateTimeOffset? operationStartedAt) =>
+        goals.IsWorkflowRunning && goals.SelectedGoalId == goalId &&
+        goals.WorkflowOperationStartedAt == operationStartedAt;
 }

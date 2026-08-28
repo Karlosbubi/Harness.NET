@@ -20,6 +20,9 @@ without presenting synthetic progress.
   `GoalWorkflowActivityView`; Presentation does not infer it from render time.
 - A one-second text refresh keeps elapsed and age values current without animation,
   focus changes, percentage claims, hidden reasoning, prompts, or provider payloads.
+- Typed evidence is loaded immediately, then polled while active. Results are accepted
+  only for the goal and operation that requested them, and the timeline excludes
+  checkpoints from earlier operations.
 
 ## Scope still open
 
@@ -32,9 +35,10 @@ local-model capture remain for later Task 071 slices.
 ## Verification
 
 Pure projection coverage uses fixed timestamps for idle, active, stalled, pre-first-
-checkpoint, elapsed-time, last-update-age, no-percentage, and bounded-timeline states.
+checkpoint, elapsed-time, last-update-age, no-percentage, bounded-timeline, and
+operation-isolation states.
 Workflow tests verify that persisted checkpoint timestamps cross the Business Logic
-boundary. All 5 status-focused tests, 313 Business Logic tests, 175 Avalonia
+boundary. All 7 status-focused tests, 313 Business Logic tests, 177 Avalonia
 Presentation tests, 22 terminal Presentation tests, and 4 architecture tests pass.
 The complete solution builds with zero warnings and errors, the repository metadata
 check passes, and `git diff --check` is clean.

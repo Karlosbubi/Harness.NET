@@ -1221,7 +1221,7 @@ Acceptance criteria:
 
 ### 071 — live agent activity status
 
-Status: `Planned`
+Status: `In progress — durable workflow and typed-operation status slices delivered`
 
 Dependencies: 040, 063, and Task 060's relevant Conversation/header composition
 slice.
@@ -1255,8 +1255,10 @@ Acceptance criteria:
 Implementation evidence (2026-08-28): the header status pill now reports the active
 workflow phase/role, elapsed time, and last durable-checkpoint age; its flyout shows a
 bounded timestamped checkpoint timeline, current typed edit/Build/Test operations,
-and the existing cancellation action. The Business Logic activity contract now
-carries the persisted checkpoint timestamp. Provider-stream progress, navigation,
+and the existing cancellation action. It loads evidence immediately, refreshes while
+active, and rejects results from an operation that is no longer current. The Business
+Logic activity contract now carries the persisted checkpoint timestamp. Provider-stream
+progress, navigation,
 multi-operation coalescing, Task 063 completion handoff, and graphical/live acceptance
 remain open.
 See the [slice acceptance record](../acceptance/live-agent-activity-status-2026-08-28.md).
