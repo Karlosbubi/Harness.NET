@@ -56,6 +56,9 @@ internal static class InfrastructureServiceRegistration
                 new(provider.ChatModel),
                 new(provider.EmbeddingModel),
                 new(provider.EmbeddingDimensions),
+                provider.MaximumAgentContextTokens is null
+                    ? null
+                    : new(provider.MaximumAgentContextTokens.Value),
                 new(provider.ConnectTimeout),
                 new(provider.RequestTimeout),
                 provider.ApiKeyReference,

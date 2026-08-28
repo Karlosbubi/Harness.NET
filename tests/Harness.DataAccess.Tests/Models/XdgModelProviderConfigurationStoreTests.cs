@@ -45,6 +45,7 @@ public sealed class XdgModelProviderConfigurationStoreTests : IDisposable
         Assert.Equal("http://localhost:11434", provider.Element("Endpoint")?.Value);
         Assert.Equal("qwen3:latest", provider.Element("ChatModel")?.Value);
         Assert.Equal("1024", provider.Element("EmbeddingDimensions")?.Value);
+        Assert.Equal("8192", provider.Element("MaximumAgentContextTokens")?.Value);
         Assert.True(saved.RequiresRestart);
         Assert.True((await store.ListAsync()).Single().RequiresRestart);
     }
@@ -91,6 +92,7 @@ public sealed class XdgModelProviderConfigurationStoreTests : IDisposable
         new("chat"),
         new("embedding"),
         new(768),
+        kind is StoredModelProviderKind.Ollama ? new(8_192) : null,
         new(TimeSpan.FromSeconds(5)),
         new(TimeSpan.FromSeconds(600)),
         ApiKeyReference: null,

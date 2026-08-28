@@ -6,6 +6,9 @@ namespace Harness.Host.Configuration;
 
 internal static class HarnessConfigurationLoader
 {
+    private const int MinimumAgentContextTokens = 2_048;
+    private const int MaximumAgentContextTokens = 262_144;
+
     internal static HarnessConfiguration Load(
         string[] args,
         ApplicationPaths applicationPaths,
@@ -110,6 +113,13 @@ internal static class HarnessConfigurationLoader
             Required(section, "ChatModel"),
             Required(section, "EmbeddingModel"),
             RequiredPositiveInt(section, "EmbeddingDimensions"),
+            kind is ModelProviderKind.Ollama
+                ? new(RequiredIntInRange(
+                    section,
+                    "MaximumAgentContextTokens",
+                    MinimumAgentContextTokens,
+                    MaximumAgentContextTokens))
+                : null,
             TimeSpan.FromSeconds(RequiredPositiveInt(section, "ConnectTimeoutSeconds")),
             TimeSpan.FromSeconds(RequiredPositiveInt(section, "RequestTimeoutSeconds")),
             apiKeyReference);
@@ -150,6 +160,19 @@ internal static class HarnessConfigurationLoader
             ? parsed
             : throw new InvalidOperationException(
                 $"Configuration value '{key}' must be a positive integer.");
+    }
+
+    private static int RequiredIntInRange(
+        IConfiguration configuration,
+        string key,
+        int minimum,
+        int maximum)
+    {
+        string value = Required(configuration, key);
+        return int.TryParse(value, out int parsed) && parsed >= minimum && parsed <= maximum
+            ? parsed
+            : throw new InvalidOperationException(
+                $"Configuration value '{key}' must be from {minimum} through {maximum}.");
     }
 
     private static int RequiredNonNegativeInt(IConfiguration configuration, string key)

@@ -16,16 +16,34 @@ public sealed class ModelProviderSettingsServiceTests
 
         ModelProviderSettingsResult invalid = await service.UpdateAsync(new(
             new("Ollama"), new("not-a-uri"), new("chat"), new("embed"),
-            new(768), new(5), new(600), null, null));
+            new(768), new(8_192), new(5), new(600), null, null));
         ModelProviderSettingsResult saved = await service.UpdateAsync(new(
             new("Ollama"), new("http://localhost:11434"), new("qwen3:latest"),
-            new("nomic-embed-text"), new(768), new(10), new(900), null, null));
+            new("nomic-embed-text"), new(768), new(8_192), new(10), new(900), null, null));
 
         Assert.Equal("invalid_provider_configuration", invalid.ErrorCode);
         ModelProviderSettingsView view = Assert.Single(saved.Snapshot!.Providers);
         Assert.Equal("qwen3:latest", view.ChatModel.Value);
+        Assert.Equal(8_192, view.MaximumAgentContextTokens?.Value);
         Assert.True(view.RequiresRestart);
         Assert.Equal(1, configurations.SaveCount);
+    }
+
+    [Fact]
+    public async Task Rejects_an_unsafe_Ollama_context_limit()
+    {
+        MemoryConfigurationStore configurations = new([
+            Provider("Ollama", StoredModelProviderKind.Ollama),
+        ]);
+        ModelProviderSettingsService service = new(configurations, new MemorySecretStore());
+
+        ModelProviderSettingsResult result = await service.UpdateAsync(new(
+            new("Ollama"), new("http://localhost:11434"), new("chat"), new("embed"),
+            new(768), new(1_024), new(5), new(600), null, null));
+
+        Assert.Equal("invalid_provider_configuration", result.ErrorCode);
+        Assert.Contains("2048 through 262144", result.Error, StringComparison.Ordinal);
+        Assert.Equal(0, configurations.SaveCount);
     }
 
     [Fact]
@@ -80,6 +98,7 @@ public sealed class ModelProviderSettingsServiceTests
         new("chat"),
         new("embedding"),
         new(768),
+        kind is StoredModelProviderKind.Ollama ? new(8_192) : null,
         new(TimeSpan.FromSeconds(5)),
         new(TimeSpan.FromSeconds(600)),
         ApiKeyReference: null,

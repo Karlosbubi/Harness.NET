@@ -54,8 +54,12 @@ no-collection and zero-data-retention routing.
 ### Provider Settings
 
 Settings exposes each Ollama and OpenRouter endpoint, chat and embedding defaults,
-embedding dimensions, and timeouts. It writes validated changes to the private XDG
-configuration override. Existing unrelated settings remain unchanged.
+embedding dimensions, and timeouts. Ollama modules also expose a maximum agent-context
+token count. The Ollama adapter sizes each request from its bounded input estimate,
+then caps it by both that configured limit and the model-advertised context length.
+This keeps context memory an explicit local-capacity choice instead of imposing a
+large hidden minimum on every request. Settings writes validated changes to the
+private XDG configuration override. Existing unrelated settings remain unchanged.
 
 Provider instances and index partition identity do not change during a process
 lifetime. Provider configuration changes therefore require restart.

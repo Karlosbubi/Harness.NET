@@ -5,10 +5,15 @@ using System.Text.Json;
 
 namespace Harness.DataAccess.Models.Ollama;
 
-internal sealed class OllamaModelProvider(HttpClient httpClient) : IModelProvider
+internal sealed record OllamaContextTokenLimit(int Value);
+
+internal sealed class OllamaModelProvider(
+    HttpClient httpClient,
+    OllamaContextTokenLimit? maximumAgentContextTokens = null) : IModelProvider
 {
     private const string ProviderName = "Ollama";
-    private const int DefaultAgentContextLength = 32_768;
+    private const int MinimumAgentContextLength = 4_096;
+    private const int DefaultMaximumAgentContextLength = 8_192;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly Dictionary<string, int> contextLengthByModel =
         new(StringComparer.Ordinal);
@@ -280,12 +285,15 @@ internal sealed class OllamaModelProvider(HttpClient httpClient) : IModelProvide
         long estimatedInputTokens = (characterCount + 2) / 3;
         int desired = (int)Math.Min(
             int.MaxValue,
-            Math.Max(DefaultAgentContextLength, (estimatedInputTokens * 2) + 4_096));
+            Math.Max(MinimumAgentContextLength, (estimatedInputTokens * 2) + 4_096));
+        int configured = Math.Min(
+            desired,
+            maximumAgentContextTokens?.Value ?? DefaultMaximumAgentContextLength);
         lock (contextLengthLock)
         {
             return contextLengthByModel.TryGetValue(request.Model, out int advertisedMaximum)
-                ? Math.Min(desired, advertisedMaximum)
-                : desired;
+                ? Math.Min(configured, advertisedMaximum)
+                : configured;
         }
     }
 

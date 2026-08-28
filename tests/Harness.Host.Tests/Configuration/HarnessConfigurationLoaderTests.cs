@@ -20,6 +20,7 @@ public sealed class HarnessConfigurationLoaderTests : IDisposable
         Assert.Equal(new Uri("http://192.168.1.101:11434"), provider.Endpoint);
         Assert.Equal("gemma4:latest", provider.ChatModel);
         Assert.Equal(768, provider.EmbeddingDimensions);
+        Assert.Equal(8_192, provider.MaximumAgentContextTokens?.Value);
         Assert.Equal(TimeSpan.FromMinutes(10), provider.RequestTimeout);
         Assert.Empty(configuration.Framework.Rules);
         ModelProviderConfiguration openRouter = configuration.Providers["OpenRouter"];
@@ -127,6 +128,15 @@ public sealed class HarnessConfigurationLoaderTests : IDisposable
 
         Assert.Equal("argument-model", configuration.Providers["Ollama"].ChatModel);
         Assert.Equal("argument-conversation", configuration.Conversation.Id);
+    }
+
+    [Fact]
+    public void Rejects_an_unsafe_Ollama_context_limit()
+    {
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
+            Load("--Providers:Ollama:MaximumAgentContextTokens=1024"));
+
+        Assert.Contains("2048 through 262144", error.Message, StringComparison.Ordinal);
     }
 
     [Fact]

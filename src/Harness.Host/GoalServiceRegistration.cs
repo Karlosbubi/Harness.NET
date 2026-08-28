@@ -149,7 +149,10 @@ internal static class GoalServiceRegistration
         };
         return provider.Kind switch
         {
-            ModelProviderKind.Ollama => new OllamaModelProvider(httpClient),
+            ModelProviderKind.Ollama => new OllamaModelProvider(
+                httpClient,
+                new(provider.MaximumAgentContextTokens?.Value ?? throw new InvalidOperationException(
+                    $"Ollama provider '{provider.Name}' has no maximum agent context."))),
             ModelProviderKind.OpenRouter => new OpenRouterModelProvider(
                 httpClient,
                 provider.Name,

@@ -16,6 +16,8 @@ public sealed record StoredModelProviderModel(string Value);
 
 public sealed record StoredEmbeddingDimensions(int Value);
 
+public sealed record StoredAgentContextTokenLimit(int Value);
+
 public sealed record StoredProviderTimeout(TimeSpan Value);
 
 public sealed record StoredModelProviderConfiguration(
@@ -25,6 +27,7 @@ public sealed record StoredModelProviderConfiguration(
     StoredModelProviderModel ChatModel,
     StoredModelProviderModel EmbeddingModel,
     StoredEmbeddingDimensions EmbeddingDimensions,
+    StoredAgentContextTokenLimit? MaximumAgentContextTokens,
     StoredProviderTimeout ConnectTimeout,
     StoredProviderTimeout RequestTimeout,
     SecretReference? ApiKeyReference,

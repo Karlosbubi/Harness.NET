@@ -25,6 +25,7 @@ module name.
       <ChatModel>gemma4:latest</ChatModel>
       <EmbeddingModel>embeddinggemma</EmbeddingModel>
       <EmbeddingDimensions>768</EmbeddingDimensions>
+      <MaximumAgentContextTokens>8192</MaximumAgentContextTokens>
       <ConnectTimeoutSeconds>5</ConnectTimeoutSeconds>
       <RequestTimeoutSeconds>600</RequestTimeoutSeconds>
     </Ollama>
@@ -43,9 +44,12 @@ routes. Provider, model, embedding dimensions, and chunking version form the vec
 partition identity; incompatible partitions are never mixed.
 
 Use Settings → Model providers to edit endpoint, chat/embedding defaults, embedding
-dimensions, secret references, and timeouts. Settings writes the private XDG override
-without replacing unrelated XML. Active providers, routes, clients, and index
-identity do not change during the process, so these edits require restart.
+dimensions, Ollama's maximum agent-context token count, secret references, and
+timeouts. The Ollama value accepts 2,048 through 262,144 tokens and defaults to 8,192;
+the adapter also respects a model's smaller advertised context. Settings writes the
+private XDG override without replacing unrelated XML. Active providers, routes,
+clients, and index identity do not change during the process, so these edits require
+restart.
 
 Temporary environment override:
 

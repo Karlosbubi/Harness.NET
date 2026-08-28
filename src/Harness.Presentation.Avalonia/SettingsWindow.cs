@@ -915,7 +915,7 @@ internal sealed class SettingsWindow : Window
 
         return Page(
             "Model providers",
-            "Configure named Ollama and OpenRouter modules. Catalog discovery runs without inference; endpoint and model changes are written to your private XDG configuration and apply after restart.",
+            "Configure named Ollama and OpenRouter modules. Catalog discovery runs without inference; endpoint, model, and local context changes are written to your private XDG configuration and apply after restart.",
             new StackPanel
             {
                 Spacing = 14,
@@ -1982,6 +1982,13 @@ internal sealed class SettingsWindow : Window
         NumericUpDown dimensions = ProviderNumber(
             configuration.EmbeddingDimensions.Value, 1, 65_536,
             $"{provider.Provider.Value} embedding dimensions");
+        NumericUpDown? maximumAgentContext = configuration.Kind is AgentModelProviderKind.Ollama
+            ? ProviderNumber(
+                configuration.MaximumAgentContextTokens?.Value ?? 8_192,
+                2_048,
+                262_144,
+                $"{provider.Provider.Value} maximum agent context tokens")
+            : null;
         NumericUpDown connectTimeout = ProviderNumber(
             configuration.ConnectTimeout.Value, 1, 3_600,
             $"{provider.Provider.Value} connect timeout seconds");
@@ -2009,6 +2016,9 @@ internal sealed class SettingsWindow : Window
             new(chatModel.Text ?? string.Empty),
             new(embeddingModel.Text ?? string.Empty),
             new(decimal.ToInt32(dimensions.Value ?? 0)),
+            maximumAgentContext is null
+                ? null
+                : new(decimal.ToInt32(maximumAgentContext.Value ?? 0)),
             new(decimal.ToInt32(connectTimeout.Value ?? 0)),
             new(decimal.ToInt32(requestTimeout.Value ?? 0)),
             secretName is null ? null : new(secretName.Text ?? string.Empty),
@@ -2019,7 +2029,9 @@ internal sealed class SettingsWindow : Window
         Grid fields = new()
         {
             ColumnDefinitions = new("*,*"),
-            RowDefinitions = new("Auto,Auto,Auto"),
+            RowDefinitions = new(maximumAgentContext is null
+                ? "Auto,Auto,Auto"
+                : "Auto,Auto,Auto,Auto"),
             ColumnSpacing = 10,
             RowSpacing = 8,
         };
@@ -2027,10 +2039,24 @@ internal sealed class SettingsWindow : Window
         AddProviderField(fields, 0, 1, "Default chat model", chatModel);
         AddProviderField(fields, 1, 0, "Default embedding model", embeddingModel);
         AddProviderField(fields, 1, 1, "Embedding dimensions", dimensions);
-        AddProviderField(fields, 2, 0, "Connect timeout (seconds)", connectTimeout);
-        AddProviderField(fields, 2, 1, "Request timeout (seconds)", requestTimeout);
+        if (maximumAgentContext is not null)
+        {
+            AddProviderField(fields, 2, 0, "Maximum agent context (tokens)", maximumAgentContext);
+        }
+        int timeoutRow = maximumAgentContext is null ? 2 : 3;
+        AddProviderField(fields, timeoutRow, 0, "Connect timeout (seconds)", connectTimeout);
+        AddProviderField(fields, timeoutRow, 1, "Request timeout (seconds)", requestTimeout);
         content.Children.Add(new Separator());
         content.Children.Add(fields);
+        if (maximumAgentContext is not null)
+        {
+            content.Children.Add(new TextBlock
+            {
+                Text = "The adapter sizes shorter requests down automatically. This ceiling bounds local KV-cache memory and is also limited by the selected model.",
+                Classes = { "muted" },
+                TextWrapping = TextWrapping.Wrap,
+            });
+        }
 
         if (secretName is not null && environmentVariable is not null)
         {
@@ -2100,7 +2126,7 @@ internal sealed class SettingsWindow : Window
         {
             Text = configuration.RequiresRestart
                 ? "Restart required: saved configuration differs from this running process."
-                : "Endpoint, model, dimension, timeout, and secret-reference changes apply after restart.",
+                : "Endpoint, model, dimension, Ollama context, timeout, and secret-reference changes apply after restart.",
             Classes = { "muted" },
             TextWrapping = TextWrapping.Wrap,
         });

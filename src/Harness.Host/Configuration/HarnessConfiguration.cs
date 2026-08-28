@@ -32,9 +32,12 @@ internal readonly record struct ModelProviderConfiguration(
     string ChatModel,
     string EmbeddingModel,
     int EmbeddingDimensions,
+    AgentContextTokenLimit? MaximumAgentContextTokens,
     TimeSpan ConnectTimeout,
     TimeSpan RequestTimeout,
     SecretReference? ApiKeyReference);
+
+internal sealed record AgentContextTokenLimit(int Value);
 
 internal readonly record struct ProviderRoutingConfiguration(
     string MainLlm,

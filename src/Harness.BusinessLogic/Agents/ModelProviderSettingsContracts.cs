@@ -20,6 +20,8 @@ public sealed record EmbeddingModel(string Value);
 
 public sealed record EmbeddingDimensions(int Value);
 
+public sealed record AgentContextTokenLimit(int Value);
+
 public sealed record ProviderTimeoutSeconds(int Value);
 
 public sealed record ModelProviderSecretName(string Value);
@@ -35,6 +37,7 @@ public sealed record ModelProviderSettingsView(
     AgentModel ChatModel,
     EmbeddingModel EmbeddingModel,
     EmbeddingDimensions EmbeddingDimensions,
+    AgentContextTokenLimit? MaximumAgentContextTokens,
     ProviderTimeoutSeconds ConnectTimeout,
     ProviderTimeoutSeconds RequestTimeout,
     ModelProviderSecretName? SecretName,
@@ -52,6 +55,7 @@ public sealed record ModelProviderSettingsUpdate(
     AgentModel ChatModel,
     EmbeddingModel EmbeddingModel,
     EmbeddingDimensions EmbeddingDimensions,
+    AgentContextTokenLimit? MaximumAgentContextTokens,
     ProviderTimeoutSeconds ConnectTimeout,
     ProviderTimeoutSeconds RequestTimeout,
     ModelProviderSecretName? SecretName,

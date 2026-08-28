@@ -1262,3 +1262,28 @@ progress, navigation,
 multi-operation coalescing, Task 063 completion handoff, and graphical/live acceptance
 remain open.
 See the [slice acceptance record](../acceptance/live-agent-activity-status-2026-08-28.md).
+
+### 072 — bounded Ollama context and GPU recovery
+
+Status: `Complete`
+
+Dependencies: 003, 038, 069, 070.
+
+Problem: Every Ollama agent request imposed a hidden 32,768-token context. Alternating
+two near-VRAM-capacity models under that floor repeatedly evicted and reloaded the
+GPU, exhausted host headroom, and triggered an AMD PSP runtime-resume failure that
+left Ollama on CPU fallback.
+
+Acceptance criteria:
+
+1. Each Ollama provider owns a typed maximum-agent-context setting with shipped and
+   test-safe defaults, range validation, XDG persistence, restart status, Settings UI,
+   and configuration documentation.
+2. The adapter sizes short requests down, caps larger requests by the configured
+   maximum and the model-advertised context, and has deterministic boundary coverage.
+3. Host recovery evidence distinguishes the unchanged LXC passthrough configuration
+   from the runtime-power failure and records the bounded server policy and a real
+   full-VRAM-offload smoke.
+4. The repository stores no machine path, credential, model blob, or conversation
+   content. See the updated
+   [local workflow acceptance record](../acceptance/local-tool-loop-liveness-2026-08-28.md).

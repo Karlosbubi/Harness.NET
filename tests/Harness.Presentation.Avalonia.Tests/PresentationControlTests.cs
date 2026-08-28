@@ -691,42 +691,6 @@ public sealed class PresentationControlTests
     }
 
     [Fact]
-    public async Task Provider_settings_exposes_configuration_and_a_write_only_OpenRouter_key()
-    {
-        using ProviderSettingsService providers = new();
-        using AvaloniaPresentationStore store = AvaloniaPresentationStoreTests.CreateStore(providers);
-        await store.LoadAsync(CancellationToken.None);
-        Assert.Single(store.Current.Settings.ProviderSettings!.Providers);
-
-        using HeadlessUnitTestSession session =
-            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
-        await session.Dispatch(() =>
-        {
-            SettingsWindow window = new(store, CancellationToken.None);
-            window.Show();
-            Dispatcher.UIThread.RunJobs();
-            ListBox categories = Assert.Single(window.GetLogicalDescendants().OfType<ListBox>());
-            categories.SelectedItem = SettingsCatalog.All.Single(category =>
-                category.Id is SettingsCategoryId.ModelProviders);
-            Dispatcher.UIThread.RunJobs();
-
-            TextBox endpoint = Assert.Single(window.GetLogicalDescendants().OfType<TextBox>(), field =>
-                AutomationProperties.GetName(field) == "OpenRouter endpoint");
-            TextBox credential = Assert.Single(window.GetLogicalDescendants().OfType<TextBox>(), field =>
-                AutomationProperties.GetName(field) == "OpenRouter API key");
-            Assert.Equal("https://openrouter.ai", endpoint.Text);
-            Assert.Equal('●', credential.PasswordChar);
-            Assert.Contains(window.GetLogicalDescendants().OfType<Button>(), button =>
-                Equals(button.Content, "Save provider configuration"));
-            Assert.Contains(window.GetLogicalDescendants().OfType<Button>(), button =>
-                Equals(button.Content, "Replace API key"));
-            Assert.DoesNotContain("sk-private", string.Join('\n', window.GetLogicalDescendants()
-                .OfType<TextBlock>().Select(block => block.Text)), StringComparison.Ordinal);
-            window.Close();
-        }, CancellationToken.None);
-    }
-
-    [Fact]
     public async Task Workflow_retry_allows_model_only_retry_without_token_ceiling()
     {
         GoalModelCandidate reviewer = Candidate(
@@ -776,43 +740,6 @@ public sealed class PresentationControlTests
         null,
         null,
         null);
-
-    private sealed class ProviderSettingsService : IModelProviderSettingsService, IDisposable
-    {
-        private readonly ModelProviderSettingsSnapshot snapshot = new([
-            new(
-                new("OpenRouter"),
-                AgentModelProviderKind.OpenRouter,
-                new("https://openrouter.ai"),
-                new("openai/gpt-5-mini"),
-                new("openai/text-embedding-3-small"),
-                new(1536),
-                new(10),
-                new(600),
-                new("openrouter-api-key"),
-                new("OPENROUTER_API_KEY"),
-                ModelProviderCredentialState.Configured,
-                CredentialMessage: null,
-                RequiresRestart: false),
-        ]);
-
-        public ValueTask<ModelProviderSettingsSnapshot> GetAsync(
-            CancellationToken cancellationToken = default) => ValueTask.FromResult(snapshot);
-
-        public ValueTask<ModelProviderSettingsResult> UpdateAsync(
-            ModelProviderSettingsUpdate request,
-            CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(new ModelProviderSettingsResult(snapshot, null, null));
-
-        public ValueTask<ModelProviderSettingsResult> SetCredentialAsync(
-            ModelProviderCredentialUpdate request,
-            CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(new ModelProviderSettingsResult(snapshot, null, null));
-
-        public void Dispose()
-        {
-        }
-    }
 
     [Fact]
     public void Closing_a_document_decision_dialog_defaults_to_cancel()

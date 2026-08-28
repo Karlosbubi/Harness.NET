@@ -74,7 +74,43 @@ public sealed class OllamaModelProviderTests
         Assert.True(events[2].Done);
         Assert.Equal(new ProviderUsage(7, 2), events[2].Usage);
         using JsonDocument body = JsonDocument.Parse(requestJson!);
-        Assert.Equal(32768, body.RootElement.GetProperty("options")
+        Assert.Equal(4098, body.RootElement.GetProperty("options")
+            .GetProperty("num_ctx").GetInt32());
+    }
+
+    [Fact]
+    public async Task Caps_agent_context_by_configuration_and_model_advertisement()
+    {
+        string? requestJson = null;
+        using HttpClient httpClient = CreateClient((request, _) =>
+        {
+            if (request.Method == HttpMethod.Get)
+            {
+                return JsonResponse("""
+                    {
+                      "models": [{
+                        "model": "small-context",
+                        "details": { "context_length": 6000 },
+                        "capabilities": ["completion", "tools"]
+                      }]
+                    }
+                    """);
+            }
+
+            requestJson = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            return JsonResponse(
+                "{\"message\":{\"content\":\"ok\"},\"done\":true}\n",
+                "application/x-ndjson");
+        });
+        OllamaModelProvider provider = new(httpClient, new(7_000));
+
+        _ = await provider.GetModelsAsync();
+        _ = await CollectAsync(provider.StreamChatAsync(new(
+            "small-context",
+            [new(ChatRole.User, new string('x', 5_000))])));
+
+        using JsonDocument body = JsonDocument.Parse(requestJson!);
+        Assert.Equal(6000, body.RootElement.GetProperty("options")
             .GetProperty("num_ctx").GetInt32());
     }
 

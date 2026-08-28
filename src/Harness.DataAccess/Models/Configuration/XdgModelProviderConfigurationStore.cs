@@ -65,6 +65,15 @@ internal sealed class XdgModelProviderConfigurationStore : IModelProviderConfigu
             Set(provider, "EmbeddingModel", configuration.EmbeddingModel.Value);
             Set(provider, "EmbeddingDimensions", configuration.EmbeddingDimensions.Value.ToString(
                 System.Globalization.CultureInfo.InvariantCulture));
+            if (configuration.MaximumAgentContextTokens is { } maximumAgentContextTokens)
+            {
+                Set(provider, "MaximumAgentContextTokens", maximumAgentContextTokens.Value.ToString(
+                    System.Globalization.CultureInfo.InvariantCulture));
+            }
+            else
+            {
+                provider.Element("MaximumAgentContextTokens")?.Remove();
+            }
             Set(provider, "ConnectTimeoutSeconds", ((int)configuration.ConnectTimeout.Value.TotalSeconds)
                 .ToString(System.Globalization.CultureInfo.InvariantCulture));
             Set(provider, "RequestTimeoutSeconds", ((int)configuration.RequestTimeout.Value.TotalSeconds)

@@ -8,6 +8,8 @@ internal sealed class ModelProviderSettingsService(
     ISecretStore secretStore) : IModelProviderSettingsService
 {
     private const int MaximumEmbeddingDimensions = 65_536;
+    private const int MinimumAgentContextTokens = 2_048;
+    private const int MaximumAgentContextTokens = 262_144;
     private const int MaximumTimeoutSeconds = 3_600;
     private const int MaximumCredentialLength = 16_384;
 
@@ -66,6 +68,9 @@ internal sealed class ModelProviderSettingsService(
             new(request.ChatModel.Value.Trim()),
             new(request.EmbeddingModel.Value.Trim()),
             new(request.EmbeddingDimensions.Value),
+            request.MaximumAgentContextTokens is null
+                ? null
+                : new(request.MaximumAgentContextTokens.Value),
             new(TimeSpan.FromSeconds(request.ConnectTimeout.Value)),
             new(TimeSpan.FromSeconds(request.RequestTimeout.Value)),
             secret,
@@ -138,6 +143,9 @@ internal sealed class ModelProviderSettingsService(
             new(provider.ChatModel.Value),
             new(provider.EmbeddingModel.Value),
             new(provider.EmbeddingDimensions.Value),
+            provider.MaximumAgentContextTokens is null
+                ? null
+                : new(provider.MaximumAgentContextTokens.Value),
             new(checked((int)provider.ConnectTimeout.Value.TotalSeconds)),
             new(checked((int)provider.RequestTimeout.Value.TotalSeconds)),
             provider.ApiKeyReference is null ? null : new(provider.ApiKeyReference.Name),
@@ -175,6 +183,15 @@ internal sealed class ModelProviderSettingsService(
             request.EmbeddingDimensions.Value is < 1 or > MaximumEmbeddingDimensions)
         {
             return $"Embedding dimensions must be from 1 through {MaximumEmbeddingDimensions}.";
+        }
+
+        if (kind is StoredModelProviderKind.Ollama &&
+            (request.MaximumAgentContextTokens is null ||
+             request.MaximumAgentContextTokens.Value is < MinimumAgentContextTokens or
+                 > MaximumAgentContextTokens))
+        {
+            return $"Ollama maximum agent context must be from {MinimumAgentContextTokens} " +
+                   $"through {MaximumAgentContextTokens} tokens.";
         }
 
         if (request.ConnectTimeout is null ||
