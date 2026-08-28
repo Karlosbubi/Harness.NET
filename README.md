@@ -68,6 +68,9 @@ Open work is tracked in [the roadmap](docs/roadmap.md) and
 evaluation surface and local-model regression gate are delivered. The roadmap now
 continues with the editor and daily-use IDE slices.
 
+Contributors start with [CONTRIBUTING.md](CONTRIBUTING.md) and the
+[documentation map](docs/README.md).
+
 ## Safety model
 
 - The user trusts a repository before Harness.NET evaluates projects or runs code.
@@ -110,8 +113,22 @@ third-party notices are in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 ```bash
 dotnet restore Harness.slnx
 dotnet build Harness.slnx --no-restore
-dotnet test Harness.slnx --no-build --no-restore
+dotnet test Harness.slnx --no-build --no-restore \
+  --filter Tier!=Live --maxcpucount:1
 dotnet run --project src/Harness.Host/Harness.Host.csproj
+```
+
+Test assemblies declare a deterministic tier. Use the pure fast loop while iterating,
+the complete non-live gate before handoff, and opt into live tests only with the
+explicit provider authorization described below:
+
+```bash
+dotnet test Harness.slnx --no-build --no-restore \
+  --filter Tier=Fast --maxcpucount:1
+dotnet test Harness.slnx --no-build --no-restore \
+  --filter 'Tier=Adapter&Tier!=Live' --maxcpucount:1
+dotnet test Harness.slnx --no-build --no-restore \
+  --filter Tier!=Live --maxcpucount:1
 ```
 
 Avalonia is the default UI. Other modes:
@@ -234,6 +251,8 @@ repositories. Treat it as sensitive. See [ADR 008](docs/decisions/008-applicatio
 
 ## Documentation
 
+- [Documentation map](docs/README.md)
+- [Contributing](CONTRIBUTING.md)
 - [Product scope](docs/vision.md)
 - [Framework rules](docs/framework.md)
 - [Architecture](docs/architecture.md)

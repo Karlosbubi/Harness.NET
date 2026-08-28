@@ -16,4 +16,7 @@
     <ProjectReference Include="../../src/Harness.Presentation.Avalonia/Harness.Presentation.Avalonia.csproj" />
     <Using Include="Xunit" />
   </ItemGroup>
+  <ItemGroup>
+    <None Update="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
