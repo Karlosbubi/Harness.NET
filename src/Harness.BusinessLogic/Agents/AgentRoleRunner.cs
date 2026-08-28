@@ -98,11 +98,11 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
                 chatClient,
                 new ChatClientAgentOptions
                 {
-                    Name = Name(request.Role),
-                    Description = Description(request.Role),
+                    Name = AgentRolePromptPolicy.Name(request.Role),
+                    Description = AgentRolePromptPolicy.Description(request.Role),
                     ChatOptions = new ChatOptions
                     {
-                        Instructions = Instructions(request.Role) +
+                        Instructions = AgentRolePromptPolicy.Instructions(request.Role) +
                             (inspectionBootstrapped
                                 ? " Harness has already completed the mandatory typed read of the " +
                                   "exact target and supplied its result in the task. Do not repeat " +
@@ -229,7 +229,7 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
                                 : "You must act through the supplied typed tools. Your first response " +
                                   "must call read_file for the exact authorized target; never answer " +
                                   "with narration or a plan. Then apply and validate a complete mutation. " +
-                                "Correct tool errors with a new correlation identifier.",
+                                  "Correct tool errors with a new correlation identifier.",
                             Tools = tools,
                         },
                         UseProvidedChatClientAsIs = true,
@@ -244,7 +244,52 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
                     session,
                     cancellationToken: cancellationToken);
             }
-            return new(request.Role, new(response.Text), ErrorCode: null, Error: null);
+            if (request.Role is AgentRole.Reviewer &&
+                tools.Count > 0 &&
+                (!providerClient.CalledTool("inspect_git") ||
+                 !providerClient.CalledTool("list_tool_evidence")))
+            {
+                AIAgent correctionAgent = new ChatClientAgent(
+                    chatClient,
+                    new ChatClientAgentOptions
+                    {
+                        Name = "reviewer-tool-correction",
+                        Description = "Performs an evidence-based review after a text-only response.",
+                        ChatOptions = new ChatOptions
+                        {
+                            Instructions =
+                                "You must inspect the supplied work through typed tools before deciding. " +
+                                "Call inspect_git and list_tool_evidence first, inspect relevant files or " +
+                                "diagnostics as needed, then return the required accept/revise JSON. Do not " +
+                                "base a revision solely on evidence you declined to inspect.",
+                            Tools = tools,
+                        },
+                        UseProvidedChatClientAsIs = true,
+                    },
+                    loggerFactory,
+                    services: null);
+                session = await correctionAgent.CreateSessionAsync(cancellationToken);
+                response = await correctionAgent.RunAsync(
+                    "INDEPENDENT TOOL INSPECTION REQUIRED.\n\n" + request.Task.Value,
+                    session,
+                    cancellationToken: cancellationToken);
+            }
+
+            if (request.Role is AgentRole.Reviewer &&
+                tools.Count > 0 &&
+                (!providerClient.CalledTool("inspect_git") ||
+                 !providerClient.CalledTool("list_tool_evidence")))
+            {
+                return new(
+                    request.Role,
+                    Output: null,
+                    new("reviewer_evidence_missing"),
+                    new("The Reviewer did not inspect both the worktree diff and durable " +
+                        "tool evidence after one bounded correction."));
+            }
+
+            return AgentRunResultPolicy.Final(
+                request.Role, response.Text, providerClient.ToolCallCount);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -310,6 +355,11 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
                 // Function adapters may wrap a typed result. The serialized result below remains
                 // authoritative and is searched for the complete-read digest.
             }
+        }
+
+        if (file?.ErrorCode is not null)
+        {
+            return null;
         }
 
         string? sha256 = file is { IsTruncated: false, ErrorCode: null }
@@ -487,9 +537,9 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
                 goalId.Value,
                 new ToolCorrelationId("structured-build-" + Guid.NewGuid().ToString("N")),
                 DotNetOperation.Build), cancellationToken);
-            if (!Succeeded(build))
+            if (!AgentRunValidationPolicy.Succeeded(build))
             {
-                return ValidationFailure(role, build);
+                return AgentRunValidationPolicy.Failure(role, build);
             }
 
             // A warning-free build proves only that the candidate compiles. Run the repository's
@@ -502,9 +552,9 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
                     goalId.Value,
                     new ToolCorrelationId("structured-test-" + Guid.NewGuid().ToString("N")),
                     DotNetOperation.Test), cancellationToken);
-                if (!Succeeded(test))
+                if (!AgentRunValidationPolicy.Succeeded(test))
                 {
-                    return ValidationFailure(role, test);
+                    return AgentRunValidationPolicy.Failure(role, test);
                 }
             }
         }
@@ -606,27 +656,6 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
         return source.Contains("\r\n", StringComparison.Ordinal)
             ? normalized.Replace("\n", "\r\n", StringComparison.Ordinal)
             : normalized;
-    }
-
-    private static bool Succeeded(DotNetOperationView operation) =>
-        operation.ErrorCode is null &&
-        operation.ExitCode == 0 &&
-        !operation.WasCancelled;
-
-    private static AgentRunResult ValidationFailure(
-        AgentRole role,
-        DotNetOperationView operation)
-    {
-        string detail = $"Deterministic {operation.Operation} failed with exit code " +
-            $"{operation.ExitCode?.ToString() ?? "unknown"}.\n" +
-            operation.StandardOutput + "\n" + operation.StandardError;
-        const int maximumDetailCharacters = 16_000;
-        if (detail.Length > maximumDetailCharacters)
-        {
-            detail = detail[^maximumDetailCharacters..];
-        }
-
-        return new(role, Output: null, new("structured_validation_failed"), new(detail));
     }
 
     private static string? PreserveSourceEnvelope(
@@ -780,14 +809,6 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
         string Sha256,
         string? Content);
 
-    private static string Name(AgentRole role) => role switch
-    {
-        AgentRole.Lead => "lead",
-        AgentRole.Implementer => "implementer",
-        AgentRole.Reviewer => "reviewer",
-        _ => throw new ArgumentOutOfRangeException(nameof(role)),
-    };
-
     private static string ConciseDelegatedTask(string task)
     {
         const string objectiveMarker = "FULL GOAL OBJECTIVE (AUTHORITATIVE)";
@@ -830,60 +851,4 @@ internal sealed class AgentRoleRunner : IAgentRoleRunner
             area is not null && AgentToolFactory.ValidFileArea(area.Value));
     }
 
-    private static string Description(AgentRole role) => role switch
-    {
-        AgentRole.Lead => "Plans bounded work and coordinates specialist roles.",
-        AgentRole.Implementer => "Implements an explicitly bounded task within the accepted architecture.",
-        AgentRole.Reviewer => "Reviews evidence and identifies correctness, safety, and regression risks.",
-        _ => throw new ArgumentOutOfRangeException(nameof(role)),
-    };
-
-    private static string Instructions(AgentRole role) => role switch
-    {
-        AgentRole.Lead =>
-            "You are the lead agent. Inspect the workspace with typed tools before planning. " +
-            "Turn the supplied objective into the smallest ordered set " +
-            "of independently useful, verifiable slices. Front-load foundations and user-visible " +
-            "value so stopping after any completed slice leaves a coherent partial result. Respect " +
-            "every exact API, path, and prohibition in the objective. Use only repository paths you " +
-            "observed; never invent files or directories. Use Roslyn symbol, definition, reference, implementation, " +
-            "and diagnostic tools when code relationships affect the plan; do not infer semantic " +
-            "facts from text matches alone. Identify explicit non-goals, and never " +
-            "claim completion without evidence.",
-        AgentRole.Implementer =>
-            "You are the implementer agent. Complete only the supplied bounded task. Keep changes " +
-            "narrow and the repository coherent at every durable tool boundary. The full goal objective " +
-            "is authoritative even when the delegated plan paraphrases it. Your first action must be a " +
-            "typed inspection tool call; do not narrate what you intend to do. Before editing, read the exact " +
-            "existing target and pass its returned sha256 to apply_file_edit as expectedSha256; never " +
-            "guess a path or hash. When the target consumes existing types, read their current definitions " +
-            "and confirm exact signatures and accessibility with get_symbol_info and " +
-            "find_symbol_definition; inspect usages or implementations when changing shared behavior " +
-            "or abstractions. Use only APIs actually present and never " +
-            "invent members or helper types. Use semantic rename for symbol renames instead of textual " +
-            "replacement. Use the closed Roslyn document transformation preview/apply tools for C# " +
-            "formatting, unused-import cleanup, or import organization instead of rewriting a file " +
-            "for style alone. For an unresolved type, use missing-import discovery and apply only a " +
-            "returned namespace through AddMissingImport. For compiler fixes and local refactorings, " +
-            "call find_code_actions first and preview/apply only its returned ID and scope. An approved " +
-            "action may return several affected files; inspect the complete preview and ensure every path " +
-            "is delegated before applying it. Prefer that semantic edit over regenerating a working file " +
-            "or method. Inspect " +
-            "Roslyn problems before and after compiler-relevant changes. On a " +
-            "diagnostic or test failure, preserve passing code and repair only the cited range or first " +
-            "relevant user-code stack frame rather than regenerating the file. Treat a failed tool " +
-            "result as actionable evidence: inspect, correct the " +
-            "request, and retry with a new correlation identifier. Never submit TODO, FIXME, placeholder, " +
-            "omitted, or NotImplementedException logic. A final response before at least one successful " +
-            "mutation is a failed task, not a progress report. Prioritize the task's core acceptance " +
-            "criteria, validate incrementally, and if execution must stop, preserve a " +
-            "buildable useful partial result and report exactly what is complete, verified, and remaining.",
-        AgentRole.Reviewer =>
-            "You are the reviewer agent. Review the supplied work independently, including coherent " +
-            "partial results. Prioritize correctness, regressions, boundary violations, missing tests, " +
-            "and unsupported claims. Use Roslyn diagnostics, symbol information, definitions, usages, and " +
-            "implementations to verify code claims rather than trusting text or the implementation report. " +
-            "Distinguish verified completed value from unfinished scope.",
-        _ => throw new ArgumentOutOfRangeException(nameof(role)),
-    };
 }

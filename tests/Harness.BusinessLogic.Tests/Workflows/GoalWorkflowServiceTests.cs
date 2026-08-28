@@ -12,7 +12,7 @@ using ViewKind = Harness.BusinessLogic.Workflows.GoalWorkflowCheckpointKind;
 
 namespace Harness.BusinessLogic.Tests.Workflows;
 
-public sealed class GoalWorkflowServiceTests
+public sealed partial class GoalWorkflowServiceTests
 {
     [Fact]
     public async Task Runs_real_role_sequence_around_plan_approval()
@@ -515,18 +515,6 @@ public sealed class GoalWorkflowServiceTests
             StringComparison.Ordinal);
         Assert.Equal(AgentRole.Reviewer, agents.Requests[^1].Role);
     }
-
-    private static GoalWorkflowService CreateService(
-        InMemoryGoalWorkflowStore store,
-        IGoalService goals,
-        IAgentRoleRunner agents,
-        IToolEvidenceService? evidence = null) => new(
-            store,
-            store,
-            goals,
-            agents,
-            evidence ?? new AdvancingToolEvidenceService(),
-            new FixedTimeProvider());
 
     private static StoredGoalWorkflowTask Task(
         StoredRunId runId,

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Harness.BusinessLogic.Goals;
@@ -20,6 +21,8 @@ internal sealed class ModelProviderChatClient(
     bool structuredLocalFileEditProposal = false,
     AgentReasoningPolicy reasoningPolicy = AgentReasoningPolicy.ProviderDefault) : IChatClient
 {
+    private readonly ConcurrentDictionary<string, byte> calledTools =
+        new(StringComparer.Ordinal);
     private int toolCallCount;
     private const string LeadResponseSchema = """
         {
@@ -69,6 +72,8 @@ internal sealed class ModelProviderChatClient(
         }
         """;
     internal int ToolCallCount => Volatile.Read(ref toolCallCount);
+
+    internal bool CalledTool(string name) => calledTools.ContainsKey(name);
 
     public async Task<ChatResponse> GetResponseAsync(
         IEnumerable<Microsoft.Extensions.AI.ChatMessage> messages,
@@ -220,6 +225,10 @@ internal sealed class ModelProviderChatClient(
             if (item.ToolCalls is not null)
             {
                 Interlocked.Add(ref toolCallCount, item.ToolCalls.Count);
+                foreach (ChatToolCall call in item.ToolCalls)
+                {
+                    calledTools.TryAdd(call.Name.Value, 0);
+                }
                 contents.AddRange(item.ToolCalls.Select(call => new FunctionCallContent(
                     call.Id.Value,
                     call.Name.Value,

@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using Harness.BusinessLogic.Agents;
 using Harness.BusinessLogic.Evidence;
 using Harness.BusinessLogic.Goals;
+using Harness.BusinessLogic.Mutations;
 using Harness.DataAccess.Workflows;
 using StoredActor = Harness.DataAccess.Workflows.WorkflowActor;
 using StoredKind = Harness.DataAccess.Workflows.GoalWorkflowCheckpointKind;
@@ -10,13 +11,14 @@ using StoredState = Harness.DataAccess.Workflows.GoalWorkflowRunState;
 
 namespace Harness.BusinessLogic.Workflows;
 
-internal sealed class GoalWorkflowService(
+internal sealed partial class GoalWorkflowService(
     IGoalWorkflowStore store,
     IGoalWorkflowTaskStore taskStore,
     IGoalService goalService,
     IAgentRoleRunner agentRunner,
     IToolEvidenceService evidenceService,
-    TimeProvider timeProvider) : IGoalWorkflowService
+    TimeProvider timeProvider,
+    IWorkspaceMutationService? mutationService = null) : IGoalWorkflowService
 {
     private const int MaximumRejectedLeadOutputCharacters = 16 * 1024;
     private const int MaximumRejectedLeadErrorCharacters = 4 * 1024;
@@ -322,12 +324,12 @@ internal sealed class GoalWorkflowService(
                 yield break;
             }
 
-            if (!await HasNewDurableMutationEvidenceAsync(
-                    goal.Id, evidenceBefore, CancellationToken.None))
+            if (!await HasNewDurableEvidenceAsync(
+                    goal.Id, evidenceBefore, includeVerification: true, CancellationToken.None))
             {
                 snapshot = await MarkDirectionAsync(snapshot,
                     "The Implementer returned a correction report without successful new " +
-                    "mutation evidence. The correction remains in progress " +
+                    "mutation or verification evidence. The correction remains in progress " +
                     "and requires retry.",
                     CancellationToken.None);
                 yield return await ToViewAsync(snapshot, cancellationToken);
@@ -390,8 +392,8 @@ internal sealed class GoalWorkflowService(
                 yield break;
             }
 
-            if (!await HasNewDurableMutationEvidenceAsync(
-                    goal.Id, evidenceBefore, CancellationToken.None))
+            if (!await HasNewDurableEvidenceAsync(
+                    goal.Id, evidenceBefore, includeVerification: false, CancellationToken.None))
             {
                 snapshot = await MarkDirectionAsync(snapshot,
                     $"Delegated task {delegatedTask.Sequence.Value} returned a report without " +
@@ -419,6 +421,19 @@ internal sealed class GoalWorkflowService(
             latest = snapshot.Checkpoints[^1];
             delegatedTasks = await taskStore.ListAsync(snapshot.Run.Id, cancellationToken);
         }
+
+        GoalFinalValidationOutcome validation = await ValidateAndRepairFinalAsync(
+            goal, plan, delegatedTasks, snapshot, cancellationToken);
+        foreach (StoredGoalWorkflowSnapshot validationSnapshot in validation.Snapshots)
+        {
+            yield return await ToViewAsync(validationSnapshot, cancellationToken);
+        }
+        if (validation.ShouldStop)
+        {
+            yield break;
+        }
+        snapshot = validation.Snapshot;
+        resumedImplementationOutput ??= validation.ImplementationOutput;
 
         await foreach (GoalWorkflowSnapshot reviewSnapshot in RunReviewCyclesAsync(
                            goal,
@@ -499,6 +514,14 @@ internal sealed class GoalWorkflowService(
         {
             StoredGoalWorkflowTask? task = delegatedTasks.SingleOrDefault(item =>
                 item.State is GoalWorkflowTaskState.InProgress);
+            if (task is null && delegatedTasks.Count > 0 && delegatedTasks.All(item =>
+                    item.State is GoalWorkflowTaskState.Completed))
+            {
+                snapshot = await RetryCompletedCorrectionAsync(
+                    goal, plan, delegatedTasks, snapshot, request.Guidance, cancellationToken);
+                yield return await ToViewAsync(snapshot, cancellationToken);
+                yield break;
+            }
             if (task is null)
             {
                 snapshot = await MarkDirectionAsync(snapshot,
@@ -541,8 +564,8 @@ internal sealed class GoalWorkflowService(
                 yield break;
             }
 
-            if (!await HasNewDurableMutationEvidenceAsync(
-                    goal.Id, evidenceBefore, CancellationToken.None))
+            if (!await HasNewDurableEvidenceAsync(
+                    goal.Id, evidenceBefore, includeVerification: false, CancellationToken.None))
             {
                 snapshot = await MarkDirectionAsync(snapshot,
                     $"Retried delegated task {task.Sequence.Value} returned a report without " +
@@ -835,12 +858,12 @@ internal sealed class GoalWorkflowService(
                 yield break;
             }
 
-            if (!await HasNewDurableMutationEvidenceAsync(
-                    goal.Id, evidenceBefore, CancellationToken.None))
+            if (!await HasNewDurableEvidenceAsync(
+                    goal.Id, evidenceBefore, includeVerification: true, CancellationToken.None))
             {
                 snapshot = await MarkDirectionAsync(snapshot,
                     "The Implementer returned a review-correction report without successful " +
-                    "new mutation evidence. The correction remains in progress.",
+                    "new mutation or verification evidence. The correction remains in progress.",
                     CancellationToken.None);
                 yield return await ToViewAsync(snapshot, cancellationToken);
                 yield break;
@@ -854,6 +877,20 @@ internal sealed class GoalWorkflowService(
                 StoredKind.ImplementerCallStarted, StoredState.Running,
                 StoredState.Running, cancellationToken);
             yield return await ToViewAsync(snapshot, cancellationToken);
+
+            GoalFinalValidationOutcome validation = await ValidateAndRepairFinalAsync(
+                goal, plan, delegatedTasks, snapshot, cancellationToken);
+            foreach (StoredGoalWorkflowSnapshot validationSnapshot in validation.Snapshots)
+            {
+                yield return await ToViewAsync(validationSnapshot, cancellationToken);
+            }
+            if (validation.ShouldStop)
+            {
+                yield break;
+            }
+
+            snapshot = validation.Snapshot;
+            implementationOutput = validation.ImplementationOutput ?? implementationOutput;
         }
     }
 
@@ -862,71 +899,6 @@ internal sealed class GoalWorkflowService(
         CancellationToken cancellationToken) =>
         await goalService.GetAsync(goalId, cancellationToken) ??
         throw new InvalidOperationException("The goal does not exist.");
-
-    private async ValueTask<HashSet<string>> EvidenceIdsAsync(
-        GoalId goalId,
-        CancellationToken cancellationToken)
-    {
-        ToolEvidenceSnapshot evidence = await evidenceService.ListAsync(
-            goalId.Value, cancellationToken);
-        if (evidence.ErrorCode is not null)
-        {
-            throw new InvalidOperationException(
-                $"Tool evidence is unavailable: {evidence.Error ?? evidence.ErrorCode}");
-        }
-
-        return evidence.Items.Select(item => item.Id.Value).ToHashSet(StringComparer.Ordinal);
-    }
-
-    private async ValueTask<string> LatestFailedToolFeedbackAsync(
-        GoalId goalId,
-        CancellationToken cancellationToken)
-    {
-        const int maximumResultCharacters = 16 * 1024;
-        ToolEvidenceSnapshot evidence = await evidenceService.ListAsync(
-            goalId.Value, cancellationToken);
-        ToolEvidenceView? failed = evidence.ErrorCode is null
-            ? evidence.Items
-                .Where(item => item.State is ToolEvidenceState.Failed)
-                .OrderByDescending(item => item.StartedAt)
-                .FirstOrDefault()
-            : null;
-        if (failed is null)
-        {
-            return string.Empty;
-        }
-
-        string result = failed.ResultJson ?? "No structured failure result was recorded.";
-        if (result.Length > maximumResultCharacters)
-        {
-            result = result[..maximumResultCharacters] + "\n[truncated]";
-        }
-
-        return $$"""
-
-
-            LATEST FAILED TOOL EVIDENCE
-            The prior attempt's durable failure follows. Correct these exact diagnostics; do not
-            repeat the rejected candidate.
-            Tool: {{failed.Tool}}
-            Correlation: {{failed.CorrelationId.Value}}
-            Result:
-            {{result}}
-            """;
-    }
-
-    private async ValueTask<bool> HasNewDurableMutationEvidenceAsync(
-        GoalId goalId,
-        IReadOnlySet<string> previousIds,
-        CancellationToken cancellationToken)
-    {
-        ToolEvidenceSnapshot evidence = await evidenceService.ListAsync(
-            goalId.Value, cancellationToken);
-        return evidence.ErrorCode is null && evidence.Items.Any(item =>
-            !previousIds.Contains(item.Id.Value) &&
-            item.State is ToolEvidenceState.Succeeded &&
-            item.Tool is ToolKind.FileEdit or ToolKind.Rename or ToolKind.DocumentTransformation);
-    }
 
     private async ValueTask<StoredGoalWorkflowSnapshot> MarkDirectionAsync(
         StoredGoalWorkflowSnapshot snapshot,
@@ -1326,7 +1298,11 @@ internal sealed class GoalWorkflowService(
         {
             StoredKind.LeadCallStarted when tasks.Count is 0 => GoalWorkflowRetryRole.Lead,
             StoredKind.ImplementerCallStarted when
-                tasks.Count(task => task.State is GoalWorkflowTaskState.InProgress) is 1 =>
+                tasks.Count(task => task.State is GoalWorkflowTaskState.InProgress) is 1 ||
+                tasks.Count > 0 && tasks.All(task => task.State is GoalWorkflowTaskState.Completed) =>
+                GoalWorkflowRetryRole.Implementer,
+            StoredKind.ImplementationProduced when tasks.Count > 0 &&
+                tasks.All(task => task.State is GoalWorkflowTaskState.Completed) =>
                 GoalWorkflowRetryRole.Implementer,
             StoredKind.ReviewerCallStarted when tasks.Count > 0 &&
                 tasks.All(task => task.State is GoalWorkflowTaskState.Completed) =>

@@ -948,7 +948,7 @@ fixes the rules; [architecture.md](../architecture.md) records the measurements 
 the enforcement matrix this task turns green.
 
 Implementation evidence (2026-08-24): `HARNESS003` is enforced at error severity with
-positive and negative analyzer coverage; the architecture suite pins 35 existing
+positive and negative analyzer coverage; the architecture suite pins 36 existing
 cross-feature service edges; Host registrations are split across five internal
 modules, `Program.cs` is 179 lines, and the Host parity test compares all 138 service
 descriptors by module count and normalized service-type/key/lifetime fingerprint to
@@ -1188,3 +1188,33 @@ Acceptance criteria:
 5. Migration, routing, provider-request mapping, Settings state, build, deterministic
    tests, and a bounded live Ollama comparison are recorded in the
    [acceptance record](../acceptance/local-role-reasoning-policy-2026-08-28.md).
+
+### 070 — local typed-tool workflow liveness
+
+Status: `Complete`
+
+Dependencies: 003, 018, 023, 038, 069.
+
+Problem: A live local-model workflow can mutate successfully yet remain running after
+an empty handoff, skip final Build/Test, accept a text-only review, mistake a dotted
+directory for an exact file, or keep the regression driver polling an already failed
+inbound operation.
+
+Acceptance criteria:
+
+1. A successful Implementer tool sequence remains actionable when the model emits no
+   final text; empty role output without durable tool work is an explicit failure.
+2. Exact-file bootstrap falls back to bounded typed tools when the candidate path is
+   a missing file, including dotted directory names.
+3. A text-only Reviewer response receives one in-session correction that requires
+   typed diff and evidence inspection before deciding.
+4. After all delegated tasks and after each review correction, the workflow runs typed
+   Build then Test exactly once before review; one concrete failure receives one
+   bounded Implementer repair and revalidation.
+5. Correction completion requires new mutation or verification evidence, persistent
+   validation failure is bounded and retryable, and long diagnostics never invalidate
+   a workflow checkpoint.
+6. The live regression driver stops immediately on failed or cancelled inbound
+   operations and reports the durable error.
+7. Deterministic tests, a warning-free build, and bounded Ollama dogfood evidence are
+   recorded in the [acceptance record](../acceptance/local-tool-loop-liveness-2026-08-28.md).

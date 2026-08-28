@@ -42,6 +42,7 @@ public sealed class BusinessLogicServiceDependencyTests
         "Harness.BusinessLogic.Retrieval.GoalContextService -> Harness.BusinessLogic.Goals.IGoalService",
         "Harness.BusinessLogic.Workflows.GoalWorkflowService -> Harness.BusinessLogic.Evidence.IToolEvidenceService",
         "Harness.BusinessLogic.Workflows.GoalWorkflowService -> Harness.BusinessLogic.Goals.IGoalService",
+        "Harness.BusinessLogic.Workflows.GoalWorkflowService -> Harness.BusinessLogic.Mutations.IWorkspaceMutationService",
     ];
 
     [Fact]

@@ -173,6 +173,48 @@ class LocalModelRegressionTests(unittest.TestCase):
         self.assertEqual(LiveGoalDriver.WORKFLOW_RUNNING, goal["workflow"]["state"])
         self.assertEqual(2, client.polls)
 
+    def test_live_driver_reports_failed_inbound_operation_without_waiting(self) -> None:
+        class FakeClient:
+            def call(self, tool: str, arguments: dict[str, object]) -> dict[str, object]:
+                if tool == "harness_goals":
+                    return {"goals": [{
+                        "workflow": {"state": LiveGoalDriver.WORKFLOW_RUNNING,
+                                     "activities": []},
+                        "inboundOperation": {
+                            "state": LiveGoalDriver.OPERATION_FAILED,
+                            "error": "provider returned an empty response",
+                        },
+                    }]}
+                return {}
+
+        driver = LiveGoalDriver(
+            FakeClient(), "instance", "workspace", 1800)  # type: ignore[arg-type]
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "provider returned an empty response",
+        ):
+            driver.resume("goal-1")
+
+    def test_live_driver_reports_cancelled_inbound_operation_without_waiting(self) -> None:
+        class FakeClient:
+            def call(self, tool: str, arguments: dict[str, object]) -> dict[str, object]:
+                if tool == "harness_goals":
+                    return {"goals": [{
+                        "workflow": {"state": LiveGoalDriver.WORKFLOW_RUNNING,
+                                     "activities": []},
+                        "inboundOperation": {
+                            "state": LiveGoalDriver.OPERATION_CANCELLED,
+                        },
+                    }]}
+                return {}
+
+        driver = LiveGoalDriver(
+            FakeClient(), "instance", "workspace", 1800)  # type: ignore[arg-type]
+
+        with self.assertRaisesRegex(RuntimeError, "was cancelled"):
+            driver.resume("goal-1")
+
     def test_roslyn_validation_is_derived_from_durable_edit_evidence(self) -> None:
         validated, errors = semantic_validation_summary({
             "candidateCodeValidation": {
