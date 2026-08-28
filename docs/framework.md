@@ -228,6 +228,9 @@ requires clarification.
 - While a goal operation is active, the header shows elapsed time and the age of the
   latest observable workflow checkpoint. On-demand detail is bounded and never
   fabricates percentage progress or exposes hidden reasoning.
+- Completed, cancelled, and failed long operations use one semantic workbench-event
+  contract. Presentation owns its bounded session queue, expiry, accessibility, and
+  closed navigation; transient events are never persistence or agent context.
 - Natural language does not authorize consequential work.
 - Settings owns ordinary application defaults. Goal overrides remain explicit and
   available on demand.

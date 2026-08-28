@@ -28,9 +28,10 @@ without presenting synthetic progress.
 
 Provider streaming state and read-only inspection calls are not yet part of the
 Presentation state stream, so this slice does not pretend to distinguish those
-sub-phases. Goal/evidence navigation, multi-operation coalescing, completion
-notifications through Task 063, graphical accessibility evidence, and a bounded live
-local-model capture remain for later Task 071 slices.
+sub-phases. Goal/evidence navigation inside the active-operation flyout,
+multi-operation coalescing, graphical accessibility evidence, and a bounded live
+local-model capture remain for later Task 071 slices. Completed workflow operations
+now hand off to the shared Task 063 workbench-event surface.
 
 ## Verification
 

@@ -45,6 +45,7 @@ internal sealed partial class MainWindow : Window
     private readonly IDeveloperProjectExecutionService developerExecutionService;
     private readonly CancellationToken cancellationToken;
     private readonly CompositeDisposable subscriptions = new();
+    private readonly WorkbenchEventSurface workbenchEvents;
     private readonly ItemsControl activities = new();
     private readonly ScrollViewer conversationScroll = new();
     private readonly TextBox composer = new();
@@ -143,7 +144,9 @@ internal sealed partial class MainWindow : Window
         this.developerExecutionService = developerExecutionService;
         this.cancellationToken = cancellationToken;
         agentActivityStatus = new(toolEvidenceService);
+        workbenchEvents = new(NavigateToWorkbenchEvent);
         agentActivityStatus.CancelRequested += store.CancelGoalWorkflow;
+        store.WorkbenchEventPublished += OnWorkbenchEventPublished;
         Title = "Harness.NET";
         Width = 1280;
         Height = 800;
@@ -222,6 +225,9 @@ internal sealed partial class MainWindow : Window
         footer.Child = BuildFooter();
         Grid.SetRow(footer, 2);
         root.Children.Add(footer);
+        Grid.SetRowSpan(workbenchEvents.Control, 3);
+        workbenchEvents.Control.SetValue(Panel.ZIndexProperty, 100);
+        root.Children.Add(workbenchEvents.Control);
         return root;
     }
 
@@ -503,11 +509,7 @@ internal sealed partial class MainWindow : Window
             await dialog.ShowDialog(this);
         };
         settings.Click += async (_, _) => await ShowSettingsAsync();
-        operations.Click += async (_, _) =>
-        {
-            OperationsDialog dialog = new(store, cancellationToken);
-            await dialog.ShowDialog(this);
-        };
+        operations.Click += async (_, _) => await ShowOperationsAsync();
         AddHandler(KeyDownEvent, OnShellKeyDown, RoutingStrategies.Tunnel);
         commandBar.Content = BuildCommandBar();
         AutomationProperties.SetName(commandBar, "Open the command palette");

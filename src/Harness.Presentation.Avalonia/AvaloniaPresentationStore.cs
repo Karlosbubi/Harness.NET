@@ -6,6 +6,7 @@ using Harness.BusinessLogic.Approvals;
 using Harness.BusinessLogic.Costs;
 using Harness.BusinessLogic.Dashboard;
 using Harness.BusinessLogic.Editor;
+using Harness.BusinessLogic.Events;
 using Harness.BusinessLogic.Framework;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Mcp;
@@ -56,6 +57,20 @@ internal sealed partial class AvaloniaPresentationStore(
 
     internal IObservable<AvaloniaShellState> States => states;
     internal AvaloniaShellState Current => states.Value;
+    internal event Action<WorkbenchEvent>? WorkbenchEventPublished;
+
+    private void PublishWorkbenchEvent(
+        WorkbenchEventSeverity severity,
+        WorkbenchEventSource source,
+        string message,
+        WorkbenchEventNavigationTarget? navigationTarget = null) =>
+        WorkbenchEventPublished?.Invoke(new(
+            new(Guid.NewGuid().ToString("N")),
+            severity,
+            source,
+            new(message),
+            TimeProvider.System.GetUtcNow(),
+            navigationTarget));
 
     internal async ValueTask LoadAsync(CancellationToken cancellationToken)
     {
