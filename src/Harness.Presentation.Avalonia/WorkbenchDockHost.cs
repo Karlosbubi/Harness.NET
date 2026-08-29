@@ -97,6 +97,7 @@ internal sealed class WorkbenchDockHost
     private readonly RunOutputTool runOutputToolUnit;
     private readonly ProblemsTool problemsToolUnit;
     private readonly DocumentIntelligence documentIntelligence;
+    private readonly DocumentNavigation documentNavigation;
     private readonly DocumentInteractions documentInteractions;
     private readonly DocumentRename documentRename;
     private readonly DocumentTransformations documentTransformations;
@@ -230,11 +231,28 @@ internal sealed class WorkbenchDockHost
             () => sourceDocuments,
             problemsToolUnit,
             cancellationToken);
+        documentNavigation = new(
+            codeIntelligenceService,
+            documentIntelligence,
+            developerExecutionService,
+            ActiveWorkspace,
+            WorkbenchRequest,
+            () => sourceDocuments,
+            virtualDocuments,
+            OpenFileAsync,
+            SetActiveDocument,
+            PrepareActiveDocumentTransitionAsync,
+            OpenOrReplaceDocument,
+            () => documents,
+            factory,
+            ShowRunOutput,
+            RefreshRunOutputAsync,
+            cancellationToken);
         documentInteractions = new(
             codeIntelligenceService,
             documentIntelligence,
             OwnerWindow,
-            NavigateToSymbolAsync,
+            documentNavigation.NavigateToSymbolAsync,
             cancellationToken);
         documentRename = new(
             mutationService,
@@ -1433,9 +1451,9 @@ internal sealed class WorkbenchDockHost
         };
         editor.CaretChanged += (_, _) => documentIntelligence.ScheduleOccurrences(session);
         editor.CodeLensInvoked += async (_, args) =>
-            await InvokeCodeLensAsync(session, args.Lens);
+            await documentNavigation.InvokeCodeLensAsync(session, args.Lens);
         surface.CodeLensInvoked += async (_, args) =>
-            await InvokeCodeLensAsync(session, args.Lens);
+            await documentNavigation.InvokeCodeLensAsync(session, args.Lens);
         editor.ViewportChanged += (_, _) => documentIntelligence.SchedulePresentation(
             session,
             includeStructure: false);
@@ -1481,13 +1499,13 @@ internal sealed class WorkbenchDockHost
             session, WorkbenchCodeCompletionTriggerKind.Invoke, triggerCharacter: null);
         surface.WorkspaceSymbols.Click += async (_, _) => await documentInteractions.ShowWorkspaceSymbolsAsync(session);
         surface.SymbolInfo.Click += async (_, _) => await documentInteractions.ShowQuickInfoAsync(session);
-        surface.Definition.Click += async (_, _) => await NavigateSymbolAsync(
+        surface.Definition.Click += async (_, _) => await documentNavigation.NavigateAsync(
             session, SemanticNavigationKind.Definition);
-        surface.References.Click += async (_, _) => await NavigateSymbolAsync(
+        surface.References.Click += async (_, _) => await documentNavigation.NavigateAsync(
             session, SemanticNavigationKind.References);
-        surface.Implementations.Click += async (_, _) => await NavigateSymbolAsync(
+        surface.Implementations.Click += async (_, _) => await documentNavigation.NavigateAsync(
             session, SemanticNavigationKind.Implementations);
-        surface.InspectionRequested += async kind => await ShowInspectionAsync(session, kind);
+        surface.InspectionRequested += async kind => await documentNavigation.ShowInspectionAsync(session, kind);
         surface.FormatDocument.Click += async (_, _) => await documentTransformations.TransformAsync(
             session, WorkbenchCodeDocumentTransformationKind.FormatDocument);
         surface.FormatSelection.Click += async (_, _) => await documentTransformations.TransformAsync(
@@ -1532,7 +1550,7 @@ internal sealed class WorkbenchDockHost
             return ValueTask.CompletedTask;
         }
 
-        return ShowInspectionAsync(session, kind);
+        return documentNavigation.ShowInspectionAsync(session, kind);
     }
 
     internal ValueTask ShowActiveQuickFixesAsync()
@@ -1648,13 +1666,13 @@ internal sealed class WorkbenchDockHost
                 await documentInteractions.ShowQuickInfoAsync(session);
                 break;
             case KeybindingCommand.GoToDefinition:
-                await NavigateSymbolAsync(session, SemanticNavigationKind.Definition);
+                await documentNavigation.NavigateAsync(session, SemanticNavigationKind.Definition);
                 break;
             case KeybindingCommand.FindReferences:
-                await NavigateSymbolAsync(session, SemanticNavigationKind.References);
+                await documentNavigation.NavigateAsync(session, SemanticNavigationKind.References);
                 break;
             case KeybindingCommand.FindImplementations:
-                await NavigateSymbolAsync(session, SemanticNavigationKind.Implementations);
+                await documentNavigation.NavigateAsync(session, SemanticNavigationKind.Implementations);
                 break;
             case KeybindingCommand.RenameSymbol:
                 await documentRename.RenameAsync(session);
@@ -1684,481 +1702,6 @@ internal sealed class WorkbenchDockHost
 
     internal ValueTask<RenameSymbolApplyView?> ApplyActiveRenameAsync(
         PendingWorkbenchRename pending) => documentRename.ApplyActiveAsync(pending);
-
-    private async ValueTask NavigateSymbolAsync(
-        SourceDocumentSession session,
-        SemanticNavigationKind kind)
-    {
-        if (!DocumentIntelligence.CanUse(session))
-        {
-            return;
-        }
-
-        session.CloseInteractiveWindows();
-
-        (WorkbenchCodeBufferVersion version, CancellationToken token) =
-            session.BeginInteraction(cancellationToken);
-        try
-        {
-            WorkbenchCodeSessionId? codeSession = await documentIntelligence.EnsureSessionAsync(session, token);
-            if (codeSession is null)
-            {
-                return;
-            }
-
-            WorkbenchCodeInteractiveSnapshot snapshot = DocumentIntelligence.Snapshot(
-                session, codeSession, version);
-            session.SetStatus(kind switch
-            {
-                SemanticNavigationKind.Definition => "Finding definition with Roslyn…",
-                SemanticNavigationKind.References => "Finding usages with Roslyn…",
-                SemanticNavigationKind.Implementations => "Finding implementations with Roslyn…",
-                _ => throw new ArgumentOutOfRangeException(nameof(kind)),
-            });
-            WorkbenchCodeNavigationView result = kind switch
-            {
-                SemanticNavigationKind.Definition =>
-                    await codeIntelligenceService.FindDefinitionAsync(snapshot, token),
-                SemanticNavigationKind.References =>
-                    await codeIntelligenceService.FindReferencesAsync(snapshot, token),
-                SemanticNavigationKind.Implementations =>
-                    await codeIntelligenceService.FindImplementationsAsync(snapshot, token),
-                _ => throw new ArgumentOutOfRangeException(nameof(kind)),
-            };
-            if (!session.IsCurrentInteraction(version))
-            {
-                return;
-            }
-
-            WorkbenchCodeSymbolDestination[] navigable = result.Destinations
-                .Where(destination =>
-                    destination.Kind is WorkbenchCodeDestinationKind.Source &&
-                    destination.Path is not null && destination.Range is not null ||
-                    destination.VirtualDocumentId is not null)
-                .ToArray();
-            if (kind is not SemanticNavigationKind.References && navigable.Length == 1)
-            {
-                await NavigateToDestinationAsync(navigable[0], session);
-                return;
-            }
-
-            if (navigable.Length == 0)
-            {
-                session.SetStatus(result.Destinations.FirstOrDefault()?.Display.Value ??
-                    "No editable source destination is available for this symbol.");
-                return;
-            }
-
-            session.SetStatus($"Found {navigable.Length:N0} navigable {NavigationLabel(kind)} " +
-                              (navigable.Length == 1 ? "destination." : "destinations."));
-
-            ListBox list = new()
-            {
-                ItemsSource = navigable.Select(destination => new SymbolDestinationChoice(destination))
-                    .ToArray(),
-                MaxHeight = 320,
-                MinWidth = 420,
-            };
-            AutomationProperties.SetName(list,
-                $"{navigable.Length} navigable {NavigationLabel(kind)} destinations for " +
-                session.View.Path.Value);
-            InsightWindow window = new(session.NativeEditor.TextArea)
-            {
-                Child = list,
-                StartOffset = session.Editor.CaretOffset,
-                EndOffset = session.Editor.CaretOffset,
-            };
-            list.SelectionChanged += async (_, _) =>
-            {
-                if (list.SelectedItem is SymbolDestinationChoice choice)
-                {
-                    window.Hide();
-                    await NavigateToDestinationAsync(choice.Destination, session);
-                }
-            };
-            session.QuickInfoWindow?.Hide();
-            session.QuickInfoWindow = window;
-            window.Show();
-        }
-        catch (OperationCanceledException) when (token.IsCancellationRequested)
-        {
-        }
-    }
-
-    private async ValueTask InvokeCodeLensAsync(
-        SourceDocumentSession session,
-        WorkbenchCodeLens lens)
-    {
-        session.Editor.SetCaretPosition(lens.Target);
-        switch (lens.Kind)
-        {
-            case WorkbenchCodeLensKind.References:
-                await NavigateSymbolAsync(session, SemanticNavigationKind.References);
-                break;
-            case WorkbenchCodeLensKind.Implementations:
-                await NavigateSymbolAsync(session, SemanticNavigationKind.Implementations);
-                break;
-            case WorkbenchCodeLensKind.Tests:
-                await ShowAssociatedTestsAsync(session);
-                break;
-            case WorkbenchCodeLensKind.Run:
-                await RunCodeLensTargetAsync(session, lens);
-                break;
-            case WorkbenchCodeLensKind.Debug:
-                session.SetStatus(developerExecutionService?.Capabilities.DebugStatus ??
-                    "No typed debugger capability is available.");
-                break;
-            default:
-                throw new ArgumentOutOfRangeException(nameof(lens));
-        }
-    }
-
-    private async ValueTask RunCodeLensTargetAsync(
-        SourceDocumentSession session,
-        WorkbenchCodeLens lens)
-    {
-        WorkspaceView? workspace = ActiveWorkspace();
-        if (developerExecutionService is null || workspace is null || !workspace.IsTrusted ||
-            lens.ExecutionTarget is null)
-        {
-            session.SetStatus("No validated project execution target is available.");
-            return;
-        }
-        if (session.IsDirty)
-        {
-            session.SetStatus("Save this document before running its entry point.");
-            return;
-        }
-
-        session.SetBusy(true, $"Starting {lens.ExecutionTarget.ProjectPath.Value}…");
-        try
-        {
-            DeveloperExecutionStartResult started =
-                await developerExecutionService.StartRunAsync(new(
-                    WorkbenchRequest(workspace), lens.ExecutionTarget), cancellationToken);
-            if (started.Execution is null)
-            {
-                session.SetStatus(started.Error ?? "The project run could not start.");
-                return;
-            }
-            session.SetStatus($"Run {started.Execution.Id.Value[..8]} started for " +
-                              $"{started.Execution.Target.ProjectPath.Value}.");
-            ShowRunOutput();
-            await RefreshRunOutputAsync();
-            _ = PollDeveloperRunAsync(started.Execution.Id);
-        }
-        finally
-        {
-            session.SetBusy(false);
-        }
-    }
-
-    private async Task PollDeveloperRunAsync(DeveloperExecutionId id)
-    {
-        if (developerExecutionService is null)
-        {
-            return;
-        }
-        try
-        {
-            for (int attempt = 0; attempt < 1200; attempt++)
-            {
-                await Task.Delay(TimeSpan.FromMilliseconds(250), cancellationToken);
-                WorkspaceView? workspace = ActiveWorkspace();
-                if (workspace is null)
-                {
-                    return;
-                }
-                DeveloperExecutionListResult listed = await developerExecutionService.ListAsync(
-                    WorkbenchRequest(workspace), cancellationToken);
-                DeveloperExecutionView? execution = listed.Executions.FirstOrDefault(item =>
-                    item.Id == id);
-                if (execution is null || execution.State is not DeveloperExecutionState.Running)
-                {
-                    await RefreshRunOutputAsync();
-                    return;
-                }
-            }
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-        }
-    }
-
-    private async ValueTask ShowAssociatedTestsAsync(SourceDocumentSession session)
-    {
-        if (!DocumentIntelligence.CanUse(session))
-        {
-            return;
-        }
-
-        session.CloseInteractiveWindows();
-        (WorkbenchCodeBufferVersion version, CancellationToken token) =
-            session.BeginInteraction(cancellationToken);
-        try
-        {
-            WorkbenchCodeSessionId? codeSession = await documentIntelligence.EnsureSessionAsync(session, token);
-            if (codeSession is null)
-            {
-                return;
-            }
-
-            session.SetStatus("Finding associated tests with Roslyn…");
-            WorkbenchCodeSemanticView result = await codeIntelligenceService
-                .FindAssociatedTestsAsync(new(
-                    DocumentIntelligence.Snapshot(session, codeSession, version),
-                    Query: null,
-                    MaximumResults: 100,
-                    Offset: 0), token);
-            if (!session.IsCurrentInteraction(version))
-            {
-                return;
-            }
-
-            WorkbenchCodeSymbolDestination[] source = result.Items
-                .Select(item => item.Destination)
-                .Where(destination => destination.Kind is WorkbenchCodeDestinationKind.Source &&
-                    destination.Path is not null && destination.Range is not null)
-                .ToArray();
-            if (source.Length == 0)
-            {
-                session.SetStatus("No associated source tests were found for this declaration.");
-                return;
-            }
-
-            session.SetStatus($"Found {source.Length:N0} associated test" +
-                              (source.Length == 1 ? "." : "s."));
-            ListBox list = new()
-            {
-                ItemsSource = source.Select(destination => new SymbolDestinationChoice(destination))
-                    .ToArray(),
-                MaxHeight = 320,
-                MinWidth = 420,
-            };
-            AutomationProperties.SetName(list,
-                $"{source.Length} associated tests for {session.View.Path.Value}");
-            InsightWindow window = new(session.NativeEditor.TextArea)
-            {
-                Child = list,
-                StartOffset = session.Editor.CaretOffset,
-                EndOffset = session.Editor.CaretOffset,
-            };
-            list.SelectionChanged += async (_, _) =>
-            {
-                if (list.SelectedItem is SymbolDestinationChoice choice)
-                {
-                    window.Hide();
-                    await NavigateToSymbolAsync(choice.Destination, session.View.GoalId);
-                }
-            };
-            session.QuickInfoWindow = window;
-            window.Show();
-        }
-        catch (OperationCanceledException) when (token.IsCancellationRequested)
-        {
-        }
-        catch (Exception exception) when (
-            exception is InvalidOperationException or IOException or ArgumentException)
-        {
-            session.SetStatus($"Associated-test lookup failed · {exception.Message}");
-        }
-    }
-
-    private static string NavigationLabel(SemanticNavigationKind kind) => kind switch
-    {
-        SemanticNavigationKind.Definition => "definition",
-        SemanticNavigationKind.References => "usage",
-        SemanticNavigationKind.Implementations => "implementation",
-        _ => throw new ArgumentOutOfRangeException(nameof(kind)),
-    };
-
-    private enum SemanticNavigationKind
-    {
-        Definition,
-        References,
-        Implementations,
-    }
-
-    private async ValueTask NavigateToSymbolAsync(
-        WorkbenchCodeSymbolDestination destination,
-        GoalId? goalId)
-    {
-        if (destination.Path is null || destination.Range is null)
-        {
-            return;
-        }
-
-        await OpenFileAsync(destination.Path.Value, goalId);
-        SourceDocumentSession? target = sourceDocuments.Values.FirstOrDefault(value =>
-            value.View.GoalId == goalId &&
-            value.View.Path.Value.Equals(destination.Path.Value, StringComparison.Ordinal));
-        if (target is null)
-        {
-            return;
-        }
-
-        SetActiveDocument(target.Document);
-        WorkbenchCodePosition position = destination.Range.Start;
-        target.Editor.SetCaretPosition(position);
-        target.Editor.ScrollTo(position);
-        target.Editor.Focus();
-    }
-
-    private ValueTask NavigateToDestinationAsync(
-        WorkbenchCodeSymbolDestination destination,
-        SourceDocumentSession source) => destination.VirtualDocumentId is null
-        ? NavigateToSymbolAsync(destination, source.View.GoalId)
-        : OpenVirtualDocumentAsync(source, destination);
-
-    private async ValueTask OpenVirtualDocumentAsync(
-        SourceDocumentSession source,
-        WorkbenchCodeSymbolDestination destination)
-    {
-        (WorkbenchCodeBufferVersion version, CancellationToken token) =
-            source.BeginInteraction(cancellationToken);
-        WorkbenchCodeSessionId? sessionId = await documentIntelligence.EnsureSessionAsync(source, token);
-        if (sessionId is null || !source.IsCurrentInteraction(version)) return;
-        WorkbenchCodeVirtualDocumentView virtualDocument =
-            await codeIntelligenceService.GetVirtualDocumentAsync(new(
-                DocumentIntelligence.Snapshot(source, sessionId, version),
-                destination.VirtualDocumentId!), token);
-        if (!source.IsCurrentInteraction(version) || virtualDocument.Text is null ||
-            virtualDocument.Title is null || virtualDocument.Origin is null)
-        {
-            source.SetStatus(virtualDocument.Issues.FirstOrDefault()?.Message.Value ??
-                "The virtual source document is unavailable.");
-            return;
-        }
-
-        string id = $"virtual:{sessionId.Value}:{virtualDocument.Id.Value}";
-        if (virtualDocuments.TryGetValue(id, out TextEditor? existing))
-        {
-            IDockable? existingDocument = documents.VisibleDockables?
-                .FirstOrDefault(item => item.Id == id);
-            if (existingDocument is not null) SetActiveDocument(existingDocument);
-            existing.Focus();
-            return;
-        }
-        if (!await PrepareActiveDocumentTransitionAsync(WorkbenchDocumentTransition.Switch)) return;
-
-        TextEditor editor = CodeEditorView.Create(
-            virtualDocument.Text.Value,
-            isReadOnly: true,
-            wordWrap: false,
-            showLineNumbers: true,
-            path: "virtual.cs");
-        AutomationProperties.SetName(editor,
-            $"Read-only {VirtualKindLabel(virtualDocument.Kind)} for {virtualDocument.Title.Value}");
-        TextBlock identity = new()
-        {
-            Text = $"{VirtualKindLabel(virtualDocument.Kind)} · read-only · " +
-                   $"{virtualDocument.Origin.Project.Value} · " +
-                   $"{virtualDocument.Origin.TargetFramework.Value} · " +
-                   $"{virtualDocument.Origin.Configuration.Value}\n" +
-                   $"Assembly {virtualDocument.Origin.Assembly.Value}\n" +
-                   $"Compilation {virtualDocument.Origin.Compilation.Value}",
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(10, 8),
-        };
-        AutomationProperties.SetName(identity, "Virtual source identity");
-        Grid content = new() { RowDefinitions = new("Auto,*") };
-        content.Children.Add(identity);
-        Grid.SetRow(editor, 1);
-        content.Children.Add(editor);
-
-        SourceDockDocument document = new()
-        {
-            Id = id,
-            Title = $"{virtualDocument.Title.Value} · read-only",
-            Factory = factory,
-            CanClose = true,
-            CanFloat = true,
-            CloseRequested = () => true,
-        };
-        WorkbenchDockContent.Attach(document, content);
-        virtualDocuments.Add(id, editor);
-        documents.AddDocument(document);
-        SetActiveDocument(document);
-        if (virtualDocument.SelectionRange is { } range)
-        {
-            editor.TextArea.Caret.Line = range.Start.Line + 1;
-            editor.TextArea.Caret.Column = range.Start.Character + 1;
-            editor.ScrollTo(range.Start.Line + 1, range.Start.Character + 1);
-        }
-        editor.Focus();
-        source.SetStatus($"Opened read-only {VirtualKindLabel(virtualDocument.Kind).ToLowerInvariant()} " +
-                         $"for {destination.Display.Value}.");
-    }
-
-    private async ValueTask ShowInspectionAsync(
-        SourceDocumentSession source,
-        WorkbenchCodeInspectionKind kind)
-    {
-        if (!DocumentIntelligence.CanUse(source)) return;
-        source.CloseInteractiveWindows();
-        (WorkbenchCodeBufferVersion version, CancellationToken token) =
-            source.BeginInteraction(cancellationToken);
-        try
-        {
-            WorkbenchCodeSessionId? sessionId = await documentIntelligence.EnsureSessionAsync(source, token);
-            if (sessionId is null || !source.IsCurrentInteraction(version)) return;
-            source.SetStatus($"Building {InspectionKindLabel(kind).ToLowerInvariant()} from the exact buffer…");
-            WorkbenchCodeInspectionView result = await codeIntelligenceService.InspectAsync(new(
-                DocumentIntelligence.Snapshot(source, sessionId, version), kind), token);
-            if (!source.IsCurrentInteraction(version)) return;
-            if (result.Text is null || result.Title is null || result.Origin is null)
-            {
-                source.SetStatus(result.Issues.FirstOrDefault()?.Message.Value ??
-                    $"{InspectionKindLabel(kind)} is unavailable.");
-                return;
-            }
-
-            string id = $"inspection:{source.View.GoalId?.Value ?? "original"}:" +
-                        $"{source.View.Path.Value}:{kind}";
-            TextEditor editor = CodeEditorView.Create(
-                result.Text.Value,
-                isReadOnly: true,
-                wordWrap: false,
-                showLineNumbers: true,
-                path: InspectionPath(kind));
-            AutomationProperties.SetName(editor,
-                $"Read-only {InspectionKindLabel(kind)} for {source.View.Path.Value}");
-            OpenOrReplaceDocument(id,
-                result.Title.Value + (result.IsTruncated ? " · truncated" : string.Empty) +
-                " · read-only", editor);
-            editor.Focus();
-            source.SetStatus($"Opened {InspectionKindLabel(kind).ToLowerInvariant()} · " +
-                             $"compilation {result.Origin.Compilation.Value[..12]}…" +
-                             (result.IsTruncated ? " · bounded result" : string.Empty));
-        }
-        catch (OperationCanceledException) when (token.IsCancellationRequested)
-        {
-        }
-    }
-
-    private static string InspectionKindLabel(WorkbenchCodeInspectionKind kind) => kind switch
-    {
-        WorkbenchCodeInspectionKind.SyntaxTree => "Syntax tree",
-        WorkbenchCodeInspectionKind.Symbol => "Symbol details",
-        WorkbenchCodeInspectionKind.GeneratedSource => "Generated source",
-        WorkbenchCodeInspectionKind.IntermediateLanguage => "Intermediate Language",
-        _ => throw new ArgumentOutOfRangeException(nameof(kind)),
-    };
-
-    private static string InspectionPath(WorkbenchCodeInspectionKind kind) => kind switch
-    {
-        WorkbenchCodeInspectionKind.GeneratedSource => "generated.cs",
-        WorkbenchCodeInspectionKind.IntermediateLanguage => "inspection.il",
-        _ => "inspection.txt",
-    };
-
-    private static string VirtualKindLabel(WorkbenchCodeVirtualDocumentKind? kind) => kind switch
-    {
-        WorkbenchCodeVirtualDocumentKind.GeneratedSource => "Generated source",
-        WorkbenchCodeVirtualDocumentKind.MetadataSignature => "Metadata signature",
-        WorkbenchCodeVirtualDocumentKind.DecompiledSource => "Decompiled source",
-        _ => "Virtual source",
-    };
 
     private async ValueTask<bool> SaveSourceDocumentAsync(
         SourceDocumentSession session,
@@ -2956,26 +2499,6 @@ internal sealed class WorkbenchDockHost
         {
             busy = false;
         }
-    }
-
-    private sealed record SymbolDestinationChoice(
-        WorkbenchCodeSymbolDestination Destination)
-    {
-        public override string ToString()
-        {
-            int line = Destination.Range?.Start.Line + 1 ?? 0;
-            string location = Destination.VirtualDocumentId is not null
-                ? Destination.Kind is WorkbenchCodeDestinationKind.Generated
-                    ? "generated source" : "metadata source"
-                : $"{Destination.Path?.Value}:{line}";
-            return $"{location}  {Destination.Display.Value}";
-        }
-    }
-
-    private sealed class UiLoadProgress(TextBlock status) : IProgress<WorkbenchCodeLoadProgress>
-    {
-        public void Report(WorkbenchCodeLoadProgress value) => Dispatcher.UIThread.Post(() =>
-            status.Text = $"{value.Stage} · {value.Message.Value}");
     }
 
 }
