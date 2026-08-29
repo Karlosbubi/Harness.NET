@@ -99,6 +99,7 @@ internal sealed class WorkbenchDockHost
     private readonly DocumentIntelligence documentIntelligence;
     private readonly DocumentInteractions documentInteractions;
     private readonly DocumentRename documentRename;
+    private readonly DocumentTransformations documentTransformations;
     private TextBlock GitStatus => gitChangesTool.Status;
     private string GitFingerprint => gitChangesTool.Fingerprint;
     private WorkbenchWorkspaceContext? CurrentGitContext => gitChangesTool.CurrentContext;
@@ -242,6 +243,14 @@ internal sealed class WorkbenchDockHost
             OwnerWindow,
             InvalidateCodeIntelligenceAsync,
             documentIntelligence.ScheduleDiagnostics,
+            cancellationToken);
+        documentTransformations = new(
+            mutationService,
+            codeIntelligenceService,
+            documentIntelligence,
+            documentInteractions,
+            () => sourceDocuments,
+            InvalidateCodeIntelligenceAsync,
             cancellationToken);
 
         Control files = filesTool.Content;
@@ -1448,11 +1457,11 @@ internal sealed class WorkbenchDockHost
         };
         editor.TextEntered += async (_, args) =>
         {
-            await HandleTextEnteredAsync(session, args.Text);
+            await documentTransformations.HandleTextEnteredAsync(session, args.Text);
         };
         editor.TextPasted += async (_, args) =>
         {
-            await HandlePasteAsync(session, args.Range);
+            await documentTransformations.HandlePasteAsync(session, args.Range);
         };
         editor.PointerPositionChanged += (_, args) =>
         {
@@ -1479,17 +1488,17 @@ internal sealed class WorkbenchDockHost
         surface.Implementations.Click += async (_, _) => await NavigateSymbolAsync(
             session, SemanticNavigationKind.Implementations);
         surface.InspectionRequested += async kind => await ShowInspectionAsync(session, kind);
-        surface.FormatDocument.Click += async (_, _) => await TransformDocumentAsync(
+        surface.FormatDocument.Click += async (_, _) => await documentTransformations.TransformAsync(
             session, WorkbenchCodeDocumentTransformationKind.FormatDocument);
-        surface.FormatSelection.Click += async (_, _) => await TransformDocumentAsync(
+        surface.FormatSelection.Click += async (_, _) => await documentTransformations.TransformAsync(
             session, WorkbenchCodeDocumentTransformationKind.FormatSelection);
-        surface.FormatChangedSpans.Click += async (_, _) => await TransformDocumentAsync(
+        surface.FormatChangedSpans.Click += async (_, _) => await documentTransformations.TransformAsync(
             session, WorkbenchCodeDocumentTransformationKind.FormatChangedSpans);
-        surface.OrganizeImports.Click += async (_, _) => await TransformDocumentAsync(
+        surface.OrganizeImports.Click += async (_, _) => await documentTransformations.TransformAsync(
             session, WorkbenchCodeDocumentTransformationKind.OrganizeImports);
-        surface.RemoveUnusedImports.Click += async (_, _) => await TransformDocumentAsync(
+        surface.RemoveUnusedImports.Click += async (_, _) => await documentTransformations.TransformAsync(
             session, WorkbenchCodeDocumentTransformationKind.RemoveUnusedImports);
-        surface.QuickFix.Click += async (_, _) => await ShowImportFixesAsync(session);
+        surface.QuickFix.Click += async (_, _) => await documentTransformations.ShowQuickFixesAsync(session);
         surface.NavigationRequested += position =>
         {
             editor.SetCaretPosition(position);
@@ -1512,7 +1521,7 @@ internal sealed class WorkbenchDockHost
             return ValueTask.CompletedTask;
         }
 
-        return TransformDocumentAsync(session, kind);
+        return documentTransformations.TransformAsync(session, kind);
     }
 
     internal ValueTask InspectActiveDocumentAsync(WorkbenchCodeInspectionKind kind)
@@ -1534,7 +1543,7 @@ internal sealed class WorkbenchDockHost
             return ValueTask.CompletedTask;
         }
 
-        return ShowImportFixesAsync(session);
+        return documentTransformations.ShowQuickFixesAsync(session);
     }
 
     internal ValueTask ApplyActiveCodeActionAsync(WorkbenchCodeActionCandidate candidate)
@@ -1546,7 +1555,7 @@ internal sealed class WorkbenchDockHost
             return ValueTask.CompletedTask;
         }
 
-        return TransformDocumentAsync(
+        return documentTransformations.TransformAsync(
             session,
             WorkbenchCodeDocumentTransformationKind.ApplyCodeAction,
             codeActionId: candidate.Id,
@@ -1561,7 +1570,7 @@ internal sealed class WorkbenchDockHost
             return ValueTask.CompletedTask;
         }
 
-        return HandleTextEnteredAsync(session, text);
+        return documentTransformations.HandleTextEnteredAsync(session, text);
     }
 
     internal ValueTask HandleActivePasteAsync(WorkbenchCodeRange range)
@@ -1572,75 +1581,13 @@ internal sealed class WorkbenchDockHost
             return ValueTask.CompletedTask;
         }
 
-        return HandlePasteAsync(session, range);
-    }
-
-    private ValueTask HandlePasteAsync(
-        SourceDocumentSession session,
-        WorkbenchCodeRange range) => documentIntelligence.Preferences.FormatOnPaste
-        ? TransformDocumentAsync(
-            session,
-            WorkbenchCodeDocumentTransformationKind.FormatPaste,
-            range: range,
-            formattingTrigger: WorkbenchCodeFormattingTrigger.Paste,
-            automatic: true)
-        : ValueTask.CompletedTask;
-
-    private async ValueTask HandleTextEnteredAsync(
-        SourceDocumentSession session,
-        string? text)
-    {
-        if (string.IsNullOrEmpty(text))
-        {
-            return;
-        }
-
-        IWorkbenchEditorAdapter editor = session.Editor;
-        if (text.Length > 1)
-        {
-            return;
-        }
-
-        char value = text[0];
-        if (value is '(' or ',')
-        {
-            await documentInteractions.ShowSignatureHelpAsync(session);
-        }
-        else if (value == ')')
-        {
-            session.SignatureWindow?.Hide();
-            session.SignatureWindow = null;
-        }
-
-        if (char.IsLetterOrDigit(value) || value is '_' or '.')
-        {
-            await documentInteractions.ShowCompletionAsync(
-                session,
-                WorkbenchCodeCompletionTriggerKind.Insertion,
-                value);
-        }
-
-        if (documentIntelligence.Preferences.FormatOnType &&
-            FormattingTrigger(value) is { } formattingTrigger)
-        {
-            int end = editor.CaretOffset;
-            int start = Math.Max(0, end - 1);
-            await TransformDocumentAsync(
-                session,
-                WorkbenchCodeDocumentTransformationKind.FormatOnType,
-                range: new(editor.GetPosition(start), editor.GetPosition(end)),
-                formattingTrigger: formattingTrigger,
-                automatic: true);
-        }
+        return documentTransformations.HandlePasteAsync(session, range);
     }
 
     internal bool CanTransformActiveDocument(WorkbenchCodeDocumentTransformationKind kind) =>
         activeDocument?.Id is { } id &&
         sourceDocuments.TryGetValue(id, out SourceDocumentSession? session) &&
-        session.View.Access is WorkbenchDocumentAccess.Editable &&
-        DocumentIntelligence.CanUse(session) &&
-        (kind is not WorkbenchCodeDocumentTransformationKind.FormatSelection ||
-            session.Editor.SelectionRange is not null);
+        documentTransformations.CanTransform(session, kind);
 
     internal bool CanInvokeActiveEditorCommand(KeybindingCommand command)
     {
@@ -1713,428 +1660,22 @@ internal sealed class WorkbenchDockHost
                 await documentRename.RenameAsync(session);
                 break;
             case KeybindingCommand.FormatDocument:
-                await TransformDocumentAsync(
+                await documentTransformations.TransformAsync(
                     session, WorkbenchCodeDocumentTransformationKind.FormatDocument);
                 break;
             case KeybindingCommand.FormatSelection:
-                await TransformDocumentAsync(
+                await documentTransformations.TransformAsync(
                     session, WorkbenchCodeDocumentTransformationKind.FormatSelection);
                 break;
             case KeybindingCommand.OrganizeImports:
-                await TransformDocumentAsync(
+                await documentTransformations.TransformAsync(
                     session, WorkbenchCodeDocumentTransformationKind.OrganizeImports);
                 break;
             case KeybindingCommand.ShowQuickFixes:
-                await ShowImportFixesAsync(session);
+                await documentTransformations.ShowQuickFixesAsync(session);
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(command));
-        }
-    }
-
-    private async ValueTask TransformDocumentAsync(
-        SourceDocumentSession session,
-        WorkbenchCodeDocumentTransformationKind kind,
-        WorkbenchCodeImportNamespace? importNamespace = null,
-        WorkbenchCodeRange? range = null,
-        WorkbenchCodeFormattingTrigger? formattingTrigger = null,
-        WorkbenchCodeActionId? codeActionId = null,
-        WorkbenchCodeActionScope? codeActionScope = null,
-        bool automatic = false)
-    {
-        if (session.View.Access is not WorkbenchDocumentAccess.Editable ||
-            !DocumentIntelligence.CanUse(session))
-        {
-            session.SetStatus("Formatting requires an editable C# source document.");
-            return;
-        }
-
-        range ??= kind is WorkbenchCodeDocumentTransformationKind.FormatSelection
-            ? session.Editor.SelectionRange
-            : null;
-        if (kind is WorkbenchCodeDocumentTransformationKind.FormatSelection && range is null)
-        {
-            session.SetStatus("Select the C# code to format first.");
-            return;
-        }
-
-        (WorkbenchCodeBufferVersion version, CancellationToken token) =
-            session.BeginInteraction(cancellationToken);
-        if (!automatic)
-        {
-            session.SetBusy(true, kind switch
-            {
-                WorkbenchCodeDocumentTransformationKind.FormatDocument =>
-                    "Formatting the document with Roslyn…",
-                WorkbenchCodeDocumentTransformationKind.FormatSelection =>
-                    "Formatting the selected code with Roslyn…",
-                WorkbenchCodeDocumentTransformationKind.FormatChangedSpans =>
-                    "Formatting changed code with Roslyn…",
-                WorkbenchCodeDocumentTransformationKind.OrganizeImports =>
-                    "Organizing imports with Roslyn…",
-                WorkbenchCodeDocumentTransformationKind.RemoveUnusedImports =>
-                    "Removing unused imports with Roslyn…",
-                WorkbenchCodeDocumentTransformationKind.AddMissingImport =>
-                    $"Adding {importNamespace?.Value} with Roslyn…",
-                WorkbenchCodeDocumentTransformationKind.ApplyCodeAction =>
-                    "Applying the selected Roslyn code action…",
-                _ => "Preparing deterministic transformation…",
-            });
-        }
-        try
-        {
-            WorkbenchCodeSessionId? codeSession = await documentIntelligence.EnsureSessionAsync(session, token);
-            if (codeSession is null || !session.IsCurrentInteraction(version))
-            {
-                return;
-            }
-
-            WorkbenchCodeInteractiveSnapshot snapshot = DocumentIntelligence.Snapshot(
-                session, codeSession, version);
-            WorkbenchCodeDocumentTransformationPreviewView preview =
-                await codeIntelligenceService.PreviewDocumentTransformationAsync(
-                    new(snapshot, kind, range, importNamespace, formattingTrigger,
-                        codeActionId, codeActionScope), token);
-            if (!session.IsCurrentInteraction(version))
-            {
-                session.SetStatus("The buffer changed before the transformation could be applied.");
-                return;
-            }
-
-            if (preview.Disposition is not WorkbenchCodeTransformationDisposition.Ready ||
-                preview.Fingerprint is null || preview.Edits.Count == 0)
-            {
-                session.SetStatus(preview.Conflicts.FirstOrDefault()?.Message.Value ??
-                    preview.Issues.FirstOrDefault()?.Message.Value ??
-                    "Roslyn could not prepare the requested transformation.");
-                return;
-            }
-
-            if (preview.Edits.Count != 1 ||
-                !preview.Edits[0].Path.Value.Equals(session.View.Path.Value, StringComparison.Ordinal))
-            {
-                await ApplyAtomicDocumentTransformationAsync(
-                    session,
-                    version,
-                    kind,
-                    range,
-                    importNamespace,
-                    formattingTrigger,
-                    codeActionId,
-                    codeActionScope,
-                    preview,
-                    token);
-                return;
-            }
-
-            WorkbenchCodeDocumentTransformationEdit edit = preview.Edits[0];
-            if (!string.Equals(session.Editor.Text, edit.OriginalText.Value,
-                StringComparison.Ordinal))
-            {
-                session.SetStatus("The buffer changed before the transformation could be applied.");
-                return;
-            }
-
-            if (edit.ReplacementCount == 0)
-            {
-                session.SetStatus(kind switch
-                {
-                    WorkbenchCodeDocumentTransformationKind.OrganizeImports =>
-                        "Imports are already organized.",
-                    WorkbenchCodeDocumentTransformationKind.RemoveUnusedImports =>
-                        "No compiler-proven unused imports were found.",
-                    WorkbenchCodeDocumentTransformationKind.AddMissingImport =>
-                        "The selected import is already present.",
-                    WorkbenchCodeDocumentTransformationKind.FormatChangedSpans =>
-                        "Changed code is already formatted.",
-                    WorkbenchCodeDocumentTransformationKind.FormatPaste or
-                        WorkbenchCodeDocumentTransformationKind.FormatOnType =>
-                        "No automatic formatting was needed.",
-                    WorkbenchCodeDocumentTransformationKind.ApplyCodeAction =>
-                        "The selected code action no longer changes this document.",
-                    _ => "The requested code is already formatted.",
-                });
-                return;
-            }
-
-            int caret = session.Editor.CaretOffset;
-            session.Editor.Replace(0, session.Editor.TextLength, edit.Text.Value);
-            session.Editor.CaretOffset = MapTransformedOffset(
-                edit.OriginalText.Value,
-                edit.Text.Value,
-                caret);
-            session.Editor.Focus();
-            session.SetStatus(kind switch
-            {
-                WorkbenchCodeDocumentTransformationKind.FormatDocument =>
-                    $"Formatted document · {edit.ReplacementCount:N0} Roslyn edit(s) · undo available.",
-                WorkbenchCodeDocumentTransformationKind.FormatSelection =>
-                    $"Formatted selection · {edit.ReplacementCount:N0} Roslyn edit(s) · undo available.",
-                WorkbenchCodeDocumentTransformationKind.FormatChangedSpans =>
-                    $"Formatted changed code · {edit.ReplacementCount:N0} Roslyn edit(s) · undo available.",
-                WorkbenchCodeDocumentTransformationKind.FormatPaste =>
-                    "Formatted pasted code with Roslyn · undo available.",
-                WorkbenchCodeDocumentTransformationKind.FormatOnType =>
-                    "Formatted current code with Roslyn · undo available.",
-                WorkbenchCodeDocumentTransformationKind.OrganizeImports =>
-                    $"Organized imports · {edit.ReplacementCount:N0} Roslyn edit(s) · undo available.",
-                WorkbenchCodeDocumentTransformationKind.RemoveUnusedImports =>
-                    $"Removed unused imports · {edit.ReplacementCount:N0} Roslyn edit(s) · undo available.",
-                WorkbenchCodeDocumentTransformationKind.AddMissingImport =>
-                    $"Added using {importNamespace?.Value} · undo available.",
-                WorkbenchCodeDocumentTransformationKind.ApplyCodeAction =>
-                    codeActionScope is WorkbenchCodeActionScope.Document
-                        ? $"Applied Roslyn fix to this document · {edit.ReplacementCount:N0} edit(s) · undo available."
-                        : $"Applied Roslyn quick fix · {edit.ReplacementCount:N0} edit(s) · undo available.",
-                _ => "Applied deterministic Roslyn transformation to the live buffer.",
-            });
-            documentIntelligence.ScheduleDiagnostics(session, immediate: true);
-            documentIntelligence.SchedulePresentation(session, immediate: true);
-        }
-        catch (OperationCanceledException) when (token.IsCancellationRequested)
-        {
-            session.SetStatus("Document transformation cancelled.");
-        }
-        finally
-        {
-            if (!automatic)
-            {
-                session.SetBusy(false);
-            }
-        }
-    }
-
-    private async ValueTask ApplyAtomicDocumentTransformationAsync(
-        SourceDocumentSession session,
-        WorkbenchCodeBufferVersion version,
-        WorkbenchCodeDocumentTransformationKind kind,
-        WorkbenchCodeRange? range,
-        WorkbenchCodeImportNamespace? importNamespace,
-        WorkbenchCodeFormattingTrigger? formattingTrigger,
-        WorkbenchCodeActionId? codeActionId,
-        WorkbenchCodeActionScope? codeActionScope,
-        WorkbenchCodeDocumentTransformationPreviewView preview,
-        CancellationToken token)
-    {
-        if (mutationService is null || session.View.GoalId is null ||
-            session.View.Sha256 is null)
-        {
-            session.SetStatus(
-                "This refactoring changes another file and requires an approved goal worktree.");
-            return;
-        }
-
-        WorkbenchCodeDocumentTransformationEdit? dirtyAffected = preview.Edits
-            .FirstOrDefault(edit => sourceDocuments.Values.Any(open =>
-                open.View.GoalId == session.View.GoalId &&
-                open.View.Path.Value.Equals(edit.Path.Value, StringComparison.Ordinal) &&
-                !open.Editor.Text.Equals(edit.OriginalText.Value, StringComparison.Ordinal)));
-        if (dirtyAffected is not null)
-        {
-            session.SetStatus(
-                $"Save or revert unsaved changes in {dirtyAffected.Path.Value} before applying this refactoring.");
-            return;
-        }
-
-        DocumentTransformationPreviewRequest request = new(
-            session.View.GoalId.Value,
-            new(session.View.Path.Value),
-            new(session.View.Sha256.Value),
-            version,
-            new(session.Editor.Text),
-            session.Editor.CaretPosition,
-            kind,
-            range,
-            DocumentTransformationOrigin.Human,
-            [],
-            importNamespace,
-            formattingTrigger,
-            codeActionId,
-            codeActionScope);
-        session.SetStatus(
-            $"Applying Roslyn refactoring atomically to {preview.Edits.Count:N0} file(s)…");
-        DocumentTransformationApplyView result =
-            await mutationService.ApplyDocumentTransformationAsync(new(
-                request,
-                NewEditCorrelation(),
-                preview.Fingerprint!), token);
-        if (result.ErrorCode is not null || result.Preview is null)
-        {
-            session.SetStatus(result.Error ?? "The multi-file refactoring was not applied.");
-            return;
-        }
-
-        foreach (WorkbenchCodeDocumentTransformationEdit appliedEdit in result.Preview.Edits)
-        {
-            SourceDocumentSession? open = sourceDocuments.Values.FirstOrDefault(candidate =>
-                candidate.View.GoalId == session.View.GoalId &&
-                candidate.View.Path.Value.Equals(appliedEdit.Path.Value, StringComparison.Ordinal));
-            FileEditView? evidence = result.Files.FirstOrDefault(file =>
-                file.Path.Equals(appliedEdit.Path.Value, StringComparison.Ordinal));
-            if (open is null || evidence?.NewSha256 is null)
-            {
-                continue;
-            }
-
-            open.ReplaceWith(open.View with
-            {
-                Content = new(appliedEdit.Text.Value),
-                Sha256 = new(evidence.NewSha256),
-                Size = new(evidence.BytesWritten),
-            });
-            open.SetStatus("Applied compiler-verified atomic Roslyn refactoring.");
-        }
-
-        session.SetStatus(
-            $"Applied Roslyn refactoring atomically to {result.Files.Count:N0} file(s).");
-        await InvalidateCodeIntelligenceAsync();
-        documentIntelligence.ScheduleDiagnostics(session, immediate: true);
-    }
-
-    private static WorkbenchCodeFormattingTrigger? FormattingTrigger(char value) => value switch
-    {
-        ';' => WorkbenchCodeFormattingTrigger.Semicolon,
-        '}' => WorkbenchCodeFormattingTrigger.CloseBrace,
-        '\n' or '\r' => WorkbenchCodeFormattingTrigger.NewLine,
-        _ => null,
-    };
-
-    private static int MapTransformedOffset(string original, string candidate, int offset)
-    {
-        int bounded = Math.Clamp(offset, 0, original.Length);
-        int prefix = 0;
-        int prefixLimit = Math.Min(original.Length, candidate.Length);
-        while (prefix < prefixLimit && original[prefix] == candidate[prefix])
-        {
-            prefix++;
-        }
-
-        if (bounded <= prefix)
-        {
-            return bounded;
-        }
-
-        int suffix = 0;
-        while (suffix < original.Length - prefix && suffix < candidate.Length - prefix &&
-               original[original.Length - suffix - 1] == candidate[candidate.Length - suffix - 1])
-        {
-            suffix++;
-        }
-
-        int originalChangedEnd = original.Length - suffix;
-        int candidateChangedEnd = candidate.Length - suffix;
-        if (bounded >= originalChangedEnd)
-        {
-            return Math.Clamp(candidateChangedEnd + bounded - originalChangedEnd,
-                0, candidate.Length);
-        }
-
-        return Math.Clamp(prefix + Math.Min(bounded - prefix, candidateChangedEnd - prefix),
-            0, candidate.Length);
-    }
-
-    private async ValueTask ShowImportFixesAsync(SourceDocumentSession session)
-    {
-        if (session.View.Access is not WorkbenchDocumentAccess.Editable ||
-            !DocumentIntelligence.CanUse(session))
-        {
-            session.SetStatus("Quick fixes require an editable C# source document.");
-            return;
-        }
-
-        (WorkbenchCodeBufferVersion version, CancellationToken token) =
-            session.BeginInteraction(cancellationToken);
-        session.SetBusy(true, "Finding Roslyn fixes at the caret…");
-        try
-        {
-            WorkbenchCodeSessionId? codeSession = await documentIntelligence.EnsureSessionAsync(session, token);
-            if (codeSession is null || !session.IsCurrentInteraction(version))
-            {
-                return;
-            }
-
-            WorkbenchCodeInteractiveSnapshot snapshot = DocumentIntelligence.Snapshot(
-                session, codeSession, version);
-            WorkbenchCodeRange? codeActionRange = session.Editor.SelectionRange;
-            WorkbenchCodeMissingImportView result =
-                await codeIntelligenceService.GetMissingImportsAsync(snapshot, token);
-            WorkbenchCodeActionView codeActions =
-                await codeIntelligenceService.GetCodeActionsAsync(
-                    new(snapshot, codeActionRange), token);
-            if (!session.IsCurrentInteraction(version))
-            {
-                session.SetStatus("The buffer changed before quick fixes were ready.");
-                return;
-            }
-
-            if (result.Candidates.Count == 0 && codeActions.Candidates.Count == 0)
-            {
-                session.SetStatus(codeActions.Issues.FirstOrDefault()?.Message.Value ??
-                    result.Issues.FirstOrDefault()?.Message.Value ??
-                    "No supported quick fix is available at the caret.");
-                return;
-            }
-
-            StackPanel choices = new() { Spacing = 4, Margin = new Thickness(4) };
-            Flyout flyout = new() { Content = choices };
-            foreach (WorkbenchCodeMissingImportCandidate candidate in result.Candidates)
-            {
-                Button action = new()
-                {
-                    Content = $"using {candidate.Namespace.Value};  ·  {candidate.Symbol.Value}",
-                    HorizontalContentAlignment = HorizontalAlignment.Left,
-                };
-                AutomationProperties.SetName(action,
-                    $"Add using {candidate.Namespace.Value} for {candidate.Symbol.Value}");
-                action.Click += async (_, _) =>
-                {
-                    flyout.Hide();
-                    await TransformDocumentAsync(session,
-                        WorkbenchCodeDocumentTransformationKind.AddMissingImport,
-                        candidate.Namespace);
-                };
-                choices.Children.Add(action);
-            }
-            foreach (WorkbenchCodeActionCandidate candidate in codeActions.Candidates)
-            {
-                string suffix = candidate.Scope is WorkbenchCodeActionScope.Document
-                    ? "  ·  Fix all in document"
-                    : candidate.AffectedFileCount > 1 || !candidate.ChangesActiveDocument
-                        ? $"  ·  {candidate.AffectedFileCount:N0} files · atomic"
-                        : string.Empty;
-                Button action = new()
-                {
-                    Content = candidate.Title.Value + suffix,
-                    HorizontalContentAlignment = HorizontalAlignment.Left,
-                };
-                AutomationProperties.SetName(action,
-                    candidate.Scope is WorkbenchCodeActionScope.Document
-                        ? $"{candidate.Title.Value}, fix all in document"
-                        : candidate.AffectedFileCount > 1 || !candidate.ChangesActiveDocument
-                            ? $"{candidate.Title.Value}, affects {candidate.AffectedFileCount:N0} files, atomic apply"
-                        : candidate.Title.Value);
-                action.Click += async (_, _) =>
-                {
-                    flyout.Hide();
-                    await TransformDocumentAsync(session,
-                        WorkbenchCodeDocumentTransformationKind.ApplyCodeAction,
-                        range: codeActionRange,
-                        codeActionId: candidate.Id,
-                        codeActionScope: candidate.Scope);
-                };
-                choices.Children.Add(action);
-            }
-            flyout.ShowAt(session.Surface.QuickFix);
-            int count = result.Candidates.Count + codeActions.Candidates.Count;
-            session.SetStatus($"{count:N0} Roslyn quick fix(es) available.");
-        }
-        catch (OperationCanceledException) when (token.IsCancellationRequested)
-        {
-            session.SetStatus("Quick-fix discovery cancelled.");
-        }
-        finally
-        {
-            session.SetBusy(false);
         }
     }
 

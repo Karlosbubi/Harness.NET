@@ -599,8 +599,8 @@ branches, tags, linked worktrees, and stashes into bounded composition units wit
 focused tests. Slice 060.4 extracted remotes, history/blame, and the exact-state
 conflict editor, including ownership of its Roslyn diagnostics lifecycle. Slices
 060.5 has extracted run output, Problems, the Roslyn lifecycle, and editor interaction
-services plus exact semantic rename after confirming no Task 052 branch is ahead of
-`main`; remaining document hosting, transformation, and navigation stay in that slice.
+services, exact semantic rename, and deterministic transformations after confirming
+no Task 052 branch is ahead of `main`; remaining document hosting and navigation stay in that slice.
 Slices 060.6–060.8 follow.
 
 ### Complete: Task 061 — architecture enforcement and composition seams
