@@ -528,6 +528,15 @@ not raw test output. Multi-selection, project/type runs, rerun shortcuts, per-ca
 adapter results, Debug, coverage, typed one-run overrides, and Hot Reload remain
 planned.
 
+Delivered sixth slice: Test Explorer joins its exact Roslyn catalog with the newest
+durable Test operation for the same discovery identity. Test leaves show Running,
+Succeeded, Failed, Cancelled, or Interrupted state with duration and exit code, offer
+Rerun for completed tests, and replace it with Stop while the owned process is active.
+History lookup remains bounded and source-context scoped; an unavailable history
+store degrades the status without hiding compiler discovery. Multi-selection,
+project/type runs, adapter-level case results and richer filters, Test Debug,
+coverage, typed one-run overrides, Hot Reload, and the debugger remain planned.
+
 Use the existing trust and Restore boundaries. Selecting a launch profile does not
 authorize execution; debug attach, expression evaluation, mutation, dumps, network
 listeners, and external processes remain separately classified. ASP.NET endpoint

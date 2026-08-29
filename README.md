@@ -60,7 +60,8 @@ Delivered:
 - a compiler-backed Test Explorer for xUnit, NUnit, and MSTest source tests, with
   project/type/test hierarchy, bounded search across names and traits, parameterized
   test labels, exact source navigation, and closed per-test Run actions with
-  no-Restore execution, cancellation, transient output, and durable result metadata;
+  no-Restore execution, in-place Stop/Rerun, duration and failure history, transient
+  output, and durable result metadata;
 - typed configurable workbench and editor keybindings with conflict validation,
   command discovery, reset, bounded declarative import/export, and optional Vim
   Normal, Insert, Visual, and Visual Line behavior;

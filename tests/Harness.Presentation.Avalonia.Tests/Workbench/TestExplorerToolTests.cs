@@ -37,6 +37,11 @@ public sealed class TestExplorerToolTests
                     []),
             };
             ExecutionService execution = new();
+            DeveloperExecutionView failed = Execution(
+                first, "execution-failed", DeveloperExecutionState.Failed, 1, 725);
+            DeveloperExecutionView running = Execution(
+                second, "execution-running", DeveloperExecutionState.Running, null, 0);
+            execution.History.AddRange([failed, running]);
             int shown = 0;
             int refreshed = 0;
             WorkbenchCodeTestCase? navigated = null;
@@ -84,6 +89,8 @@ public sealed class TestExplorerToolTests
             Assert.Equal(["Adds values", "Subtracts values"],
                 type.Children.Select(node => node.Label));
             Assert.Same(first, type.Children[0].Test);
+            Assert.Same(failed, type.Children[0].Execution);
+            Assert.Same(running, type.Children[1].Execution);
             Assert.Contains("2 test(s) discovered", tool.StatusText, StringComparison.Ordinal);
             Assert.Equal("Roslyn test hierarchy", AutomationProperties.GetName(tool.Tree));
             Assert.Equal("Test Explorer search", AutomationProperties.GetName(tool.Filter));
@@ -100,6 +107,10 @@ public sealed class TestExplorerToolTests
             Assert.Equal(1, shown);
             Assert.Equal(1, refreshed);
             Assert.Contains("Follow it in Run output", tool.StatusText, StringComparison.Ordinal);
+            tool.CancelTestAsync(running).AsTask().GetAwaiter().GetResult();
+            Assert.Equal("execution-running", Assert.Single(execution.Cancelled).Value);
+            Assert.Equal(2, refreshed);
+            Assert.Contains("Stopping", tool.StatusText, StringComparison.Ordinal);
             window.Close();
         }, CancellationToken.None);
     }
@@ -119,6 +130,35 @@ public sealed class TestExplorerToolTests
             new(new(line, 4), new(line, 20)),
             [new(new("Category"), new("Fast"))],
             parameterized);
+
+    private static DeveloperExecutionView Execution(
+        WorkbenchCodeTestCase test,
+        string id,
+        DeveloperExecutionState state,
+        int? exitCode,
+        long duration) => new(
+            new(id),
+            new("workspace-1"),
+            GoalId: null,
+            "Original workspace",
+            DeveloperExecutionOperation.Test,
+            new(new(test.ProjectPath.Value), null, null),
+            EntryPoint: null,
+            state,
+            DateTimeOffset.Parse("2026-08-29T11:00:00Z"),
+            state is DeveloperExecutionState.Running
+                ? null
+                : DateTimeOffset.Parse("2026-08-29T11:00:00Z").AddMilliseconds(duration),
+            exitCode,
+            duration,
+            StandardOutput: null,
+            StandardError: null,
+            IsOutputTruncated: false,
+            IsErrorTruncated: false,
+            IsOutputAvailable: false,
+            ErrorCode: state is DeveloperExecutionState.Failed ? "process_failed" : null,
+            Error: state is DeveloperExecutionState.Failed ? "The test failed." : null,
+            new(new(test.Id.Value), new(test.FullyQualifiedName.Value)));
 
     private static AvaloniaShellState TrustedShell()
     {
@@ -161,6 +201,8 @@ public sealed class TestExplorerToolTests
     private sealed class ExecutionService : IDeveloperProjectExecutionService
     {
         internal List<DeveloperTestStartRequest> Tests { get; } = [];
+        internal List<DeveloperExecutionView> History { get; } = [];
+        internal List<DeveloperExecutionId> Cancelled { get; } = [];
         public DeveloperExecutionCapabilities Capabilities { get; } = new(
             true, true, true, false, "Debug unavailable.", CanTest: true);
 
@@ -203,11 +245,15 @@ public sealed class TestExplorerToolTests
         public ValueTask<DeveloperExecutionListResult> ListAsync(
             WorkbenchWorkspaceRequest request,
             CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(new DeveloperExecutionListResult([], false, null, null));
+            ValueTask.FromResult(new DeveloperExecutionListResult(
+                History, false, null, null));
 
         public ValueTask<DeveloperExecutionCancelResult> CancelAsync(
             DeveloperExecutionId executionId,
-            CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(new DeveloperExecutionCancelResult(false, null, null));
+            CancellationToken cancellationToken = default)
+        {
+            Cancelled.Add(executionId);
+            return ValueTask.FromResult(new DeveloperExecutionCancelResult(true, null, null));
+        }
     }
 }

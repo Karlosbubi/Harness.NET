@@ -649,8 +649,9 @@ project/type/test hierarchy, and exact source navigation. The fifth slice adds a
 closed per-test Run action with an exact fully-qualified-name filter, no Restore or
 shell, process-tree cancellation, transient bounded output, and durable test identity,
 exit, duration, failure, and restart history. Multi-test selection, project/type
-runs, rerun shortcuts, per-case adapter results, test Debug, coverage, typed one-run
-overrides, Hot Reload, and Debug remain open.
+runs, per-case adapter results, test Debug, coverage, typed one-run overrides, Hot
+Reload, and Debug remain open. The sixth slice projects the newest exact-test history
+back into Test Explorer with state, duration, exit code, Rerun, and in-place Stop.
 
 Acceptance criteria:
 

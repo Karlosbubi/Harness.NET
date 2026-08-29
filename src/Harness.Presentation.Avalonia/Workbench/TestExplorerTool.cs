@@ -116,7 +116,10 @@ internal sealed class TestExplorerTool
                     "Roslyn test discovery failed.", StatusSeverity.Error);
                 return;
             }
-            Render(result);
+            DeveloperExecutionListResult history = execution is null
+                ? new([], false, null, null)
+                : await execution.ListAsync(context.Request(workspace), context.CancellationToken);
+            Render(result, history);
         }
         catch (OperationCanceledException)
         {
@@ -172,7 +175,7 @@ internal sealed class TestExplorerTool
             {
                 Text = node.Label,
                 TextWrapping = TextWrapping.Wrap,
-            } : TestControl(node.Test),
+            } : TestControl(node),
             node => node.Children);
         AutomationProperties.SetName(tree, "Roslyn test hierarchy");
         Grid.SetRow(tree, 3);
@@ -184,8 +187,9 @@ internal sealed class TestExplorerTool
         return grid;
     }
 
-    private Control TestControl(WorkbenchCodeTestCase test)
+    private Control TestControl(TestTreeNode node)
     {
+        WorkbenchCodeTestCase test = node.Test!;
         string traits = test.Traits.Count == 0
             ? string.Empty
             : " · " + string.Join(", ", test.Traits.Select(item =>
@@ -207,10 +211,33 @@ internal sealed class TestExplorerTool
         actions.Children.Add(open);
         if (execution?.Capabilities.CanTest is true)
         {
-            Button run = new() { Content = "Run" };
-            AutomationProperties.SetName(run, $"Run test {test.FullyQualifiedName.Value}");
-            run.Click += async (_, _) => await StartTestAsync(test);
-            actions.Children.Add(run);
+            if (node.Execution is { State: DeveloperExecutionState.Running } running)
+            {
+                Button stop = new() { Content = "Stop" };
+                AutomationProperties.SetName(stop, $"Stop test {test.FullyQualifiedName.Value}");
+                stop.Click += async (_, _) => await CancelTestAsync(running);
+                actions.Children.Add(stop);
+            }
+            else
+            {
+                Button run = new() { Content = node.Execution is null ? "Run" : "Rerun" };
+                AutomationProperties.SetName(run,
+                    $"{(node.Execution is null ? "Run" : "Rerun")} test " +
+                    test.FullyQualifiedName.Value);
+                run.Click += async (_, _) => await StartTestAsync(test);
+                actions.Children.Add(run);
+            }
+        }
+        if (node.Execution is not null)
+        {
+            TextBlock history = new()
+            {
+                Text = History(node.Execution),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            AutomationProperties.SetName(history,
+                $"Test history {test.FullyQualifiedName.Value}: {history.Text}");
+            actions.Children.Add(history);
         }
         return actions;
     }
@@ -264,8 +291,31 @@ internal sealed class TestExplorerTool
         }
     }
 
-    private void Render(WorkbenchCodeTestDiscoveryView result)
+    internal async ValueTask CancelTestAsync(DeveloperExecutionView running)
     {
+        if (execution is null || running.Operation is not DeveloperExecutionOperation.Test ||
+            running.State is not DeveloperExecutionState.Running)
+            return;
+        DeveloperExecutionCancelResult result = await execution.CancelAsync(
+            running.Id, context.CancellationToken);
+        status.Message = result.CancellationRequested
+            ? $"Stopping {running.Test?.FullyQualifiedName.Value ?? "the selected test"}…"
+            : result.Error ?? "The selected test could not be stopped.";
+        status.Severity = result.CancellationRequested
+            ? StatusSeverity.Information
+            : StatusSeverity.Error;
+        await refreshRunOutput();
+    }
+
+    private void Render(
+        WorkbenchCodeTestDiscoveryView result,
+        DeveloperExecutionListResult history)
+    {
+        Dictionary<string, DeveloperExecutionView> latest = history.Executions
+            .Where(item => item.Operation is DeveloperExecutionOperation.Test &&
+                item.Test is not null)
+            .GroupBy(item => item.Test!.Id.Value, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
         TestTreeNode[] projects = result.Tests
             .GroupBy(item => item.ProjectPath.Value, StringComparer.Ordinal)
             .OrderBy(group => group.Key, StringComparer.Ordinal)
@@ -280,15 +330,27 @@ internal sealed class TestExplorerTool
                             .Select(item => new TestTreeNode(
                                 item.DisplayName.Value,
                                 [],
-                                item)).ToArray()))
+                                item,
+                                latest.GetValueOrDefault(item.Id.Value))).ToArray()))
                     .ToArray()))
             .ToArray();
         tree.ItemsSource = projects;
         status.Message = $"{result.Tests.Count:N0} test(s) discovered with Roslyn" +
-                         (result.IsTruncated ? " · bounded result" : string.Empty) + ".";
-        status.Severity = result.IsTruncated || result.State is WorkbenchCodeResultState.Degraded
+                         (result.IsTruncated ? " · bounded result" : string.Empty) +
+                         (history.Error is null ? string.Empty : " · history unavailable") + ".";
+        status.Severity = result.IsTruncated || result.State is WorkbenchCodeResultState.Degraded ||
+                          history.Error is not null
             ? StatusSeverity.Warning
             : StatusSeverity.Success;
+    }
+
+    private static string History(DeveloperExecutionView execution)
+    {
+        string duration = execution.State is DeveloperExecutionState.Running
+            ? "running"
+            : $"{execution.DurationMilliseconds:N0} ms";
+        string exit = execution.ExitCode is null ? string.Empty : $" · exit {execution.ExitCode}";
+        return $"{execution.State} · {duration}{exit}";
     }
 
     private void RenderUnavailable(
@@ -309,5 +371,6 @@ internal sealed class TestExplorerTool
     internal sealed record TestTreeNode(
         string Label,
         IReadOnlyList<TestTreeNode> Children,
-        WorkbenchCodeTestCase? Test = null);
+        WorkbenchCodeTestCase? Test = null,
+        DeveloperExecutionView? Execution = null);
 }
