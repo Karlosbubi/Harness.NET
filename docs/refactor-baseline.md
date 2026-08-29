@@ -15,8 +15,9 @@ staging, patch units, destructive previews, and developer commit entry;
 `GitBranchesTool` and `GitWorktreesTool` own branches, tags, linked worktrees, and
 stashes. Slice 060.4 is also implemented: `GitRemotesTool`, `GitHistoryTool`, and
 `GitConflictsTool` own synchronization, history/blame, exact conflict editing, and
-the conflict editor's Roslyn session lifecycle. Slices 060.5–060.8 remain and
-continue to follow the sequencing and evidence rules below.
+the conflict editor's Roslyn session lifecycle. Slice 060.5 is in progress:
+`RunOutputTool` and `ProblemsTool` are extracted while `DocumentsHost` remains.
+Slices 060.6–060.8 remain and continue to follow the sequencing and evidence rules below.
 
 ## Measured baseline (2026-08-24)
 
@@ -156,7 +157,7 @@ slices that touch `WorkbenchDockHost`.
 | 060.2 — implemented | Extract **GitChangesTool** (staging, patch units, destructive previews). | Exact-fingerprint staging, opaque patch-unit selection, destructive preview/confirmation, unsaved-buffer blocking, and developer commit preview/confirmation re-verified; host budget tightened from 6,060 to 5,798 lines. |
 | 060.3 — implemented | Extract **GitBranchesTool**, **GitWorktreesTool** (branches, tags, worktrees, stashes). | Exact reference/repository/worktree-set fingerprints, destructive previews, workspace-transition guards, and matching acceptance records re-verified; host budget tightened from 5,798 to 5,309 lines and the monolithic test budget from 5,217 to 4,901. |
 | 060.4 — implemented | Extract **GitRemotesTool**, **GitHistoryTool**, **GitConflictsTool**. | Remote/history/conflict acceptance records re-verified, including exact conflict save/stage separation, unsaved-result transitions, Roslyn session reuse/cancellation/shutdown, and production AT-SPI; host budget tightened from 5,309 to 4,570 lines and the monolithic test budget from 4,901 to 4,824. |
-| 060.5 | Extract **RunOutputTool**, **ProblemsTool**, **DocumentsHost** (document sessions, diagnostics views, switcher). Coordinate with Task 052 owner first — run output and documents are its surface. | `WorkbenchDockHost` ≤ 800 lines and leaves the allowlist. |
+| 060.5 — in progress | Extract **RunOutputTool**, **ProblemsTool**, **DocumentsHost** (document sessions, diagnostics views, switcher). Task 052 has no open branch ahead of `main`; its delivered CodeLens-run slice is included. Run output and Problems are extracted; Documents remains. | `WorkbenchDockHost` ≤ 800 lines and leaves the allowlist. |
 | 060.6 | Store decomposition into per-feature command handlers; `AvaloniaShellState` contract unchanged. | Store tests split per feature; store leaves the allowlist. |
 | 060.7 | `SettingsWindow` and `GoalDialog` section decomposition. | Both leave the allowlist; settings and chat-first workflow acceptance evidence re-verified. |
 | 060.8 | UX consistency pass enabled by the units: shared tool chrome (header, busy, empty, error presentation), command-palette and keybinding coverage audit for every tool action. | Palette lists every tool action; keybinding catalog complete; Orca/AT-SPI checks pass; allowlist empty. |

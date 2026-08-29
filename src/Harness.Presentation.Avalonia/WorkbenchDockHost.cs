@@ -36,7 +36,6 @@ namespace Harness.Presentation.Avalonia;
 
 internal sealed class WorkbenchDockHost
 {
-    private readonly IRunOutputService runOutputService;
     private readonly IWorkbenchInspectionService inspectionService;
     private readonly IDeveloperGitService? developerGitService;
     private readonly IWorkbenchDocumentService documentService;
@@ -56,8 +55,6 @@ internal sealed class WorkbenchDockHost
     private readonly Dictionary<string, Control> durableContexts = new(StringComparer.Ordinal);
     private readonly Dictionary<string, SourceDocumentSession> sourceDocuments = new(StringComparer.Ordinal);
     private readonly Dictionary<string, TextEditor> virtualDocuments = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, WorkbenchCodeDiagnosticView> documentDiagnostics =
-        new(StringComparer.Ordinal);
     private readonly SemaphoreSlim codeSessionGate = new(1, 1);
     private readonly TextBlock layoutStatus = new()
     {
@@ -98,28 +95,14 @@ internal sealed class WorkbenchDockHost
     private readonly GitRemotesTool gitRemotesTool;
     private readonly GitHistoryTool gitHistoryTool;
     private readonly GitConflictsTool gitConflictsTool;
+    private readonly RunOutputTool runOutputToolUnit;
+    private readonly ProblemsTool problemsToolUnit;
     private TextBlock GitStatus => gitChangesTool.Status;
     private string GitFingerprint => gitChangesTool.Fingerprint;
     private WorkbenchWorkspaceContext? CurrentGitContext => gitChangesTool.CurrentContext;
-    private readonly ListBox runOutputs = new();
-    private readonly TextBlock runOutputStatus = new() { TextWrapping = TextWrapping.Wrap };
-    private readonly Button cancelDeveloperRun = new() { Content = "Stop", IsEnabled = false };
-    private readonly TextEditor runOutputDetails = CodeEditorView.Create(
-        string.Empty,
-        isReadOnly: true,
-        wordWrap: false,
-        showLineNumbers: false,
-        path: "run-output.txt");
-    private readonly ListBox problems = new();
-    private readonly TextBlock problemsStatus = new() { TextWrapping = TextWrapping.Wrap };
-    private readonly CheckBox showWarnings = new() { Content = "Warnings", IsChecked = true };
-    private readonly CheckBox showInformation = new() { Content = "Info", IsChecked = true };
-    private readonly CheckBox showHidden = new() { Content = "Hidden", IsChecked = false };
     private string? workspaceId;
     private string? selectedGoalId;
-    private string? runOutputFingerprint;
     private bool busy;
-    private bool runOutputBusy;
     private bool suppressDocumentActivation;
     private bool renderingDocumentSwitcher;
     private bool resolvingDocumentTransition;
@@ -181,7 +164,6 @@ internal sealed class WorkbenchDockHost
         Func<Task>? refreshWorkspaceContext = null,
         Func<string, Task>? manageWorkspaceAt = null)
     {
-        this.runOutputService = runOutputService;
         this.inspectionService = inspectionService;
         this.documentService = documentService;
         this.codeIntelligenceService = codeIntelligenceService;
@@ -240,11 +222,13 @@ internal sealed class WorkbenchDockHost
             codeIntelligenceService,
             gitChangesTool.Render,
             HasOpenSourceDocument);
+        runOutputToolUnit = new(toolContext, runOutputService, developerExecutionService);
+        problemsToolUnit = new(NavigateToProblemAsync);
 
         Control files = filesTool.Content;
         Control sourceControl = BuildSourceControlTool();
-        Control runOutput = BuildRunOutputTool();
-        Control problemsContent = BuildProblemsTool();
+        Control runOutput = runOutputToolUnit.Content;
+        Control problemsContent = problemsToolUnit.Content;
         Control context = BuildContextTool(goalContext);
         Control overviewContent = BuildOverviewDocument();
         durableContexts.Add(WorkbenchDockIds.NavigationTool, navigation);
@@ -417,8 +401,8 @@ internal sealed class WorkbenchDockHost
                                                 virtualDocuments.TryGetValue(id, out TextEditor? editor)
         ? editor
         : activeDocument?.Context as TextEditor;
-    internal ListBox Problems => problems;
-    internal string? ProblemsStatusText => problemsStatus.Text;
+    internal ListBox Problems => problemsToolUnit.List;
+    internal string? ProblemsStatusText => problemsToolUnit.Status.Text;
     internal bool ActiveSourceDocumentIsDirty => activeDocument?.Id is { } id &&
                                                  sourceDocuments.TryGetValue(id, out SourceDocumentSession? session) &&
                                                  session.IsDirty;
@@ -630,14 +614,7 @@ internal sealed class WorkbenchDockHost
             }
         }
 
-        string nextRunOutputFingerprint = $"{nextGoalId}|{snapshot.Goals.Workflow?.State}|" +
-                                          $"{snapshot.Goals.Workflow?.Activities.Count ?? 0}|" +
-                                          snapshot.Goals.IsWorkflowRunning;
-        if (!string.Equals(runOutputFingerprint, nextRunOutputFingerprint, StringComparison.Ordinal))
-        {
-            runOutputFingerprint = nextRunOutputFingerprint;
-            Dispatcher.UIThread.Post(async () => await RefreshRunOutputAsync());
-        }
+        runOutputToolUnit.Update(snapshot, selectedGoal?.Id);
 
         if (active is null)
         {
@@ -1314,82 +1291,6 @@ internal sealed class WorkbenchDockHost
         return grid;
     }
 
-    private Control BuildRunOutputTool()
-    {
-        Grid grid = new()
-        {
-            RowDefinitions = new("Auto,*,2*"),
-            Margin = new Thickness(10),
-            RowSpacing = 8,
-        };
-        Grid heading = new() { ColumnDefinitions = new("*,Auto,Auto"), ColumnSpacing = 8 };
-        AutomationProperties.SetName(runOutputStatus, "Run output status");
-        runOutputStatus.Text = "Open a trusted workspace to inspect project and goal runs.";
-        heading.Children.Add(runOutputStatus);
-        Button refresh = new() { Content = "Refresh" };
-        AutomationProperties.SetName(refresh, "Refresh run output");
-        refresh.Click += async (_, _) => await RefreshRunOutputAsync();
-        Grid.SetColumn(refresh, 1);
-        heading.Children.Add(refresh);
-        AutomationProperties.SetName(cancelDeveloperRun, "Stop selected project run");
-        cancelDeveloperRun.Click += async (_, _) => await CancelSelectedDeveloperRunAsync();
-        Grid.SetColumn(cancelDeveloperRun, 2);
-        heading.Children.Add(cancelDeveloperRun);
-        grid.Children.Add(heading);
-
-        AutomationProperties.SetName(runOutputs, "Project and goal runs");
-        runOutputs.SelectionChanged += (_, _) => ShowSelectedRunOutput();
-        Grid.SetRow(runOutputs, 1);
-        grid.Children.Add(runOutputs);
-
-        AutomationProperties.SetName(runOutputDetails, "Selected run output");
-        Grid.SetRow(runOutputDetails, 2);
-        grid.Children.Add(runOutputDetails);
-        return grid;
-    }
-
-    private Control BuildProblemsTool()
-    {
-        Grid grid = new()
-        {
-            RowDefinitions = new("Auto,*"),
-            Margin = new Thickness(10),
-            RowSpacing = 8,
-        };
-        Grid heading = new()
-        {
-            ColumnDefinitions = new("*,Auto,Auto,Auto"),
-            ColumnSpacing = 10,
-            Children = { problemsStatus },
-        };
-        problemsStatus.Text = "Open a .NET source file to load compiler diagnostics.";
-        AutomationProperties.SetName(problemsStatus, "Code intelligence status");
-        AutomationProperties.SetName(showWarnings, "Show warning diagnostics");
-        AutomationProperties.SetName(showInformation, "Show information diagnostics");
-        AutomationProperties.SetName(showHidden, "Show hidden diagnostics");
-        Grid.SetColumn(showWarnings, 1);
-        Grid.SetColumn(showInformation, 2);
-        Grid.SetColumn(showHidden, 3);
-        heading.Children.Add(showWarnings);
-        heading.Children.Add(showInformation);
-        heading.Children.Add(showHidden);
-        showWarnings.IsCheckedChanged += (_, _) => RenderProblems();
-        showInformation.IsCheckedChanged += (_, _) => RenderProblems();
-        showHidden.IsCheckedChanged += (_, _) => RenderProblems();
-        grid.Children.Add(heading);
-        AutomationProperties.SetName(problems, "Compiler and analyzer problems");
-        problems.SelectionChanged += async (_, _) =>
-        {
-            if (problems.SelectedItem is ProblemChoice choice)
-            {
-                await NavigateToProblemAsync(choice);
-            }
-        };
-        Grid.SetRow(problems, 1);
-        grid.Children.Add(problems);
-        return grid;
-    }
-
     private void ScheduleDiagnostics(SourceDocumentSession session, bool immediate = false)
     {
         if (session.IsDisposed) return;
@@ -1401,10 +1302,7 @@ internal sealed class WorkbenchDockHost
         }
 
         session.Surface.BeginCodeHealthUpdate();
-        if (session.Document.Id is { } documentId && documentDiagnostics.Remove(documentId))
-        {
-            RenderProblems();
-        }
+        if (session.Document.Id is { } documentId) problemsToolUnit.Remove(documentId);
 
         (WorkbenchCodeBufferVersion version, CancellationToken token) =
             session.BeginDiagnostics(cancellationToken);
@@ -1457,8 +1355,7 @@ internal sealed class WorkbenchDockHost
                 }
 
                 session.Surface.UpdateCodeHealth(result);
-                documentDiagnostics[documentId] = result;
-                RenderProblems();
+                problemsToolUnit.Set(documentId, session.View.GoalId, result);
             });
         }
         catch (OperationCanceledException) when (requestCancellation.IsCancellationRequested)
@@ -1469,7 +1366,7 @@ internal sealed class WorkbenchDockHost
         {
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                problemsStatus.Text = $"Code intelligence failed · {exception.Message}";
+                problemsToolUnit.Status.Text = $"Code intelligence failed · {exception.Message}";
             });
         }
     }
@@ -1684,11 +1581,12 @@ internal sealed class WorkbenchDockHost
                 entryPoint.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
             {
                 await Dispatcher.UIThread.InvokeAsync(() =>
-                    problemsStatus.Text = "Code intelligence unavailable · invalid workspace entry point.");
+                    problemsToolUnit.Status.Text =
+                        "Code intelligence unavailable · invalid workspace entry point.");
                 return null;
             }
 
-            IProgress<WorkbenchCodeLoadProgress> progress = new UiLoadProgress(problemsStatus);
+            IProgress<WorkbenchCodeLoadProgress> progress = new UiLoadProgress(problemsToolUnit.Status);
             WorkbenchCodeSessionView started = await codeIntelligenceService.StartAsync(
                 new(
                     new(active.Id),
@@ -1700,7 +1598,7 @@ internal sealed class WorkbenchDockHost
             {
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
-                    problemsStatus.Text = started.Issues.Count == 0
+                    problemsToolUnit.Status.Text = started.Issues.Count == 0
                         ? "Code intelligence unavailable."
                         : $"Code intelligence unavailable · {started.Issues[0].Message.Value}";
                 });
@@ -1738,9 +1636,7 @@ internal sealed class WorkbenchDockHost
 
             codeSessionId = null;
             codeSessionKey = null;
-            documentDiagnostics.Clear();
-            problems.ItemsSource = Array.Empty<ProblemChoice>();
-            problemsStatus.Text = "Open a .NET source file to load compiler diagnostics.";
+            problemsToolUnit.Clear();
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -1751,55 +1647,19 @@ internal sealed class WorkbenchDockHost
         }
     }
 
-    private void RenderProblems()
-    {
-        ProblemChoice[] choices = documentDiagnostics
-            .SelectMany(pair => pair.Value.Diagnostics.Select(diagnostic => new ProblemChoice(
-                diagnostic,
-                sourceDocuments.TryGetValue(pair.Key, out SourceDocumentSession? session)
-                    ? session.View.GoalId
-                    : null)))
-            .Where(choice => choice.Diagnostic.Severity switch
-            {
-                WorkbenchCodeDiagnosticSeverity.Error => true,
-                WorkbenchCodeDiagnosticSeverity.Warning => showWarnings.IsChecked is true,
-                WorkbenchCodeDiagnosticSeverity.Information => showInformation.IsChecked is true,
-                WorkbenchCodeDiagnosticSeverity.Hidden => showHidden.IsChecked is true,
-                _ => false,
-            })
-            .OrderByDescending(choice => choice.Diagnostic.Severity)
-            .ThenBy(choice => choice.Diagnostic.Path.Value, StringComparer.Ordinal)
-            .ThenBy(choice => choice.Diagnostic.Range.Start.Line)
-            .Take(5_000)
-            .ToArray();
-        problems.ItemsSource = choices;
-        int errors = choices.Count(choice =>
-            choice.Diagnostic.Severity is WorkbenchCodeDiagnosticSeverity.Error);
-        int warnings = choices.Count(choice =>
-            choice.Diagnostic.Severity is WorkbenchCodeDiagnosticSeverity.Warning);
-        WorkbenchCodeDiagnosticView? unavailable = documentDiagnostics.Values.FirstOrDefault(
-            result => result.State is WorkbenchCodeResultState.Degraded or
-                WorkbenchCodeResultState.Failed);
-        problemsStatus.Text = unavailable?.Issues.FirstOrDefault() is { } issue
-            ? $"Code intelligence {unavailable.State.ToString().ToLowerInvariant()} · " +
-              issue.Message.Value
-            : choices.Length == 0
-                ? "No compiler or analyzer problems in the active buffers."
-                : $"{errors:N0} error(s), {warnings:N0} warning(s), " +
-                  $"{choices.Length - errors - warnings:N0} other finding(s).";
-    }
-
-    private async ValueTask NavigateToProblemAsync(ProblemChoice choice)
+    private async ValueTask NavigateToProblemAsync(
+        WorkbenchCodeDiagnostic diagnostic,
+        GoalId? goalId)
     {
         SourceDocumentSession? session = sourceDocuments.Values.FirstOrDefault(item =>
-            item.View.GoalId == choice.GoalId &&
-            item.View.Path.Value.Equals(choice.Diagnostic.Path.Value, StringComparison.Ordinal));
+            item.View.GoalId == goalId &&
+            item.View.Path.Value.Equals(diagnostic.Path.Value, StringComparison.Ordinal));
         if (session is null)
         {
-            await OpenFileAsync(choice.Diagnostic.Path.Value, choice.GoalId);
+            await OpenFileAsync(diagnostic.Path.Value, goalId);
             session = sourceDocuments.Values.FirstOrDefault(item =>
-                item.View.GoalId == choice.GoalId &&
-                item.View.Path.Value.Equals(choice.Diagnostic.Path.Value, StringComparison.Ordinal));
+                item.View.GoalId == goalId &&
+                item.View.Path.Value.Equals(diagnostic.Path.Value, StringComparison.Ordinal));
         }
 
         if (session is null)
@@ -1808,7 +1668,7 @@ internal sealed class WorkbenchDockHost
         }
 
         SetActiveDocument(session.Document);
-        WorkbenchCodePosition position = choice.Diagnostic.Range.Start;
+        WorkbenchCodePosition position = diagnostic.Range.Start;
         session.Editor.SetCaretPosition(position);
         session.Editor.ScrollTo(position);
         session.Editor.Focus();
@@ -1817,181 +1677,7 @@ internal sealed class WorkbenchDockHost
     private static bool IsDotNetSource(string path) =>
         Path.GetExtension(path).Equals(".cs", StringComparison.OrdinalIgnoreCase);
 
-    internal async ValueTask RefreshRunOutputAsync()
-    {
-        WorkspaceView? workspace = ActiveWorkspace();
-        GoalView? goal = state().Goals.SelectedGoal;
-        if (runOutputBusy)
-        {
-            return;
-        }
-
-        if (workspace is null || !workspace.IsTrusted)
-        {
-            runOutputs.ItemsSource = Array.Empty<RunOutputChoiceBase>();
-            runOutputDetails.Text = string.Empty;
-            runOutputStatus.Text = workspace is null
-                ? "Open a workspace to inspect project and goal runs."
-                : "Trust the workspace before inspecting run output.";
-            return;
-        }
-
-        runOutputBusy = true;
-        runOutputStatus.Text = "Loading project and goal runs…";
-        try
-        {
-            DeveloperExecutionListResult developer = developerExecutionService is null
-                ? new([], false, null, null)
-                : await developerExecutionService.ListAsync(
-                    WorkbenchRequest(workspace), cancellationToken);
-            RunOutputSnapshot? goalRuns = goal is null
-                ? null
-                : await runOutputService.ListAsync(goal.Id, cancellationToken);
-            if (developer.Error is not null || goalRuns?.Error is not null)
-            {
-                runOutputs.ItemsSource = Array.Empty<RunOutputChoiceBase>();
-                runOutputDetails.Text = string.Empty;
-                runOutputStatus.Text = developer.Error ?? goalRuns?.Error;
-                return;
-            }
-
-            RunOutputChoiceBase[] choices = developer.Executions
-                .Select(item => (RunOutputChoiceBase)new DeveloperRunOutputChoice(item))
-                .Concat(goalRuns?.Items.Select(item =>
-                    (RunOutputChoiceBase)new GoalRunOutputChoice(item)) ?? [])
-                .OrderByDescending(item => item.StartedAt)
-                .ToArray();
-            runOutputs.ItemsSource = choices;
-            runOutputStatus.Text = choices.Length == 0
-                ? "No project, Build, Test, or Restore runs are recorded for this source context."
-                : $"{choices.Length} project and goal run(s)." +
-                  (developer.IsTruncated || goalRuns?.IsTruncated is true
-                      ? " Showing the latest bounded results."
-                      : string.Empty);
-            runOutputs.SelectedIndex = choices.Length == 0 ? -1 : 0;
-            if (choices.Length == 0)
-            {
-                runOutputDetails.Text = string.Empty;
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            runOutputStatus.Text = "Run-output refresh cancelled.";
-        }
-        catch (Exception exception)
-        {
-            runOutputs.ItemsSource = Array.Empty<RunOutputChoiceBase>();
-            runOutputDetails.Text = string.Empty;
-            runOutputStatus.Text = $"Run output unavailable: {exception.Message}";
-        }
-        finally
-        {
-            runOutputBusy = false;
-        }
-    }
-
-    private void ShowSelectedRunOutput()
-    {
-        runOutputDetails.Text = runOutputs.SelectedItem switch
-        {
-            GoalRunOutputChoice choice => FormatRunOutput(choice.Output),
-            DeveloperRunOutputChoice choice => FormatDeveloperRunOutput(choice.Output),
-            _ => string.Empty,
-        };
-        cancelDeveloperRun.IsEnabled = runOutputs.SelectedItem is DeveloperRunOutputChoice
-        {
-            Output.State: DeveloperExecutionState.Running,
-        };
-    }
-
-    private async ValueTask CancelSelectedDeveloperRunAsync()
-    {
-        if (developerExecutionService is null ||
-            runOutputs.SelectedItem is not DeveloperRunOutputChoice choice ||
-            choice.Output.State is not DeveloperExecutionState.Running)
-        {
-            return;
-        }
-        DeveloperExecutionCancelResult cancelled = await developerExecutionService.CancelAsync(
-            choice.Output.Id, cancellationToken);
-        runOutputStatus.Text = cancelled.CancellationRequested
-            ? "Stopping the selected project run…"
-            : cancelled.Error ?? "The selected project run could not be stopped.";
-    }
-
-    private static string FormatDeveloperRunOutput(DeveloperExecutionView output)
-    {
-        List<string> lines =
-        [
-            $"Run · {output.State}",
-            $"Project: {output.Target.ProjectPath.Value}",
-            $"Framework: {output.Target.TargetFramework.Value}",
-            $"Source: {output.SourceDescription}",
-            $"Started: {output.StartedAt:O}",
-            $"Completed: {(output.CompletedAt is null ? "not completed" : output.CompletedAt.Value.ToString("O"))}",
-            $"Exit code: {(output.ExitCode?.ToString() ?? "not reported")}",
-            $"Duration: {output.DurationMilliseconds:N0} ms",
-        ];
-        if (output.Error is not null)
-        {
-            lines.Add($"Run error: {output.Error}");
-        }
-        lines.Add(string.Empty);
-        if (!output.IsOutputAvailable)
-        {
-            lines.Add(output.State is DeveloperExecutionState.Running
-                ? "Output becomes available when this bounded run completes."
-                : "Raw output is no longer available. Harness.NET persists run metadata, not potentially sensitive application output.");
-            return string.Join(Environment.NewLine, lines);
-        }
-        lines.Add(output.IsOutputTruncated ? "Standard output · truncated" : "Standard output");
-        lines.Add(output.StandardOutput?.Value ?? string.Empty);
-        lines.Add(string.Empty);
-        lines.Add(output.IsErrorTruncated ? "Standard error · truncated" : "Standard error");
-        lines.Add(output.StandardError?.Value ?? string.Empty);
-        return string.Join(Environment.NewLine, lines);
-    }
-
-    private static string FormatRunOutput(RunOutputView output)
-    {
-        List<string> lines =
-        [
-            $"{output.Operation} · {output.State}",
-            $"Started: {output.StartedAt:O}",
-            $"Completed: {(output.CompletedAt is null ? "not recorded" : output.CompletedAt.Value.ToString("O"))}",
-            $"Correlation: {output.CorrelationId.Value}",
-        ];
-        if (output.Error is not null)
-        {
-            lines.Add($"Evidence error: {output.Error}");
-            return string.Join(Environment.NewLine, lines);
-        }
-
-        if (output.Result is not { } result)
-        {
-            lines.Add(output.State is ToolEvidenceState.Running
-                ? "The run is still active; output becomes available with durable completion evidence."
-                : "No completed output was recorded for this run.");
-            return string.Join(Environment.NewLine, lines);
-        }
-
-        lines.Add($"Entry point: {result.EntryPoint}");
-        lines.Add($"Exit code: {(result.ExitCode?.ToString() ?? "not reported")}");
-        lines.Add($"Duration: {result.DurationMilliseconds:N0} ms");
-        lines.Add($"Cancelled: {(result.WasCancelled ? "yes" : "no")}");
-        if (result.Error is not null)
-        {
-            lines.Add($"Operation error: {result.Error}");
-        }
-
-        lines.Add(string.Empty);
-        lines.Add(result.IsOutputTruncated ? "Standard output · truncated" : "Standard output");
-        lines.Add(result.StandardOutput);
-        lines.Add(string.Empty);
-        lines.Add(result.IsErrorTruncated ? "Standard error · truncated" : "Standard error");
-        lines.Add(result.StandardError);
-        return string.Join(Environment.NewLine, lines);
-    }
+    internal ValueTask RefreshRunOutputAsync() => runOutputToolUnit.RefreshAsync();
 
     private Control BuildOverviewDocument()
     {
@@ -4014,9 +3700,8 @@ internal sealed class WorkbenchDockHost
         IDockable? dockable = args.Dockable;
         if (dockable?.Id is { } id && sourceDocuments.Remove(id, out SourceDocumentSession? session))
         {
-            documentDiagnostics.Remove(id);
+            problemsToolUnit.Remove(id);
             session.Dispose();
-            RenderProblems();
         }
         if (dockable?.Id is { } virtualId)
             virtualDocuments.Remove(virtualId);
@@ -4508,42 +4193,6 @@ internal sealed class WorkbenchDockHost
         finally
         {
             busy = false;
-        }
-    }
-
-    private abstract record RunOutputChoiceBase(DateTimeOffset StartedAt);
-
-    private sealed record GoalRunOutputChoice(RunOutputView Output)
-        : RunOutputChoiceBase(Output.StartedAt)
-    {
-        public override string ToString()
-        {
-            string exit = Output.Result?.ExitCode is { } code ? $" · exit {code}" : string.Empty;
-            return $"{Output.Operation} · {Output.State}{exit} · {Output.StartedAt.LocalDateTime:g}";
-        }
-    }
-
-    private sealed record DeveloperRunOutputChoice(DeveloperExecutionView Output)
-        : RunOutputChoiceBase(Output.StartedAt)
-    {
-        public override string ToString()
-        {
-            string exit = Output.ExitCode is { } code ? $" · exit {code}" : string.Empty;
-            return $"Run {Output.Target.ProjectPath.Value} · {Output.State}{exit} · " +
-                   $"{Output.StartedAt.LocalDateTime:g}";
-        }
-    }
-
-    private sealed record ProblemChoice(
-        WorkbenchCodeDiagnostic Diagnostic,
-        GoalId? GoalId)
-    {
-        public override string ToString()
-        {
-            int line = Diagnostic.Range.Start.Line + 1;
-            int column = Diagnostic.Range.Start.Character + 1;
-            return $"{Diagnostic.Severity} {Diagnostic.Id.Value}  " +
-                   $"{Diagnostic.Path.Value}:{line}:{column}  {Diagnostic.Message.Value}";
         }
     }
 

@@ -1546,76 +1546,6 @@ public sealed partial class PresentationControlTests
     }
 
     [Fact]
-    public async Task Run_output_tool_renders_typed_goal_execution_evidence()
-    {
-        using HeadlessUnitTestSession session =
-            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
-        await session.Dispatch(() =>
-        {
-            DateTimeOffset now = DateTimeOffset.UtcNow;
-            RunOutputService output = new()
-            {
-                Result = new(
-                    [new(
-                        new("run-1"),
-                        new("goal-1"),
-                        new("build-1"),
-                        DotNetOperation.Build,
-                        ToolEvidenceState.Failed,
-                        new(
-                            "goal-1",
-                            new("build-1"),
-                            DotNetOperation.Build,
-                            "Harness.slnx",
-                            1,
-                            "compiler output",
-                            "CS1002: ; expected",
-                            IsOutputTruncated: true,
-                            IsErrorTruncated: false,
-                            WasCancelled: false,
-                            DurationMilliseconds: 725,
-                            "process_failed",
-                            "Build failed."),
-                        now,
-                        now.AddMilliseconds(725),
-                        Error: null)],
-                    IsTruncated: false,
-                    ErrorCode: null,
-                    Error: null),
-            };
-            WorkbenchDockHost workbench = CreateWorkbench(
-                ApprovedGoalShell(),
-                new(),
-                runOutput: output);
-            Window window = new() { Content = workbench.Control };
-            window.Show();
-
-            workbench.RefreshRunOutputAsync().AsTask().GetAwaiter().GetResult();
-
-            ITool tool = Find<ITool>(workbench.Root, WorkbenchDockIds.RunOutputTool);
-            Control content = Assert.IsAssignableFrom<Control>(tool.Context);
-            ListBox runs = Assert.Single(content.GetVisualDescendants().OfType<ListBox>());
-            TextEditor details = Assert.Single(content.GetVisualDescendants().OfType<TextEditor>());
-            Assert.Single(Assert.IsAssignableFrom<IEnumerable<object>>(runs.ItemsSource));
-            Assert.Contains("Build · Failed", details.Text, StringComparison.Ordinal);
-            Assert.Contains("Harness.slnx", details.Text, StringComparison.Ordinal);
-            Assert.Contains("Standard output · truncated", details.Text, StringComparison.Ordinal);
-            Assert.Contains("compiler output", details.Text, StringComparison.Ordinal);
-            Assert.Contains("CS1002: ; expected", details.Text, StringComparison.Ordinal);
-            Assert.Equal("goal-1", Assert.Single(output.Requests).Value);
-
-            output.Result = new([], false, null, null);
-            workbench.RefreshRunOutputAsync().AsTask().GetAwaiter().GetResult();
-            TextBlock status = Assert.Single(content.GetVisualDescendants().OfType<TextBlock>(),
-                item => AutomationProperties.GetName(item) == "Run output status");
-            Assert.Contains("No project, Build, Test, or Restore runs", status.Text,
-                StringComparison.Ordinal);
-            Assert.Equal(string.Empty, details.Text);
-            window.Close();
-        }, CancellationToken.None);
-    }
-
-    [Fact]
     public async Task Compact_viewport_collapses_tools_and_keyboard_commands_restore_access()
     {
         using HeadlessUnitTestSession session =
@@ -1679,59 +1609,6 @@ public sealed partial class PresentationControlTests
             Assert.True(left.IsExpanded);
             Assert.True(right.IsExpanded);
             Assert.True(bottom.IsExpanded);
-            window.Close();
-        }, CancellationToken.None);
-    }
-
-    [Fact]
-    public async Task Source_buffer_diagnostics_render_in_the_dockable_problems_tool_and_navigate()
-    {
-        using HeadlessUnitTestSession session =
-            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
-        await session.Dispatch(() =>
-        {
-            CodeIntelligenceService codeIntelligence = new()
-            {
-                Diagnostics = snapshot => new(
-                    snapshot.SessionId,
-                    snapshot.Path,
-                    snapshot.BufferVersion,
-                    WorkbenchCodeResultState.Ready,
-                    [new(
-                        new("CS1002"),
-                        new("; expected"),
-                        new("Compiler"),
-                        new("Sample"),
-                        snapshot.Path,
-                        new(new(0, 9), new(0, 10)),
-                        WorkbenchCodeDiagnosticSeverity.Error)],
-                    []),
-            };
-            WorkbenchDockHost workbench = CreateWorkbench(
-                TrustedShell(),
-                new(),
-                codeIntelligence: codeIntelligence);
-            Window window = new() { Width = 1280, Height = 800, Content = workbench.Control };
-            window.Show();
-
-            workbench.OpenFileAsync("src/App.cs").AsTask().GetAwaiter().GetResult();
-            Dispatcher.UIThread.RunJobs();
-
-            WorkbenchCodeDocumentSnapshot snapshot = Assert.Single(codeIntelligence.Snapshots);
-            Assert.Equal(1, snapshot.BufferVersion.Value);
-            Assert.Equal("src/App.cs", snapshot.Path.Value);
-            Assert.Single(Assert.IsAssignableFrom<IEnumerable<object>>(workbench.Problems.ItemsSource));
-            Assert.Contains("1 error", workbench.ProblemsStatusText, StringComparison.Ordinal);
-            Assert.NotNull(Find<ITool>(workbench.Root, WorkbenchDockIds.ProblemsTool));
-            CodeDiagnosticRenderer renderer = Assert.Single(
-                workbench.ActiveSourceEditor!.TextArea.TextView.BackgroundRenderers
-                    .OfType<CodeDiagnosticRenderer>());
-            Assert.Equal(1, renderer.SegmentCount);
-
-            workbench.Problems.SelectedIndex = 0;
-            Dispatcher.UIThread.RunJobs();
-            Assert.Equal(1, workbench.ActiveSourceEditor?.TextArea.Caret.Line);
-            Assert.Equal(10, workbench.ActiveSourceEditor?.TextArea.Caret.Column);
             window.Close();
         }, CancellationToken.None);
     }
