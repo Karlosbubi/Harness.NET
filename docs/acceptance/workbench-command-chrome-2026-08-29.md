@@ -22,6 +22,10 @@ This record covers the presentation UX portion of Task 060 slice 060.8.
 
 The production AT-SPI verifier opens the real command palette, settings, workspace
 and goal flows, exercises Roslyn editor actions, persists/restarts the Dock layout,
-and checks explicit automation names. The global source-size guard has no remaining
-Avalonia production or test entries; 4 non-Avalonia test fixtures remain visible and keep
-Task 060 open.
+and checks explicit automation names. The final production services and test
+fixtures are decomposed into bounded partials; the global source-size guard now has
+an empty burn-down allowlist, completing slice 060.8 and Task 060.
+
+Final verification on 2026-08-29 passed the warning-free solution build, all 871
+deterministic .NET release-gate tests, repository metadata checks, Linux x64 publish,
+and the production Avalonia AT-SPI workflow.

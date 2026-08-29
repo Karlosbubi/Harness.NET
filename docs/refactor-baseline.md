@@ -24,12 +24,13 @@ and workflow units. The 523-line state/reducer coordinator and its 448-line shar
 test fixture have both left the source-size allowlist. Slice 060.7 is implemented:
 the 397-line settings coordinator, 460-line goal coordinator, and their bounded
 section/dialog units have left the production allowlist, with matching presentation
-tests split from the shared fixture. Slice 060.8 remains and continues to follow the
-sequencing and evidence rules below. Its presentation UX portion is implemented:
+tests split from the shared fixture. Slice 060.8 is implemented under the sequencing
+and evidence rules below:
 the shell and shared test fixture are decomposed, all Avalonia production/test files
 have left the allowlist, 45 workbench tool actions join the complete typed palette
-catalog, and core tool status uses one live indicator. The 4 remaining global
-source-budget entries keep the slice and Task 060 open.
+catalog, and core tool status uses one live indicator. The remaining production
+services and test fixtures are decomposed into bounded partials, leaving the shared
+global source-budget allowlist empty and completing Task 060.
 
 ## Measured baseline (2026-08-24)
 
@@ -172,7 +173,7 @@ slices that touch `WorkbenchDockHost`.
 | 060.5 — implemented | Extract **RunOutputTool**, **ProblemsTool**, **DocumentsHost** (document sessions, diagnostics views, switcher). Task 052 has no open branch ahead of `main`; its delivered CodeLens-run slice is included. Run output, Problems, Roslyn lifecycle/interactions, rename, transformations, navigation, virtual documents, inspection, CodeLens, layout lifecycle, cross-tool focus, and overview composition are extracted. | `WorkbenchDockHost` is 795 lines and has left the allowlist. |
 | 060.6 — implemented | Store decomposition into per-feature command handlers; `AvaloniaShellState` contract unchanged. | Store tests split per feature; production and test store files leave the allowlist. |
 | 060.7 — implemented | `SettingsWindow` and `GoalDialog` section decomposition. | Both leave the allowlist; settings and chat-first workflow acceptance evidence re-verified. |
-| 060.8 | UX consistency pass enabled by the units: shared tool chrome (header, busy, empty, error presentation), command-palette and keybinding coverage audit for every tool action. | Palette lists every tool action; keybinding catalog complete; Orca/AT-SPI checks pass; allowlist empty. |
+| 060.8 — implemented | UX consistency pass enabled by the units: shared tool chrome (header, busy, empty, error presentation), command-palette and keybinding coverage audit for every tool action. | Palette lists every tool action; keybinding catalog complete; Orca/AT-SPI checks pass; allowlist empty. |
 
 Slice 060.0 is independent and should land first and fast. Slices 060.1–060.5 are
 strictly sequential. 060.6 and 060.7 may proceed in parallel with each other after

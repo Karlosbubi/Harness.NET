@@ -881,7 +881,7 @@ Acceptance criteria:
 
 ### 060 — workbench composition refactor
 
-Status: `In progress` — PR #2 merged slice 060.0 and the shrink-only budget
+Status: `Complete` — PR #2 merged slice 060.0 and the shrink-only budget
 infrastructure. Slices 060.1–060.3 extracted the Files/Search, Git-changes,
 branches/tags, and worktrees/stashes units with focused tests. Slice 060.4 extracted
 remotes, history/blame, and the conflict editor with its Roslyn lifecycle. Slice 060.5
@@ -893,9 +893,9 @@ partials; both the production and test stores have left the allowlist. Slice 060
 has extracted bounded settings sections and goal workflow dialogs with matching
 focused tests; both production windows have left the allowlist. Slice 060.8 has
 completed the Avalonia UX audit, with bounded shell/test units, a complete typed
-palette for 45 core tool actions, and shared live tool status. Four non-Avalonia
-test-fixture entries remain in the shared global size-budget allowlist, so the slice
-remains open.
+palette for 45 core tool actions, and shared live tool status. The remaining
+production services and test fixtures are split into bounded partials, leaving the
+shared global size-budget allowlist empty and completing the task.
 
 Dependencies: 049, 050. Coordinates with in-progress 052.
 

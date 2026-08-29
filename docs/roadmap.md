@@ -580,7 +580,7 @@ execution. Dev-container or Compose compatibility requires a separate format,
 security, provenance, and execution decision; Harness.NET still adds no private
 metadata directory to user repositories.
 
-### In progress: Task 060 — workbench composition refactor
+### Complete: Task 060 — workbench composition refactor
 
 Decompose the accreted Avalonia Presentation classes — `WorkbenchDockHost`,
 `AvaloniaPresentationStore`, `SettingsWindow`, and `GoalDialog` — into per-tool and
@@ -613,8 +613,9 @@ bounded section/dialog units with matching focused tests; both production window
 have left the allowlist. Slice 060.8 has completed its presentation UX audit: all
 Avalonia source/test files are bounded, every fixed palette and core workbench tool
 action has one typed keybinding identity, and core tool status is consistently live.
-The shared global size-budget allowlist still has 4 test-fixture entries to burn
-down before the slice and Task 060 close.
+The remaining oversized production services and test fixtures are split into bounded
+partial units, so the shared global size-budget allowlist is empty and Task 060 is
+complete.
 
 ### Complete: Task 061 — architecture enforcement and composition seams
 

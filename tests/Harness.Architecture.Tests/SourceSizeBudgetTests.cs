@@ -5,13 +5,7 @@ public sealed class SourceSizeBudgetTests
     private const int DefaultMaximumLines = 800;
 
     private static readonly IReadOnlyDictionary<string, int> BurnDownAllowlist =
-        new Dictionary<string, int>(StringComparer.Ordinal)
-        {
-            ["tests/Harness.BusinessLogic.Tests/CodeIntelligence/WorkbenchCodeIntelligenceServiceTests.cs"] = 944,
-            ["tests/Harness.BusinessLogic.Tests/Mutations/WorkspaceMutationServiceTests.cs"] = 1_217,
-            ["tests/Harness.DataAccess.Tests/CodeIntelligence/RoslynCodeIntelligenceEngineTests.cs"] = 2_019,
-            ["tests/Harness.DataAccess.Tests/Inspection/LibGitDeveloperGitRepositoryTests.cs"] = 1_185,
-        };
+        new Dictionary<string, int>(StringComparer.Ordinal);
 
     [Fact]
     public void Production_and_test_sources_respect_the_shrink_only_line_budget()
