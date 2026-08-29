@@ -14,6 +14,8 @@ using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Layouts;
 using Harness.BusinessLogic.Mutations;
 using Harness.BusinessLogic.ProjectSecrets;
+using Harness.BusinessLogic.Privacy;
+using Harness.BusinessLogic.Terminal;
 using Harness.UI.Avalonia;
 
 namespace Harness.Presentation.Avalonia;
@@ -34,6 +36,8 @@ internal sealed class HarnessApplication(
     IDeveloperProjectExecutionService developerExecutionService,
     IDeveloperCoverageService coverageService,
     IDeveloperDebuggerService developerDebuggerService,
+    IDeveloperTerminalService developerTerminalService,
+    ISensitiveDisplayGuard sensitiveDisplayGuard,
     AvaloniaInboundMcpUiBridge inboundMcpUiBridge,
     CancellationToken cancellationToken) : Application
 {
@@ -51,6 +55,10 @@ internal sealed class HarnessApplication(
         Styles.Add(new StyleInclude(new Uri("avares://Harness.Presentation.Avalonia/"))
         {
             Source = new Uri("avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml"),
+        });
+        Styles.Add(new StyleInclude(new Uri("avares://Harness.Presentation.Avalonia/"))
+        {
+            Source = new Uri("avares://SvcSystems.UI.Terminal/Styles/Colors.axaml"),
         });
     }
 
@@ -74,6 +82,8 @@ internal sealed class HarnessApplication(
                 developerExecutionService,
                 coverageService,
                 developerDebuggerService,
+                developerTerminalService,
+                sensitiveDisplayGuard,
                 cancellationToken);
             inboundMcpUiBridge.Attach(MainWindow);
             MainWindow.Closed += (_, _) => inboundMcpUiBridge.Detach(MainWindow);

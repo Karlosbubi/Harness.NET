@@ -46,6 +46,7 @@ internal sealed class WorkbenchNavigator
     internal bool ShowConversation() => ActivateTool(WorkbenchDockIds.ConversationTool);
     internal bool ShowGit() => ActivateTool(WorkbenchDockIds.GitTool);
     internal bool ShowRunOutput() => ActivateTool(WorkbenchDockIds.RunOutputTool);
+    internal bool ShowTerminal() => ActivateTool(WorkbenchDockIds.TerminalTool);
     internal bool ShowProblems() => ActivateTool(WorkbenchDockIds.ProblemsTool);
 
     internal bool FocusNextRegion()
@@ -57,6 +58,7 @@ internal sealed class WorkbenchNavigator
             WorkbenchDockIds.GitTool,
             WorkbenchDockIds.ConversationTool,
             WorkbenchDockIds.RunOutputTool,
+            WorkbenchDockIds.TerminalTool,
         ];
         focusRegionIndex = (focusRegionIndex + 1) % regions.Length;
         if (regions[focusRegionIndex] == WorkbenchDockIds.OverviewDocument)

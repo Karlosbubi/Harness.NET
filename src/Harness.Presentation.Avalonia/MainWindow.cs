@@ -26,6 +26,8 @@ using Harness.BusinessLogic.Layouts;
 using Harness.BusinessLogic.Mcp;
 using Harness.BusinessLogic.Mutations;
 using Harness.BusinessLogic.ProjectSecrets;
+using Harness.BusinessLogic.Privacy;
+using Harness.BusinessLogic.Terminal;
 using Harness.BusinessLogic.Workflows;
 using Harness.BusinessLogic.Workspaces;
 using Harness.UI.Avalonia;
@@ -47,6 +49,8 @@ internal sealed partial class MainWindow : Window
     private readonly IDeveloperProjectExecutionService developerExecutionService;
     private readonly IDeveloperCoverageService coverageService;
     private readonly IDeveloperDebuggerService developerDebuggerService;
+    private readonly IDeveloperTerminalService developerTerminalService;
+    private readonly ISensitiveDisplayGuard sensitiveDisplayGuard;
     private readonly CancellationToken cancellationToken;
     private readonly CompositeDisposable subscriptions = new();
     private readonly WorkbenchEventSurface workbenchEvents;
@@ -143,6 +147,8 @@ internal sealed partial class MainWindow : Window
         IDeveloperProjectExecutionService developerExecutionService,
         IDeveloperCoverageService coverageService,
         IDeveloperDebuggerService developerDebuggerService,
+        IDeveloperTerminalService developerTerminalService,
+        ISensitiveDisplayGuard sensitiveDisplayGuard,
         CancellationToken cancellationToken)
     {
         this.store = store;
@@ -158,6 +164,8 @@ internal sealed partial class MainWindow : Window
         this.developerExecutionService = developerExecutionService;
         this.coverageService = coverageService;
         this.developerDebuggerService = developerDebuggerService;
+        this.developerTerminalService = developerTerminalService;
+        this.sensitiveDisplayGuard = sensitiveDisplayGuard;
         this.cancellationToken = cancellationToken;
         agentActivityStatus = new(toolEvidenceService, agentActivityReader);
         workbenchEvents = new(NavigateToWorkbenchEvent);
@@ -219,7 +227,9 @@ internal sealed partial class MainWindow : Window
             () => store.RefreshActiveWorkspaceContextAsync(cancellationToken).AsTask(),
             ShowWorkspaceDialogAtAsync,
             coverageService,
-            developerDebuggerService);
+            developerDebuggerService,
+            developerTerminalService,
+            sensitiveDisplayGuard);
         Border documentActions = new()
         {
             Child = workbench.DocumentActions,

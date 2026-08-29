@@ -581,14 +581,14 @@ public sealed partial class PresentationControlTests
             Assert.Equal(0, restoredWindowState.Y);
             Assert.Equal(1920, restoredWindowState.Width);
             Assert.Equal(1280, restoredWindowState.Height);
-            Assert.Equal(7, DurableTools(restored.Root).Count);
+            Assert.Equal(8, DurableTools(restored.Root).Count);
             Assert.Equal("Layout restored", restored.LayoutStatusText);
             restoredWindow.Close();
         }, CancellationToken.None);
     }
 
     [Fact]
-    public async Task Legacy_six_tool_layout_is_upgraded_with_the_problems_pane()
+    public async Task Legacy_six_tool_layout_is_upgraded_with_problems_and_terminal_panes()
     {
         using HeadlessUnitTestSession session =
             HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
@@ -600,13 +600,15 @@ public sealed partial class PresentationControlTests
             source.SaveLayoutAsync().AsTask().GetAwaiter().GetResult();
             JsonNode payload = JsonNode.Parse(layouts.Stored!)!;
             RemovePane(payload, WorkbenchDockIds.ProblemsTool);
+            RemovePane(payload, WorkbenchDockIds.TerminalTool);
             layouts.Stored = payload.ToJsonString();
 
             WorkbenchDockHost restored = CreateWorkbench(shell, layouts);
             restored.RestoreLayoutAsync().AsTask().GetAwaiter().GetResult();
 
             Assert.NotNull(Find<ITool>(restored.Root, WorkbenchDockIds.ProblemsTool));
-            Assert.Equal(7, DurableTools(restored.Root).Count);
+            Assert.NotNull(Find<ITool>(restored.Root, WorkbenchDockIds.TerminalTool));
+            Assert.Equal(8, DurableTools(restored.Root).Count);
         }, CancellationToken.None);
     }
 
@@ -630,14 +632,14 @@ public sealed partial class PresentationControlTests
             WorkbenchDockHost unknown = CreateWorkbench(shell, layouts);
             unknown.RestoreLayoutAsync().AsTask().GetAwaiter().GetResult();
             Assert.Contains("rejected", unknown.LayoutStatusText, StringComparison.OrdinalIgnoreCase);
-            Assert.Equal(7, DurableTools(unknown.Root).Count);
+            Assert.Equal(8, DurableTools(unknown.Root).Count);
 
             layouts.Stored = validLayout.Replace("\"Version\": 2", "\"Version\": 1",
                 StringComparison.Ordinal);
             WorkbenchDockHost obsolete = CreateWorkbench(shell, layouts);
             obsolete.RestoreLayoutAsync().AsTask().GetAwaiter().GetResult();
             Assert.Contains("rejected", obsolete.LayoutStatusText, StringComparison.OrdinalIgnoreCase);
-            Assert.Equal(7, DurableTools(obsolete.Root).Count);
+            Assert.Equal(8, DurableTools(obsolete.Root).Count);
 
             layouts.Stored = validLayout.Replace(
                 WorkbenchDockIds.FilesTool,
@@ -650,7 +652,7 @@ public sealed partial class PresentationControlTests
             workbench.RestoreLayoutAsync().AsTask().GetAwaiter().GetResult();
 
             Assert.Contains("rejected", workbench.LayoutStatusText, StringComparison.OrdinalIgnoreCase);
-            Assert.Equal(7, DurableTools(workbench.Root).Count);
+            Assert.Equal(8, DurableTools(workbench.Root).Count);
 
             workbench.ResetLayoutAsync().AsTask().GetAwaiter().GetResult();
             Assert.True(layouts.WasReset);

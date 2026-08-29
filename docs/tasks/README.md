@@ -589,7 +589,7 @@ remote process output. See the
 
 ### 051 — developer terminal and structured tasks
 
-Status: `In progress — terminal and task authority ADR accepted`
+Status: `In progress — real developer PTY delivered; durable metadata and structured tasks open`
 
 Dependencies: 015, 026, 029, 033, 037.
 
@@ -624,7 +624,14 @@ Acceptance criteria:
 Progress: ADR 029 now separates the trusted developer-only PTY, structured task
 contracts, typed agent operations, and durable Run evidence. It fixes layer ownership,
 transient-content privacy, restart behavior, process-tree cleanup, and the prohibition
-on exposing terminal authority to agents before the first PTY process contract lands.
+on exposing terminal authority to agents. The first terminal slice adds a dockable
+multi-session Avalonia terminal over a real PTY with input/output, Unicode, resize,
+bounded scrollback, selection, copy/paste, search, transient detected links, exact
+source/trust/environment/persistence metadata, and complete owned process-tree Stop.
+Real Linux adapter evidence verifies resize, Unicode, and background-child cleanup.
+Terminal services remain absent from the agent catalog and factory. Durable safe
+session metadata, restart reconciliation, accessibility/publish acceptance, and the
+separate structured-task slice remain open.
 
 ### 052 — .NET project, Run, Test, and Debug experience
 

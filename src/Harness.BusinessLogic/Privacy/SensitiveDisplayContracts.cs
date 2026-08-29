@@ -3,6 +3,7 @@ namespace Harness.BusinessLogic.Privacy;
 public enum SensitiveDisplayKind
 {
     ProjectUserSecret,
+    DeveloperTerminal,
 }
 
 public sealed record SensitiveDisplayStatus(

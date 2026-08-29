@@ -22,6 +22,17 @@ public sealed class AgentToolPolicyTests
     }
 
     [Fact]
+    public void Agent_tool_catalog_has_no_developer_terminal_or_shell_capability()
+    {
+        Assert.DoesNotContain(Enum.GetNames<AgentToolKind>(), name =>
+            name.Contains("Terminal", StringComparison.OrdinalIgnoreCase) ||
+            name.Contains("Shell", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(AgentToolCatalog.Default.Modules.SelectMany(module => module.Operations),
+            operation => operation.Value.Contains("terminal", StringComparison.OrdinalIgnoreCase) ||
+                         operation.Value.Contains("shell", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void Lead_is_read_only()
     {
         IReadOnlyList<AgentToolKind> tools = AgentToolPolicy.AllowedFor(AgentRole.Lead);

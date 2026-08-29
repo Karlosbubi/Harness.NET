@@ -26,6 +26,8 @@ using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Layouts;
 using Harness.BusinessLogic.Mcp;
 using Harness.BusinessLogic.Mutations;
+using Harness.BusinessLogic.Privacy;
+using Harness.BusinessLogic.Terminal;
 using Harness.BusinessLogic.Tools;
 using Harness.BusinessLogic.Workspaces;
 using Harness.Presentation.Avalonia.Workbench;
@@ -70,6 +72,7 @@ internal sealed partial class WorkbenchDockHost
     private readonly GitHistoryTool gitHistoryTool;
     private readonly GitConflictsTool gitConflictsTool;
     private readonly RunOutputTool runOutputToolUnit;
+    private readonly DeveloperTerminalTool terminalToolUnit;
     private readonly DocumentsHost documentsHost;
     private readonly ProblemsTool problemsToolUnit;
     private readonly WorkbenchOverview overviewHost;
@@ -104,7 +107,9 @@ internal sealed partial class WorkbenchDockHost
         Func<Task>? refreshWorkspaceContext = null,
         Func<string, Task>? manageWorkspaceAt = null,
         IDeveloperCoverageService? coverageService = null,
-        IDeveloperDebuggerService? debuggerService = null)
+        IDeveloperDebuggerService? debuggerService = null,
+        IDeveloperTerminalService? terminalService = null,
+        ISensitiveDisplayGuard? sensitiveDisplayGuard = null)
     {
         this.inspectionService = inspectionService;
         this.state = state;
@@ -157,6 +162,7 @@ internal sealed partial class WorkbenchDockHost
             async () => await this.refreshWorkspaceContext());
         gitHistoryTool = new(toolContext, gitChangesTool.ReportStatus);
         runOutputToolUnit = new(toolContext, runOutputService, developerExecutionService);
+        terminalToolUnit = new(terminalService, state, cancellationToken, sensitiveDisplayGuard);
         DebuggerTool? debuggerTool = null;
         documentsHost = new(
             documentService,
@@ -217,6 +223,7 @@ internal sealed partial class WorkbenchDockHost
         Control files = filesTool.Content;
         Control sourceControl = BuildSourceControlTool();
         Control runOutput = runOutputToolUnit.Content;
+        Control terminal = terminalToolUnit.Content;
         Control problemsContent = problemsToolUnit.Content;
         Control context = BuildContextTool(goalContext);
         Control overviewContent = overviewHost.Content;
@@ -226,6 +233,7 @@ internal sealed partial class WorkbenchDockHost
         durableContexts.Add(WorkbenchDockIds.GitTool, sourceControl);
         durableContexts.Add(WorkbenchDockIds.ConversationTool, conversation);
         durableContexts.Add(WorkbenchDockIds.RunOutputTool, runOutput);
+        durableContexts.Add(WorkbenchDockIds.TerminalTool, terminal);
         durableContexts.Add(WorkbenchDockIds.ProblemsTool, problemsContent);
         durableContexts.Add(WorkbenchDockIds.OverviewDocument, overviewContent);
 
@@ -260,6 +268,11 @@ internal sealed partial class WorkbenchDockHost
                 .WithTitle("Run output")
                 .WithCanClose(true)
                 .WithContext(runOutput))
+            .Tool(out ITool? terminalTool, item => item
+                .WithId(WorkbenchDockIds.TerminalTool)
+                .WithTitle("Terminal")
+                .WithCanClose(true)
+                .WithContext(terminal))
             .Tool(out ITool? problemsTool, item => item
                 .WithId(WorkbenchDockIds.ProblemsTool)
                 .WithTitle("Problems")
@@ -323,7 +336,8 @@ internal sealed partial class WorkbenchDockHost
         bottom.VisibleDockables = factory.CreateList<IDockable>(
             conversationTool!,
             problemsTool!,
-            runOutputTool!);
+            runOutputTool!,
+            terminalTool!);
         bottom.ActiveDockable = conversationTool;
         documents.VisibleDockables = factory.CreateList<IDockable>(overviewDocument);
         documents.ActiveDockable = overviewDocument;
@@ -334,6 +348,7 @@ internal sealed partial class WorkbenchDockHost
         WorkbenchDockContent.Attach(gitTool!, sourceControl);
         WorkbenchDockContent.Attach(conversationTool!, conversation);
         WorkbenchDockContent.Attach(runOutputTool!, runOutput);
+        WorkbenchDockContent.Attach(terminalTool!, terminal);
         WorkbenchDockContent.Attach(problemsTool!, problemsContent);
         WorkbenchDockContent.Attach(overviewDocument, overviewContent);
         WorkbenchLayoutHost.EnsureDefaultTools(left, right, bottom, "before Dock initialization");
@@ -469,6 +484,8 @@ internal sealed partial class WorkbenchDockHost
     internal string GitSummaryText => gitChangesTool.Summary.Text ?? string.Empty;
 
     internal bool ShowRunOutput() => navigator.ShowRunOutput();
+
+    internal bool ShowTerminal() => navigator.ShowTerminal();
 
     internal bool ShowProblems() => navigator.ShowProblems();
 

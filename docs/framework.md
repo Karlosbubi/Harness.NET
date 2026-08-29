@@ -238,6 +238,9 @@ requires clarification.
   workspace. A selected approved goal targets its worktree instead.
 - Search, editor, Git, and diff use the same source context.
 - Run output shows typed Build/Test/Restore evidence and is not a terminal.
+- The developer terminal is a trusted-user PTY with bounded process-local content.
+  Business Logic owns trust and lifecycle, Data Access owns the PTY/process tree, and
+  Presentation owns terminal emulation. Agents have no terminal read or input path.
 - Visual verification requests one consented XDG Screenshot frame. Captures are
   bounded, goal-scoped, revocable, private, and withheld from remote models unless
   Settings explicitly enables disclosure. No video, background capture, or input

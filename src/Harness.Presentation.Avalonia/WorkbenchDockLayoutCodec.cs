@@ -66,7 +66,7 @@ internal sealed class WorkbenchDockLayoutCodec(IFactory factory)
                 return Failure("The saved workbench layout could not be decoded.");
             }
 
-            snapshot = RestoreAddedProblemsPane(snapshot);
+            snapshot = RestoreAddedToolPanes(snapshot);
 
             string? validationError = Validate(snapshot);
             if (validationError is not null)
@@ -393,29 +393,38 @@ internal sealed class WorkbenchDockLayoutCodec(IFactory factory)
               $"[{string.Join(", ", state.DurableCounts.Keys.Order(StringComparer.Ordinal))}].";
     }
 
-    private static LayoutSnapshot RestoreAddedProblemsPane(LayoutSnapshot snapshot)
+    private static LayoutSnapshot RestoreAddedToolPanes(LayoutSnapshot snapshot)
     {
-        if (snapshot.Version != FormatVersion || ContainsPane(
-                snapshot.Root,
-                WorkbenchDockIds.ProblemsTool))
+        if (snapshot.Version != FormatVersion)
         {
             return snapshot;
         }
 
-        return snapshot with { Root = AddProblemsPane(snapshot.Root) };
+        LayoutNode root = snapshot.Root;
+        if (!ContainsPane(root, WorkbenchDockIds.ProblemsTool))
+        {
+            root = AddBottomPane(root, WorkbenchDockIds.ProblemsTool, "Problems");
+        }
+
+        if (!ContainsPane(root, WorkbenchDockIds.TerminalTool))
+        {
+            root = AddBottomPane(root, WorkbenchDockIds.TerminalTool, "Terminal");
+        }
+
+        return snapshot with { Root = root };
     }
 
-    private static LayoutNode AddProblemsPane(LayoutNode node)
+    private static LayoutNode AddBottomPane(LayoutNode node, string id, string title)
     {
         IReadOnlyList<LayoutNode> children = node.Children
-            .Select(AddProblemsPane)
+            .Select(child => AddBottomPane(child, id, title))
             .ToArray();
         if (node.Kind is LayoutNodeKind.ToolDock && node.Id == WorkbenchDockIds.Bottom)
         {
             children = children.Append(new LayoutNode(
                 LayoutNodeKind.Pane,
-                WorkbenchDockIds.ProblemsTool,
-                "Problems",
+                id,
+                title,
                 Proportion: 0.5,
                 Orientation: null,
                 Alignment: null,
@@ -438,15 +447,15 @@ internal sealed class WorkbenchDockLayoutCodec(IFactory factory)
         return node with
         {
             Children = children,
-            Hidden = node.Hidden.Select(AddProblemsPane).ToArray(),
-            LeftPinned = node.LeftPinned.Select(AddProblemsPane).ToArray(),
-            RightPinned = node.RightPinned.Select(AddProblemsPane).ToArray(),
-            TopPinned = node.TopPinned.Select(AddProblemsPane).ToArray(),
-            BottomPinned = node.BottomPinned.Select(AddProblemsPane).ToArray(),
-            PinnedDock = node.PinnedDock is null ? null : AddProblemsPane(node.PinnedDock),
+            Hidden = node.Hidden.Select(child => AddBottomPane(child, id, title)).ToArray(),
+            LeftPinned = node.LeftPinned.Select(child => AddBottomPane(child, id, title)).ToArray(),
+            RightPinned = node.RightPinned.Select(child => AddBottomPane(child, id, title)).ToArray(),
+            TopPinned = node.TopPinned.Select(child => AddBottomPane(child, id, title)).ToArray(),
+            BottomPinned = node.BottomPinned.Select(child => AddBottomPane(child, id, title)).ToArray(),
+            PinnedDock = node.PinnedDock is null ? null : AddBottomPane(node.PinnedDock, id, title),
             Windows = node.Windows.Select(window => window with
             {
-                Root = AddProblemsPane(window.Root),
+                Root = AddBottomPane(window.Root, id, title),
             }).ToArray(),
         };
     }
@@ -680,6 +689,7 @@ internal sealed class WorkbenchDockLayoutCodec(IFactory factory)
         WorkbenchDockIds.GitTool => "Git",
         WorkbenchDockIds.ConversationTool => "Conversation",
         WorkbenchDockIds.RunOutputTool => "Run output",
+        WorkbenchDockIds.TerminalTool => "Terminal",
         WorkbenchDockIds.ProblemsTool => "Problems",
         WorkbenchDockIds.OverviewDocument => "Workspace overview",
         _ => stored.Length <= 128 ? stored : string.Empty,

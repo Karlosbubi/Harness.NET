@@ -20,6 +20,10 @@ public class PresentationTestApplication : Application
         {
             Source = new Uri("avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml"),
         });
+        Styles.Add(new StyleInclude(new Uri("avares://Harness.Presentation.Avalonia.Tests/"))
+        {
+            Source = new Uri("avares://SvcSystems.UI.Terminal/Styles/Colors.axaml"),
+        });
     }
 }
 

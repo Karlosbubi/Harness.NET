@@ -181,7 +181,7 @@ internal sealed class WorkbenchLayoutHost
         WorkbenchDockIds.NavigationTool or WorkbenchDockIds.FilesTool => Left,
         WorkbenchDockIds.ContextTool or WorkbenchDockIds.GitTool => Right,
         WorkbenchDockIds.ConversationTool or WorkbenchDockIds.RunOutputTool or
-            WorkbenchDockIds.ProblemsTool => Bottom,
+            WorkbenchDockIds.ProblemsTool or WorkbenchDockIds.TerminalTool => Bottom,
         _ => null,
     };
 
@@ -226,7 +226,7 @@ internal sealed class WorkbenchLayoutHost
         IToolDock left, IToolDock right, IToolDock bottom, string stage)
     {
         if (left.VisibleDockables?.Count != 2 || right.VisibleDockables?.Count != 2 ||
-            bottom.VisibleDockables?.Count != 3)
+            bottom.VisibleDockables?.Count != 4)
             throw new InvalidOperationException($"Dock lost the default tool panels {stage}.");
     }
 

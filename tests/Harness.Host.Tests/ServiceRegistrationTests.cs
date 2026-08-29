@@ -40,9 +40,16 @@ public sealed class ServiceRegistrationTests
             "Harness.DataAccess.Debugging.NetCoreDbgAdapterSessionFactory",
         ],
         StringComparer.Ordinal);
+    private static readonly IReadOnlySet<string> Task051TerminalRegistrations = new HashSet<string>(
+        [
+            "Harness.BusinessLogic.Terminal.IDeveloperTerminalService",
+            "Harness.DataAccess.Terminal.IDeveloperTerminalConnectionFactory",
+        ],
+        StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> ReviewedFeatureRegistrations = new HashSet<string>(
         Task071GoalRegistrations.Concat(Task052CoverageRegistrations)
-            .Concat(Task052DebuggerRegistrations), StringComparer.Ordinal);
+            .Concat(Task052DebuggerRegistrations)
+            .Concat(Task051TerminalRegistrations), StringComparer.Ordinal);
 
     [Fact]
     public void Feature_modules_preserve_the_baseline_plus_reviewed_feature_registrations()
@@ -78,7 +85,7 @@ public sealed class ServiceRegistrationTests
                 {
                     ("Infrastructure", 14),
                     ("Integrations", 31),
-                    ("Workspace", 85),
+                    ("Workspace", 87),
                     ("Goals", 16),
                     ("Presentation", 9),
                 }),

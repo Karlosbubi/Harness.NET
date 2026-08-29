@@ -13,6 +13,8 @@ using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Layouts;
 using Harness.BusinessLogic.Mutations;
 using Harness.BusinessLogic.ProjectSecrets;
+using Harness.BusinessLogic.Privacy;
+using Harness.BusinessLogic.Terminal;
 using Harness.UI.Avalonia;
 
 namespace Harness.Presentation.Avalonia;
@@ -33,6 +35,8 @@ internal sealed class AvaloniaShell(
     IDeveloperProjectExecutionService developerExecutionService,
     IDeveloperCoverageService coverageService,
     IDeveloperDebuggerService developerDebuggerService,
+    IDeveloperTerminalService developerTerminalService,
+    ISensitiveDisplayGuard sensitiveDisplayGuard,
     AvaloniaInboundMcpUiBridge inboundMcpUiBridge) : IAvaloniaShell
 {
     public ValueTask RunAsync(CancellationToken cancellationToken = default)
@@ -54,6 +58,8 @@ internal sealed class AvaloniaShell(
                 developerExecutionService,
                 coverageService,
                 developerDebuggerService,
+                developerTerminalService,
+                sensitiveDisplayGuard,
                 inboundMcpUiBridge,
                 cancellationToken))
             .UsePlatformDetect()

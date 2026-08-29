@@ -31,7 +31,9 @@ using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Layouts;
 using Harness.BusinessLogic.Mcp;
 using Harness.BusinessLogic.Mutations;
+using Harness.BusinessLogic.Privacy;
 using Harness.BusinessLogic.Research;
+using Harness.BusinessLogic.Terminal;
 using Harness.BusinessLogic.VisualCapture;
 using Harness.BusinessLogic.Workflows;
 using Harness.BusinessLogic.Workspaces;
@@ -56,7 +58,8 @@ public sealed partial class PresentationControlTests
         Func<Task>? refreshWorkspaceContext = null,
         Func<string, Task>? manageWorkspaceAt = null,
         IDeveloperProjectExecutionService? developerExecution = null,
-        IDeveloperDebuggerService? developerDebugger = null) => new(
+        IDeveloperDebuggerService? developerDebugger = null,
+        IDeveloperTerminalService? developerTerminal = null) => new(
         runOutput ?? new RunOutputService(),
         inspection ?? new InspectionService(),
         documents ?? new DocumentService(),
@@ -76,7 +79,9 @@ public sealed partial class PresentationControlTests
         refreshWorkspaceContext,
         manageWorkspaceAt,
         null,
-        developerDebugger);
+        developerDebugger,
+        developerTerminal,
+        null);
 
     private static Control ConversationSurface(string text) => new Border
     {

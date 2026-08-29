@@ -147,7 +147,7 @@ public sealed partial class PresentationControlTests
                 AutomationProperties.GetName(focusEditor));
             focusEditor.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Assert.Same(workbench.ActiveSourceEditor, workbench.LastRequestedFocusTarget);
-            Assert.Equal(7, DurableTools(workbench.Root).Count);
+            Assert.Equal(8, DurableTools(workbench.Root).Count);
             Control documentContent = Assert.IsAssignableFrom<Control>(
                 workbench.Documents.ActiveDockable?.Context);
             TextEditor editor = Assert.Single(

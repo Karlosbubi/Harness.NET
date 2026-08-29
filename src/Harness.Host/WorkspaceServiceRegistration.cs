@@ -15,6 +15,7 @@ using Harness.BusinessLogic.Layouts;
 using Harness.BusinessLogic.Mutations;
 using Harness.BusinessLogic.Privacy;
 using Harness.BusinessLogic.ProjectSecrets;
+using Harness.BusinessLogic.Terminal;
 using Harness.BusinessLogic.VisualCapture;
 using Harness.BusinessLogic.Workspaces;
 using Harness.DataAccess.Agents;
@@ -34,6 +35,7 @@ using Harness.DataAccess.Models;
 using Harness.DataAccess.Mutations;
 using Harness.DataAccess.ProjectSecrets;
 using Harness.DataAccess.SemanticIndex;
+using Harness.DataAccess.Terminal;
 using Harness.DataAccess.VisualCapture;
 using Harness.DataAccess.Workflows;
 using Harness.DataAccess.Workspaces;
@@ -104,6 +106,10 @@ internal static class WorkspaceServiceRegistration
             DeveloperDebuggerSettingsService>();
         services.AddSingleton<IDeveloperDebuggerService,
             DeveloperDebuggerService>();
+        services.AddSingleton<IDeveloperTerminalConnectionFactory,
+            PortaDeveloperTerminalConnectionFactory>();
+        services.AddSingleton<IDeveloperTerminalService,
+            DeveloperTerminalService>();
         services.AddSingleton<IGoalService, GoalService>();
         services.AddSingleton<IGoalWorktreeManager, GitGoalWorktreeManager>();
         services.AddSingleton<IWorkspaceFileEditor, AtomicWorkspaceFileEditor>();
