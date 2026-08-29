@@ -58,6 +58,9 @@ Delivered:
   revalidation as Run, a private bounded DAP-over-stdio lifecycle, verified source
   breakpoints, threads, stacks, scopes, expandable variables, continue/pause/step/stop,
   confined source navigation, transient bounded output, and deterministic cleanup;
+  project and exact-test Debug identities, targets, state, exit, duration, and safe
+  failure metadata survive restart while breakpoints, output, stacks, scopes, and
+  variables deliberately do not;
 - a source-context-aware static .NET Solution view for entry points, SDK policy and
   selected-SDK/workload-manifest health, projects, target frameworks,
   declared/conventional configurations, startup candidates, project/package

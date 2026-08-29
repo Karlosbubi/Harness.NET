@@ -43,7 +43,7 @@ Status meanings:
 | `execute_terminal_command` | Closed structured command/run modules for justified gaps | Excluded as shell | Never accept an unrestricted shell command string |
 | `get_repositories`, `git_status` | VCS roots, status, branch, HEAD and bounded diff | Partial | Repository-local Git adapters |
 | Git integration mutations | Stage/commit through existing exact-diff fingerprint; future typed branch/remote actions | Partial | Separate explicit integration/network authority |
-| debugger status/start/attach | Typed debug configurations, process attach and session lifecycle | Developer UI delivered | Exact Roslyn project-entry launch and Linux owned-Test Debug attach are delivered through the verified managed adapter; no PID input or arbitrary attach |
+| debugger status/start/attach | Typed debug configurations, process attach and session lifecycle | Developer UI delivered | Exact Roslyn project-entry launch and Linux owned-Test Debug attach are delivered through the verified managed adapter with restart-safe lifecycle metadata; live inspection stays transient, with no PID input or arbitrary attach |
 | breakpoints/logpoints and control | List/set/remove scoped breakpoints; pause/resume/step/run-to-line/stop | Developer UI partial | Exact source breakpoint, pause/resume/step/stop and session identities are delivered; logpoints and run-to-line remain planned |
 | threads/stacks/frame/value inspection | Paged runtime inspection with depth/size limits | Developer UI delivered | Suspended exact session/frame identity, bounded adapter results, and confined source mapping |
 | debugger expression/variable mutation | Explicitly risk-classified evaluate/set operations | Planned | Consequential confirmation; evaluation may execute code |

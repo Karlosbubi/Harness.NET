@@ -33,9 +33,9 @@ internal sealed partial class DeveloperProjectExecutionService(
     private readonly SemaphoreSlim reconciliationGate = new(1, 1);
     private readonly SemaphoreSlim executionSlots = new(
         MaximumConcurrentExecutions, MaximumConcurrentExecutions);
+    private readonly DateTimeOffset reconciliationCutoff = timeProvider.GetUtcNow();
     private int reconciled;
     private bool disposed;
-
     public DeveloperExecutionCapabilities Capabilities
     {
         get
@@ -496,7 +496,8 @@ internal sealed partial class DeveloperProjectExecutionService(
         {
             if (reconciled == 0)
             {
-                await store.InterruptRunningAsync(timeProvider.GetUtcNow(), cancellationToken);
+                await store.InterruptRunningAsync(timeProvider.GetUtcNow(),
+                    reconciliationCutoff, cancellationToken);
                 Volatile.Write(ref reconciled, 1);
             }
         }
@@ -545,7 +546,8 @@ internal sealed partial class DeveloperProjectExecutionService(
 
     private static WorkbenchExecutionTarget? EntryPoint(StoredDeveloperExecution execution) =>
         (execution.Operation is StoredDeveloperExecutionOperation.Run or
-            StoredDeveloperExecutionOperation.HotReload) &&
+            StoredDeveloperExecutionOperation.HotReload or
+            StoredDeveloperExecutionOperation.Debug) &&
         execution.DeclarationId is not null
             ? new(
                 WorkbenchExecutionTargetKind.ProjectEntryPoint,
@@ -558,7 +560,8 @@ internal sealed partial class DeveloperProjectExecutionService(
             : null;
 
     private static DeveloperTestTarget? Test(StoredDeveloperExecution execution) =>
-        execution.Operation is StoredDeveloperExecutionOperation.Test &&
+        (execution.Operation is StoredDeveloperExecutionOperation.Test or
+            StoredDeveloperExecutionOperation.Debug) &&
         execution.TestId is not null && execution.TestName is not null &&
         execution.TestScope is not null
             ? new(
@@ -644,7 +647,6 @@ internal sealed partial class DeveloperProjectExecutionService(
     private static bool IsBounded(string value, int maximum) =>
         !string.IsNullOrWhiteSpace(value) && value.Length <= maximum &&
         value.Equals(value.Trim(), StringComparison.Ordinal);
-
     private static bool IsEnvironmentName(string value) =>
         IsBounded(value, 128) && (char.IsLetter(value[0]) || value[0] == '_') &&
         value.All(character => char.IsLetterOrDigit(character) || character == '_') &&
@@ -668,7 +670,6 @@ internal sealed partial class DeveloperProjectExecutionService(
         DeveloperTestScope.Selection => StoredDeveloperTestScope.Selection,
         _ => throw new ArgumentOutOfRangeException(nameof(scope)),
     };
-
     private static StoredDeveloperTestOutcome Map(DotNetTestOutcome outcome) => outcome switch
     {
         DotNetTestOutcome.Passed => StoredDeveloperTestOutcome.Passed,
@@ -677,7 +678,6 @@ internal sealed partial class DeveloperProjectExecutionService(
         DotNetTestOutcome.Other => StoredDeveloperTestOutcome.Other,
         _ => throw new ArgumentOutOfRangeException(nameof(outcome)),
     };
-
     private static DeveloperTestOutcome MapView(DotNetTestOutcome outcome) => outcome switch
     {
         DotNetTestOutcome.Passed => DeveloperTestOutcome.Passed,
@@ -734,7 +734,6 @@ internal sealed partial class DeveloperProjectExecutionService(
         StoredDeveloperExecutionState.Interrupted => DeveloperExecutionState.Interrupted,
         _ => throw new ArgumentOutOfRangeException(nameof(state)),
     };
-
     private static StoredDeveloperExecutionOperation Map(DeveloperExecutionOperation operation) =>
         operation switch
         {
@@ -742,6 +741,7 @@ internal sealed partial class DeveloperProjectExecutionService(
             DeveloperExecutionOperation.Rebuild => StoredDeveloperExecutionOperation.Rebuild,
             DeveloperExecutionOperation.Test => StoredDeveloperExecutionOperation.Test,
             DeveloperExecutionOperation.HotReload => StoredDeveloperExecutionOperation.HotReload,
+            DeveloperExecutionOperation.Debug => StoredDeveloperExecutionOperation.Debug,
             _ => StoredDeveloperExecutionOperation.Run,
         };
 
@@ -763,6 +763,7 @@ internal sealed partial class DeveloperProjectExecutionService(
             StoredDeveloperExecutionOperation.Rebuild => DeveloperExecutionOperation.Rebuild,
             StoredDeveloperExecutionOperation.Test => DeveloperExecutionOperation.Test,
             StoredDeveloperExecutionOperation.HotReload => DeveloperExecutionOperation.HotReload,
+            StoredDeveloperExecutionOperation.Debug => DeveloperExecutionOperation.Debug,
             _ => DeveloperExecutionOperation.Run,
         };
 

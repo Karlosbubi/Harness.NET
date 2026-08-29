@@ -623,7 +623,7 @@ Acceptance criteria:
 
 ### 052 — .NET project, Run, Test, and Debug experience
 
-Status: `In progress — project and exact Linux Test Debug delivered`
+Status: `In progress — durable project and exact Linux Test Debug delivered`
 
 Dependencies: 018, 042, 047, 049, 051.
 
@@ -693,6 +693,14 @@ operation's waiting managed testhost descendant, rechecks ancestry and command
 identity immediately before attach, and never accepts a PID from presentation,
 configuration, or a model. Test Debug reuses the debugger workspace and deterministic
 process-tree cleanup.
+The seventeenth slice makes both Debug forms durable without persisting inspection
+content. Schema 39 records the exact project-entry or test identity, source context,
+state, timestamps, exit, duration, and bounded safe failure. A one-shot application
+lifecycle reconciliation marks only pre-start running rows interrupted; it cannot
+reclassify a live operation created later by another service. Debug output,
+breakpoints, threads, stacks, scopes, variables, and one-run override values remain
+process-local. See the
+[durable Debug acceptance record](../acceptance/developer-debug-durability-2026-08-29.md).
 
 Acceptance criteria:
 

@@ -26,6 +26,7 @@ public enum StoredDeveloperExecutionOperation
 {
     Run,
     HotReload,
+    Debug,
     Build,
     Rebuild,
     Test,
@@ -117,5 +118,6 @@ public interface IDeveloperDotNetExecutionStore
 
     ValueTask<int> InterruptRunningAsync(
         DateTimeOffset completedAt,
+        DateTimeOffset startedBefore,
         CancellationToken cancellationToken = default);
 }

@@ -60,6 +60,7 @@ public enum DeveloperExecutionOperation
 {
     Run,
     HotReload,
+    Debug,
     Build,
     Rebuild,
     Test,

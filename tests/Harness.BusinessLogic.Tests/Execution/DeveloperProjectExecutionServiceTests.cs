@@ -403,6 +403,30 @@ public sealed class DeveloperProjectExecutionServiceTests
         Assert.False(execution.IsOutputAvailable);
     }
 
+    [Fact]
+    public async Task Reconstructs_durable_test_debug_identity_without_transient_debug_data()
+    {
+        Store store = new();
+        store.Items.Add(new(
+            new("debug-history"), new("workspace-a"), null, new("Original workspace"),
+            StoredDeveloperExecutionOperation.Debug, new("App.Tests.csproj"),
+            new("net10.0"), null, null, StoredDeveloperExecutionState.Interrupted,
+            DateTimeOffset.Parse("2026-08-29T12:00:00Z"),
+            DateTimeOffset.Parse("2026-08-29T12:00:01Z"), null, 1_000,
+            "application_restarted", "Harness.NET restarted before this operation completed.",
+            new(new string('d', 64)), new("Demo.Tests.Exact"),
+            StoredDeveloperTestScope.Exact));
+        using DeveloperProjectExecutionService service = CreateService(new Runner(), store);
+
+        DeveloperExecutionView execution = Assert.Single((await service.ListAsync(
+            new(new("workspace-a"), null))).Executions);
+
+        Assert.Equal(DeveloperExecutionOperation.Debug, execution.Operation);
+        Assert.Equal("Demo.Tests.Exact", execution.Test?.FullyQualifiedName.Value);
+        Assert.False(execution.IsOutputAvailable);
+        Assert.Empty(execution.TestCases);
+    }
+
     private static DeveloperProjectExecutionService CreateService(Runner runner, Store store) => new(
         new Context(), new Workspaces(), new DotNet(), new Files(), runner, store,
         new FixedTimeProvider(), NullLogger<DeveloperProjectExecutionService>.Instance,
@@ -582,7 +606,10 @@ public sealed class DeveloperProjectExecutionServiceTests
                 Items.ToArray());
         }
 
-        public ValueTask<int> InterruptRunningAsync(DateTimeOffset completedAt, CancellationToken cancellationToken = default) =>
+        public ValueTask<int> InterruptRunningAsync(
+            DateTimeOffset completedAt,
+            DateTimeOffset startedBefore,
+            CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(0);
     }
 

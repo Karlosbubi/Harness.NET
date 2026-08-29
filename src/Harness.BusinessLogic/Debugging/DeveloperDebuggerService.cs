@@ -3,15 +3,17 @@ using System.Collections.Immutable;
 using System.Text;
 using Harness.BusinessLogic.Execution;
 using Harness.DataAccess.Debugging;
+using Harness.DataAccess.Execution;
 using Microsoft.Extensions.Logging;
 
 namespace Harness.BusinessLogic.Debugging;
 
-internal sealed class DeveloperDebuggerService(
+internal sealed partial class DeveloperDebuggerService(
     IDeveloperExecutionTargetResolver targetResolver,
     IDotNetDebugSessionFactory sessionFactory,
     IDotNetTestDebugSessionFactory testSessionFactory,
     IDeveloperDebuggerSettingsService settings,
+    IDeveloperDotNetExecutionStore executionStore,
     TimeProvider timeProvider,
     ILogger<DeveloperDebuggerService> logger) : IDeveloperDebuggerService, IAsyncDisposable
 {
@@ -22,6 +24,9 @@ internal sealed class DeveloperDebuggerService(
     private readonly ConcurrentDictionary<string, SessionState> sessions = new();
     private readonly SemaphoreSlim sessionSlots = new(
         MaximumConcurrentSessions, MaximumConcurrentSessions);
+    private readonly SemaphoreSlim reconciliationGate = new(1, 1);
+    private readonly DateTimeOffset reconciliationCutoff = timeProvider.GetUtcNow();
+    private int reconciled;
     private bool disposed;
 
     public async ValueTask<DeveloperDebugStartResult> StartAsync(
@@ -35,12 +40,14 @@ internal sealed class DeveloperDebuggerService(
                 "Install or repair the verified managed debugger in Settings first.");
         if (!ValidateBreakpoints(request.Breakpoints, out string? breakpointError))
             return new(null, "debug_breakpoints_invalid", breakpointError);
+        await EnsureReconciledAsync(cancellationToken);
         if (!await sessionSlots.WaitAsync(0, cancellationToken))
             return new(null, "debug_session_limit_reached",
                 $"At most {MaximumConcurrentSessions} debug sessions may be active.");
 
         bool slotTransferred = false;
         IDebugAdapterSession? adapter = null;
+        StoredDeveloperExecution? stored = null;
         try
         {
             DeveloperExecutionTargetResolution resolution = await targetResolver
@@ -50,8 +57,16 @@ internal sealed class DeveloperDebuggerService(
                 return new(null, resolution.ErrorCode, resolution.Error);
 
             DeveloperDebugSessionId id = new(Guid.NewGuid().ToString("N"));
+            DateTimeOffset startedAt = timeProvider.GetUtcNow();
             try
             {
+                stored = await StartStoredAsync(
+                    id, request.Workspace, resolution.Context, new(
+                        new(request.Target.ProjectPath.Value),
+                        request.Target.TargetFramework.Value == "unknown"
+                            ? null : new(request.Target.TargetFramework.Value),
+                        null),
+                    request.Target, test: null, startedAt, cancellationToken);
                 adapter = await sessionFactory.StartLaunchAsync(
                     resolution.RootPath,
                     new(
@@ -86,7 +101,7 @@ internal sealed class DeveloperDebuggerService(
                     DeveloperDebugStopReason.None,
                     null,
                     null,
-                    timeProvider.GetUtcNow(),
+                    startedAt,
                     null,
                     "Debugger running; waiting for a breakpoint or pause.",
                     configured,
@@ -98,6 +113,9 @@ internal sealed class DeveloperDebuggerService(
                 if (!sessions.TryAdd(id.Value, state))
                 {
                     await DisposeAdapterAsync(adapter);
+                    await CompleteStartFailureAsync(stored, startedAt,
+                        "debug_session_identity_conflict",
+                        "The debug session identity already exists.");
                     return new(null, "debug_session_identity_conflict",
                         "The debug session identity already exists.");
                 }
@@ -109,12 +127,18 @@ internal sealed class DeveloperDebuggerService(
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
                 if (adapter is not null) await DisposeAdapterAsync(adapter);
+                if (stored is not null)
+                    await CompleteStartFailureAsync(stored, startedAt,
+                        "debug_start_failed",
+                        "The managed debug session could not be started.");
                 logger.LogWarning(exception, "Could not start a managed debug session.");
                 return new(null, "debug_start_failed", SafeError(exception));
             }
             catch
             {
                 if (adapter is not null) await DisposeAdapterAsync(adapter);
+                if (stored is not null)
+                    await CompleteStartInterruptedAsync(stored, startedAt);
                 throw;
             }
         }
@@ -136,12 +160,15 @@ internal sealed class DeveloperDebuggerService(
         if (!OperatingSystem.IsLinux())
             return new(null, "test_debug_platform_unsupported",
                 "Owned Test Debug process discovery is currently supported on Linux.");
+        await EnsureReconciledAsync(cancellationToken);
         if (!await sessionSlots.WaitAsync(0, cancellationToken))
             return new(null, "debug_session_limit_reached",
                 $"At most {MaximumConcurrentSessions} debug sessions may be active.");
 
         bool slotTransferred = false;
         IDebugAdapterSession? adapter = null;
+        StoredDeveloperExecution? stored = null;
+        DateTimeOffset? startedAt = null;
         try
         {
             DeveloperTestDebugTargetResolution resolution = await targetResolver
@@ -154,6 +181,10 @@ internal sealed class DeveloperDebuggerService(
             }
 
             DeveloperDebugSessionId id = new(Guid.NewGuid().ToString("N"));
+            startedAt = timeProvider.GetUtcNow();
+            stored = await StartStoredAsync(
+                id, request.Workspace, resolution.Context, request.Project,
+                target: null, request.Test, startedAt.Value, cancellationToken);
             adapter = await testSessionFactory.StartAsync(resolution.RootPath, new(
                 new(id.Value),
                 new(request.Project.ProjectPath.Value),
@@ -179,7 +210,7 @@ internal sealed class DeveloperDebuggerService(
                 DeveloperDebugStopReason.None,
                 null,
                 null,
-                timeProvider.GetUtcNow(),
+                startedAt.Value,
                 null,
                 $"Debugging test {request.Test.FullyQualifiedName.Value}…",
                 configured,
@@ -192,6 +223,9 @@ internal sealed class DeveloperDebuggerService(
             if (!sessions.TryAdd(id.Value, state))
             {
                 await DisposeAdapterAsync(adapter);
+                await CompleteStartFailureAsync(stored, startedAt.Value,
+                    "debug_session_identity_conflict",
+                    "The debug session identity already exists.");
                 return new(null, "debug_session_identity_conflict",
                     "The debug session identity already exists.");
             }
@@ -203,12 +237,18 @@ internal sealed class DeveloperDebuggerService(
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             if (adapter is not null) await DisposeAdapterAsync(adapter);
+            if (stored is not null && startedAt is not null)
+                await CompleteStartFailureAsync(stored, startedAt.Value,
+                    "test_debug_start_failed",
+                    "The exact Test Debug session could not be started.");
             logger.LogWarning(exception, "Could not start an owned Test Debug session.");
             return new(null, "test_debug_start_failed", SafeError(exception));
         }
         catch
         {
             if (adapter is not null) await DisposeAdapterAsync(adapter);
+            if (stored is not null && startedAt is not null)
+                await CompleteStartInterruptedAsync(stored, startedAt.Value);
             throw;
         }
         finally
@@ -285,14 +325,16 @@ internal sealed class DeveloperDebuggerService(
             return new(null, "debug_session_unavailable", "The debug session is unavailable.");
         try
         {
-            await CloseSessionAsync(state, terminateDebuggee: true, cancellationToken);
-            state.Update(view => view with
+            state.Update(view => IsTerminal(view.State) ? view : view with
             {
                 State = DeveloperDebugSessionState.Terminated,
                 CompletedAt = timeProvider.GetUtcNow(),
                 Status = "Debug session stopped.",
             });
+            await CompleteDurablyAsync(state,
+                "debug_stopped", "The developer stopped this debug session.");
             state.ReleaseSlot(sessionSlots);
+            await CloseSessionAsync(state, terminateDebuggee: true, cancellationToken);
             return new(state.Snapshot(), null, null);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
@@ -380,16 +422,19 @@ internal sealed class DeveloperDebuggerService(
                         break;
                     case StoredDebugEventKind.Terminated:
                         Complete(state);
+                        await CompleteDurablyAsync(state, null, null);
                         await CloseSessionAsync(state, terminateDebuggee: false,
                             CancellationToken.None);
                         return;
                     case StoredDebugEventKind.AdapterFailed:
-                        state.Update(view => view with
+                        state.Update(view => IsTerminal(view.State) ? view : view with
                         {
                             State = DeveloperDebugSessionState.Failed,
                             CompletedAt = timeProvider.GetUtcNow(),
                             Status = debugEvent.Message ?? "The debug adapter failed.",
                         });
+                        await CompleteDurablyAsync(state, "debug_adapter_failed",
+                            "The managed debug adapter failed.");
                         state.ReleaseSlot(sessionSlots);
                         await CloseSessionAsync(state, terminateDebuggee: true,
                             CancellationToken.None);
@@ -404,12 +449,14 @@ internal sealed class DeveloperDebuggerService(
         {
             logger.LogWarning(exception, "Debug session {SessionId} observation failed.",
                 state.View.Id.Value);
-            state.Update(view => view with
+            state.Update(view => IsTerminal(view.State) ? view : view with
             {
                 State = DeveloperDebugSessionState.Failed,
                 CompletedAt = timeProvider.GetUtcNow(),
                 Status = "The debug adapter connection failed.",
             });
+            await CompleteDurablyAsync(state, "debug_connection_failed",
+                "The managed debug adapter connection failed.");
             state.ReleaseSlot(sessionSlots);
             await CloseSessionAsync(state, terminateDebuggee: true,
                 CancellationToken.None);
@@ -440,7 +487,7 @@ internal sealed class DeveloperDebuggerService(
 
     private void Complete(SessionState state)
     {
-        state.Update(view => view with
+        state.Update(view => IsTerminal(view.State) ? view : view with
         {
             State = view.ExitCode is 0 or null
                 ? DeveloperDebugSessionState.Succeeded
@@ -590,11 +637,20 @@ internal sealed class DeveloperDebuggerService(
         disposed = true;
         foreach (SessionState state in sessions.Values)
         {
+            state.Update(view => IsTerminal(view.State) ? view : view with
+            {
+                State = DeveloperDebugSessionState.Interrupted,
+                CompletedAt = timeProvider.GetUtcNow(),
+                Status = "Debug session interrupted by application shutdown.",
+            });
+            await CompleteDurablyAsync(state, "application_shutdown",
+                "Harness.NET shut down before this debug session completed.");
             state.ReleaseSlot(sessionSlots);
             await CloseSessionAsync(state, terminateDebuggee: true,
                 CancellationToken.None);
         }
         sessionSlots.Dispose();
+        reconciliationGate.Dispose();
     }
 
     private async ValueTask CloseSessionAsync(
@@ -638,6 +694,7 @@ internal sealed class DeveloperDebuggerService(
         private readonly StringBuilder output = new();
         private bool slotReleased;
         private bool closeStarted;
+        private bool durableCompletionStarted;
 
         internal IDebugAdapterSession Adapter { get; } = adapter;
         internal DeveloperDebugSessionView View { get; private set; } = view;
@@ -684,6 +741,16 @@ internal sealed class DeveloperDebuggerService(
             {
                 if (closeStarted) return false;
                 closeStarted = true;
+                return true;
+            }
+        }
+
+        internal bool TryBeginDurableCompletion()
+        {
+            lock (gate)
+            {
+                if (durableCompletionStarted) return false;
+                durableCompletionStarted = true;
                 return true;
             }
         }

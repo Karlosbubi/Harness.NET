@@ -15,6 +15,24 @@ namespace Harness.Presentation.Avalonia.Tests;
 public sealed partial class PresentationControlTests
 {
     [Fact]
+    public void Run_output_labels_durable_debug_metadata_as_transient_inspection()
+    {
+        DateTimeOffset started = DateTimeOffset.Parse("2026-08-29T15:00:00Z");
+        DeveloperExecutionView execution = new(
+            new("debug-1"), new("workspace-1"), null, "Original workspace",
+            DeveloperExecutionOperation.Debug,
+            new(new("App.csproj"), new("net10.0"), null), null,
+            DeveloperExecutionState.Succeeded, started, started.AddSeconds(1),
+            0, 1_000, null, null, false, false, false, null, null);
+
+        string formatted = RunOutputTool.Format(execution);
+
+        Assert.Contains("Debug · Succeeded", formatted, StringComparison.Ordinal);
+        Assert.Contains("breakpoints, stacks, scopes, and variables are intentionally transient",
+            formatted, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Run_output_formats_typed_adapter_case_results()
     {
         DateTimeOffset started = DateTimeOffset.Parse("2026-08-29T12:00:00Z");
@@ -130,7 +148,7 @@ public sealed partial class PresentationControlTests
             workbench.RefreshRunOutputAsync().AsTask().GetAwaiter().GetResult();
             TextBlock status = Assert.Single(content.GetVisualDescendants().OfType<TextBlock>(),
                 item => AutomationProperties.GetName(item) == "Run output status");
-            Assert.Contains("No project, Build, Test, or Restore runs", status.Text,
+            Assert.Contains("No project, Build, Test, Debug, or Restore runs", status.Text,
                 StringComparison.Ordinal);
             Assert.Equal(string.Empty, details.Text);
             window.Close();

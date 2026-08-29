@@ -9,6 +9,9 @@ namespace Harness.DataAccess.Execution;
 internal sealed class SqliteDeveloperDotNetExecutionStore(
     IApplicationPaths applicationPaths) : IDeveloperDotNetExecutionStore
 {
+    private readonly SemaphoreSlim reconciliationGate = new(1, 1);
+    private int reconciled;
+
     public async ValueTask<StoredDeveloperExecution> StartAsync(
         StoredDeveloperExecutionStart execution,
         CancellationToken cancellationToken = default)
@@ -18,11 +21,11 @@ internal sealed class SqliteDeveloperDotNetExecutionStore(
         await connection.ExecuteAsync(new CommandDefinition("""
             INSERT INTO developer_dotnet_executions (
                 id, workspace_id, goal_id, source_description, project_path,
-                operation, run_mode, target_framework, configuration, declaration_id,
+                operation, run_mode, debug_mode, target_framework, configuration, declaration_id,
                 test_id, test_name, test_scope, test_selection_json, state, started_at)
             VALUES (
                 @id, @workspaceId, @goalId, @sourceDescription, @projectPath,
-                @operation, @runMode, @targetFramework, @configuration, @declarationId,
+                @operation, @runMode, @debugMode, @targetFramework, @configuration, @declarationId,
                 @testId, @testName, @testScope, @testSelectionJson, 'Running', @startedAt);
             """, new
         {
@@ -31,12 +34,19 @@ internal sealed class SqliteDeveloperDotNetExecutionStore(
             goalId = execution.GoalId?.Value,
             sourceDescription = execution.SourceDescription.Value,
             projectPath = execution.ProjectPath.Value,
-            operation = execution.Operation is StoredDeveloperExecutionOperation.HotReload
-                ? StoredDeveloperExecutionOperation.Run.ToString()
+            operation = execution.Operation is StoredDeveloperExecutionOperation.HotReload or
+                StoredDeveloperExecutionOperation.Debug
+                ? execution.Operation is StoredDeveloperExecutionOperation.Debug &&
+                  execution.TestId is not null
+                    ? StoredDeveloperExecutionOperation.Test.ToString()
+                    : StoredDeveloperExecutionOperation.Run.ToString()
                 : execution.Operation.ToString(),
             runMode = execution.Operation is StoredDeveloperExecutionOperation.HotReload
                 ? "HotReload"
                 : "Standard",
+            debugMode = execution.Operation is StoredDeveloperExecutionOperation.Debug
+                ? execution.TestId is null ? "Project" : "Test"
+                : "None",
             targetFramework = execution.TargetFramework?.Value,
             configuration = execution.Configuration?.Value,
             declarationId = execution.DeclarationId?.Value ?? string.Empty,
@@ -130,6 +140,7 @@ internal sealed class SqliteDeveloperDotNetExecutionStore(
                    source_description AS SourceDescription,
                    operation AS Operation,
                    run_mode AS RunMode,
+                   debug_mode AS DebugMode,
                    project_path AS ProjectPath,
                    target_framework AS TargetFramework,
                    configuration AS Configuration,
@@ -176,18 +187,35 @@ internal sealed class SqliteDeveloperDotNetExecutionStore(
 
     public async ValueTask<int> InterruptRunningAsync(
         DateTimeOffset completedAt,
+        DateTimeOffset startedBefore,
         CancellationToken cancellationToken = default)
     {
-        await using SqliteConnection connection = await OpenAsync(cancellationToken);
-        return await connection.ExecuteAsync(new CommandDefinition("""
-            UPDATE developer_dotnet_executions
-            SET state = 'Interrupted',
-                completed_at = @completedAt,
-                error_code = 'application_restarted',
-                error = 'Harness.NET restarted before this project run completed.'
-            WHERE state = 'Running';
-            """, new { completedAt = completedAt.ToString("O") },
-            cancellationToken: cancellationToken));
+        if (Volatile.Read(ref reconciled) != 0) return 0;
+        await reconciliationGate.WaitAsync(cancellationToken);
+        try
+        {
+            if (reconciled != 0) return 0;
+            await using SqliteConnection connection = await OpenAsync(cancellationToken);
+            int changed = await connection.ExecuteAsync(new CommandDefinition("""
+                UPDATE developer_dotnet_executions
+                SET state = 'Interrupted',
+                    completed_at = @completedAt,
+                    error_code = 'application_restarted',
+                    error = 'Harness.NET restarted before this project operation completed.'
+                WHERE state = 'Running' AND started_at < @startedBefore;
+                """, new
+            {
+                completedAt = completedAt.ToString("O"),
+                startedBefore = startedBefore.ToString("O"),
+            },
+                cancellationToken: cancellationToken));
+            Volatile.Write(ref reconciled, 1);
+            return changed;
+        }
+        finally
+        {
+            reconciliationGate.Release();
+        }
     }
 
     private async ValueTask<SqliteConnection> OpenAsync(CancellationToken cancellationToken)
@@ -211,6 +239,7 @@ internal sealed class SqliteDeveloperDotNetExecutionStore(
         public string SourceDescription { get; init; } = string.Empty;
         public string Operation { get; init; } = string.Empty;
         public string RunMode { get; init; } = string.Empty;
+        public string DebugMode { get; init; } = string.Empty;
         public string ProjectPath { get; init; } = string.Empty;
         public string? TargetFramework { get; init; }
         public string? Configuration { get; init; }
@@ -231,7 +260,9 @@ internal sealed class SqliteDeveloperDotNetExecutionStore(
         internal StoredDeveloperExecution ToRecord(
             ImmutableArray<StoredDeveloperTestCaseResult> testCases) => new(
             new(Id), new(WorkspaceId), GoalId is null ? null : new(GoalId),
-            new(SourceDescription), RunMode.Equals("HotReload", StringComparison.Ordinal)
+            new(SourceDescription), !DebugMode.Equals("None", StringComparison.Ordinal)
+                ? StoredDeveloperExecutionOperation.Debug
+                : RunMode.Equals("HotReload", StringComparison.Ordinal)
                 ? StoredDeveloperExecutionOperation.HotReload
                 : Enum.Parse<StoredDeveloperExecutionOperation>(Operation),
             new(ProjectPath), TargetFramework is null ? null : new(TargetFramework),

@@ -93,7 +93,7 @@ internal sealed class RunOutputTool
                 .ToArray();
             outputs.ItemsSource = choices;
             status.Message = choices.Length == 0
-                ? "No project, Build, Test, or Restore runs are recorded for this source context."
+                ? "No project, Build, Test, Debug, or Restore runs are recorded for this source context."
                 : $"{choices.Length} project and goal run(s)." +
                   (developer.IsTruncated || goalRuns?.IsTruncated is true
                       ? " Showing the latest bounded results."
@@ -161,7 +161,7 @@ internal sealed class RunOutputTool
         cancel.IsEnabled = outputs.SelectedItem is DeveloperRunChoice
         {
             Output.State: DeveloperExecutionState.Running,
-        };
+        } selected && selected.Output.Operation is not DeveloperExecutionOperation.Debug;
     }
 
     internal async ValueTask CancelSelectedAsync()
@@ -211,7 +211,11 @@ internal sealed class RunOutputTool
         lines.Add(string.Empty);
         if (!output.IsOutputAvailable)
         {
-            lines.Add(output.State is DeveloperExecutionState.Running
+            lines.Add(output.Operation is DeveloperExecutionOperation.Debug
+                ? output.State is DeveloperExecutionState.Running
+                    ? "Live debugger output remains in the Debug workspace."
+                    : "Debugger output, breakpoints, stacks, scopes, and variables are intentionally transient."
+                : output.State is DeveloperExecutionState.Running
                 ? "Output becomes available when this bounded run completes."
                 : "Raw output is no longer available. Harness.NET persists run metadata, not potentially sensitive application output.");
             return string.Join(Environment.NewLine, lines);

@@ -632,6 +632,15 @@ workspace then provide the same inspection and control lifecycle. No UI, model, 
 configuration boundary accepts a PID. Parent/testhost output is bounded and
 process-local, and Stop or failure kills the complete owned tree.
 
+Delivered seventeenth slice: project and exact-test Debug now share durable operation
+history with Build, Run, Test, and Hot Reload. Schema 39 distinguishes project and
+test debug identities while retaining the existing database constraints for a
+Roslyn project entry point or exact test. State, source context, target, timestamps,
+exit, duration, and bounded safe failure survive restart; raw output, breakpoints,
+threads, stacks, scopes, variables, and override values remain transient. Restart
+reconciliation is one-shot and cutoff-bound so a later lazy service initialization
+cannot interrupt a debug session started during the current application lifetime.
+
 Use the existing trust and Restore boundaries. Selecting a launch profile does not
 authorize execution; debug attach, expression evaluation, mutation, dumps, network
 listeners, and external processes remain separately classified. ASP.NET endpoint

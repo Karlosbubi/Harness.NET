@@ -6,6 +6,7 @@ using Harness.BusinessLogic.Debugging;
 using Harness.BusinessLogic.Execution;
 using Harness.BusinessLogic.Workspaces;
 using Harness.DataAccess.Debugging;
+using Harness.DataAccess.Execution;
 using Harness.DataAccess.Inspection;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -17,7 +18,8 @@ public sealed class DeveloperDebuggerServiceTests
     public async Task Owns_launch_breakpoint_stop_inspection_step_and_termination_lifecycle()
     {
         FakeSession adapter = new();
-        DeveloperDebuggerService service = CreateService(adapter);
+        ExecutionStore store = new();
+        DeveloperDebuggerService service = CreateService(adapter, store: store);
 
         DeveloperDebugStartResult started = await service.StartAsync(new(
             WorkspaceRequest(),
@@ -45,6 +47,8 @@ public sealed class DeveloperDebuggerServiceTests
         Assert.Equal(DeveloperDebugSessionState.Terminated, terminated.Session?.State);
         Assert.True(adapter.ConfigurationCompleted);
         Assert.True(adapter.Disconnected);
+        Assert.Equal(StoredDeveloperExecutionState.Cancelled,
+            Assert.Single(store.Items).State);
     }
 
     [Fact]
@@ -65,7 +69,8 @@ public sealed class DeveloperDebuggerServiceTests
     public async Task Natural_termination_releases_and_disposes_the_adapter_lifecycle()
     {
         FakeSession adapter = new();
-        DeveloperDebuggerService service = CreateService(adapter);
+        ExecutionStore store = new();
+        DeveloperDebuggerService service = CreateService(adapter, store: store);
         DeveloperDebugStartResult started = await service.StartAsync(new(
             WorkspaceRequest(), Target(), []));
 
@@ -78,6 +83,29 @@ public sealed class DeveloperDebuggerServiceTests
         Assert.Equal(0, completed.ExitCode);
         Assert.True(adapter.Disconnected);
         Assert.True(adapter.Disposed);
+        StoredDeveloperExecution durable = Assert.Single(store.Items);
+        Assert.Equal(StoredDeveloperExecutionOperation.Debug, durable.Operation);
+        Assert.Equal(StoredDeveloperExecutionState.Succeeded, durable.State);
+        Assert.Equal("Program.Main", durable.DeclarationId?.Value);
+    }
+
+    [Fact]
+    public async Task Application_shutdown_interrupts_durable_debug_without_persisting_output()
+    {
+        FakeSession adapter = new();
+        ExecutionStore store = new();
+        DeveloperDebuggerService service = CreateService(adapter, store: store);
+        await service.StartAsync(new(WorkspaceRequest(), Target(), []));
+
+        await service.DisposeAsync();
+
+        StoredDeveloperExecution durable = Assert.Single(store.Items);
+        Assert.Equal(StoredDeveloperExecutionState.Interrupted, durable.State);
+        Assert.Equal("application_shutdown", durable.ErrorCode);
+        Assert.DoesNotContain(durable.GetType().GetProperties(), property =>
+            property.Name.Contains("Output", StringComparison.OrdinalIgnoreCase) ||
+            property.Name.Contains("Breakpoint", StringComparison.OrdinalIgnoreCase) ||
+            property.Name.Contains("Variable", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -85,11 +113,13 @@ public sealed class DeveloperDebuggerServiceTests
     {
         FakeSession adapter = new();
         TestSessionFactory testFactory = new(adapter);
+        ExecutionStore store = new();
         DeveloperDebuggerService service = new(
             new TargetResolver(),
             new SessionFactory(adapter),
             testFactory,
             new SettingsService(ready: true),
+            store,
             TimeProvider.System,
             NullLogger<DeveloperDebuggerService>.Instance);
         DeveloperTestTarget test = new(
@@ -105,6 +135,10 @@ public sealed class DeveloperDebuggerServiceTests
         Assert.Equal(test, stopped.Test);
         Assert.Equal("Tests/ExactTests.cs", Assert.Single(stopped.Breakpoints).Location.Source.Value);
         Assert.Equal("Demo.Tests.Exact", testFactory.Request?.Test.Value);
+        StoredDeveloperExecution durable = Assert.Single(store.Items);
+        Assert.Equal(StoredDeveloperExecutionOperation.Debug, durable.Operation);
+        Assert.Equal(StoredDeveloperTestScope.Exact, durable.TestScope);
+        Assert.Equal("Demo.Tests.Exact", durable.TestName?.Value);
     }
 
     [Fact]
@@ -130,11 +164,13 @@ public sealed class DeveloperDebuggerServiceTests
 
     private static DeveloperDebuggerService CreateService(
         FakeSession session,
-        bool ready = true) => new(
+        bool ready = true,
+        ExecutionStore? store = null) => new(
         new TargetResolver(),
         new SessionFactory(session),
         new TestSessionFactory(session),
         new SettingsService(ready),
+        store ?? new ExecutionStore(),
         TimeProvider.System,
         NullLogger<DeveloperDebuggerService>.Instance);
 
@@ -238,6 +274,66 @@ public sealed class DeveloperDebuggerServiceTests
             Request = request;
             return ValueTask.FromResult<IDebugAdapterSession>(session);
         }
+    }
+
+    private sealed class ExecutionStore : IDeveloperDotNetExecutionStore
+    {
+        private readonly Lock gate = new();
+        internal List<StoredDeveloperExecution> Items { get; } = [];
+
+        public ValueTask<StoredDeveloperExecution> StartAsync(
+            StoredDeveloperExecutionStart execution,
+            CancellationToken cancellationToken = default)
+        {
+            StoredDeveloperExecution stored = new(
+                execution.Id, execution.WorkspaceId, execution.GoalId,
+                execution.SourceDescription, execution.Operation, execution.ProjectPath,
+                execution.TargetFramework, execution.Configuration, execution.DeclarationId,
+                StoredDeveloperExecutionState.Running, execution.StartedAt,
+                null, null, 0, null, null, execution.TestId, execution.TestName,
+                execution.TestScope, execution.SelectedTests);
+            lock (gate) Items.Add(stored);
+            return ValueTask.FromResult(stored);
+        }
+
+        public ValueTask CompleteAsync(
+            StoredDeveloperExecutionCompletion completion,
+            CancellationToken cancellationToken = default)
+        {
+            lock (gate)
+            {
+                int index = Items.FindIndex(item => item.Id == completion.Id);
+                if (index >= 0)
+                {
+                    Items[index] = Items[index] with
+                    {
+                        State = completion.State,
+                        CompletedAt = completion.CompletedAt,
+                        ExitCode = completion.ExitCode,
+                        DurationMilliseconds = completion.DurationMilliseconds,
+                        ErrorCode = completion.ErrorCode,
+                        Error = completion.Error,
+                    };
+                }
+            }
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask<IReadOnlyList<StoredDeveloperExecution>> ListAsync(
+            StoredDeveloperWorkspaceId workspaceId,
+            StoredDeveloperGoalId? goalId,
+            int maximumResults,
+            CancellationToken cancellationToken = default)
+        {
+            lock (gate)
+                return ValueTask.FromResult<IReadOnlyList<StoredDeveloperExecution>>(
+                    Items.ToArray());
+        }
+
+        public ValueTask<int> InterruptRunningAsync(
+            DateTimeOffset completedAt,
+            DateTimeOffset startedBefore,
+            CancellationToken cancellationToken = default) => ValueTask.FromResult(0);
     }
 
     private sealed class FakeSession : IDebugAdapterSession

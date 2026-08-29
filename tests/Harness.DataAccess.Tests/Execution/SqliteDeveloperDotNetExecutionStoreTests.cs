@@ -80,6 +80,43 @@ public sealed class SqliteDeveloperDotNetExecutionStoreTests : IDisposable
         Assert.Equal("M:Program.Main", execution.DeclarationId?.Value);
     }
 
+    [Fact]
+    public async Task Persists_project_and_exact_test_debug_as_typed_modes()
+    {
+        StubPaths paths = new(Paths());
+        await new SqliteDatabaseInitializer(paths).InitializeAsync();
+        SqliteDeveloperDotNetExecutionStore store = new(paths);
+        DateTimeOffset started = DateTimeOffset.Parse("2026-08-29T15:00:00Z");
+
+        await store.StartAsync(new(
+            new("debug-project"), new("workspace-a"), null, new("Original workspace"),
+            StoredDeveloperExecutionOperation.Debug,
+            new("App.csproj"), new("net10.0"), null,
+            new("M:Program.Main"), started));
+        await store.StartAsync(new(
+            new("debug-test"), new("workspace-a"), null, new("Original workspace"),
+            StoredDeveloperExecutionOperation.Debug,
+            new("App.Tests.csproj"), new("net10.0"), null, null, started.AddSeconds(1),
+            new(new string('a', 64)), new("Demo.Tests.Exact"),
+            StoredDeveloperTestScope.Exact));
+
+        IReadOnlyList<StoredDeveloperExecution> executions = await store.ListAsync(
+            new("workspace-a"), null, 10);
+        Assert.All(executions, item =>
+            Assert.Equal(StoredDeveloperExecutionOperation.Debug, item.Operation));
+        Assert.NotNull(executions.Single(item => item.Id.Value == "debug-project").DeclarationId);
+        Assert.Equal("Demo.Tests.Exact",
+            executions.Single(item => item.Id.Value == "debug-test").TestName?.Value);
+        await using SqliteConnection connection = new($"Data Source={paths.Current.DatabasePath}");
+        await connection.OpenAsync();
+        Assert.Equal(1, await connection.ExecuteScalarAsync<int>(
+            "SELECT COUNT(*) FROM developer_dotnet_executions " +
+            "WHERE operation='Run' AND debug_mode='Project';"));
+        Assert.Equal(1, await connection.ExecuteScalarAsync<int>(
+            "SELECT COUNT(*) FROM developer_dotnet_executions " +
+            "WHERE operation='Test' AND debug_mode='Test';"));
+    }
+
     [Theory]
     [InlineData(StoredDeveloperTestScope.Exact, "Demo.CalculatorTests.Adds")]
     [InlineData(StoredDeveloperTestScope.Type, "Demo.CalculatorTests")]
@@ -105,7 +142,7 @@ public sealed class SqliteDeveloperDotNetExecutionStoreTests : IDisposable
 
         StoredDeveloperExecution execution = Assert.Single(await store.ListAsync(
             new("workspace-a"), null, 10));
-        Assert.Equal(38, initialized.SchemaVersion.Value);
+        Assert.Equal(39, initialized.SchemaVersion.Value);
         Assert.Equal(StoredDeveloperExecutionOperation.Test, execution.Operation);
         Assert.Equal(new string('a', 64), execution.TestId?.Value);
         Assert.Equal(selector, execution.TestName?.Value);
@@ -208,7 +245,8 @@ public sealed class SqliteDeveloperDotNetExecutionStoreTests : IDisposable
                    OR ScriptName LIKE '%035_DeveloperDotNetTestSelections.sql'
                    OR ScriptName LIKE '%036_DeveloperDotNetTestCaseResults.sql'
                    OR ScriptName LIKE '%037_DeveloperCoverage.sql'
-                   OR ScriptName LIKE '%038_DeveloperHotReload.sql';
+                   OR ScriptName LIKE '%038_DeveloperHotReload.sql'
+                   OR ScriptName LIKE '%039_DeveloperDebugSessions.sql';
                 UPDATE application_metadata SET value = '33' WHERE key = 'schema_version';
                 """;
             await command.ExecuteNonQueryAsync();
@@ -220,7 +258,7 @@ public sealed class SqliteDeveloperDotNetExecutionStoreTests : IDisposable
             await new SqliteDeveloperDotNetExecutionStore(paths).ListAsync(
                 new("workspace-a"), null, 10));
 
-        Assert.Equal(38, migrated.SchemaVersion.Value);
+        Assert.Equal(39, migrated.SchemaVersion.Value);
         Assert.Equal(StoredDeveloperTestScope.Exact, execution.TestScope);
     }
 
@@ -247,10 +285,12 @@ public sealed class SqliteDeveloperDotNetExecutionStoreTests : IDisposable
                 DROP TABLE developer_dotnet_test_case_results;
                 ALTER TABLE developer_dotnet_executions DROP COLUMN test_cases_truncated;
                 ALTER TABLE developer_dotnet_executions DROP COLUMN run_mode;
+                ALTER TABLE developer_dotnet_executions DROP COLUMN debug_mode;
                 DELETE FROM SchemaVersions
                 WHERE ScriptName LIKE '%036_DeveloperDotNetTestCaseResults.sql'
                    OR ScriptName LIKE '%037_DeveloperCoverage.sql'
-                   OR ScriptName LIKE '%038_DeveloperHotReload.sql';
+                   OR ScriptName LIKE '%038_DeveloperHotReload.sql'
+                   OR ScriptName LIKE '%039_DeveloperDebugSessions.sql';
                 UPDATE application_metadata SET value = '35' WHERE key = 'schema_version';
                 """);
         }
@@ -260,7 +300,7 @@ public sealed class SqliteDeveloperDotNetExecutionStoreTests : IDisposable
         StoredDeveloperExecution execution = Assert.Single(await store.ListAsync(
             new("workspace-a"), null, 10));
 
-        Assert.Equal(38, migrated.SchemaVersion.Value);
+        Assert.Equal(39, migrated.SchemaVersion.Value);
         Assert.Equal(StoredDeveloperTestScope.Selection, execution.TestScope);
         Assert.Equal(2, execution.SelectedTests.Length);
         Assert.Empty(execution.TestCases);
@@ -311,7 +351,8 @@ public sealed class SqliteDeveloperDotNetExecutionStoreTests : IDisposable
                    OR ScriptName LIKE '%035_DeveloperDotNetTestSelections.sql'
                    OR ScriptName LIKE '%036_DeveloperDotNetTestCaseResults.sql'
                    OR ScriptName LIKE '%037_DeveloperCoverage.sql'
-                   OR ScriptName LIKE '%038_DeveloperHotReload.sql';
+                   OR ScriptName LIKE '%038_DeveloperHotReload.sql'
+                   OR ScriptName LIKE '%039_DeveloperDebugSessions.sql';
                 UPDATE application_metadata SET value = '31' WHERE key = 'schema_version';
                 """;
             await command.ExecuteNonQueryAsync();
@@ -323,7 +364,7 @@ public sealed class SqliteDeveloperDotNetExecutionStoreTests : IDisposable
             await new SqliteDeveloperDotNetExecutionStore(paths).ListAsync(
                 new("workspace-a"), null, 10));
 
-        Assert.Equal(38, migrated.SchemaVersion.Value);
+        Assert.Equal(39, migrated.SchemaVersion.Value);
         Assert.Equal(StoredDeveloperExecutionOperation.Run, execution.Operation);
         Assert.Null(execution.Configuration);
         Assert.Equal("M:Program.Main", execution.DeclarationId?.Value);
@@ -346,16 +387,27 @@ public sealed class SqliteDeveloperDotNetExecutionStoreTests : IDisposable
         await store.CompleteAsync(new(
             new("complete"), StoredDeveloperExecutionState.Succeeded,
             started.AddSeconds(1), 0, 1000, null, null));
+        await store.StartAsync(new(
+            new("current"), new("workspace-a"), null, new("Original workspace"),
+            StoredDeveloperExecutionOperation.Debug,
+            new("App.csproj"), null, null, new("M:Program.Main"),
+            started.AddSeconds(2)));
 
-        int changed = await store.InterruptRunningAsync(started.AddSeconds(2));
+        int changed = await store.InterruptRunningAsync(
+            started.AddSeconds(2), started.AddSeconds(1));
+        int repeated = await store.InterruptRunningAsync(
+            started.AddSeconds(4), started.AddSeconds(3));
         IReadOnlyList<StoredDeveloperExecution> executions = await store.ListAsync(
             new("workspace-a"), null, 10);
 
         Assert.Equal(1, changed);
+        Assert.Equal(0, repeated);
         Assert.Contains(executions, item => item.Id.Value == "running" &&
             item.State is StoredDeveloperExecutionState.Interrupted);
         Assert.Contains(executions, item => item.Id.Value == "complete" &&
             item.State is StoredDeveloperExecutionState.Succeeded);
+        Assert.Contains(executions, item => item.Id.Value == "current" &&
+            item.State is StoredDeveloperExecutionState.Running);
     }
 
     public void Dispose()
