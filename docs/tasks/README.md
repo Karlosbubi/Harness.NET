@@ -885,9 +885,10 @@ Status: `In progress` — PR #2 merged slice 060.0 and the shrink-only budget
 infrastructure. Slices 060.1–060.3 extracted the Files/Search, Git-changes,
 branches/tags, and worktrees/stashes units with focused tests. Slice 060.4 extracted
 remotes, history/blame, and the conflict editor with its Roslyn lifecycle. Slice 060.5
-has extracted run output, Problems, Roslyn lifecycle/interactions, rename,
-transformations, navigation, inspection, and CodeLens; document session hosting and
-slices 060.6–060.8 remain.
+extracted run output, Problems, document sessions, Roslyn lifecycle/interactions,
+rename, transformations, navigation, inspection, CodeLens, layout lifecycle,
+cross-tool focus/accessibility, and overview composition. The 795-line host has left
+the burn-down allowlist; slices 060.6–060.8 remain.
 
 Dependencies: 049, 050. Coordinates with in-progress 052.
 

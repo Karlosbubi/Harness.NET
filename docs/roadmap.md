@@ -597,14 +597,15 @@ slice 060.0 (SDK pin, ignore rules, continuous verification) and the shrink-only
 source budget. Slices 060.1–060.3 extracted Files, Search, exact-state Git changes,
 branches, tags, linked worktrees, and stashes into bounded composition units with
 focused tests. Slice 060.4 extracted remotes, history/blame, and the exact-state
-conflict editor, including ownership of its Roslyn diagnostics lifecycle. Slices
-060.5 has extracted run output, Problems, the Roslyn lifecycle, and editor interaction
+conflict editor, including ownership of its Roslyn diagnostics lifecycle. Slice
+060.5 extracted run output, Problems, the Roslyn lifecycle, and editor interaction
 services, rename, transformations, navigation, virtual documents, inspection, and
 CodeLens after confirming no Task 052 branch is ahead of `main`. Document session
 creation, dirty/save/reload/close transitions, Dock activation, and Roslyn invalidation
 now live in bounded `DocumentsHost` and `DocumentSessionFactory` units. Persisted Dock
-replacement and adaptive viewport behavior now live in `WorkbenchLayoutHost`; initial
-arrangement and cross-tool navigation remain in slice 060.5.
+replacement and adaptive viewport behavior now live in `WorkbenchLayoutHost`, while
+`WorkbenchNavigator` and `WorkbenchOverview` own cross-tool focus/accessibility and
+overview documents. The 795-line coordinator has left the source-size allowlist.
 Slices 060.6–060.8 follow.
 
 ### Complete: Task 061 — architecture enforcement and composition seams

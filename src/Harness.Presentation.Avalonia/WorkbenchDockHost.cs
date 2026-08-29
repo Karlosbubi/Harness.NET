@@ -39,27 +39,12 @@ internal sealed class WorkbenchDockHost
     private readonly IWorkbenchInspectionService inspectionService;
     private readonly IDeveloperGitService? developerGitService;
     private readonly Func<AvaloniaShellState> state;
-    private readonly Func<bool, Task> manageWorkspace;
     private readonly Func<string, Task> manageWorkspaceAt;
-    private readonly Func<Task> manageProjectSecrets;
     private readonly Func<Task> refreshWorkspaceContext;
     private readonly IDeveloperProjectExecutionService? developerExecutionService;
     private readonly CancellationToken cancellationToken;
     private readonly Factory factory = new();
     private readonly Dictionary<string, Control> durableContexts = new(StringComparer.Ordinal);
-    private readonly TextBlock overviewHeading = new()
-    {
-        FontSize = 22,
-        FontWeight = FontWeight.SemiBold,
-        TextWrapping = TextWrapping.Wrap,
-    };
-    private readonly TextBlock overviewDetails = new() { TextWrapping = TextWrapping.Wrap };
-    private readonly Button overviewAction = new() { Content = "Open workspace" };
-    private readonly Button overviewSecretsAction = new()
-    {
-        Content = "Project User Secrets",
-        IsVisible = false,
-    };
     private readonly FilesTool filesTool;
     private readonly GitChangesTool gitChangesTool;
     private readonly GitBranchesTool gitBranchesTool;
@@ -70,23 +55,15 @@ internal sealed class WorkbenchDockHost
     private readonly RunOutputTool runOutputToolUnit;
     private readonly DocumentsHost documentsHost;
     private readonly ProblemsTool problemsToolUnit;
+    private readonly WorkbenchOverview overviewHost;
     private readonly WorkbenchLayoutHost layoutHost;
+    private readonly WorkbenchNavigator navigator;
     private TextBlock GitStatus => gitChangesTool.Status;
     private string GitFingerprint => gitChangesTool.Fingerprint;
     private WorkbenchWorkspaceContext? CurrentGitContext => gitChangesTool.CurrentContext;
     private string? workspaceId;
     private string? selectedGoalId;
     private bool busy;
-    private int focusRegionIndex = -1;
-    private KeybindingSettingsSnapshot keybindingSettings = KeybindingSettingsSnapshot.Default;
-    private static readonly KeybindingCommand[] WorkbenchKeyCommands =
-    [
-        KeybindingCommand.ShowFiles,
-        KeybindingCommand.ShowGit,
-        KeybindingCommand.ShowRunOutput,
-        KeybindingCommand.ShowProblems,
-        KeybindingCommand.FocusNextRegion,
-    ];
 
     internal WorkbenchDockHost(
         IRunOutputService runOutputService,
@@ -110,9 +87,7 @@ internal sealed class WorkbenchDockHost
     {
         this.inspectionService = inspectionService;
         this.state = state;
-        this.manageWorkspace = manageWorkspace ?? (_ => Task.CompletedTask);
         this.manageWorkspaceAt = manageWorkspaceAt ?? (_ => Task.CompletedTask);
-        this.manageProjectSecrets = manageProjectSecrets ?? (() => Task.CompletedTask);
         this.developerExecutionService = developerExecutionService;
         this.developerGitService = developerGitService;
         this.refreshWorkspaceContext = refreshWorkspaceContext ?? (() => Task.CompletedTask);
@@ -180,13 +155,18 @@ internal sealed class WorkbenchDockHost
             codeIntelligenceService,
             gitChangesTool.Render,
             documentsHost.HasOpen);
+        overviewHost = new(
+            state,
+            documentsHost,
+            manageWorkspace ?? (_ => Task.CompletedTask),
+            manageProjectSecrets ?? (() => Task.CompletedTask));
 
         Control files = filesTool.Content;
         Control sourceControl = BuildSourceControlTool();
         Control runOutput = runOutputToolUnit.Content;
         Control problemsContent = problemsToolUnit.Content;
         Control context = BuildContextTool(goalContext);
-        Control overviewContent = BuildOverviewDocument();
+        Control overviewContent = overviewHost.Content;
         durableContexts.Add(WorkbenchDockIds.NavigationTool, navigation);
         durableContexts.Add(WorkbenchDockIds.FilesTool, files);
         durableContexts.Add(WorkbenchDockIds.ContextTool, context);
@@ -324,7 +304,6 @@ internal sealed class WorkbenchDockHost
             Focusable = true,
         };
         AutomationProperties.SetName(Control, "Docked workspace workbench");
-        Control.KeyDown += OnWorkbenchKeyDown;
         layoutHost = new(
             layoutService,
             factory,
@@ -339,27 +318,27 @@ internal sealed class WorkbenchDockHost
             documentsHost.ReplaceDock,
             Control,
             cancellationToken);
+        navigator = new(factory, layoutHost, Control);
         Control.SizeChanged += (_, _) =>
             layoutHost.ApplyViewport(Control.Bounds.Width, Control.Bounds.Height);
-        Control.LayoutUpdated += (_, _) => ApplyDockAutomationNames();
         LayoutActions = layoutHost.Actions;
         DocumentActions = documentsHost.BuildActions(
             layoutHost.Status,
-            control => LastRequestedFocusTarget = control,
-            FocusContext);
+            navigator.RecordFocusRequest,
+            navigator.FocusContext);
     }
 
     internal DockControl Control { get; }
     internal Control LayoutActions { get; }
     internal Control DocumentActions { get; }
     internal ComboBox DocumentSwitcher => documentsHost.Switcher;
-    internal Button OverviewAction => overviewAction;
+    internal Button OverviewAction => overviewHost.Action;
     internal IDocumentDock Documents => layoutHost.Documents;
     internal IRootDock Root => layoutHost.Root;
     internal IFactory Factory => factory;
     internal string? LayoutStatusText => layoutHost.Status.Text;
     internal bool IsCompactViewport => layoutHost.IsCompactViewport;
-    internal Control? LastRequestedFocusTarget { get; private set; }
+    internal Control? LastRequestedFocusTarget => navigator.LastRequestedFocusTarget;
     internal int SourceDocumentCount => documentsHost.SourceCount;
     internal int VirtualDocumentCount => documentsHost.VirtualCount;
     internal TreeView FileTree => filesTool.Tree;
@@ -412,7 +391,7 @@ internal sealed class WorkbenchDockHost
     {
         filesTool.Update(snapshot);
         documentsHost.Update(snapshot);
-        keybindingSettings = snapshot.Settings.KeybindingSettings ?? KeybindingSettingsSnapshot.Default;
+        navigator.Update(snapshot.Settings.KeybindingSettings ?? KeybindingSettingsSnapshot.Default);
 
         WorkspaceView? active = snapshot.Workspaces.Registered.FirstOrDefault(item => item.IsActive);
         if (!string.Equals(workspaceId, active?.Id, StringComparison.Ordinal))
@@ -443,28 +422,7 @@ internal sealed class WorkbenchDockHost
 
         runOutputToolUnit.Update(snapshot, selectedGoal?.Id);
 
-        if (active is null)
-        {
-            overviewHeading.Text = "Open a repository to get started";
-            overviewDetails.Text = "Choose a Git-backed .NET repository. Harness.NET will discover its solutions and projects before asking you to trust it.";
-            overviewAction.Content = "Open workspace";
-            overviewAction.Classes.Remove("command");
-            overviewAction.Classes.Add("primary");
-            overviewSecretsAction.IsVisible = false;
-            return;
-        }
-
-        overviewHeading.Text = active.Name;
-        overviewDetails.Text = $"{active.RootPath}\n\nBranch: {active.Branch}\n" +
-                               $"Trust: {(active.IsTrusted ? "Trusted" : "Not trusted")}\n" +
-                               $"Working tree: {(active.IsDirty ? "Has changes" : "Clean")}\n\n" +
-                               (active.IsTrusted
-                                   ? "Use Files or Git to open source and diff documents in this editor."
-                                   : "Trust this workspace before reading repository content.");
-        overviewAction.Content = "Workspace settings";
-        overviewAction.Classes.Remove("primary");
-        overviewAction.Classes.Add("command");
-        overviewSecretsAction.IsVisible = active.IsTrusted;
+        overviewHost.Update(active);
     }
 
     internal ValueTask OpenFileAsync(string relativePath) =>
@@ -642,50 +600,9 @@ internal sealed class WorkbenchDockHost
         });
     }
 
-    internal void OpenPlan()
-    {
-        if (state().Goals.CurrentPlan is not { } plan)
-        {
-            overviewDetails.Text = "The selected goal has no current plan to open.";
-            documentsHost.ActivateOverview();
-            return;
-        }
+    internal void OpenPlan() => overviewHost.OpenPlan();
 
-        documentsHost.OpenOrReplace(
-            WorkbenchDockIds.PlanDocument,
-            $"Plan · revision {plan.Revision.Value}",
-            new ScrollViewer
-            {
-                Content = MarkdownContentView.Create(plan.Content, _ => null),
-                Padding = new Thickness(18),
-            });
-    }
-
-    internal void OpenEvidence()
-    {
-        if (state().Goals.Workflow?.Evidence is not { Count: > 0 } items)
-        {
-            overviewDetails.Text = "The selected goal has no durable workflow evidence to open.";
-            documentsHost.ActivateOverview();
-            return;
-        }
-
-        StackPanel content = new() { Spacing = 14 };
-        foreach (var item in items)
-        {
-            content.Children.Add(new TextBlock
-            {
-                Text = $"{item.Sequence}. {item.Title.Value}",
-                FontWeight = FontWeight.SemiBold,
-            });
-            content.Children.Add(MarkdownContentView.Create(item.Content.Value, _ => null));
-        }
-
-        documentsHost.OpenOrReplace(
-            WorkbenchDockIds.EvidenceDocument,
-            "Workflow evidence",
-            new ScrollViewer { Content = content, Padding = new Thickness(18) });
-    }
+    internal void OpenEvidence() => overviewHost.OpenEvidence();
 
     internal void ApplyViewport(double width, double height) =>
         layoutHost.ApplyViewport(width, height);
@@ -777,48 +694,6 @@ internal sealed class WorkbenchDockHost
 
     internal ValueTask RefreshRunOutputAsync() => runOutputToolUnit.RefreshAsync();
 
-    private Control BuildOverviewDocument()
-    {
-        overviewAction.Classes.Add("primary");
-        overviewAction.HorizontalAlignment = HorizontalAlignment.Left;
-        AutomationProperties.SetName(overviewAction, "Open or manage workspace");
-        overviewAction.Click += async (_, _) => await manageWorkspace(ActiveWorkspace() is null);
-        overviewSecretsAction.Classes.Add("command");
-        overviewSecretsAction.HorizontalAlignment = HorizontalAlignment.Left;
-        AutomationProperties.SetName(overviewSecretsAction, "Manage project User Secrets");
-        overviewSecretsAction.Click += async (_, _) => await manageProjectSecrets();
-        StackPanel actions = new()
-        {
-            Orientation = global::Avalonia.Layout.Orientation.Horizontal,
-            Spacing = 8,
-            Children = { overviewAction, overviewSecretsAction },
-        };
-        return new Grid
-        {
-            Children =
-            {
-                new Border
-                {
-                    MaxWidth = 720,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Classes = { "card" },
-                    Child = new StackPanel
-                    {
-                        Spacing = 14,
-                        Children =
-                        {
-                            new TextBlock { Text = "HARNESS.NET WORKSPACE", Classes = { "eyebrow" } },
-                            overviewHeading,
-                            overviewDetails,
-                            actions,
-                        },
-                    },
-                },
-            },
-        };
-    }
-
     internal ValueTask TransformActiveDocumentAsync(
         WorkbenchCodeDocumentTransformationKind kind) => documentsHost.TransformActiveAsync(kind);
 
@@ -863,14 +738,6 @@ internal sealed class WorkbenchDockHost
         return view;
     }
 
-    private static Control CreateEditor(string content, string path, bool showLineNumbers)
-    {
-        TextEditor editor = CodeEditorView.Create(
-            content, isReadOnly: true, wordWrap: false, showLineNumbers: showLineNumbers, path: path);
-        AutomationProperties.SetName(editor, $"Read-only editor for {path}");
-        return editor;
-    }
-
     private WorkspaceView? ActiveWorkspace() =>
         state().Workspaces.Registered.FirstOrDefault(item => item.IsActive);
 
@@ -886,203 +753,21 @@ internal sealed class WorkbenchDockHost
         $"{WorkbenchDockIds.DiffDocument}.{context.WorkspaceId.Value}." +
         (context.GoalId?.Value ?? "original");
 
-    private void OnWorkbenchKeyDown(object? sender, KeyEventArgs args)
-    {
-        KeybindingCommand? command = KeybindingInput.Match(
-            args, keybindingSettings, WorkbenchKeyCommands);
-        if (command is null) return;
-        args.Handled = command switch
-        {
-            KeybindingCommand.ShowFiles => ShowFiles(),
-            KeybindingCommand.ShowGit => ShowGit(),
-            KeybindingCommand.ShowRunOutput => ShowRunOutput(),
-            KeybindingCommand.ShowProblems => ShowProblems(),
-            KeybindingCommand.FocusNextRegion => FocusNextRegion(),
-            _ => false,
-        };
-    }
+    internal bool ShowFiles() => navigator.ShowFiles();
 
-    /// <summary>Activates the Files panel, the same path as its keyboard shortcut.</summary>
-    internal bool ShowFiles() => ActivateTool(WorkbenchDockIds.FilesTool);
+    internal bool ShowConversation() => navigator.ShowConversation();
 
-    /// <summary>Restores and activates the primary Conversation panel.</summary>
-    internal bool ShowConversation() => ActivateTool(WorkbenchDockIds.ConversationTool);
-
-    /// <summary>Activates the Git panel, the same path as its keyboard shortcut.</summary>
-    internal bool ShowGit() => ActivateTool(WorkbenchDockIds.GitTool);
+    internal bool ShowGit() => navigator.ShowGit();
 
     internal string GitStatusText => GitStatus.Text ?? string.Empty;
 
     internal string GitSummaryText => gitChangesTool.Summary.Text ?? string.Empty;
 
-    /// <summary>Activates the Run output panel, the same path as its keyboard shortcut.</summary>
-    internal bool ShowRunOutput() => ActivateTool(WorkbenchDockIds.RunOutputTool);
+    internal bool ShowRunOutput() => navigator.ShowRunOutput();
 
-    /// <summary>Activates the Problems panel, the same path as its keyboard shortcut.</summary>
-    internal bool ShowProblems() => ActivateTool(WorkbenchDockIds.ProblemsTool);
+    internal bool ShowProblems() => navigator.ShowProblems();
 
-    private bool ActivateTool(string id)
-    {
-        IDockable? tool = layoutHost.Find(id);
-        bool visibleInOwner = tool?.Owner is IDock visibleOwner &&
-                              visibleOwner.VisibleDockables?.Contains(tool) is true;
-        if (!visibleInOwner && factory.RestoreDockable(id) is { } restored)
-        {
-            tool = restored;
-        }
-
-        if (tool is null)
-        {
-            return false;
-        }
-
-        visibleInOwner = tool.Owner is IDock restoredOwner &&
-                         restoredOwner.VisibleDockables?.Contains(tool) is true;
-        if (!visibleInOwner && layoutHost.DefaultToolDock(id) is { } defaultOwner)
-        {
-            layoutHost.RemoveFromSpecialCollections(tool);
-            factory.AddDockable(defaultOwner, tool);
-        }
-
-        if (tool.Owner is IToolDock owner)
-        {
-            layoutHost.RestoreAdaptiveProportion(owner);
-            owner.IsExpanded = true;
-        }
-
-        factory.SetActiveDockable(tool);
-        FocusContext(tool);
-        return true;
-    }
-
-    private void ApplyDockAutomationNames()
-    {
-        foreach (DocumentTabStripItem tab in Control.GetVisualDescendants()
-                     .OfType<DocumentTabStripItem>())
-        {
-            if (tab.DataContext is IDockable { Title: { Length: > 0 } title })
-            {
-                AutomationProperties.SetAccessibilityView(tab, AccessibilityView.Content);
-                SetAutomationName(tab, title);
-            }
-        }
-
-        foreach (ToolChromeControl chrome in Control.GetVisualDescendants()
-                     .OfType<ToolChromeControl>())
-        {
-            if (chrome.DataContext is IToolDock dock)
-            {
-                SetAutomationName(chrome, $"{DockTitle(dock)} panel controls");
-            }
-        }
-
-        foreach (ToolControl toolControl in Control.GetVisualDescendants().OfType<ToolControl>())
-        {
-            if (toolControl.DataContext is IToolDock dock)
-            {
-                SetAutomationName(toolControl, $"{DockTitle(dock)} panel");
-            }
-        }
-
-        foreach (ItemsControl itemsControl in Control.GetVisualDescendants()
-                     .OfType<ItemsControl>()
-                     .Where(item => item.DataContext is IProportionalDock))
-        {
-            SetAutomationName(itemsControl, "Workbench panel layout");
-        }
-
-        foreach (Button button in Control.GetVisualDescendants().OfType<Button>())
-        {
-            string? name = button.Name switch
-            {
-                "PART_MenuButton" => $"Panel actions for {DockTitle(button)}",
-                "PART_PinButton" => $"Auto-hide or dock {DockTitle(button)}",
-                "PART_MaximizeRestoreButton" => $"Maximize or restore {DockTitle(button)}",
-                "PART_CloseButton" => $"Close {DockTitle(button)}",
-                _ => null,
-            };
-            if (name is not null)
-            {
-                SetAutomationName(button, name);
-            }
-        }
-
-        foreach (Control splitter in Control.GetVisualDescendants()
-                     .OfType<Control>()
-                     .Where(item => item.GetType().Name == "ProportionalStackPanelSplitter"))
-        {
-            SetAutomationName(splitter, "Resize adjacent workbench panels");
-        }
-    }
-
-    private static string DockTitle(Control control)
-    {
-        IDockable? dockable = control.GetVisualAncestors()
-            .OfType<Control>()
-            .Select(item => item.DataContext)
-            .OfType<IDockable>()
-            .FirstOrDefault();
-        return dockable switch
-        {
-            IToolDock toolDock => DockTitle(toolDock),
-            { Title: { Length: > 0 } } => dockable.Title,
-            _ => "workbench panel",
-        };
-    }
-
-    private static string DockTitle(IToolDock dock) =>
-        string.IsNullOrWhiteSpace(dock.ActiveDockable?.Title)
-            ? "workbench"
-            : dock.ActiveDockable.Title;
-
-    private static void SetAutomationName(Control control, string name)
-    {
-        if (!string.Equals(AutomationProperties.GetName(control), name, StringComparison.Ordinal))
-        {
-            AutomationProperties.SetName(control, name);
-        }
-    }
-
-    internal bool FocusNextRegion()
-    {
-        string[] regions =
-        [
-            WorkbenchDockIds.FilesTool,
-            WorkbenchDockIds.OverviewDocument,
-            WorkbenchDockIds.GitTool,
-            WorkbenchDockIds.ConversationTool,
-            WorkbenchDockIds.RunOutputTool,
-        ];
-        focusRegionIndex = (focusRegionIndex + 1) % regions.Length;
-        if (regions[focusRegionIndex] == WorkbenchDockIds.OverviewDocument)
-        {
-            IDockable target = layoutHost.Documents.ActiveDockable ?? layoutHost.Overview;
-            factory.SetActiveDockable(target);
-            FocusContext(target);
-            return true;
-        }
-
-        return ActivateTool(regions[focusRegionIndex]);
-    }
-
-    private void FocusContext(IDockable dockable)
-    {
-        if (dockable.Context is not Control context)
-        {
-            return;
-        }
-
-        Control? target = context.Focusable
-            ? context
-            : context.GetVisualDescendants()
-                .OfType<Control>()
-                .FirstOrDefault(item => item.Focusable && item.IsEffectivelyVisible);
-        LastRequestedFocusTarget = target;
-        if (target is not null && !target.Focus())
-        {
-            Dispatcher.UIThread.Post(() => target.Focus());
-        }
-    }
+    internal bool FocusNextRegion() => navigator.FocusNextRegion();
 
     private async ValueTask RunAsync(Func<ValueTask> operation)
     {

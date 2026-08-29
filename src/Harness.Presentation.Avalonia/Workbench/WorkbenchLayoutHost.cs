@@ -346,24 +346,24 @@ internal sealed class WorkbenchLayoutHost
 
     private static IDockable? FindDockable(IDockable root, string id)
     {
-        if (string.Equals(root.Id, id, StringComparison.Ordinal)) return root;
-        if (root is IDock dock)
+        HashSet<IDockable> visited = new(ReferenceEqualityComparer.Instance);
+        Stack<IDockable> pending = new();
+        pending.Push(root);
+        while (pending.TryPop(out IDockable? current))
         {
-            foreach (IDockable child in dock.VisibleDockables ?? [])
-                if (FindDockable(child, id) is { } found) return found;
-        }
-        if (root is IRootDock rootDock)
-        {
-            foreach (IDockable child in rootDock.HiddenDockables ?? [])
-                if (FindDockable(child, id) is { } found) return found;
-            foreach (IDockable child in rootDock.LeftPinnedDockables ?? [])
-                if (FindDockable(child, id) is { } found) return found;
-            foreach (IDockable child in rootDock.RightPinnedDockables ?? [])
-                if (FindDockable(child, id) is { } found) return found;
-            foreach (IDockable child in rootDock.TopPinnedDockables ?? [])
-                if (FindDockable(child, id) is { } found) return found;
-            foreach (IDockable child in rootDock.BottomPinnedDockables ?? [])
-                if (FindDockable(child, id) is { } found) return found;
+            if (!visited.Add(current)) continue;
+            if (current.Id == id) return current;
+            if (current is IDock dock)
+                foreach (IDockable child in dock.VisibleDockables ?? []) pending.Push(child);
+            if (current is not IRootDock rootDock) continue;
+            foreach (IDockable child in (rootDock.HiddenDockables ?? [])
+                         .Concat(rootDock.LeftPinnedDockables ?? [])
+                         .Concat(rootDock.RightPinnedDockables ?? [])
+                         .Concat(rootDock.TopPinnedDockables ?? [])
+                         .Concat(rootDock.BottomPinnedDockables ?? []))
+                pending.Push(child);
+            foreach (IDockWindow window in rootDock.Windows ?? [])
+                if (window.Layout is not null) pending.Push(window.Layout);
         }
         return null;
     }
