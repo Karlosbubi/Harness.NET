@@ -107,12 +107,23 @@ internal sealed partial class MainWindow : Window
     [
         KeybindingCommand.ShowCommandPalette,
         KeybindingCommand.QuickOpen,
+        KeybindingCommand.OpenWorkspace,
+        KeybindingCommand.ManageWorkspaces,
+        KeybindingCommand.ManageProjectUserSecrets,
         KeybindingCommand.OpenSettings,
+        KeybindingCommand.InspectSemanticContext,
+        KeybindingCommand.ManageFramework,
+        KeybindingCommand.ManageOperations,
+        KeybindingCommand.RefreshProviderHealth,
+        KeybindingCommand.ReloadUserThemes,
         KeybindingCommand.ShowChat,
         KeybindingCommand.ShowFiles,
         KeybindingCommand.ShowGit,
+        KeybindingCommand.OpenWorkingTreeDiff,
         KeybindingCommand.ShowRunOutput,
         KeybindingCommand.ShowProblems,
+        KeybindingCommand.SaveWorkbenchLayout,
+        KeybindingCommand.ResetWorkbenchLayout,
         KeybindingCommand.FocusNextRegion,
     ];
 
@@ -529,37 +540,22 @@ internal sealed partial class MainWindow : Window
         KeybindingCommand? command = KeybindingInput.Match(args, bindings, ShellKeyCommands);
         if (command is null) return;
         args.Handled = true;
-        switch (command.Value)
+        if (command is KeybindingCommand.ShowCommandPalette)
         {
-            case KeybindingCommand.ShowCommandPalette:
-                await ShowCommandPaletteAsync();
-                break;
-            case KeybindingCommand.QuickOpen:
-                await ShowQuickOpenAsync();
-                break;
-            case KeybindingCommand.OpenSettings:
-                await ShowSettingsAsync();
-                break;
-            case KeybindingCommand.ShowChat:
-                ShowConversation();
-                break;
-            case KeybindingCommand.ShowFiles:
-                workbench?.ShowFiles();
-                break;
-            case KeybindingCommand.ShowGit:
-                workbench?.ShowGit();
-                break;
-            case KeybindingCommand.ShowRunOutput:
-                workbench?.ShowRunOutput();
-                break;
-            case KeybindingCommand.ShowProblems:
-                workbench?.ShowProblems();
-                break;
-            case KeybindingCommand.FocusNextRegion:
-                workbench?.FocusNextRegion();
-                break;
-            default:
-                throw new ArgumentOutOfRangeException(nameof(command));
+            await ShowCommandPaletteAsync();
+            return;
+        }
+
+        PaletteCommand? action = BuildCommands()
+            .SingleOrDefault(item => item.Binding == command.Value);
+        if (action?.IsAvailable is true)
+        {
+            await action.InvokeAsync();
+        }
+        else if (action?.UnavailableReason is { } unavailable)
+        {
+            status.Severity = StatusSeverity.Warning;
+            status.Message = unavailable;
         }
     }
 

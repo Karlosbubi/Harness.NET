@@ -267,8 +267,12 @@ internal sealed class SourceEditorSurface : IDisposable
             KeybindingCommand.FormatDocument);
         SetShortcutTip(FormatSelection, "Format selected code", settings,
             KeybindingCommand.FormatSelection);
+        SetShortcutTip(FormatChangedSpans, "Format changed code", settings,
+            KeybindingCommand.FormatChangedCode);
         SetShortcutTip(OrganizeImports, "Sort and group using directives", settings,
             KeybindingCommand.OrganizeImports);
+        SetShortcutTip(RemoveUnusedImports, "Remove unused imports", settings,
+            KeybindingCommand.RemoveUnusedImports);
         SetShortcutTip(QuickFix, "Show Roslyn fixes at the caret", settings,
             KeybindingCommand.ShowQuickFixes);
     }

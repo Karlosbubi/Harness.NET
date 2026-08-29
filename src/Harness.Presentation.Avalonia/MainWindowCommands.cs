@@ -56,33 +56,51 @@ internal sealed partial class MainWindow : Window
         List<PaletteCommand> commands =
         [
             new("workspace.open", "Workspace", "Open workspace…",
-                () => new(ShowWorkspaceDialogAsync(true))),
+                () => new(ShowWorkspaceDialogAsync(true)),
+                bindings.DisplayFor(KeybindingCommand.OpenWorkspace),
+                Binding: KeybindingCommand.OpenWorkspace),
             new("workspace.manage", "Workspace", "Manage workspaces…",
-                () => new(ShowWorkspaceDialogAsync(false))),
+                () => new(ShowWorkspaceDialogAsync(false)),
+                bindings.DisplayFor(KeybindingCommand.ManageWorkspaces),
+                Binding: KeybindingCommand.ManageWorkspaces),
             new("workspace.user-secrets", "Workspace", "Manage project User Secrets…",
                 () => new(ShowProjectUserSecretsAsync()),
+                bindings.DisplayFor(KeybindingCommand.ManageProjectUserSecrets),
                 UnavailableReason: needsTrust,
-                MatchText: "Workspace Project User Secrets credentials development dotnet"),
+                MatchText: "Workspace Project User Secrets credentials development dotnet",
+                Binding: KeybindingCommand.ManageProjectUserSecrets),
             new("workspace.quick.open", "Workspace", "Go to file…",
                 () => new(ShowQuickOpenAsync()),
                 bindings.DisplayFor(KeybindingCommand.QuickOpen),
-                UnavailableReason: needsTrust),
+                UnavailableReason: needsTrust,
+                Binding: KeybindingCommand.QuickOpen),
             new("goal.context", "Goal", "Inspect semantic context…",
                 () => new(ShowSemanticContextAsync()),
+                bindings.DisplayFor(KeybindingCommand.InspectSemanticContext),
                 UnavailableReason: state.Goals.SelectedGoal is null
                     ? "Create or continue a goal first"
-                    : needsTrust),
+                    : needsTrust,
+                Binding: KeybindingCommand.InspectSemanticContext),
             new("framework.manage", "Framework", "Effective framework…",
                 () => new(ShowDialogAsync(new FrameworkDialog(store, cancellationToken))),
-                UnavailableReason: needsWorkspace),
+                bindings.DisplayFor(KeybindingCommand.ManageFramework),
+                UnavailableReason: needsWorkspace,
+                Binding: KeybindingCommand.ManageFramework),
             new("settings.open", "Application", "Settings…",
-                () => new(ShowSettingsAsync()), bindings.DisplayFor(KeybindingCommand.OpenSettings)),
+                () => new(ShowSettingsAsync()), bindings.DisplayFor(KeybindingCommand.OpenSettings),
+                Binding: KeybindingCommand.OpenSettings),
             new("operations.manage", "Application", "Operations and backup…",
-                () => new(ShowDialogAsync(new OperationsDialog(store, cancellationToken)))),
+                () => new(ShowDialogAsync(new OperationsDialog(store, cancellationToken))),
+                bindings.DisplayFor(KeybindingCommand.ManageOperations),
+                Binding: KeybindingCommand.ManageOperations),
             new("provider.refresh", "Providers", "Refresh provider health",
-                async () => await store.RefreshProviderAsync(cancellationToken)),
+                async () => await store.RefreshProviderAsync(cancellationToken),
+                bindings.DisplayFor(KeybindingCommand.RefreshProviderHealth),
+                Binding: KeybindingCommand.RefreshProviderHealth),
             new("themes.reload", "Appearance", "Reload user themes",
-                async () => await store.RefreshThemesAsync(cancellationToken)),
+                async () => await store.RefreshThemesAsync(cancellationToken),
+                bindings.DisplayFor(KeybindingCommand.ReloadUserThemes),
+                Binding: KeybindingCommand.ReloadUserThemes),
         ];
 
         if (workbench is { } host)
@@ -91,22 +109,30 @@ internal sealed partial class MainWindow : Window
             [
                 new("tool.files", "Panels", "Show Files panel",
                     () => { host.ShowFiles(); return ValueTask.CompletedTask; },
-                    bindings.DisplayFor(KeybindingCommand.ShowFiles)),
+                    bindings.DisplayFor(KeybindingCommand.ShowFiles),
+                    Binding: KeybindingCommand.ShowFiles),
                 new("tool.conversation", "Panels", "Show Chat panel",
                     () => { ShowConversation(); return ValueTask.CompletedTask; },
                     bindings.DisplayFor(KeybindingCommand.ShowChat),
-                    MatchText: "Panels Show Chat Conversation goal agent message"),
+                    MatchText: "Panels Show Chat Conversation goal agent message",
+                    Binding: KeybindingCommand.ShowChat),
                 new("tool.git", "Panels", "Show Git panel",
                     () => { host.ShowGit(); return ValueTask.CompletedTask; },
-                    bindings.DisplayFor(KeybindingCommand.ShowGit)),
+                    bindings.DisplayFor(KeybindingCommand.ShowGit),
+                    Binding: KeybindingCommand.ShowGit),
                 new("tool.output", "Panels", "Show Run output panel",
                     () => { host.ShowRunOutput(); return ValueTask.CompletedTask; },
-                    bindings.DisplayFor(KeybindingCommand.ShowRunOutput)),
+                    bindings.DisplayFor(KeybindingCommand.ShowRunOutput),
+                    Binding: KeybindingCommand.ShowRunOutput),
                 new("tool.problems", "Panels", "Show Problems panel",
                     () => { host.ShowProblems(); return ValueTask.CompletedTask; },
-                    bindings.DisplayFor(KeybindingCommand.ShowProblems)),
+                    bindings.DisplayFor(KeybindingCommand.ShowProblems),
+                    Binding: KeybindingCommand.ShowProblems),
                 new("git.diff", "Git", "Open working-tree diff",
-                    async () => await host.OpenDiffAsync(), UnavailableReason: needsTrust),
+                    async () => await host.OpenDiffAsync(),
+                    bindings.DisplayFor(KeybindingCommand.OpenWorkingTreeDiff),
+                    UnavailableReason: needsTrust,
+                    Binding: KeybindingCommand.OpenWorkingTreeDiff),
                 EditorCommand("editor.save", "Save document", KeybindingCommand.SaveDocument,
                     "Open an editable document first"),
                 EditorCommand("editor.close", "Close document", KeybindingCommand.CloseDocument,
@@ -128,44 +154,57 @@ internal sealed partial class MainWindow : Window
                         KeybindingCommand.FormatDocument),
                     bindings.DisplayFor(KeybindingCommand.FormatDocument),
                     UnavailableReason: host.CanInvokeActiveEditorCommand(KeybindingCommand.FormatDocument)
-                            ? null : "Open an editable C# document first"),
+                            ? null : "Open an editable C# document first",
+                    Binding: KeybindingCommand.FormatDocument),
                 new("editor.format.selection", "Editor", "Format selection",
                     async () => await host.InvokeActiveEditorCommandAsync(
                         KeybindingCommand.FormatSelection),
                     bindings.DisplayFor(KeybindingCommand.FormatSelection),
                     UnavailableReason: host.CanInvokeActiveEditorCommand(KeybindingCommand.FormatSelection)
-                            ? null : "Select code in an editable C# document first"),
+                            ? null : "Select code in an editable C# document first",
+                    Binding: KeybindingCommand.FormatSelection),
                 new("editor.format.changed", "Editor", "Format changed code",
                     async () => await host.TransformActiveDocumentAsync(
                         WorkbenchCodeDocumentTransformationKind.FormatChangedSpans),
+                    bindings.DisplayFor(KeybindingCommand.FormatChangedCode),
                     UnavailableReason: host.CanTransformActiveDocument(
                         WorkbenchCodeDocumentTransformationKind.FormatChangedSpans)
-                            ? null : "Open an editable C# document first"),
+                            ? null : "Open an editable C# document first",
+                    Binding: KeybindingCommand.FormatChangedCode),
                 new("editor.organize.imports", "Editor", "Organize imports",
                     async () => await host.InvokeActiveEditorCommandAsync(
                         KeybindingCommand.OrganizeImports),
                     bindings.DisplayFor(KeybindingCommand.OrganizeImports),
                     UnavailableReason: host.CanInvokeActiveEditorCommand(KeybindingCommand.OrganizeImports)
-                            ? null : "Open an editable C# document first"),
+                            ? null : "Open an editable C# document first",
+                    Binding: KeybindingCommand.OrganizeImports),
                 new("editor.remove.unused.imports", "Editor", "Remove unused imports",
                     async () => await host.TransformActiveDocumentAsync(
                         WorkbenchCodeDocumentTransformationKind.RemoveUnusedImports),
+                    bindings.DisplayFor(KeybindingCommand.RemoveUnusedImports),
                     UnavailableReason: host.CanTransformActiveDocument(
                         WorkbenchCodeDocumentTransformationKind.RemoveUnusedImports)
-                            ? null : "Open an editable C# document first"),
+                            ? null : "Open an editable C# document first",
+                    Binding: KeybindingCommand.RemoveUnusedImports),
                 new("editor.quick.fix", "Editor", "Show quick fixes",
                     async () => await host.InvokeActiveEditorCommandAsync(
                         KeybindingCommand.ShowQuickFixes),
                     bindings.DisplayFor(KeybindingCommand.ShowQuickFixes),
                     UnavailableReason: host.CanInvokeActiveEditorCommand(KeybindingCommand.ShowQuickFixes)
-                            ? null : "Open an editable C# document first"),
+                            ? null : "Open an editable C# document first",
+                    Binding: KeybindingCommand.ShowQuickFixes),
                 new("layout.save", "Layout", "Save workbench layout",
-                    async () => await host.SaveLayoutAsync()),
+                    async () => await host.SaveLayoutAsync(),
+                    bindings.DisplayFor(KeybindingCommand.SaveWorkbenchLayout),
+                    Binding: KeybindingCommand.SaveWorkbenchLayout),
                 new("layout.reset", "Layout", "Reset workbench layout",
-                    async () => await host.ResetLayoutAsync()),
+                    async () => await host.ResetLayoutAsync(),
+                    bindings.DisplayFor(KeybindingCommand.ResetWorkbenchLayout),
+                    Binding: KeybindingCommand.ResetWorkbenchLayout),
                 new("accessibility.focus.next", "Accessibility", "Focus next workbench region",
                     () => { host.FocusNextRegion(); return ValueTask.CompletedTask; },
-                    bindings.DisplayFor(KeybindingCommand.FocusNextRegion)),
+                    bindings.DisplayFor(KeybindingCommand.FocusNextRegion),
+                    Binding: KeybindingCommand.FocusNextRegion),
             ]);
 
             PaletteCommand EditorCommand(
@@ -176,9 +215,11 @@ internal sealed partial class MainWindow : Window
                 id, "Editor", title,
                 async () => await host.InvokeActiveEditorCommandAsync(command),
                 bindings.DisplayFor(command),
-                host.CanInvokeActiveEditorCommand(command) ? null : unavailable);
+                host.CanInvokeActiveEditorCommand(command) ? null : unavailable,
+                Binding: command);
         }
 
+        PaletteCommandCatalog.RequireComplete(commands, includeWorkbenchCommands: workbench is not null);
         return commands;
     }
 

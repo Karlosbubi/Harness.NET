@@ -65,7 +65,10 @@ gestures with a semicolon. Whole-set validation reports duplicate assignments,
 cross-command conflicts, invalid keys, and protected desktop or unmodified input
 shortcuts before Save is enabled. Empty text deliberately unbinds a command. Changes
 apply to open editors and the shell without restart, and the command palette and
-header show the same active snapshot used for dispatch.
+header show the same active snapshot used for dispatch. Every fixed command-palette
+action has exactly one typed catalog entry, including workspace, framework,
+operations, provider refresh, layout, and editor transformation actions. Commands
+without a safe universal shortcut ship deliberately unbound and can be assigned here.
 
 Reset restores the shipped defaults. Export copies a bounded
 `harness-keybindings-v1` JSON document. Import accepts only that exact declarative

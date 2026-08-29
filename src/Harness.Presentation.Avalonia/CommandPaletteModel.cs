@@ -1,3 +1,5 @@
+using Harness.BusinessLogic.Editor;
+
 namespace Harness.Presentation.Avalonia;
 
 /// <summary>
@@ -11,7 +13,8 @@ internal sealed record PaletteCommand(
     Func<ValueTask> InvokeAsync,
     string? Shortcut = null,
     string? UnavailableReason = null,
-    string? MatchText = null)
+    string? MatchText = null,
+    KeybindingCommand? Binding = null)
 {
     internal bool IsAvailable => UnavailableReason is null;
 
@@ -19,6 +22,48 @@ internal sealed record PaletteCommand(
 
     /// <summary>What the filter matches. Files match their whole repository-relative path.</summary>
     internal string Searchable => MatchText ?? Label;
+}
+
+internal static class PaletteCommandCatalog
+{
+    internal static void RequireComplete(
+        IReadOnlyList<PaletteCommand> commands,
+        bool includeWorkbenchCommands)
+    {
+        ArgumentNullException.ThrowIfNull(commands);
+        PaletteCommand[] unbound = commands.Where(command => command.Binding is null).ToArray();
+        if (unbound.Length > 0)
+        {
+            throw new InvalidOperationException(
+                $"Palette commands missing typed keybindings: {string.Join(", ", unbound.Select(command => command.Id))}.");
+        }
+
+        KeybindingCommand[] duplicates = commands
+            .GroupBy(command => command.Binding!.Value)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .ToArray();
+        if (duplicates.Length > 0)
+        {
+            throw new InvalidOperationException(
+                $"Palette keybindings used more than once: {string.Join(", ", duplicates)}.");
+        }
+
+        if (!includeWorkbenchCommands)
+        {
+            return;
+        }
+
+        KeybindingCommand[] missing = Enum.GetValues<KeybindingCommand>()
+            .Where(command => command is not KeybindingCommand.ShowCommandPalette)
+            .Except(commands.Select(command => command.Binding!.Value))
+            .ToArray();
+        if (missing.Length > 0)
+        {
+            throw new InvalidOperationException(
+                $"Typed keybindings missing from the palette: {string.Join(", ", missing)}.");
+        }
+    }
 }
 
 /// <summary>

@@ -87,6 +87,29 @@ public sealed class CommandPaletteFilterTests
         Assert.True(ranked[0].IsAvailable);
         Assert.False(ranked[^1].IsAvailable);
     }
+
+    [Fact]
+    public void Typed_palette_catalog_rejects_unbound_duplicate_and_missing_commands()
+    {
+        PaletteCommand[] complete = Enum.GetValues<KeybindingCommand>()
+            .Where(command => command is not KeybindingCommand.ShowCommandPalette)
+            .Select(command => new PaletteCommand(
+                command.ToString(),
+                "Test",
+                command.ToString(),
+                () => ValueTask.CompletedTask,
+                Binding: command))
+            .ToArray();
+
+        PaletteCommandCatalog.RequireComplete(complete, includeWorkbenchCommands: true);
+        Assert.Throws<InvalidOperationException>(() => PaletteCommandCatalog.RequireComplete(
+            complete[..^1], includeWorkbenchCommands: true));
+        Assert.Throws<InvalidOperationException>(() => PaletteCommandCatalog.RequireComplete(
+            [complete[0] with { Binding = null }], includeWorkbenchCommands: false));
+        Assert.Throws<InvalidOperationException>(() => PaletteCommandCatalog.RequireComplete(
+            [complete[0], complete[0] with { Id = "duplicate" }],
+            includeWorkbenchCommands: false));
+    }
 }
 
 public sealed class KeybindingInputTests

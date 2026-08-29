@@ -18,6 +18,8 @@ public sealed class KeybindingSettingsServiceTests
         Assert.Equal(Enum.GetValues<KeybindingCommand>().Length, snapshot.Bindings.Count);
         Assert.Equal("Shift+F12; Alt+F7", snapshot.DisplayFor(KeybindingCommand.FindReferences));
         Assert.Equal("Ctrl+,", snapshot.DisplayFor(KeybindingCommand.OpenSettings));
+        Assert.Empty(snapshot.GesturesFor(KeybindingCommand.ManageWorkspaces));
+        Assert.Empty(snapshot.GesturesFor(KeybindingCommand.FormatChangedCode));
     }
 
     [Fact]

@@ -22,7 +22,9 @@ internal sealed class DocumentSessionFactory
         KeybindingCommand.RenameSymbol,
         KeybindingCommand.FormatDocument,
         KeybindingCommand.FormatSelection,
+        KeybindingCommand.FormatChangedCode,
         KeybindingCommand.OrganizeImports,
+        KeybindingCommand.RemoveUnusedImports,
         KeybindingCommand.ShowQuickFixes,
     ];
 
@@ -190,9 +192,15 @@ internal sealed class DocumentSessionFactory
             case KeybindingCommand.FormatSelection:
                 await transformations.TransformAsync(
                     document, WorkbenchCodeDocumentTransformationKind.FormatSelection); break;
+            case KeybindingCommand.FormatChangedCode:
+                await transformations.TransformAsync(
+                    document, WorkbenchCodeDocumentTransformationKind.FormatChangedSpans); break;
             case KeybindingCommand.OrganizeImports:
                 await transformations.TransformAsync(
                     document, WorkbenchCodeDocumentTransformationKind.OrganizeImports); break;
+            case KeybindingCommand.RemoveUnusedImports:
+                await transformations.TransformAsync(
+                    document, WorkbenchCodeDocumentTransformationKind.RemoveUnusedImports); break;
             case KeybindingCommand.ShowQuickFixes:
                 await transformations.ShowQuickFixesAsync(document); break;
             default: throw new ArgumentOutOfRangeException(nameof(command));
