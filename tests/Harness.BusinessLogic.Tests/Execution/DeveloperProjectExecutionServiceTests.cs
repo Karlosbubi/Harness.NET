@@ -120,6 +120,80 @@ public sealed class DeveloperProjectExecutionServiceTests
         Assert.Equal(0, runner.Calls);
     }
 
+    [Fact]
+    public async Task Starts_one_compiler_discovered_test_with_durable_identity()
+    {
+        Runner runner = new();
+        Store store = new();
+        using DeveloperProjectExecutionService service = CreateService(runner, store);
+        DeveloperTestTarget test = new(
+            new(new string('a', 64)),
+            new("Demo.CalculatorTests.Adds"));
+
+        DeveloperExecutionStartResult started = await service.StartTestAsync(new(
+            new(new("workspace-a"), null),
+            new(new("App.csproj"), new("net10.0"), new("Release")),
+            test));
+
+        Assert.Equal(DeveloperExecutionOperation.Test, started.Execution?.Operation);
+        Assert.Equal(test, started.Execution?.Test);
+        Assert.Null(started.Execution?.EntryPoint);
+        Assert.Equal(DotNetProjectOperation.Test, runner.LastRequest?.Operation);
+        Assert.Equal(test.FullyQualifiedName.Value, runner.LastRequest?.Test?.Value);
+        runner.Complete();
+        DeveloperExecutionView completed = await WaitForCompletionAsync(service);
+        Assert.Equal(test, completed.Test);
+        Assert.Equal(StoredDeveloperExecutionOperation.Test, Assert.Single(store.Items).Operation);
+        Assert.Equal(test.Id.Value, Assert.Single(store.Items).TestId?.Value);
+    }
+
+    [Fact]
+    public async Task Rejects_a_non_discovery_test_identity_before_starting_dotnet()
+    {
+        Runner runner = new();
+        using DeveloperProjectExecutionService service = CreateService(runner, new Store());
+
+        DeveloperExecutionStartResult result = await service.StartTestAsync(new(
+            new(new("workspace-a"), null),
+            new(new("App.csproj"), null, null),
+            new(new("not-a-discovery-hash"), new("Demo.Tests.Passes|Other"))));
+
+        Assert.Equal("invalid_test_target", result.ErrorCode);
+        Assert.Equal(0, runner.Calls);
+    }
+
+    [Fact]
+    public async Task Selected_test_cancellation_reaches_the_owned_process_tree()
+    {
+        Runner runner = new();
+        using DeveloperProjectExecutionService service = CreateService(runner, new Store());
+        DeveloperExecutionStartResult started = await service.StartTestAsync(TestRequest());
+
+        DeveloperExecutionCancelResult cancellation = await service.CancelAsync(
+            started.Execution!.Id);
+        DeveloperExecutionView completed = await WaitForCompletionAsync(service);
+
+        Assert.True(cancellation.CancellationRequested);
+        Assert.Equal(DotNetProjectOperation.Test, runner.LastRequest?.Operation);
+        Assert.Equal(DeveloperExecutionState.Cancelled, completed.State);
+    }
+
+    [Fact]
+    public async Task Selected_test_failure_keeps_duration_and_exit_history()
+    {
+        Runner runner = new() { Fail = true };
+        using DeveloperProjectExecutionService service = CreateService(runner, new Store());
+        await service.StartTestAsync(TestRequest());
+
+        runner.Complete();
+        DeveloperExecutionView completed = await WaitForCompletionAsync(service);
+
+        Assert.Equal(DeveloperExecutionState.Failed, completed.State);
+        Assert.Equal(1, completed.ExitCode);
+        Assert.Equal(12, completed.DurationMilliseconds);
+        Assert.Equal("test failure", completed.StandardError?.Value);
+    }
+
     private static DeveloperProjectExecutionService CreateService(Runner runner, Store store) => new(
         new Context(), new Workspaces(), new DotNet(), new Files(), runner, store,
         new FixedTimeProvider(), NullLogger<DeveloperProjectExecutionService>.Instance);
@@ -128,6 +202,11 @@ public sealed class DeveloperProjectExecutionServiceTests
         WorkbenchExecutionTargetKind.ProjectEntryPoint,
         new("App.csproj"), new("net10.0"), new("M:Program.Main"),
         new("Program.cs"), new(Hash(Source)), new(1));
+
+    private static DeveloperTestStartRequest TestRequest() => new(
+        new(new("workspace-a"), null),
+        new(new("App.csproj"), new("net10.0"), new("Release")),
+        new(new(new string('a', 64)), new("Demo.CalculatorTests.Adds")));
 
     private static string Hash(string value) => Convert.ToHexStringLower(
         SHA256.HashData(new UTF8Encoding(false, true).GetBytes(value)));
@@ -203,6 +282,7 @@ public sealed class DeveloperProjectExecutionServiceTests
             TaskCreationOptions.RunContinuationsAsynchronously);
         public int Calls { get; private set; }
         public DotNetProjectExecutionRequest? LastRequest { get; private set; }
+        public bool Fail { get; init; }
         public void Complete() => completion.TrySetResult();
 
         public async ValueTask<DotNetProjectExecutionResult> RunAsync(
@@ -215,8 +295,8 @@ public sealed class DeveloperProjectExecutionServiceTests
             try
             {
                 await completion.Task.WaitAsync(cancellationToken);
-                return new(request.ProjectPath, request.TargetFramework, 0,
-                    new("synthetic process output"), new(string.Empty), false, false,
+                return new(request.ProjectPath, request.TargetFramework, Fail ? 1 : 0,
+                    new("synthetic process output"), new(Fail ? "test failure" : string.Empty), false, false,
                     false, 12, null, null);
             }
             catch (OperationCanceledException)
@@ -240,7 +320,8 @@ public sealed class DeveloperProjectExecutionServiceTests
                 execution.SourceDescription, execution.Operation, execution.ProjectPath,
                 execution.TargetFramework, execution.Configuration, execution.DeclarationId,
                 StoredDeveloperExecutionState.Running,
-                execution.StartedAt, null, null, 0, null, null);
+                execution.StartedAt, null, null, 0, null, null,
+                execution.TestId, execution.TestName);
             lock (gate) Items.Add(stored);
             return ValueTask.FromResult(stored);
         }

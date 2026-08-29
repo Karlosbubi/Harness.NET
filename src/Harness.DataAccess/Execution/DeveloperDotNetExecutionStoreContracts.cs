@@ -5,12 +5,15 @@ public sealed record StoredDeveloperWorkspaceId(string Value);
 public sealed record StoredDeveloperGoalId(string Value);
 public sealed record StoredDeveloperSourceDescription(string Value);
 public sealed record StoredDeveloperDeclarationId(string Value);
+public sealed record StoredDeveloperTestId(string Value);
+public sealed record StoredDeveloperTestName(string Value);
 
 public enum StoredDeveloperExecutionOperation
 {
     Run,
     Build,
     Rebuild,
+    Test,
 }
 
 public enum StoredDeveloperExecutionState
@@ -38,7 +41,9 @@ public sealed record StoredDeveloperExecution(
     int? ExitCode,
     long DurationMilliseconds,
     string? ErrorCode,
-    string? Error);
+    string? Error,
+    StoredDeveloperTestId? TestId = null,
+    StoredDeveloperTestName? TestName = null);
 
 public sealed record StoredDeveloperExecutionStart(
     StoredDeveloperExecutionId Id,
@@ -50,7 +55,9 @@ public sealed record StoredDeveloperExecutionStart(
     DotNetTargetFramework? TargetFramework,
     DotNetConfigurationName? Configuration,
     StoredDeveloperDeclarationId? DeclarationId,
-    DateTimeOffset StartedAt);
+    DateTimeOffset StartedAt,
+    StoredDeveloperTestId? TestId = null,
+    StoredDeveloperTestName? TestName = null);
 
 public sealed record StoredDeveloperExecutionCompletion(
     StoredDeveloperExecutionId Id,

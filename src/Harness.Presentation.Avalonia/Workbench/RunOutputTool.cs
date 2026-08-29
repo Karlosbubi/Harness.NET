@@ -135,7 +135,7 @@ internal sealed class RunOutputTool
         refresh.Click += async (_, _) => await RefreshAsync();
         Grid.SetColumn(refresh, 1);
         heading.Children.Add(refresh);
-        AutomationProperties.SetName(cancel, "Stop selected project run");
+        AutomationProperties.SetName(cancel, "Stop selected project operation");
         cancel.Click += async (_, _) => await CancelSelectedAsync();
         Grid.SetColumn(cancel, 2);
         heading.Children.Add(cancel);
@@ -190,6 +190,8 @@ internal sealed class RunOutputTool
             $"Exit code: {(output.ExitCode?.ToString() ?? "not reported")}",
             $"Duration: {output.DurationMilliseconds:N0} ms",
         ];
+        if (output.Test is not null)
+            lines.Insert(2, $"Test: {output.Test.FullyQualifiedName.Value}");
         if (output.Error is not null) lines.Add($"Operation error: {output.Error}");
         lines.Add(string.Empty);
         if (!output.IsOutputAvailable)
@@ -259,7 +261,9 @@ internal sealed class RunOutputTool
         public override string ToString()
         {
             string exit = Output.ExitCode is { } code ? $" · exit {code}" : string.Empty;
-            return $"{Output.Operation} {Output.Project.ProjectPath.Value} · {Output.State}{exit} · " +
+            string target = Output.Test?.FullyQualifiedName.Value ??
+                            Output.Project.ProjectPath.Value;
+            return $"{Output.Operation} {target} · {Output.State}{exit} · " +
                    $"{Output.StartedAt.LocalDateTime:g}";
         }
     }

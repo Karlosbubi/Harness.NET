@@ -517,6 +517,17 @@ does not execute tests, restore packages, launch processes, or infer tests from 
 names. Test execution/debug, selection filters, duration/failure history, rerun,
 coverage, typed one-run overrides, Hot Reload, and Debug remain planned.
 
+Delivered fifth slice: each discovered test exposes a closed Run action. Business
+Logic re-resolves the trusted original workspace or approved goal worktree, validates
+the compiler discovery identity and inspected project, and invokes `dotnet test`
+through a direct bounded argument list with an exact fully qualified-name filter and
+`--no-restore`. Test runs share asynchronous identity, process-tree cancellation,
+bounded process-local streams, exit/duration/failure history, restart reconciliation,
+and Run output with Run/Build/Rebuild. Schema 33 persists test identity and lifecycle,
+not raw test output. Multi-selection, project/type runs, rerun shortcuts, per-case
+adapter results, Debug, coverage, typed one-run overrides, and Hot Reload remain
+planned.
+
 Use the existing trust and Restore boundaries. Selecting a launch profile does not
 authorize execution; debug attach, expression evaluation, mutation, dumps, network
 listeners, and external processes remain separately classified. ASP.NET endpoint

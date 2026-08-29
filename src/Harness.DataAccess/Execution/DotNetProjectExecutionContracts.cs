@@ -3,6 +3,7 @@ namespace Harness.DataAccess.Execution;
 public sealed record DotNetProjectPath(string Value);
 public sealed record DotNetTargetFramework(string Value);
 public sealed record DotNetConfigurationName(string Value);
+public sealed record DotNetTestFullyQualifiedName(string Value);
 public sealed record DotNetExecutionOutput(string Value);
 
 public enum DotNetProjectOperation
@@ -10,13 +11,15 @@ public enum DotNetProjectOperation
     Run,
     Build,
     Rebuild,
+    Test,
 }
 
 public sealed record DotNetProjectExecutionRequest(
     DotNetProjectPath ProjectPath,
     DotNetTargetFramework? TargetFramework,
     DotNetProjectOperation Operation = DotNetProjectOperation.Run,
-    DotNetConfigurationName? Configuration = null);
+    DotNetConfigurationName? Configuration = null,
+    DotNetTestFullyQualifiedName? Test = null);
 
 public sealed record DotNetProjectExecutionResult(
     DotNetProjectPath ProjectPath,

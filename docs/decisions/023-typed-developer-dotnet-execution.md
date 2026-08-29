@@ -31,6 +31,16 @@ inspected configuration/framework; Rebuild maps to `dotnet build --no-incrementa
 They share the confined, shell-free, no-implicit-Restore runner and never reconstruct
 arguments from UI text.
 
+A Test Explorer Run action carries the compiler-discovered stable test hash, fully
+qualified test name, and inspected project as semantic values. Business Logic
+re-resolves the exact trusted source context and project and accepts only the bounded
+closed test-name grammar. Data Access invokes `dotnet test <project> --no-restore
+--filter FullyQualifiedName=<name>` through the same direct argument-list runner.
+There is no shell string, implicit Restore, adapter discovery process outside
+`dotnet test`, or model-facing execution authority. The operation records test
+identity, state, exit code, duration, cancellation, and errors; stdout/stderr remain
+bounded and process-local under the existing privacy rule.
+
 Run identity, source context, state, exit code, duration, and failure survive restart.
 Raw stdout and stderr are bounded but process-local because executed applications may
 print credentials; Harness.NET does not silently turn output into a durable secret
@@ -54,6 +64,8 @@ the developer UI does not imply agent authority.
 - Output and cancellation remain inspectable in the Run output tool.
 - Solution Build/Rebuild actions and command-palette entries share the same typed
   lifecycle without granting a generic task or shell capability.
+- Compiler-discovered Test Explorer rows can start one exact test and reuse the same
+  cancellation, transient-output, failure-history, and restart-reconciliation path.
 - Debug is visibly absent rather than misleading until its actual adapter is ready.
 - The same typed target and execution identity can later back Solution, Test Explorer,
   launch profiles, Hot Reload, and debugger UI.

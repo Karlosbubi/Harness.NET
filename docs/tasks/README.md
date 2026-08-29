@@ -623,7 +623,7 @@ Acceptance criteria:
 
 ### 052 — .NET project, Run, Test, and Debug experience
 
-Status: `In progress — typed Run, Solution, Build/Rebuild, and Roslyn test discovery delivered`
+Status: `In progress — typed Run, Solution, Build/Rebuild, discovery, and selected Test delivered`
 
 Dependencies: 018, 042, 047, 049, 051.
 
@@ -645,9 +645,12 @@ configuration validation, confined no-Restore process execution, cancellation,
 transient bounded streams, and durable/restart-safe operation metadata. The fourth
 slice adds exact-session Roslyn discovery for xUnit, NUnit, and MSTest, including
 derived attributes, traits, parameterization, bounded search and paging, a
-project/type/test hierarchy, and exact source navigation. Test execution/debug,
-selection filters, duration/failure history, rerun, coverage, typed one-run overrides,
-Hot Reload, and Debug remain open.
+project/type/test hierarchy, and exact source navigation. The fifth slice adds a
+closed per-test Run action with an exact fully-qualified-name filter, no Restore or
+shell, process-tree cancellation, transient bounded output, and durable test identity,
+exit, duration, failure, and restart history. Multi-test selection, project/type
+runs, rerun shortcuts, per-case adapter results, test Debug, coverage, typed one-run
+overrides, Hot Reload, and Debug remain open.
 
 Acceptance criteria:
 

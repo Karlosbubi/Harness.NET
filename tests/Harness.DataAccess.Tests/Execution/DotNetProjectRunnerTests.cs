@@ -89,6 +89,45 @@ public sealed class DotNetProjectRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task Runs_one_exact_test_without_shell_or_restore()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        Directory.CreateDirectory(root);
+        await File.WriteAllTextAsync(Path.Combine(root, "Tests.csproj"), "<Project />");
+        string executable = await CreateExecutableAsync("printf '%s\\n' \"$@\"");
+        DotNetProjectRunner runner = new(executable);
+
+        DotNetProjectExecutionResult result = await runner.RunAsync(root, new(
+            new("Tests.csproj"),
+            new("net10.0"),
+            DotNetProjectOperation.Test,
+            new("Release"),
+            new("Demo.CalculatorTests.Adds")));
+
+        Assert.Null(result.Error);
+        Assert.Equal([
+            "test", Path.Combine(root, "Tests.csproj"), "--no-restore", "--filter",
+            "FullyQualifiedName=Demo.CalculatorTests.Adds", "--framework", "net10.0",
+            "--configuration", "Release",
+        ], result.StandardOutput.Value.Split('\n'));
+    }
+
+    [Fact]
+    public async Task Rejects_an_unbounded_test_filter_before_process_start()
+    {
+        Directory.CreateDirectory(root);
+        await File.WriteAllTextAsync(Path.Combine(root, "Tests.csproj"), "<Project />");
+        DotNetProjectRunner runner = new(Path.Combine(root, "missing-dotnet"));
+
+        DotNetProjectExecutionResult result = await runner.RunAsync(root, new(
+            new("Tests.csproj"), null, DotNetProjectOperation.Test,
+            Test: new("Demo.Tests.Passes|Other")));
+
+        Assert.Equal("test_name_invalid", result.ErrorCode);
+        Assert.Null(result.ExitCode);
+    }
+
+    [Fact]
     public async Task Cancellation_kills_the_project_process_tree()
     {
         if (!OperatingSystem.IsLinux())

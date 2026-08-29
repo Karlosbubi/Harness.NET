@@ -6,6 +6,7 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Harness.BusinessLogic.CodeIntelligence;
+using Harness.BusinessLogic.Execution;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Workspaces;
 using Harness.UI.Avalonia;
@@ -16,7 +17,10 @@ internal sealed class TestExplorerTool
 {
     private readonly WorkbenchToolContext context;
     private readonly IWorkbenchCodeIntelligenceService codeIntelligence;
+    private readonly IDeveloperProjectExecutionService? execution;
     private readonly Func<WorkbenchCodeTestCase, GoalId?, ValueTask> navigate;
+    private readonly Action showRunOutput;
+    private readonly Func<ValueTask> refreshRunOutput;
     private readonly TreeView tree = new();
     private readonly TextBox filter = new() { PlaceholderText = "Search tests or traits" };
     private readonly StatusIndicator status = new() { TextWrapping = TextWrapping.Wrap };
@@ -27,11 +31,17 @@ internal sealed class TestExplorerTool
     internal TestExplorerTool(
         WorkbenchToolContext context,
         IWorkbenchCodeIntelligenceService codeIntelligence,
-        Func<WorkbenchCodeTestCase, GoalId?, ValueTask> navigate)
+        IDeveloperProjectExecutionService? execution,
+        Func<WorkbenchCodeTestCase, GoalId?, ValueTask> navigate,
+        Action showRunOutput,
+        Func<ValueTask> refreshRunOutput)
     {
         this.context = context;
         this.codeIntelligence = codeIntelligence;
+        this.execution = execution;
         this.navigate = navigate;
+        this.showRunOutput = showRunOutput;
+        this.refreshRunOutput = refreshRunOutput;
         Content = BuildContent();
         RenderUnavailable("Select a trusted workspace to discover tests with Roslyn.");
     }
@@ -162,7 +172,7 @@ internal sealed class TestExplorerTool
             {
                 Text = node.Label,
                 TextWrapping = TextWrapping.Wrap,
-            } : TestButton(node.Test),
+            } : TestControl(node.Test),
             node => node.Children);
         AutomationProperties.SetName(tree, "Roslyn test hierarchy");
         Grid.SetRow(tree, 3);
@@ -174,22 +184,84 @@ internal sealed class TestExplorerTool
         return grid;
     }
 
-    private Button TestButton(WorkbenchCodeTestCase test)
+    private Control TestControl(WorkbenchCodeTestCase test)
     {
         string traits = test.Traits.Count == 0
             ? string.Empty
             : " · " + string.Join(", ", test.Traits.Select(item =>
                 $"{item.Name.Value}={item.Value.Value}"));
-        Button button = new()
+        StackPanel actions = new()
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 6,
+        };
+        Button open = new()
         {
             Content = test.DisplayName.Value +
                       (test.IsParameterized ? " · parameterized" : string.Empty) + traits,
             HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Left,
         };
-        AutomationProperties.SetName(button, $"Open test {test.FullyQualifiedName.Value}");
-        button.Click += async (_, _) => await NavigateAsync(test);
-        return button;
+        AutomationProperties.SetName(open, $"Open test {test.FullyQualifiedName.Value}");
+        open.Click += async (_, _) => await NavigateAsync(test);
+        actions.Children.Add(open);
+        if (execution?.Capabilities.CanTest is true)
+        {
+            Button run = new() { Content = "Run" };
+            AutomationProperties.SetName(run, $"Run test {test.FullyQualifiedName.Value}");
+            run.Click += async (_, _) => await StartTestAsync(test);
+            actions.Children.Add(run);
+        }
+        return actions;
+    }
+
+    internal async ValueTask StartTestAsync(WorkbenchCodeTestCase test)
+    {
+        WorkspaceView? workspace = context.ActiveWorkspace();
+        if (execution is null || !execution.Capabilities.CanTest || busy ||
+            workspace is not { IsTrusted: true })
+        {
+            status.Message = "A trusted workspace with developer Test capability is required.";
+            status.Severity = StatusSeverity.Warning;
+            return;
+        }
+
+        busy = true;
+        status.Message = $"Starting {test.DisplayName.Value} without Restore…";
+        status.Severity = StatusSeverity.Information;
+        try
+        {
+            DeveloperExecutionStartResult result = await execution.StartTestAsync(new(
+                context.Request(workspace),
+                new(new(test.ProjectPath.Value), TargetFramework: null, Configuration: null),
+                new(new(test.Id.Value), new(test.FullyQualifiedName.Value))),
+                context.CancellationToken);
+            if (result.Execution is null)
+            {
+                status.Message = result.Error ?? "The selected test could not be started.";
+                status.Severity = StatusSeverity.Error;
+                return;
+            }
+            showRunOutput();
+            await refreshRunOutput();
+            status.Message = $"Started {test.DisplayName.Value}. Follow it in Run output.";
+            status.Severity = StatusSeverity.Success;
+        }
+        catch (OperationCanceledException)
+        {
+            status.Message = "Starting the selected test was cancelled.";
+            status.Severity = StatusSeverity.Warning;
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException or IOException)
+        {
+            status.Message = exception.Message;
+            status.Severity = StatusSeverity.Error;
+        }
+        finally
+        {
+            busy = false;
+        }
     }
 
     private void Render(WorkbenchCodeTestDiscoveryView result)

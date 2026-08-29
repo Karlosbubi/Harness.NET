@@ -69,6 +69,19 @@ internal sealed class DotNetProjectRunner : IDotNetProjectRunner
             return Failure(confined, "configuration_invalid",
                 "The selected build configuration is invalid.");
         }
+        if (request.Operation is DotNetProjectOperation.Test)
+        {
+            if (request.Test is null || !IsValidTestName(request.Test.Value))
+            {
+                return Failure(confined, "test_name_invalid",
+                    "A bounded fully qualified test name is required.");
+            }
+        }
+        else if (request.Test is not null)
+        {
+            return Failure(confined, "test_target_invalid",
+                "A test selector is valid only for the Test operation.");
+        }
 
         ProcessStartInfo startInfo = new(executable)
         {
@@ -78,7 +91,7 @@ internal sealed class DotNetProjectRunner : IDotNetProjectRunner
             UseShellExecute = false,
             CreateNoWindow = true,
         };
-        foreach (string argument in Arguments(request.Operation, projectPath))
+        foreach (string argument in Arguments(request.Operation, projectPath, request.Test))
         {
             startInfo.ArgumentList.Add(argument);
         }
@@ -146,11 +159,15 @@ internal sealed class DotNetProjectRunner : IDotNetProjectRunner
 
     private static IReadOnlyList<string> Arguments(
         DotNetProjectOperation operation,
-        string projectPath) => operation switch
+        string projectPath,
+        DotNetTestFullyQualifiedName? test) => operation switch
     {
         DotNetProjectOperation.Build => ["build", projectPath, "--no-restore"],
         DotNetProjectOperation.Rebuild =>
             ["build", projectPath, "--no-restore", "--no-incremental"],
+        DotNetProjectOperation.Test =>
+            ["test", projectPath, "--no-restore", "--filter",
+                $"FullyQualifiedName={test!.Value}"],
         _ => ["run", "--project", projectPath, "--no-restore", "--no-launch-profile"],
     };
 
@@ -163,6 +180,12 @@ internal sealed class DotNetProjectRunner : IDotNetProjectRunner
         !string.IsNullOrWhiteSpace(value) && value.Length <= 128 &&
         value.Equals(value.Trim(), StringComparison.Ordinal) &&
         value.All(character => !char.IsControl(character));
+
+    private static bool IsValidTestName(string value) =>
+        !string.IsNullOrWhiteSpace(value) && value.Length <= 512 &&
+        value.Equals(value.Trim(), StringComparison.Ordinal) &&
+        value.All(character => char.IsLetterOrDigit(character) ||
+            character is '.' or '_' or '+' or '`');
 
     private static async Task<BoundedText> ReadBoundedAsync(StreamReader reader)
     {

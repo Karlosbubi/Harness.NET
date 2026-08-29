@@ -37,7 +37,8 @@ internal sealed class DeveloperProjectExecutionService(
         CanBuildProject: true,
         CanRebuildProject: true,
         CanDebugProjectEntryPoint: false,
-        "Debug requires a pinned debugger adapter; ordinary Run is not labeled Debug.");
+        "Debug requires a pinned debugger adapter; ordinary Run is not labeled Debug.",
+        CanTest: true);
 
     public async ValueTask<DeveloperExecutionStartResult> StartRunAsync(
         DeveloperExecutionStartRequest request,
@@ -64,6 +65,7 @@ internal sealed class DeveloperProjectExecutionService(
             DeveloperExecutionOperation.Run,
             project,
             request.Target,
+            test: null,
             cancellationToken);
     }
 
@@ -93,6 +95,37 @@ internal sealed class DeveloperProjectExecutionService(
             request.Operation,
             request.Project,
             entryPoint: null,
+            test: null,
+            cancellationToken);
+    }
+
+    public async ValueTask<DeveloperExecutionStartResult> StartTestAsync(
+        DeveloperTestStartRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(disposed, this);
+        ArgumentNullException.ThrowIfNull(request);
+        await EnsureReconciledAsync(cancellationToken);
+        if (!IsValidTest(request.Test))
+        {
+            return new(null, "invalid_test_target",
+                "A compiler-discovered bounded test identity is required.");
+        }
+        Resolution resolution = await ResolveProjectAsync(
+            request.Workspace,
+            request.Project,
+            cancellationToken);
+        if (resolution.RootPath is null || resolution.Context is null)
+        {
+            return new(null, resolution.ErrorCode, resolution.Error);
+        }
+        return await StartExecutionAsync(
+            request.Workspace,
+            resolution,
+            DeveloperExecutionOperation.Test,
+            request.Project,
+            entryPoint: null,
+            request.Test,
             cancellationToken);
     }
 
@@ -102,6 +135,7 @@ internal sealed class DeveloperProjectExecutionService(
         DeveloperExecutionOperation operation,
         DeveloperProjectTarget project,
         WorkbenchExecutionTarget? entryPoint,
+        DeveloperTestTarget? test,
         CancellationToken cancellationToken)
     {
         WorkbenchWorkspaceContext context = resolution.Context
@@ -131,7 +165,9 @@ internal sealed class DeveloperProjectExecutionService(
                 project.TargetFramework is null ? null : new(project.TargetFramework.Value),
                 project.Configuration is null ? null : new(project.Configuration.Value),
                 entryPoint is null ? null : new(entryPoint.DeclarationId.Value),
-                startedAt), cancellationToken);
+                startedAt,
+                test is null ? null : new(test.Id.Value),
+                test is null ? null : new(test.FullyQualifiedName.Value)), cancellationToken);
         }
         catch (Exception exception)
         {
@@ -155,8 +191,9 @@ internal sealed class DeveloperProjectExecutionService(
             operation,
             project,
             rootPath,
+            test,
             executionCancellation);
-        return new(Map(stored, entryPoint), null, null);
+        return new(Map(stored, entryPoint, test), null, null);
     }
 
     public async ValueTask<DeveloperExecutionListResult> ListAsync(
@@ -177,7 +214,7 @@ internal sealed class DeveloperProjectExecutionService(
             MaximumExecutions,
             cancellationToken)).ToArray();
         return new(
-            executions.Select(item => Map(item, EntryPoint(item))).ToArray(),
+            executions.Select(item => Map(item, EntryPoint(item), Test(item))).ToArray(),
             executions.Length >= MaximumExecutions,
             null,
             null);
@@ -208,6 +245,7 @@ internal sealed class DeveloperProjectExecutionService(
         DeveloperExecutionOperation operation,
         DeveloperProjectTarget project,
         string rootPath,
+        DeveloperTestTarget? test,
         CancellationTokenSource cancellation)
     {
         DotNetProjectExecutionResult result;
@@ -217,7 +255,8 @@ internal sealed class DeveloperProjectExecutionService(
                 new(project.ProjectPath.Value),
                 project.TargetFramework is null ? null : new(project.TargetFramework.Value),
                 MapRunnerOperation(operation),
-                project.Configuration is null ? null : new(project.Configuration.Value)),
+                project.Configuration is null ? null : new(project.Configuration.Value),
+                test is null ? null : new(test.FullyQualifiedName.Value)),
                 cancellation.Token);
         }
         catch (Exception exception)
@@ -408,7 +447,8 @@ internal sealed class DeveloperProjectExecutionService(
 
     private DeveloperExecutionView Map(
         StoredDeveloperExecution execution,
-        WorkbenchExecutionTarget? entryPoint)
+        WorkbenchExecutionTarget? entryPoint,
+        DeveloperTestTarget? test)
     {
         bool available = output.TryGetValue(execution.Id.Value, out TransientOutput? streams);
         return new(
@@ -429,7 +469,8 @@ internal sealed class DeveloperProjectExecutionService(
             streams?.IsErrorTruncated ?? false,
             available,
             execution.ErrorCode,
-            execution.Error);
+            execution.Error,
+            test);
     }
 
     private static WorkbenchExecutionTarget? EntryPoint(StoredDeveloperExecution execution) =>
@@ -444,6 +485,22 @@ internal sealed class DeveloperProjectExecutionService(
                 new(string.Empty),
                 new(0))
             : null;
+
+    private static DeveloperTestTarget? Test(StoredDeveloperExecution execution) =>
+        execution.Operation is StoredDeveloperExecutionOperation.Test &&
+        execution.TestId is not null && execution.TestName is not null
+            ? new(new(execution.TestId.Value), new(execution.TestName.Value))
+            : null;
+
+    private static bool IsValidTest(DeveloperTestTarget? test) =>
+        test is not null && test.Id.Value.Length == 64 &&
+        test.Id.Value.All(character => character is >= '0' and <= '9' or >= 'a' and <= 'f') &&
+        !string.IsNullOrWhiteSpace(test.FullyQualifiedName.Value) &&
+        test.FullyQualifiedName.Value.Length <= 512 &&
+        test.FullyQualifiedName.Value.Equals(
+            test.FullyQualifiedName.Value.Trim(), StringComparison.Ordinal) &&
+        test.FullyQualifiedName.Value.All(character => char.IsLetterOrDigit(character) ||
+            character is '.' or '_' or '+' or '`');
 
     private void TrimOutput()
     {
@@ -474,6 +531,7 @@ internal sealed class DeveloperProjectExecutionService(
         {
             DeveloperExecutionOperation.Build => StoredDeveloperExecutionOperation.Build,
             DeveloperExecutionOperation.Rebuild => StoredDeveloperExecutionOperation.Rebuild,
+            DeveloperExecutionOperation.Test => StoredDeveloperExecutionOperation.Test,
             _ => StoredDeveloperExecutionOperation.Run,
         };
 
@@ -483,6 +541,7 @@ internal sealed class DeveloperProjectExecutionService(
         {
             DeveloperExecutionOperation.Build => DotNetProjectOperation.Build,
             DeveloperExecutionOperation.Rebuild => DotNetProjectOperation.Rebuild,
+            DeveloperExecutionOperation.Test => DotNetProjectOperation.Test,
             _ => DotNetProjectOperation.Run,
         };
 
@@ -491,6 +550,7 @@ internal sealed class DeveloperProjectExecutionService(
         {
             StoredDeveloperExecutionOperation.Build => DeveloperExecutionOperation.Build,
             StoredDeveloperExecutionOperation.Rebuild => DeveloperExecutionOperation.Rebuild,
+            StoredDeveloperExecutionOperation.Test => DeveloperExecutionOperation.Test,
             _ => DeveloperExecutionOperation.Run,
         };
 

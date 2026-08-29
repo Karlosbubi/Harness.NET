@@ -16,10 +16,12 @@ internal sealed class SqliteDeveloperDotNetExecutionStore(
         await connection.ExecuteAsync(new CommandDefinition("""
             INSERT INTO developer_dotnet_executions (
                 id, workspace_id, goal_id, source_description, project_path,
-                operation, target_framework, configuration, declaration_id, state, started_at)
+                operation, target_framework, configuration, declaration_id,
+                test_id, test_name, state, started_at)
             VALUES (
                 @id, @workspaceId, @goalId, @sourceDescription, @projectPath,
-                @operation, @targetFramework, @configuration, @declarationId, 'Running', @startedAt);
+                @operation, @targetFramework, @configuration, @declarationId,
+                @testId, @testName, 'Running', @startedAt);
             """, new
         {
             id = execution.Id.Value,
@@ -31,6 +33,8 @@ internal sealed class SqliteDeveloperDotNetExecutionStore(
             targetFramework = execution.TargetFramework?.Value,
             configuration = execution.Configuration?.Value,
             declarationId = execution.DeclarationId?.Value ?? string.Empty,
+            testId = execution.TestId?.Value,
+            testName = execution.TestName?.Value,
             startedAt = execution.StartedAt.ToString("O"),
         }, cancellationToken: cancellationToken));
         return new(
@@ -38,7 +42,8 @@ internal sealed class SqliteDeveloperDotNetExecutionStore(
             execution.SourceDescription, execution.Operation, execution.ProjectPath,
             execution.TargetFramework, execution.Configuration,
             execution.DeclarationId, StoredDeveloperExecutionState.Running,
-            execution.StartedAt, null, null, 0, null, null);
+            execution.StartedAt, null, null, 0, null, null,
+            execution.TestId, execution.TestName);
     }
 
     public async ValueTask CompleteAsync(
@@ -93,6 +98,8 @@ internal sealed class SqliteDeveloperDotNetExecutionStore(
                    target_framework AS TargetFramework,
                    configuration AS Configuration,
                    declaration_id AS DeclarationId,
+                   test_id AS TestId,
+                   test_name AS TestName,
                    state AS State,
                    started_at AS StartedAt,
                    completed_at AS CompletedAt,
@@ -150,6 +157,8 @@ internal sealed class SqliteDeveloperDotNetExecutionStore(
         public string? TargetFramework { get; init; }
         public string? Configuration { get; init; }
         public string DeclarationId { get; init; } = string.Empty;
+        public string? TestId { get; init; }
+        public string? TestName { get; init; }
         public string State { get; init; } = string.Empty;
         public string StartedAt { get; init; } = string.Empty;
         public string? CompletedAt { get; init; }
@@ -168,6 +177,8 @@ internal sealed class SqliteDeveloperDotNetExecutionStore(
             DateTimeOffset.Parse(StartedAt),
             CompletedAt is null ? null : DateTimeOffset.Parse(CompletedAt),
             ExitCode is null ? null : checked((int)ExitCode.Value),
-            DurationMilliseconds, ErrorCode, Error);
+            DurationMilliseconds, ErrorCode, Error,
+            TestId is null ? null : new(TestId),
+            TestName is null ? null : new(TestName));
     }
 }

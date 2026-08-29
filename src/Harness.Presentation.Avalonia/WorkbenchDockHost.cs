@@ -173,7 +173,10 @@ internal sealed partial class WorkbenchDockHost
         testExplorerTool = new(
             toolContext,
             codeIntelligenceService,
-            documentsHost.NavigateToTestAsync);
+            developerExecutionService,
+            documentsHost.NavigateToTestAsync,
+            () => { ShowRunOutput(); },
+            RefreshRunOutputAsync);
         problemsToolUnit = documentsHost.Problems;
         gitConflictsTool = new(
             toolContext,

@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Threading;
 using Harness.BusinessLogic.CodeIntelligence;
+using Harness.BusinessLogic.Execution;
 using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Workspaces;
 using Harness.Presentation.Avalonia.Workbench;
@@ -35,6 +36,9 @@ public sealed class TestExplorerToolTests
                     IsTruncated: false,
                     []),
             };
+            ExecutionService execution = new();
+            int shown = 0;
+            int refreshed = 0;
             WorkbenchCodeTestCase? navigated = null;
             TestExplorerTool tool = new(
                 new(
@@ -45,12 +49,15 @@ public sealed class TestExplorerToolTests
                     (_, _) => ValueTask.CompletedTask,
                     CancellationToken.None),
                 intelligence,
+                execution,
                 (test, goalId) =>
                 {
                     Assert.Null(goalId);
                     navigated = test;
                     return ValueTask.CompletedTask;
-                });
+                },
+                () => shown++,
+                () => { refreshed++; return ValueTask.CompletedTask; });
             Window window = new() { Width = 800, Height = 700, Content = tool.Content };
             window.Show();
             tool.Filter.Text = "Fast";
@@ -83,6 +90,16 @@ public sealed class TestExplorerToolTests
 
             tool.NavigateAsync(first).AsTask().GetAwaiter().GetResult();
             Assert.Same(first, navigated);
+            tool.StartTestAsync(first).AsTask().GetAwaiter().GetResult();
+            DeveloperTestStartRequest startedTest = Assert.Single(execution.Tests);
+            Assert.Equal("workspace-1", startedTest.Workspace.WorkspaceId.Value);
+            Assert.Equal(first.ProjectPath.Value, startedTest.Project.ProjectPath.Value);
+            Assert.Equal(first.Id.Value, startedTest.Test.Id.Value);
+            Assert.Equal(first.FullyQualifiedName.Value,
+                startedTest.Test.FullyQualifiedName.Value);
+            Assert.Equal(1, shown);
+            Assert.Equal(1, refreshed);
+            Assert.Contains("Follow it in Run output", tool.StatusText, StringComparison.Ordinal);
             window.Close();
         }, CancellationToken.None);
     }
@@ -139,5 +156,58 @@ public sealed class TestExplorerToolTests
         public ValueTask<WorkbenchDotNetInspectionResult> InspectDotNetAsync(
             WorkbenchWorkspaceRequest request,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private sealed class ExecutionService : IDeveloperProjectExecutionService
+    {
+        internal List<DeveloperTestStartRequest> Tests { get; } = [];
+        public DeveloperExecutionCapabilities Capabilities { get; } = new(
+            true, true, true, false, "Debug unavailable.", CanTest: true);
+
+        public ValueTask<DeveloperExecutionStartResult> StartTestAsync(
+            DeveloperTestStartRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            Tests.Add(request);
+            return ValueTask.FromResult(new DeveloperExecutionStartResult(new(
+                new("execution-1"),
+                request.Workspace.WorkspaceId,
+                request.Workspace.GoalId,
+                "Original workspace",
+                DeveloperExecutionOperation.Test,
+                request.Project,
+                EntryPoint: null,
+                DeveloperExecutionState.Running,
+                DateTimeOffset.Parse("2026-08-29T12:00:00Z"),
+                CompletedAt: null,
+                ExitCode: null,
+                DurationMilliseconds: 0,
+                StandardOutput: null,
+                StandardError: null,
+                IsOutputTruncated: false,
+                IsErrorTruncated: false,
+                IsOutputAvailable: false,
+                ErrorCode: null,
+                Error: null,
+                Test: request.Test), null, null));
+        }
+
+        public ValueTask<DeveloperExecutionStartResult> StartRunAsync(
+            DeveloperExecutionStartRequest request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public ValueTask<DeveloperExecutionStartResult> StartBuildAsync(
+            DeveloperBuildStartRequest request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public ValueTask<DeveloperExecutionListResult> ListAsync(
+            WorkbenchWorkspaceRequest request,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new DeveloperExecutionListResult([], false, null, null));
+
+        public ValueTask<DeveloperExecutionCancelResult> CancelAsync(
+            DeveloperExecutionId executionId,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new DeveloperExecutionCancelResult(false, null, null));
     }
 }

@@ -32,7 +32,7 @@ public sealed class SqliteApplicationRestoreTests : IDisposable
 
         ApplicationRestoreInspectionResult inspection = await restore.InspectAsync(new(archive));
         Assert.NotNull(inspection.Archive);
-        Assert.Equal(32, inspection.Archive.SchemaVersion.Value);
+        Assert.Equal(33, inspection.Archive.SchemaVersion.Value);
         Assert.NotNull(inspection.Archive.WorkbenchLayoutSha256);
 
         ApplicationRestoreStageResult staged = await restore.StageAsync(
@@ -54,7 +54,7 @@ public sealed class SqliteApplicationRestoreTests : IDisposable
         Assert.True(File.Exists(Path.Combine(applied.RollbackDirectory!, "harness.db")));
         Assert.True(File.Exists(Path.Combine(applied.RollbackDirectory!, "workbench-layout.json")));
         Assert.False(Directory.Exists(Path.Combine(paths.DataDirectory, "restores", "pending")));
-        Assert.Equal(32,
+        Assert.Equal(33,
             (await new SqliteDatabaseInitializer(applicationPaths).InitializeAsync())
             .SchemaVersion.Value);
     }
@@ -120,7 +120,7 @@ public sealed class SqliteApplicationRestoreTests : IDisposable
 
         Assert.Equal(1, await CountConversationAsync(targetPaths.DatabasePath, "portable"));
         Assert.False(File.Exists(targetPaths.WorkbenchLayoutPath));
-        Assert.Equal(32,
+        Assert.Equal(33,
             (await new SqliteDatabaseInitializer(target).InitializeAsync()).SchemaVersion.Value);
     }
 
@@ -207,7 +207,7 @@ public sealed class SqliteApplicationRestoreTests : IDisposable
             await JsonSerializer.SerializeAsync(manifest, new
             {
                 Format = "harness-backup-v1",
-                SchemaVersion = 32,
+                SchemaVersion = 33,
                 CreatedAt = DateTimeOffset.Parse("2026-07-31T12:00:00Z"),
                 DatabaseBytes = new FileInfo(snapshot).Length,
                 DatabaseSha256 = hash,

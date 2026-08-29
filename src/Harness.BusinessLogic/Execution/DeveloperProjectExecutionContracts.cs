@@ -9,18 +9,25 @@ public sealed record DeveloperExecutionOutput(string Value);
 public sealed record DeveloperProjectPath(string Value);
 public sealed record DeveloperTargetFramework(string Value);
 public sealed record DeveloperConfigurationName(string Value);
+public sealed record DeveloperTestId(string Value);
+public sealed record DeveloperTestName(string Value);
 
 public enum DeveloperExecutionOperation
 {
     Run,
     Build,
     Rebuild,
+    Test,
 }
 
 public sealed record DeveloperProjectTarget(
     DeveloperProjectPath ProjectPath,
     DeveloperTargetFramework? TargetFramework,
     DeveloperConfigurationName? Configuration);
+
+public sealed record DeveloperTestTarget(
+    DeveloperTestId Id,
+    DeveloperTestName FullyQualifiedName);
 
 public enum DeveloperExecutionState
 {
@@ -36,7 +43,8 @@ public sealed record DeveloperExecutionCapabilities(
     bool CanBuildProject,
     bool CanRebuildProject,
     bool CanDebugProjectEntryPoint,
-    string DebugStatus);
+    string DebugStatus,
+    bool CanTest = false);
 
 public sealed record DeveloperExecutionView(
     DeveloperExecutionId Id,
@@ -57,7 +65,8 @@ public sealed record DeveloperExecutionView(
     bool IsErrorTruncated,
     bool IsOutputAvailable,
     string? ErrorCode,
-    string? Error);
+    string? Error,
+    DeveloperTestTarget? Test = null);
 
 public sealed record DeveloperExecutionStartRequest(
     WorkbenchWorkspaceRequest Workspace,
@@ -72,6 +81,11 @@ public sealed record DeveloperBuildStartRequest(
     WorkbenchWorkspaceRequest Workspace,
     DeveloperExecutionOperation Operation,
     DeveloperProjectTarget Project);
+
+public sealed record DeveloperTestStartRequest(
+    WorkbenchWorkspaceRequest Workspace,
+    DeveloperProjectTarget Project,
+    DeveloperTestTarget Test);
 
 public sealed record DeveloperExecutionListResult(
     IReadOnlyList<DeveloperExecutionView> Executions,
@@ -95,6 +109,14 @@ public interface IDeveloperProjectExecutionService
     ValueTask<DeveloperExecutionStartResult> StartBuildAsync(
         DeveloperBuildStartRequest request,
         CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperExecutionStartResult> StartTestAsync(
+        DeveloperTestStartRequest request,
+        CancellationToken cancellationToken = default) => ValueTask.FromResult(
+            new DeveloperExecutionStartResult(
+                null,
+                "test_execution_not_supported",
+                "Developer test execution is unavailable."));
 
     ValueTask<DeveloperExecutionListResult> ListAsync(
         WorkbenchWorkspaceRequest request,
