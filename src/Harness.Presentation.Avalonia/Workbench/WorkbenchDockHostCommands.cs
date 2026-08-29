@@ -75,6 +75,7 @@ internal sealed partial class WorkbenchDockHost
     {
         filesTool.Update(snapshot);
         solutionTool.Update(snapshot);
+        testExplorerTool.Update(snapshot);
         documentsHost.Update(snapshot);
         navigator.Update(snapshot.Settings.KeybindingSettings ?? KeybindingSettingsSnapshot.Default);
 
@@ -316,16 +317,25 @@ internal sealed partial class WorkbenchDockHost
     internal ValueTask RebuildStartupProjectAsync() =>
         solutionTool.StartDefaultBuildAsync(DeveloperExecutionOperation.Rebuild);
 
+    internal ValueTask RefreshTestExplorerAsync() => testExplorerTool.RefreshAsync();
+
     private Control BuildWorkspaceNavigation(Control navigation)
     {
         TabItem workspaceTab = new() { Header = "Workspace", Content = navigation };
         TabItem solutionTab = new() { Header = "Solution", Content = solutionTool.Content };
+        TabItem testsTab = new() { Header = "Tests", Content = testExplorerTool.Content };
         AutomationProperties.SetName(workspaceTab, "Workspace navigation tab");
         AutomationProperties.SetName(solutionTab, ".NET solution navigation tab");
+        AutomationProperties.SetName(testsTab, "Test Explorer navigation tab");
         workspaceSections.Items.Add(workspaceTab);
         workspaceSections.Items.Add(solutionTab);
+        workspaceSections.Items.Add(testsTab);
+        workspaceSections.SelectionChanged += async (_, _) =>
+        {
+            if (workspaceSections.SelectedIndex == 2) await testExplorerTool.RefreshAsync();
+        };
         workspaceSections.SelectedIndex = 0;
-        AutomationProperties.SetName(workspaceSections, "Workspace and solution navigation");
+        AutomationProperties.SetName(workspaceSections, "Workspace, solution, and test navigation");
         return workspaceSections;
     }
     private Control BuildSourceControlTool()

@@ -61,6 +61,21 @@ on the UI thread.
 Use explicit Ready, Loading, Degraded, Cancelled, Failed, and Stale states. An empty
 result is not an error state.
 
+### Compiler-backed test discovery
+
+Discover source tests from the exact active Roslyn solution and resolved attribute
+symbols. The bounded catalog recognizes xUnit, NUnit, and MSTest test attributes,
+including derived attributes, and returns stable semantic identities, framework,
+parameterization, bounded traits, project path, source path, and exact source range.
+Search and paging operate over this catalog. File names, text patterns, restored test
+adapters, and executed discovery processes are not authoritative test evidence.
+
+Presentation may build a project/type/test hierarchy and navigate through the typed
+source destination. Discovery never restores, loads a test assembly, or executes
+repository code. Running or debugging a discovered test uses the separately governed
+typed developer execution lifecycle in ADR 023; discovery alone grants no process or
+agent authority.
+
 ### Manual and model edits
 
 Manual editing remains permissive. Diagnostics do not block typing or save.

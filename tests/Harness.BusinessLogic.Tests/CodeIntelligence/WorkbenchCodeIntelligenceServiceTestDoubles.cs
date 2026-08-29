@@ -95,6 +95,9 @@ public sealed partial class WorkbenchCodeIntelligenceServiceTests
         internal Func<CodeIntelligenceInspectionRequest, CancellationToken,
             ValueTask<CodeIntelligenceInspectionResult>>? Inspections
         { get; init; }
+        internal Func<CodeIntelligenceTestDiscoveryRequest, CancellationToken,
+            ValueTask<CodeIntelligenceTestDiscoveryResult>>? TestDiscovery
+        { get; init; }
         internal CodeIntelligenceOpenRequest? OpenRequest { get; private set; }
         internal CodeIntelligenceSessionId? ClosedSession { get; private set; }
         internal int OpenCallCount { get; private set; }
@@ -165,6 +168,11 @@ public sealed partial class WorkbenchCodeIntelligenceServiceTests
             CodeIntelligenceInspectionRequest request,
             CancellationToken cancellationToken = default) => Inspections is null
             ? throw new NotSupportedException() : Inspections(request, cancellationToken);
+        public ValueTask<CodeIntelligenceTestDiscoveryResult> DiscoverTestsAsync(
+            CodeIntelligenceTestDiscoveryRequest request,
+            CancellationToken cancellationToken = default) => TestDiscovery is null
+            ? throw new NotSupportedException()
+            : TestDiscovery(request, cancellationToken);
         public ValueTask<CodeIntelligenceDocumentPresentationResult> GetDocumentPresentationAsync(
             CodeIntelligenceDocumentPresentationRequest request,
             CancellationToken cancellationToken = default) => Presentations is null

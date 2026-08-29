@@ -31,6 +31,9 @@ internal static class WorkbenchPaletteCatalog
             Command("solution.rebuild", "Solution", "Rebuild startup project",
                 KeybindingCommand.RebuildStartupProject,
                 () => InSolution(host.RebuildStartupProjectAsync), needsTrust),
+            Command("tests.refresh", "Tests", "Refresh Test Explorer",
+                KeybindingCommand.RefreshTestExplorer,
+                () => InTests(host.RefreshTestExplorerAsync), needsTrust),
             Command("git.refresh", "Git", "Refresh Git state",
                 KeybindingCommand.RefreshGit,
                 () => InGit(GitWorkbenchSection.Changes, host.RefreshGitAsync), needsTrust),
@@ -199,6 +202,12 @@ internal static class WorkbenchPaletteCatalog
         async ValueTask InSolution(Func<ValueTask> action)
         {
             host.ShowSolution();
+            await action();
+        }
+
+        async ValueTask InTests(Func<ValueTask> action)
+        {
+            host.ShowTestExplorer();
             await action();
         }
 

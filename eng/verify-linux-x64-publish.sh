@@ -11,6 +11,22 @@ schema_version=$(sed -n \
   "$repository_root/src/Harness.DataAccess/Persistence/SqliteDatabaseInitializer.cs")
 test -n "$schema_version"
 
+sqlite_query() {
+  python3 - "$1" "$2" <<'PY'
+import sqlite3
+import sys
+
+database, statement = sys.argv[1:]
+with sqlite3.connect(database) as connection:
+    if statement.lstrip().upper().startswith(("PRAGMA", "SELECT")):
+        row = connection.execute(statement).fetchone()
+        if row is not None:
+            print(row[0])
+    else:
+        connection.executescript(statement)
+PY
+}
+
 cleanup() {
   if [[ -n "$process_id" ]] && kill -0 "$process_id" 2>/dev/null; then
     kill -TERM "$process_id" 2>/dev/null || true
@@ -74,7 +90,7 @@ test ! -e "$smoke_root/config/harness.net/harness.xml"
 test ! -e "$smoke_root/cache/harness.net"
 
 database_path="$smoke_root/data/harness.net/harness.db"
-sqlite3 "$database_path" \
+sqlite_query "$database_path" \
   "INSERT INTO conversations (id, title, model, created_at, updated_at) VALUES ('release-proof', 'Release proof', 'none', '2026-07-28T00:00:00Z', '2026-07-28T00:00:00Z');"
 backup_path="$smoke_root/harness-state.zip"
 layout_directory="$smoke_root/state/harness.net"
@@ -119,11 +135,11 @@ unzip -p "$backup_path" workbench-layout.json \
 recovered_database="$recovery_root/data/harness.net/harness.db"
 test "$(sha256sum "$recovery_root/state/harness.net/workbench-layout.json" | cut -d ' ' -f 1)" = \
   "$expected_layout_sha"
-test "$(sqlite3 "$recovered_database" "PRAGMA integrity_check;")" = "ok"
-test "$(sqlite3 "$recovered_database" \
+test "$(sqlite_query "$recovered_database" "PRAGMA integrity_check;")" = "ok"
+test "$(sqlite_query "$recovered_database" \
   "SELECT COUNT(*) FROM conversations WHERE id='release-proof';")" = "1"
 
-sqlite3 "$recovered_database" \
+sqlite_query "$recovered_database" \
   "DROP TABLE appearance_preferences; DROP TABLE agent_role_defaults; DROP TABLE goal_budget_extensions; DROP TABLE remote_spend_preferences; DROP TABLE visual_capture_preferences; DROP TABLE editor_intelligence_preferences; DROP TABLE keybinding_preferences; DROP TABLE keybinding_configuration; DROP TABLE developer_dotnet_executions; DELETE FROM SchemaVersions WHERE ScriptName LIKE '%018_AppearancePreferences.sql' OR ScriptName LIKE '%019_AgentRoleDefaults.sql' OR ScriptName LIKE '%020_RenameEvidence.sql' OR ScriptName LIKE '%021_GoalBudgetExtensions.sql' OR ScriptName LIKE '%022_RemoteSpendPreferences.sql' OR ScriptName LIKE '%023_AgentOutputTokenLimits.sql' OR ScriptName LIKE '%024_RemoveAgentOutputTokenLimits.sql' OR ScriptName LIKE '%025_VisualCapturePreferences.sql' OR ScriptName LIKE '%026_EditorIntelligencePreferences.sql' OR ScriptName LIKE '%027_EditorFormattingPreferences.sql' OR ScriptName LIKE '%028_KeybindingPreferences.sql' OR ScriptName LIKE '%029_EditorInputMode.sql' OR ScriptName LIKE '%030_DeveloperDotNetExecutions.sql' OR ScriptName LIKE '%031_AgentReasoningPolicy.sql' OR ScriptName LIKE '%032_DeveloperDotNetBuildOperations.sql'; UPDATE application_metadata SET value='17' WHERE key='schema_version';"
 env -i \
   PATH="$recovery_root/no-installed-tools" \
@@ -139,9 +155,9 @@ if ! grep -q "Harness.NET ready (schema $schema_version)" "$recovery_root/upgrad
 fi
 test -n "$(find "$recovery_root/data/harness.net/backups" \
   -type f -name 'pre-upgrade-*.zip' -print -quit)"
-test "$(sqlite3 "$recovered_database" \
+test "$(sqlite_query "$recovered_database" \
   "SELECT COUNT(*) FROM conversations WHERE id='release-proof';")" = "1"
-test "$(sqlite3 "$recovered_database" \
+test "$(sqlite_query "$recovered_database" \
   "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='appearance_preferences';")" = "1"
 
 echo "linux-x64 publish verification passed"

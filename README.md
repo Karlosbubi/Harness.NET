@@ -57,6 +57,9 @@ Delivered:
 - typed per-project and startup-project Build/Rebuild with inspected configuration,
   confined no-Restore process execution, cancellation, transient bounded streams,
   and durable restart-safe lifecycle metadata;
+- a compiler-backed Test Explorer for xUnit, NUnit, and MSTest source tests, with
+  project/type/test hierarchy, bounded search across names and traits, parameterized
+  test labels, and exact source navigation without executing or restoring projects;
 - typed configurable workbench and editor keybindings with conflict validation,
   command discovery, reset, bounded declarative import/export, and optional Vim
   Normal, Insert, Visual, and Visual Line behavior;

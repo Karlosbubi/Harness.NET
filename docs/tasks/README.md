@@ -623,7 +623,7 @@ Acceptance criteria:
 
 ### 052 — .NET project, Run, Test, and Debug experience
 
-Status: `In progress — typed Run, Solution metadata, and Build/Rebuild delivered`
+Status: `In progress — typed Run, Solution, Build/Rebuild, and Roslyn test discovery delivered`
 
 Dependencies: 018, 042, 047, 049, 051.
 
@@ -642,8 +642,12 @@ Bounded launch-profile discovery exposes profile kinds and safe metadata while
 withholding argument text, environment values, and executable paths. The third slice
 adds per-project Build/Rebuild, startup-project command-palette actions, inspected
 configuration validation, confined no-Restore process execution, cancellation,
-transient bounded streams, and durable/restart-safe operation metadata. Typed one-run
-overrides, Test Explorer, coverage, Hot Reload, and Debug remain open.
+transient bounded streams, and durable/restart-safe operation metadata. The fourth
+slice adds exact-session Roslyn discovery for xUnit, NUnit, and MSTest, including
+derived attributes, traits, parameterization, bounded search and paging, a
+project/type/test hierarchy, and exact source navigation. Test execution/debug,
+selection filters, duration/failure history, rerun, coverage, typed one-run overrides,
+Hot Reload, and Debug remain open.
 
 Acceptance criteria:
 

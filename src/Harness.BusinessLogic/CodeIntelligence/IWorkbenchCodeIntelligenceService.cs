@@ -99,6 +99,18 @@ public interface IWorkbenchCodeIntelligenceService
         WorkbenchCodeSemanticQuery query, CancellationToken cancellationToken = default) =>
         SemanticUnavailable(query, "test_association_not_supported");
 
+    ValueTask<WorkbenchCodeTestDiscoveryView> DiscoverTestsAsync(
+        WorkbenchCodeTestDiscoveryRequest request,
+        CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult<WorkbenchCodeTestDiscoveryView>(new(
+            request.SessionId,
+            WorkbenchCodeResultState.Failed,
+            [],
+            Continuation: null,
+            IsTruncated: false,
+            [new(new("test_discovery_not_supported"),
+                new("Test discovery is unavailable."))]));
+
     ValueTask<WorkbenchCodeDocumentPresentationView> GetDocumentPresentationAsync(
         WorkbenchCodeDocumentPresentationRequest request,
         CancellationToken cancellationToken = default) => ValueTask.FromResult(

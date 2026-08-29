@@ -59,6 +59,7 @@ internal sealed partial class WorkbenchDockHost
     private readonly Dictionary<string, Control> durableContexts = new(StringComparer.Ordinal);
     private readonly FilesTool filesTool;
     private readonly SolutionTool solutionTool;
+    private readonly TestExplorerTool testExplorerTool;
     private readonly GitChangesTool gitChangesTool;
     private readonly GitBranchesTool gitBranchesTool;
     private readonly GitWorktreesTool gitWorktreesTool;
@@ -169,6 +170,10 @@ internal sealed partial class WorkbenchDockHost
             RefreshRunOutputAsync,
             factory,
             cancellationToken);
+        testExplorerTool = new(
+            toolContext,
+            codeIntelligenceService,
+            documentsHost.NavigateToTestAsync);
         problemsToolUnit = documentsHost.Problems;
         gitConflictsTool = new(
             toolContext,
@@ -404,6 +409,13 @@ internal sealed partial class WorkbenchDockHost
     {
         bool shown = navigator.ShowWorkspace();
         workspaceSections.SelectedIndex = 1;
+        return shown;
+    }
+
+    internal bool ShowTestExplorer()
+    {
+        bool shown = navigator.ShowWorkspace();
+        workspaceSections.SelectedIndex = 2;
         return shown;
     }
 

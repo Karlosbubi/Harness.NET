@@ -187,7 +187,7 @@ public sealed partial class PresentationControlTests
             Window? owner) => ValueTask.FromResult(false);
     }
 
-    private sealed class CodeIntelligenceService : IWorkbenchCodeIntelligenceService
+    internal sealed class CodeIntelligenceService : IWorkbenchCodeIntelligenceService
     {
         internal Func<WorkbenchCodeDocumentSnapshot, WorkbenchCodeDiagnosticView>? Diagnostics
         {
@@ -197,6 +197,8 @@ public sealed partial class PresentationControlTests
 
         internal List<WorkbenchCodeDocumentSnapshot> Snapshots { get; } = [];
         internal List<WorkbenchCodeSessionRequest> StartRequests { get; } = [];
+        internal List<WorkbenchCodeTestDiscoveryRequest> TestDiscoveryRequests { get; } = [];
+        internal bool EmitReadyProgress { get; init; }
         internal List<WorkbenchCodeSessionId> StoppedSessions { get; } = [];
         internal Func<WorkbenchCodeCompletionRequest, WorkbenchCodeCompletionView>? Completions
         {
@@ -255,6 +257,9 @@ public sealed partial class PresentationControlTests
         { get; init; }
         internal Func<WorkbenchCodeInteractiveSnapshot, WorkbenchCodeActionView>? CodeActions
         { get; init; }
+        internal Func<WorkbenchCodeTestDiscoveryRequest, WorkbenchCodeTestDiscoveryView>?
+            TestDiscovery
+        { get; init; }
         internal int ImplementationCallCount { get; private set; }
 
         public ValueTask<WorkbenchCodeSessionView> StartAsync(
@@ -263,10 +268,31 @@ public sealed partial class PresentationControlTests
             CancellationToken cancellationToken = default)
         {
             StartRequests.Add(request);
+            if (EmitReadyProgress)
+            {
+                progress?.Report(new(
+                    new("context-1"),
+                    WorkbenchCodeLoadStage.Ready,
+                    new("Code intelligence is ready.")));
+            }
             return ValueTask.FromResult<WorkbenchCodeSessionView>(new(
                 new("context-1"),
                 new("session-1"),
                 WorkbenchCodeResultState.Ready,
+                []));
+        }
+
+        public ValueTask<WorkbenchCodeTestDiscoveryView> DiscoverTestsAsync(
+            WorkbenchCodeTestDiscoveryRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            TestDiscoveryRequests.Add(request);
+            return ValueTask.FromResult(TestDiscovery?.Invoke(request) ?? new(
+                request.SessionId,
+                WorkbenchCodeResultState.Ready,
+                [],
+                Continuation: null,
+                IsTruncated: false,
                 []));
         }
 

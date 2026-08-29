@@ -8,7 +8,7 @@ AT-SPI/portal tools. Durations are typical developer-machine ranges, not budgets
 |---|---|---|---|---|
 | `verify-v1-release.sh` | Deterministic tests, local-model fixtures, and Linux publish gate. | .NET 10, Python 3, Linux publish prerequisites. | Repository release gate. | 3–8 min |
 | `verify-v1-desktop-release.sh` | Complete deterministic, AT-SPI/Orca, workflow, and publish gate. | Graphical Linux, accessibility bus, Orca. | Desktop release acceptance. | 5–12 min |
-| `verify-linux-x64-publish.sh` | Self-contained publish, lifecycle, persistence, backup, and recovery smoke checks. | Linux x64, `sqlite3`. | Release and backup acceptance. | 1–4 min |
+| `verify-linux-x64-publish.sh` | Self-contained publish, lifecycle, persistence, backup, and recovery smoke checks. | Linux x64, Python 3 standard library. | Release and backup acceptance. | 1–4 min |
 | `verify-avalonia-atspi.py` | Production workbench accessibility, layout, focus, and optional Orca checks. | Graphical Linux, `python3-dbus`, AT-SPI; Orca for `--with-orca`. | Workbench and refactor slices. | 1–3 min |
 | `verify-avalonia-workflow.py` | Deterministic end-to-end goal workflow through the production UI and typed tools. | Graphical Linux, AT-SPI, .NET 10. | Chat/goal workflow acceptance. | 1–3 min |
 | `verify-editor-intelligence.py` | Focused Roslyn/editor tests with optional desktop and complete-Linux gates. | .NET 10; graphical dependencies for optional flags. | Editor intelligence acceptance. | 1–8 min |

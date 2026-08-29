@@ -50,6 +50,7 @@ public enum KeybindingCommand
     RefreshSolution,
     BuildStartupProject,
     RebuildStartupProject,
+    RefreshTestExplorer,
     RefreshGit,
     StageGitChange,
     UnstageGitChange,

@@ -212,6 +212,21 @@ internal sealed class DocumentsHost
 
     internal ValueTask OpenAsync(string path) => OpenAsync(path, state().Goals.SelectedGoal?.Id);
 
+    internal async ValueTask NavigateToTestAsync(
+        WorkbenchCodeTestCase test,
+        GoalId? goalId)
+    {
+        ArgumentNullException.ThrowIfNull(test);
+        await OpenAsync(test.Path.Value, goalId);
+        SourceDocumentSession? target = sources.Values.FirstOrDefault(item =>
+            item.View.GoalId == goalId && item.View.Path.Value == test.Path.Value);
+        if (target is null) return;
+        SetActive(target.Document);
+        target.Editor.SetCaretPosition(test.Range.Start);
+        target.Editor.ScrollTo(test.Range.Start);
+        target.Editor.Focus();
+    }
+
     internal async ValueTask OpenAsync(string path, GoalId? goalId)
     {
         WorkspaceView? workspace = ActiveWorkspace();

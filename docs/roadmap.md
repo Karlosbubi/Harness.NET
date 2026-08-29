@@ -508,6 +508,15 @@ identities, bounded process-local output, cancellation, duration, and durable li
 metadata with Run; restart reconciliation marks abandoned operations interrupted.
 Typed one-run overrides, Test Explorer, coverage, Hot Reload, and Debug remain planned.
 
+Delivered fourth slice: the Workspace tool includes a Test Explorer whose discovery
+is computed from the exact active Roslyn solution. It recognizes compiler-resolved
+xUnit, NUnit, and MSTest attributes (including derived attributes), presents a bounded
+project/type/test hierarchy, searches names and traits, labels parameterized tests,
+and navigates to exact source ranges. Discovery is cancellable, session-bound, and
+does not execute tests, restore packages, launch processes, or infer tests from file
+names. Test execution/debug, selection filters, duration/failure history, rerun,
+coverage, typed one-run overrides, Hot Reload, and Debug remain planned.
+
 Use the existing trust and Restore boundaries. Selecting a launch profile does not
 authorize execution; debug attach, expression evaluation, mutation, dumps, network
 listeners, and external processes remain separately classified. ASP.NET endpoint

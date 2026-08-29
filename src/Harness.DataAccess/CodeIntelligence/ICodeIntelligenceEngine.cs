@@ -105,6 +105,19 @@ public interface ICodeIntelligenceEngine
         CodeIntelligenceSemanticQuery query,
         CancellationToken cancellationToken = default) => SemanticUnavailable(query, "test_association_not_supported");
 
+    ValueTask<CodeIntelligenceTestDiscoveryResult> DiscoverTestsAsync(
+        CodeIntelligenceTestDiscoveryRequest request,
+        CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult<CodeIntelligenceTestDiscoveryResult>(new(
+            request.ContextId,
+            request.SessionId,
+            CodeIntelligenceResultState.Failed,
+            [],
+            Continuation: null,
+            IsTruncated: false,
+            [new(new("test_discovery_not_supported"),
+                new("Test discovery is unavailable."))]));
+
     ValueTask<CodeIntelligenceDocumentPresentationResult> GetDocumentPresentationAsync(
         CodeIntelligenceDocumentPresentationRequest request,
         CancellationToken cancellationToken = default) => ValueTask.FromResult(

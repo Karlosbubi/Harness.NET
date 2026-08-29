@@ -399,6 +399,18 @@ def verify_solution_build_accessibility(application: AtSpiApplication) -> None:
     )
 
 
+def verify_test_explorer_accessibility(application: AtSpiApplication) -> None:
+    application.invoke("Workspace", "page tab")
+    application.wait_for_name("Test Explorer navigation tab", "page tab")
+    application.invoke("Test Explorer navigation tab", "page tab")
+    application.wait_for_name("Test Explorer search", "entry")
+    application.wait_for_name("Roslyn test hierarchy", "tree")
+    application.wait_for_name("Refresh Test Explorer", "push button")
+    application.wait_for_name_containing(
+        "1 test(s) discovered", "label", timeout=60
+    )
+
+
 def verify_orca_speech(debug_log: Path) -> None:
     speech_lines = [
         line for line in debug_log.read_text(encoding="utf-8").splitlines()
@@ -741,12 +753,23 @@ def main() -> int:
                 quiet=True,
             )
             (repository / "Program.cs").write_text(
+                "namespace Xunit\n"
+                "{\n"
+                "    internal class FactAttribute : System.Attribute { }\n"
+                "}\n"
+                "\n"
                 "internal static class Program\n"
                 "{\n"
                 "    public static void Main()\n"
                 "    {\n"
                 "        Console.WriteLine(\"Harness run acceptance\");\n"
                 "    }\n"
+                "}\n"
+                "\n"
+                "internal sealed class RepresentativeTests\n"
+                "{\n"
+                "    [Xunit.Fact]\n"
+                "    public void Passes() { }\n"
                 "}\n",
                 encoding="utf-8",
             )
@@ -814,6 +837,7 @@ def main() -> int:
                 exercise_orca_speech(application)
             register_workspace(application, repository)
             verify_project_user_secrets_accessibility(application)
+            verify_test_explorer_accessibility(application)
             verify_solution_build_accessibility(application)
             create_and_approve_goal(application)
             verify_documents_and_search(application, repository)

@@ -1,0 +1,241 @@
+using Avalonia;
+using Avalonia.Automation;
+using Avalonia.Controls;
+using Avalonia.Controls.Templates;
+using Avalonia.Input;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Harness.BusinessLogic.CodeIntelligence;
+using Harness.BusinessLogic.Goals;
+using Harness.BusinessLogic.Workspaces;
+using Harness.UI.Avalonia;
+
+namespace Harness.Presentation.Avalonia.Workbench;
+
+internal sealed class TestExplorerTool
+{
+    private readonly WorkbenchToolContext context;
+    private readonly IWorkbenchCodeIntelligenceService codeIntelligence;
+    private readonly Func<WorkbenchCodeTestCase, GoalId?, ValueTask> navigate;
+    private readonly TreeView tree = new();
+    private readonly TextBox filter = new() { PlaceholderText = "Search tests or traits" };
+    private readonly StatusIndicator status = new() { TextWrapping = TextWrapping.Wrap };
+    private bool busy;
+    private string? workspaceId;
+    private string? goalId;
+
+    internal TestExplorerTool(
+        WorkbenchToolContext context,
+        IWorkbenchCodeIntelligenceService codeIntelligence,
+        Func<WorkbenchCodeTestCase, GoalId?, ValueTask> navigate)
+    {
+        this.context = context;
+        this.codeIntelligence = codeIntelligence;
+        this.navigate = navigate;
+        Content = BuildContent();
+        RenderUnavailable("Select a trusted workspace to discover tests with Roslyn.");
+    }
+
+    internal Control Content { get; }
+    internal TreeView Tree => tree;
+    internal TextBox Filter => filter;
+    internal string StatusText => status.Message ?? string.Empty;
+
+    internal ValueTask NavigateAsync(WorkbenchCodeTestCase test) =>
+        navigate(test, context.SelectedGoalId());
+
+    internal void Update(AvaloniaShellState snapshot)
+    {
+        WorkspaceView? active = snapshot.Workspaces.Registered.FirstOrDefault(item => item.IsActive);
+        string? nextGoal = snapshot.Goals.SelectedGoal is { } selected && active is not null &&
+                           selected.WorkspaceId == active.Id
+            ? selected.Id.Value
+            : null;
+        if (workspaceId == active?.Id && goalId == nextGoal) return;
+        workspaceId = active?.Id;
+        goalId = nextGoal;
+        RenderUnavailable(active is { IsTrusted: true }
+            ? "Test source context changed. Refresh to discover tests with Roslyn."
+            : "Select a trusted workspace to discover tests with Roslyn.");
+    }
+
+    internal async ValueTask RefreshAsync()
+    {
+        WorkspaceView? workspace = context.ActiveWorkspace();
+        if (busy) return;
+        if (workspace is not { IsTrusted: true })
+        {
+            RenderUnavailable("Select a trusted workspace to discover tests with Roslyn.");
+            return;
+        }
+
+        busy = true;
+        bool acceptingLoadProgress = true;
+        status.Message = "Loading the exact Roslyn source context for test discovery…";
+        status.Severity = StatusSeverity.Information;
+        try
+        {
+            string entryPoint = Path.IsPathRooted(workspace.EntryPoint)
+                ? Path.GetRelativePath(workspace.RootPath, workspace.EntryPoint)
+                : workspace.EntryPoint;
+            WorkbenchCodeSessionView session = await codeIntelligence.StartAsync(new(
+                new(workspace.Id),
+                context.SelectedGoalId(),
+                new(entryPoint)),
+                new Progress<WorkbenchCodeLoadProgress>(progress =>
+                {
+                    if (acceptingLoadProgress) status.Message = progress.Message.Value;
+                }),
+                context.CancellationToken);
+            acceptingLoadProgress = false;
+            if (session.SessionId is null || session.State is WorkbenchCodeResultState.Failed)
+            {
+                RenderUnavailable(session.Issues.FirstOrDefault()?.Message.Value ??
+                    "Roslyn test discovery is unavailable.", StatusSeverity.Error);
+                return;
+            }
+            WorkbenchCodeTestDiscoveryView result = await codeIntelligence.DiscoverTestsAsync(new(
+                session.SessionId,
+                string.IsNullOrWhiteSpace(filter.Text) ? null : filter.Text.Trim(),
+                MaximumResults: 2_000,
+                Offset: 0), context.CancellationToken);
+            if (result.State is WorkbenchCodeResultState.Failed or
+                WorkbenchCodeResultState.Stale or WorkbenchCodeResultState.Cancelled)
+            {
+                RenderUnavailable(result.Issues.FirstOrDefault()?.Message.Value ??
+                    "Roslyn test discovery failed.", StatusSeverity.Error);
+                return;
+            }
+            Render(result);
+        }
+        catch (OperationCanceledException)
+        {
+            RenderUnavailable("Test discovery was cancelled.", StatusSeverity.Warning);
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException or IOException or
+                UnauthorizedAccessException)
+        {
+            RenderUnavailable(exception.Message, StatusSeverity.Error);
+        }
+        finally
+        {
+            acceptingLoadProgress = false;
+            busy = false;
+        }
+    }
+
+    private Control BuildContent()
+    {
+        Grid grid = new()
+        {
+            RowDefinitions = new("Auto,Auto,Auto,*"),
+            Margin = new Thickness(8),
+            RowSpacing = 6,
+        };
+        Grid header = new() { ColumnDefinitions = new("*,Auto"), ColumnSpacing = 6 };
+        header.Children.Add(new TextBlock
+        {
+            Text = "Test Explorer",
+            FontWeight = global::Avalonia.Media.FontWeight.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        Button refresh = new() { Content = "Refresh" };
+        AutomationProperties.SetName(refresh, "Refresh Test Explorer");
+        refresh.Click += async (_, _) => await RefreshAsync();
+        Grid.SetColumn(refresh, 1);
+        header.Children.Add(refresh);
+        grid.Children.Add(header);
+
+        AutomationProperties.SetName(filter, "Test Explorer search");
+        filter.KeyDown += async (_, args) =>
+        {
+            if (args.Key is not Key.Enter) return;
+            args.Handled = true;
+            await RefreshAsync();
+        };
+        Grid.SetRow(filter, 1);
+        grid.Children.Add(filter);
+
+        tree.ItemTemplate = new FuncTreeDataTemplate<TestTreeNode>(
+            (node, _) => node.Test is null ? new TextBlock
+            {
+                Text = node.Label,
+                TextWrapping = TextWrapping.Wrap,
+            } : TestButton(node.Test),
+            node => node.Children);
+        AutomationProperties.SetName(tree, "Roslyn test hierarchy");
+        Grid.SetRow(tree, 3);
+        grid.Children.Add(tree);
+
+        AutomationProperties.SetName(status, "Test Explorer status");
+        Grid.SetRow(status, 2);
+        grid.Children.Add(status);
+        return grid;
+    }
+
+    private Button TestButton(WorkbenchCodeTestCase test)
+    {
+        string traits = test.Traits.Count == 0
+            ? string.Empty
+            : " · " + string.Join(", ", test.Traits.Select(item =>
+                $"{item.Name.Value}={item.Value.Value}"));
+        Button button = new()
+        {
+            Content = test.DisplayName.Value +
+                      (test.IsParameterized ? " · parameterized" : string.Empty) + traits,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Left,
+        };
+        AutomationProperties.SetName(button, $"Open test {test.FullyQualifiedName.Value}");
+        button.Click += async (_, _) => await NavigateAsync(test);
+        return button;
+    }
+
+    private void Render(WorkbenchCodeTestDiscoveryView result)
+    {
+        TestTreeNode[] projects = result.Tests
+            .GroupBy(item => item.ProjectPath.Value, StringComparer.Ordinal)
+            .OrderBy(group => group.Key, StringComparer.Ordinal)
+            .Select(project => new TestTreeNode(
+                project.Key,
+                project.GroupBy(item => ContainingType(item.FullyQualifiedName.Value),
+                        StringComparer.Ordinal)
+                    .OrderBy(group => group.Key, StringComparer.Ordinal)
+                    .Select(type => new TestTreeNode(
+                        type.Key,
+                        type.OrderBy(item => item.FullyQualifiedName.Value, StringComparer.Ordinal)
+                            .Select(item => new TestTreeNode(
+                                item.DisplayName.Value,
+                                [],
+                                item)).ToArray()))
+                    .ToArray()))
+            .ToArray();
+        tree.ItemsSource = projects;
+        status.Message = $"{result.Tests.Count:N0} test(s) discovered with Roslyn" +
+                         (result.IsTruncated ? " · bounded result" : string.Empty) + ".";
+        status.Severity = result.IsTruncated || result.State is WorkbenchCodeResultState.Degraded
+            ? StatusSeverity.Warning
+            : StatusSeverity.Success;
+    }
+
+    private void RenderUnavailable(
+        string message,
+        StatusSeverity severity = StatusSeverity.Information)
+    {
+        tree.ItemsSource = Array.Empty<TestTreeNode>();
+        status.Message = message;
+        status.Severity = severity;
+    }
+
+    private static string ContainingType(string fullyQualifiedName)
+    {
+        int separator = fullyQualifiedName.LastIndexOf('.');
+        return separator <= 0 ? "Tests" : fullyQualifiedName[..separator];
+    }
+
+    internal sealed record TestTreeNode(
+        string Label,
+        IReadOnlyList<TestTreeNode> Children,
+        WorkbenchCodeTestCase? Test = null);
+}
