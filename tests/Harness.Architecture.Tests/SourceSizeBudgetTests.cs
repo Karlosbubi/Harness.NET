@@ -12,11 +12,8 @@ public sealed class SourceSizeBudgetTests
             ["src/Harness.BusinessLogic/Workflows/GoalWorkflowService.cs"] = 1_337,
             ["src/Harness.DataAccess/CodeIntelligence/RoslynCodeIntelligenceEngine.cs"] = 1_896,
             ["src/Harness.DataAccess/Inspection/LibGitDeveloperGitRepository.cs"] = 1_962,
-            ["src/Harness.Presentation.Terminal/GoalDialog.cs"] = 1_262,
-            ["tests/Harness.BusinessLogic.Tests/Agents/AgentRoleRunnerTests.cs"] = 838,
             ["tests/Harness.BusinessLogic.Tests/CodeIntelligence/WorkbenchCodeIntelligenceServiceTests.cs"] = 944,
             ["tests/Harness.BusinessLogic.Tests/Mutations/WorkspaceMutationServiceTests.cs"] = 1_217,
-            ["tests/Harness.BusinessLogic.Tests/Workflows/GoalWorkflowServiceTests.cs"] = 832,
             ["tests/Harness.DataAccess.Tests/CodeIntelligence/RoslynCodeIntelligenceEngineTests.cs"] = 2_019,
             ["tests/Harness.DataAccess.Tests/Inspection/LibGitDeveloperGitRepositoryTests.cs"] = 1_185,
         };
