@@ -33,7 +33,21 @@ internal static class DotNetInspectionMapper
                             configuration.Source is DotNetConfigurationSource.Declared
                                 ? DotNetConfigurationSourceView.Declared
                                 : DotNetConfigurationSourceView.Convention)).ToArray(),
-                    project.Details.IsStartupCandidate))).ToArray(),
+                    project.Details.IsStartupCandidate,
+                    project.Details.LaunchProfiles is null
+                        ? null
+                        : new(
+                            project.Details.LaunchProfiles.Profiles.Select(profile =>
+                                new DotNetLaunchProfileView(
+                                    new(profile.Name.Value),
+                                    Map(profile.Kind),
+                                    profile.LaunchesBrowser,
+                                    profile.HasCommandLineArguments,
+                                    profile.EnvironmentNames.Select(name =>
+                                        new DotNetLaunchEnvironmentNameView(name.Value)).ToArray()))
+                                .ToArray(),
+                            project.Details.LaunchProfiles.ErrorCode,
+                            project.Details.LaunchProfiles.Error)))).ToArray(),
         result.IsTruncated,
         result.ErrorCode,
         result.Error,
@@ -70,5 +84,12 @@ internal static class DotNetInspectionMapper
         DotNetProjectIssueKind.OutsideWorkspace => DotNetProjectIssueKindView.OutsideWorkspace,
         DotNetProjectIssueKind.TooLarge => DotNetProjectIssueKindView.TooLarge,
         _ => DotNetProjectIssueKindView.InvalidMetadata,
+    };
+
+    private static DotNetLaunchProfileKindView Map(DotNetLaunchProfileKind kind) => kind switch
+    {
+        DotNetLaunchProfileKind.Project => DotNetLaunchProfileKindView.Project,
+        DotNetLaunchProfileKind.Executable => DotNetLaunchProfileKindView.Executable,
+        _ => DotNetLaunchProfileKindView.Unsupported,
     };
 }

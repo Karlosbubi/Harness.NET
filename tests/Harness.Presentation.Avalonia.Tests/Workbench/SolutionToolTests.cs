@@ -48,6 +48,7 @@ public sealed class SolutionToolTests
             Assert.Equal("src/App/App.csproj", project.Path?.Value);
             Assert.Contains(project.Children, node => node.Label == "Target frameworks");
             Assert.Contains(project.Children, node => node.Label == "Configurations");
+            Assert.Contains(project.Children, node => node.Label == "Launch profiles · 1");
             Assert.Contains(project.Children, node => node.Label == "Dependencies");
             Assert.EndsWith("startup candidate", project.Label, StringComparison.Ordinal);
             Assert.Contains("1 project(s)", tool.StatusText, StringComparison.Ordinal);
@@ -106,7 +107,16 @@ public sealed class SolutionToolTests
                         new(
                             DotNetProjectKindView.Executable,
                             [new(new("Debug"), DotNetConfigurationSourceView.Convention)],
-                            IsStartupCandidate: true))],
+                            IsStartupCandidate: true,
+                            new(
+                                [new(
+                                    new("App"),
+                                    DotNetLaunchProfileKindView.Project,
+                                    LaunchesBrowser: true,
+                                    HasCommandLineArguments: true,
+                                    [new("APP_ENV")])],
+                                ErrorCode: null,
+                                Error: null)))],
                     IsTruncated: false,
                     ErrorCode: null,
                     Error: null,

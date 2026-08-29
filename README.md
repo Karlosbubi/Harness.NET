@@ -51,7 +51,9 @@ Delivered:
   selected-SDK/workload-manifest health, projects, target frameworks,
   declared/conventional configurations, startup candidates, project/package
   references, project metadata, and per-project loading failures, with no implicit
-  Restore or repository execution;
+  Restore or repository execution; bounded launch-profile discovery exposes only
+  profile kinds, flags, and environment-variable names—not argument text, values,
+  or executable paths;
 - typed configurable workbench and editor keybindings with conflict validation,
   command discovery, reset, bounded declarative import/export, and optional Vim
   Normal, Insert, Visual, and Visual Line behavior;

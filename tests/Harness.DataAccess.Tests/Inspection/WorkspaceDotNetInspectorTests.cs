@@ -40,6 +40,24 @@ public sealed class WorkspaceDotNetInspectorTests : IDisposable
             """
             { "sdk": { "version": "10.0.201", "rollForward": "latestPatch", "allowPrerelease": false } }
             """);
+        Directory.CreateDirectory(Path.Combine(root, "src", "Properties"));
+        await File.WriteAllTextAsync(
+            Path.Combine(root, "src", "Properties", "launchSettings.json"),
+            """
+            {
+              "profiles": {
+                "Sample": {
+                  "commandName": "Project",
+                  "launchBrowser": true,
+                  "commandLineArgs": "--token should-not-cross-boundary",
+                  "environmentVariables": {
+                    "ASPNETCORE_ENVIRONMENT": "Development",
+                    "SECRET_VALUE": "should-not-cross-boundary"
+                  }
+                }
+              }
+            }
+            """);
 
         WorkspaceDotNetInfo result = await CreateInspector()
             .InspectAsync(root, Path.Combine(root, "Repository.slnx"));
@@ -65,6 +83,15 @@ public sealed class WorkspaceDotNetInspectorTests : IDisposable
         Assert.Equal(DotNetSdkHealthState.Ready, result.SdkHealth!.State);
         Assert.Equal("10.0.400", result.SdkHealth.SelectedVersion!.Value);
         Assert.True(result.SdkHealth.WorkloadManifestsAvailable);
+        DotNetLaunchProfileInfo profile = Assert.Single(
+            project.Details.LaunchProfiles!.Profiles);
+        Assert.Equal("Sample", profile.Name.Value);
+        Assert.Equal(DotNetLaunchProfileKind.Project, profile.Kind);
+        Assert.True(profile.LaunchesBrowser);
+        Assert.True(profile.HasCommandLineArguments);
+        Assert.Equal(["ASPNETCORE_ENVIRONMENT", "SECRET_VALUE"],
+            profile.EnvironmentNames.Select(name => name.Value));
+        Assert.DoesNotContain("should-not-cross-boundary", profile.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]

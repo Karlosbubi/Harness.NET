@@ -494,8 +494,11 @@ declared project/package references, selected SDK resolution, and workload-manif
 availability. It opens project files through the existing typed document boundary
 and reports missing, outside-root, oversized, or malformed project declarations
 without hiding healthy projects or leaking machine paths. It never restores,
-evaluates MSBuild, or executes project code. Launch profiles, Build/Rebuild, Test
-Explorer, Hot Reload, and Debug remain planned.
+evaluates MSBuild, or executes project code. Bounded `launchSettings.json` discovery
+shows project/executable/unsupported profile kinds, browser/argument presence, and
+environment-variable names while withholding argument text, values, and executable
+paths. Typed one-run overrides, Build/Rebuild, Test Explorer, Hot Reload, and Debug
+remain planned.
 
 Use the existing trust and Restore boundaries. Selecting a launch profile does not
 authorize execution; debug attach, expression evaluation, mutation, dumps, network

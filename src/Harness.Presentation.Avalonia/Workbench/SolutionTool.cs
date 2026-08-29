@@ -245,6 +245,25 @@ internal sealed class SolutionTool
                         : " · declared"),
                     null,
                     [])).ToArray()));
+            if (details.LaunchProfiles is { } profiles)
+            {
+                children.Add(new(
+                    profiles.Error is null
+                        ? $"Launch profiles · {profiles.Profiles.Count}"
+                        : "Launch profiles · unavailable",
+                    null,
+                    profiles.Error is null
+                        ? profiles.Profiles.Select(profile => new SolutionTreeNode(
+                            $"{profile.Name.Value} · {profile.Kind}" +
+                            (profile.LaunchesBrowser ? " · browser" : string.Empty) +
+                            (profile.HasCommandLineArguments ? " · arguments configured" : string.Empty) +
+                            (profile.EnvironmentNames.Count == 0
+                                ? string.Empty
+                                : $" · environment names: {string.Join(", ", profile.EnvironmentNames.Select(name => name.Value))}"),
+                            null,
+                            [])).ToArray()
+                        : [new(profiles.Error, null, [])]));
+            }
         }
         children.Add(new(
             project.TargetFrameworks.Count == 0

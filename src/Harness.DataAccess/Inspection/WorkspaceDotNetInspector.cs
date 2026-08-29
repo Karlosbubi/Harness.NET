@@ -11,6 +11,8 @@ internal sealed class WorkspaceDotNetInspector(DotNetSdkSelector sdkSelector)
 {
     private const int MaximumProjects = 200;
     private const int MaximumReferencesPerProject = 500;
+    private const int MaximumLaunchProfilesPerProject = 64;
+    private const int MaximumLaunchEnvironmentNames = 128;
     private const long MaximumMetadataBytes = 1024 * 1024;
     private static readonly Regex SolutionProject = new(
         "^Project\\(\"[^\"]+\"\\)\\s*=\\s*\"[^\"]*\"\\s*,\\s*\"(?<path>[^\"]+)\"",
@@ -244,6 +246,9 @@ internal sealed class WorkspaceDotNetInspector(DotNetSdkSelector sdkSelector)
         string[] configurations = declaredConfigurations.Length == 0
             ? ["Debug", "Release"]
             : declaredConfigurations;
+        DotNetLaunchProfileCatalog launchProfiles = await ReadLaunchProfilesAsync(
+            Path.GetDirectoryName(projectPath)!,
+            cancellationToken);
         return new(
             new(
                 relativePath,
@@ -258,8 +263,91 @@ internal sealed class WorkspaceDotNetInspector(DotNetSdkSelector sdkSelector)
                         new(value),
                         configurationSource)).ToArray(),
                     kind is DotNetProjectKind.Executable or DotNetProjectKind.Web or
-                        DotNetProjectKind.Worker)),
+                        DotNetProjectKind.Worker,
+                    launchProfiles)),
             null);
+    }
+
+    private static async ValueTask<DotNetLaunchProfileCatalog> ReadLaunchProfilesAsync(
+        string projectDirectory,
+        CancellationToken cancellationToken)
+    {
+        string path = Path.Combine(projectDirectory, "Properties", "launchSettings.json");
+        FileInfo file = new(path);
+        if (!file.Exists)
+        {
+            return new([], ErrorCode: null, Error: null);
+        }
+
+        if (file.Length > MaximumMetadataBytes)
+        {
+            return new(
+                [],
+                "launch_settings_too_large",
+                "launchSettings.json exceeds the 1 MiB static metadata limit.");
+        }
+
+        try
+        {
+            await using FileStream stream = file.OpenRead();
+            using JsonDocument document = await JsonDocument.ParseAsync(
+                stream,
+                new JsonDocumentOptions
+                {
+                    AllowTrailingCommas = true,
+                    CommentHandling = JsonCommentHandling.Skip,
+                    MaxDepth = 32,
+                },
+                cancellationToken);
+            if (!document.RootElement.TryGetProperty("profiles", out JsonElement profiles) ||
+                profiles.ValueKind is not JsonValueKind.Object)
+            {
+                return new([], "launch_settings_invalid", "launchSettings.json has no profiles object.");
+            }
+
+            DotNetLaunchProfileInfo[] values = profiles.EnumerateObject()
+                .Take(MaximumLaunchProfilesPerProject)
+                .Select(profile => MapLaunchProfile(profile.Name, profile.Value))
+                .ToArray();
+            return new(values, ErrorCode: null, Error: null);
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException or JsonException)
+        {
+            return new(
+                [],
+                "launch_settings_invalid",
+                "launchSettings.json could not be read as bounded JSON metadata.");
+        }
+    }
+
+    private static DotNetLaunchProfileInfo MapLaunchProfile(
+        string name,
+        JsonElement profile)
+    {
+        string? commandName = StringValue(profile, "commandName");
+        DotNetLaunchProfileKind kind = commandName?.ToLowerInvariant() switch
+        {
+            "project" => DotNetLaunchProfileKind.Project,
+            "executable" => DotNetLaunchProfileKind.Executable,
+            _ => DotNetLaunchProfileKind.Unsupported,
+        };
+        bool launchesBrowser = BooleanValue(profile, "launchBrowser") is true;
+        bool hasArguments = profile.TryGetProperty("commandLineArgs", out JsonElement arguments) &&
+                            arguments.ValueKind is JsonValueKind.String &&
+                            !string.IsNullOrWhiteSpace(arguments.GetString());
+        DotNetLaunchEnvironmentName[] environmentNames = profile.TryGetProperty(
+                "environmentVariables",
+                out JsonElement environment) && environment.ValueKind is JsonValueKind.Object
+            ? environment.EnumerateObject()
+                .Select(variable => variable.Name)
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Distinct(StringComparer.Ordinal)
+                .Take(MaximumLaunchEnvironmentNames)
+                .Select(value => new DotNetLaunchEnvironmentName(value))
+                .ToArray()
+            : [];
+        return new(new(name), kind, launchesBrowser, hasArguments, environmentNames);
     }
 
     private static DotNetProjectReadResult Failure(

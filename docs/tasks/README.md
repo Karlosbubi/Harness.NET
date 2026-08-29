@@ -638,7 +638,9 @@ declared/conventional configurations, typed project kind and startup candidates,
 declared references/packages, language and nullable metadata, with typed project-file
 navigation and no Restore, MSBuild evaluation, or repository execution.
 Per-project loading failures remain visible without hiding healthy projects.
-Build/Rebuild UI, Test Explorer, launch profiles, Hot Reload, and Debug remain open.
+Bounded launch-profile discovery exposes profile kinds and safe metadata while
+withholding argument text, environment values, and executable paths. Typed one-run
+overrides, Build/Rebuild UI, Test Explorer, Hot Reload, and Debug remain open.
 
 Acceptance criteria:
 

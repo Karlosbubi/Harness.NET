@@ -44,6 +44,8 @@ public sealed class WorkbenchInspectionServiceTests
         Assert.Equal("src/App/App.csproj", project.Path);
         Assert.Equal(DotNetProjectKindView.Executable, project.Details!.Kind);
         Assert.True(project.Details.IsStartupCandidate);
+        Assert.Equal(DotNetLaunchProfileKindView.Project,
+            Assert.Single(project.Details.LaunchProfiles!.Profiles).Kind);
         Assert.Equal(DotNetSdkHealthStateView.Ready, solution.DotNet.SdkHealth!.State);
         Assert.Equal(DotNetProjectIssueKindView.Missing,
             Assert.Single(solution.DotNet.ProjectIssues!).Kind);
@@ -210,7 +212,12 @@ public sealed class WorkbenchInspectionServiceTests
                     new(
                         DotNetProjectKind.Executable,
                         [new(new("Debug"), DotNetConfigurationSource.Convention)],
-                        IsStartupCandidate: true))],
+                        IsStartupCandidate: true,
+                        new(
+                            [new(new("App"), DotNetLaunchProfileKind.Project, false, true,
+                                [new("APP_ENV")])],
+                            ErrorCode: null,
+                            Error: null)))],
                 IsTruncated: false,
                 ErrorCode: null,
                 Error: null,

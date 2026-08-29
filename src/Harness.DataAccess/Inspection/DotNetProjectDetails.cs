@@ -25,4 +25,5 @@ public sealed record DotNetProjectConfiguration(
 public sealed record DotNetProjectDetails(
     DotNetProjectKind Kind,
     IReadOnlyList<DotNetProjectConfiguration> Configurations,
-    bool IsStartupCandidate);
+    bool IsStartupCandidate,
+    DotNetLaunchProfileCatalog? LaunchProfiles = null);

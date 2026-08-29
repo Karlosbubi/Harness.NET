@@ -23,6 +23,10 @@ foundation, not MSBuild evaluation, execution, or a claim that Task 052 is compl
 - Missing, outside-workspace, oversized, and malformed project declarations appear as
   typed loading-issue nodes while healthy projects remain usable. Messages disclose
   no absolute machine path.
+- Bounded `launchSettings.json` discovery classifies Project, Executable, and
+  unsupported profiles and reports browser/argument presence plus environment-variable
+  names. Contracts contain no argument text, environment value, or executable path,
+  so those potentially sensitive values cannot cross into Business Logic or UI.
 - Refresh is a typed `KeybindingCommand` and command-palette action. Busy, success,
   bounded-result, cancellation, trust, and error states use the shared live status
   indicator.
@@ -38,12 +42,12 @@ foundation, not MSBuild evaluation, execution, or a claim that Task 052 is compl
   project metadata, shared status, and explicit automation name.
 - The complete typed workbench catalog remains identical to the keybinding enum tail,
   now with 46 actions.
-- Final verification passed the warning-free solution build, all 872 deterministic
+- Final verification passed the warning-free solution build, all 873 deterministic
   .NET release-gate tests, repository metadata checks, Linux x64 publish, and the
   production Avalonia AT-SPI workflow.
 
 ## Remaining Task 052 work
 
-Launch profiles and typed overrides, Build/Rebuild, Test Explorer, coverage, Hot
-Reload, and a real debugger adapter remain open. None is inferred from display text
-or represented as available before its typed adapter exists.
+Typed one-run launch overrides, Build/Rebuild, Test Explorer, coverage, Hot Reload,
+and a real debugger adapter remain open. None is inferred from display text or
+represented as available before its typed adapter exists.
