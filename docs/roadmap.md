@@ -602,8 +602,9 @@ conflict editor, including ownership of its Roslyn diagnostics lifecycle. Slices
 services, rename, transformations, navigation, virtual documents, inspection, and
 CodeLens after confirming no Task 052 branch is ahead of `main`. Document session
 creation, dirty/save/reload/close transitions, Dock activation, and Roslyn invalidation
-now live in bounded `DocumentsHost` and `DocumentSessionFactory` units; workbench
-arrangement, adaptive layout, and cross-tool navigation remain in slice 060.5.
+now live in bounded `DocumentsHost` and `DocumentSessionFactory` units. Persisted Dock
+replacement and adaptive viewport behavior now live in `WorkbenchLayoutHost`; initial
+arrangement and cross-tool navigation remain in slice 060.5.
 Slices 060.6–060.8 follow.
 
 ### Complete: Task 061 — architecture enforcement and composition seams

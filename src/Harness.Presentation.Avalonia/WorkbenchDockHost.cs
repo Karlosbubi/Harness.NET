@@ -38,7 +38,6 @@ internal sealed class WorkbenchDockHost
 {
     private readonly IWorkbenchInspectionService inspectionService;
     private readonly IDeveloperGitService? developerGitService;
-    private readonly IWorkbenchLayoutService layoutService;
     private readonly Func<AvaloniaShellState> state;
     private readonly Func<bool, Task> manageWorkspace;
     private readonly Func<string, Task> manageWorkspaceAt;
@@ -47,21 +46,7 @@ internal sealed class WorkbenchDockHost
     private readonly IDeveloperProjectExecutionService? developerExecutionService;
     private readonly CancellationToken cancellationToken;
     private readonly Factory factory = new();
-    private readonly WorkbenchDockLayoutCodec layoutCodec;
     private readonly Dictionary<string, Control> durableContexts = new(StringComparer.Ordinal);
-    private readonly TextBlock layoutStatus = new()
-    {
-        MaxWidth = 180,
-        TextTrimming = TextTrimming.CharacterEllipsis,
-        VerticalAlignment = VerticalAlignment.Center,
-    };
-    private IDocumentDock documents = null!;
-    private IToolDock leftTools = null!;
-    private IToolDock rightTools = null!;
-    private IToolDock bottomTools = null!;
-    private IDockable overviewDocument = null!;
-    private IRootDock root = null!;
-    private string defaultLayoutPayload = string.Empty;
     private readonly TextBlock overviewHeading = new()
     {
         FontSize = 22,
@@ -85,19 +70,13 @@ internal sealed class WorkbenchDockHost
     private readonly RunOutputTool runOutputToolUnit;
     private readonly DocumentsHost documentsHost;
     private readonly ProblemsTool problemsToolUnit;
+    private readonly WorkbenchLayoutHost layoutHost;
     private TextBlock GitStatus => gitChangesTool.Status;
     private string GitFingerprint => gitChangesTool.Fingerprint;
     private WorkbenchWorkspaceContext? CurrentGitContext => gitChangesTool.CurrentContext;
     private string? workspaceId;
     private string? selectedGoalId;
     private bool busy;
-    private bool adaptiveLeftCollapsed;
-    private bool adaptiveRightCollapsed;
-    private bool adaptiveBottomCollapsed;
-    private double expandedLeftProportion = 0.19;
-    private double expandedRightProportion = 0.22;
-    private double expandedBottomProportion = 0.45;
-    private bool viewportInitialized;
     private int focusRegionIndex = -1;
     private KeybindingSettingsSnapshot keybindingSettings = KeybindingSettingsSnapshot.Default;
     private static readonly KeybindingCommand[] WorkbenchKeyCommands =
@@ -130,7 +109,6 @@ internal sealed class WorkbenchDockHost
         Func<string, Task>? manageWorkspaceAt = null)
     {
         this.inspectionService = inspectionService;
-        this.layoutService = layoutService;
         this.state = state;
         this.manageWorkspace = manageWorkspace ?? (_ => Task.CompletedTask);
         this.manageWorkspaceAt = manageWorkspaceAt ?? (_ => Task.CompletedTask);
@@ -140,7 +118,6 @@ internal sealed class WorkbenchDockHost
         this.refreshWorkspaceContext = refreshWorkspaceContext ?? (() => Task.CompletedTask);
         this.cancellationToken = cancellationToken;
         factory.HideToolsOnClose = true;
-        layoutCodec = new(factory);
         WorkbenchToolContext toolContext = new(
             inspectionService,
             state,
@@ -294,15 +271,18 @@ internal sealed class WorkbenchDockHost
                 .WithDefaultDockable(workbench)
                 .WithActiveDockable(workbench));
 
-        documents = documentDock ?? throw new InvalidOperationException("Dock did not create the document region.");
-        leftTools = left;
-        rightTools = right;
-        bottomTools = bottom;
-        overviewDocument = overview ?? throw new InvalidOperationException("Dock did not create the overview document.");
+        IDocumentDock documents = documentDock ?? throw new InvalidOperationException(
+            "Dock did not create the document region.");
+        IToolDock leftTools = left;
+        IToolDock rightTools = right;
+        IToolDock bottomTools = bottom;
+        IDockable overviewDocument = overview ?? throw new InvalidOperationException(
+            "Dock did not create the overview document.");
         left!.WithProportion(0.19);
         right!.WithProportion(0.22);
         bottom!.WithProportion(0.45);
-        root = rootDock ?? throw new InvalidOperationException("Dock did not create the workbench root.");
+        IRootDock root = rootDock ?? throw new InvalidOperationException(
+            "Dock did not create the workbench root.");
         left.VisibleDockables = factory.CreateList<IDockable>(navigationTool!, filesDockTool!);
         left.ActiveDockable = navigationTool;
         right.VisibleDockables = factory.CreateList<IDockable>(contextTool!, gitTool!);
@@ -323,9 +303,9 @@ internal sealed class WorkbenchDockHost
         WorkbenchDockContent.Attach(runOutputTool!, runOutput);
         WorkbenchDockContent.Attach(problemsTool!, problemsContent);
         WorkbenchDockContent.Attach(overviewDocument, overviewContent);
-        EnsureDefaultTools(left, right, bottom, "before Dock initialization");
+        WorkbenchLayoutHost.EnsureDefaultTools(left, right, bottom, "before Dock initialization");
         factory.InitLayout(root);
-        EnsureDefaultTools(left, right, bottom, "after Dock initialization");
+        WorkbenchLayoutHost.EnsureDefaultTools(left, right, bottom, "after Dock initialization");
         left.IsExpanded = true;
         right.IsExpanded = true;
         bottom.IsExpanded = true;
@@ -337,10 +317,6 @@ internal sealed class WorkbenchDockHost
                 window.ShowInTaskbar = false;
             }
         };
-        WorkbenchDockLayoutCaptureResult defaultLayout = layoutCodec.Capture(root);
-        defaultLayoutPayload = defaultLayout.Payload ?? throw new InvalidOperationException(
-            $"Dock did not create a valid default layout: {defaultLayout.Error}");
-
         Control = new DockControl
         {
             Factory = factory,
@@ -349,11 +325,26 @@ internal sealed class WorkbenchDockHost
         };
         AutomationProperties.SetName(Control, "Docked workspace workbench");
         Control.KeyDown += OnWorkbenchKeyDown;
-        Control.SizeChanged += (_, _) => ApplyViewport(Control.Bounds.Width, Control.Bounds.Height);
+        layoutHost = new(
+            layoutService,
+            factory,
+            root,
+            documents,
+            overviewDocument,
+            leftTools,
+            rightTools,
+            bottomTools,
+            durableContexts,
+            documentsHost.CloseAllAsync,
+            documentsHost.ReplaceDock,
+            Control,
+            cancellationToken);
+        Control.SizeChanged += (_, _) =>
+            layoutHost.ApplyViewport(Control.Bounds.Width, Control.Bounds.Height);
         Control.LayoutUpdated += (_, _) => ApplyDockAutomationNames();
-        LayoutActions = BuildLayoutActions();
+        LayoutActions = layoutHost.Actions;
         DocumentActions = documentsHost.BuildActions(
-            layoutStatus,
+            layoutHost.Status,
             control => LastRequestedFocusTarget = control,
             FocusContext);
     }
@@ -363,11 +354,11 @@ internal sealed class WorkbenchDockHost
     internal Control DocumentActions { get; }
     internal ComboBox DocumentSwitcher => documentsHost.Switcher;
     internal Button OverviewAction => overviewAction;
-    internal IDocumentDock Documents => documents;
-    internal IRootDock Root => root;
+    internal IDocumentDock Documents => layoutHost.Documents;
+    internal IRootDock Root => layoutHost.Root;
     internal IFactory Factory => factory;
-    internal string? LayoutStatusText => layoutStatus.Text;
-    internal bool IsCompactViewport { get; private set; }
+    internal string? LayoutStatusText => layoutHost.Status.Text;
+    internal bool IsCompactViewport => layoutHost.IsCompactViewport;
     internal Control? LastRequestedFocusTarget { get; private set; }
     internal int SourceDocumentCount => documentsHost.SourceCount;
     internal int VirtualDocumentCount => documentsHost.VirtualCount;
@@ -386,84 +377,12 @@ internal sealed class WorkbenchDockHost
     internal ValueTask<bool> SaveActiveSourceDocumentAsync() => documentsHost.SaveActiveAsync();
     internal ValueTask CloseActiveSourceDocumentAsync() => documentsHost.CloseActiveAsync();
 
-    internal async ValueTask RestoreLayoutAsync()
-    {
-        WorkbenchLayoutLoadResult stored = await layoutService.LoadAsync(cancellationToken);
-        if (stored.State is WorkbenchLayoutLoadState.Missing)
-        {
-            layoutStatus.Text = "Default layout";
-            layoutStatus.IsVisible = false;
-            return;
-        }
+    internal ValueTask RestoreLayoutAsync() => layoutHost.RestoreAsync();
 
-        if (stored.Layout is null)
-        {
-            layoutStatus.Text = $"Saved layout rejected · {stored.Error ?? "invalid private state"}";
-            layoutStatus.IsVisible = true;
-            return;
-        }
+    internal ValueTask SaveLayoutAsync(CancellationToken saveCancellationToken = default) =>
+        layoutHost.SaveAsync(saveCancellationToken);
 
-        WorkbenchDockLayoutRestoreResult restored = layoutCodec.Restore(
-            stored.Layout.Value,
-            durableContexts,
-            WorkingArea());
-        if (restored.Layout is null || restored.Documents is null || restored.Overview is null)
-        {
-            layoutStatus.Text = $"Saved layout rejected · {restored.Error ?? "invalid Dock graph"}";
-            layoutStatus.IsVisible = true;
-            return;
-        }
-
-        ApplyLayout(restored.Layout, restored.Documents, restored.Overview);
-        layoutStatus.Text = "Layout restored";
-        layoutStatus.IsVisible = true;
-    }
-
-    internal async ValueTask SaveLayoutAsync(
-        CancellationToken saveCancellationToken = default)
-    {
-        WorkbenchDockLayoutCaptureResult captured = layoutCodec.Capture(root);
-        if (captured.Payload is null)
-        {
-            layoutStatus.Text = $"Layout not saved · {captured.Error ?? "invalid Dock graph"}";
-            layoutStatus.IsVisible = true;
-            return;
-        }
-
-        WorkbenchLayoutWriteResult result = await layoutService.SaveAsync(
-            new(captured.Payload),
-            saveCancellationToken);
-        layoutStatus.Text = result.Succeeded
-            ? "Layout saved"
-            : $"Layout not saved · {result.Error ?? "private state unavailable"}";
-        layoutStatus.IsVisible = true;
-    }
-
-    internal async ValueTask ResetLayoutAsync()
-    {
-        if (!await documentsHost.CloseAllAsync(WorkbenchDocumentTransition.Close))
-        {
-            layoutStatus.Text = "Layout reset cancelled · unsaved source changes kept";
-            return;
-        }
-
-        WorkbenchLayoutWriteResult reset = await layoutService.ResetAsync(cancellationToken);
-        WorkbenchDockLayoutRestoreResult restored = layoutCodec.Restore(
-            defaultLayoutPayload,
-            durableContexts,
-            WorkingArea());
-        if (restored.Layout is null || restored.Documents is null || restored.Overview is null)
-        {
-            layoutStatus.Text = $"Layout reset failed · {restored.Error ?? "invalid default layout"}";
-            return;
-        }
-
-        ApplyLayout(restored.Layout, restored.Documents, restored.Overview);
-        layoutStatus.Text = reset.Succeeded
-            ? "Default layout restored"
-            : $"Default active; stored layout not removed · {reset.Error}";
-        layoutStatus.IsVisible = true;
-    }
+    internal ValueTask ResetLayoutAsync() => layoutHost.ResetAsync();
 
     internal async ValueTask RefreshAsync()
     {
@@ -768,190 +687,8 @@ internal sealed class WorkbenchDockHost
             new ScrollViewer { Content = content, Padding = new Thickness(18) });
     }
 
-    private Control BuildLayoutActions()
-    {
-        Button save = new() { Content = "↓" };
-        AutomationProperties.SetName(save, "Save current panel layout");
-        ToolTip.SetTip(save, "Save panel layout");
-        save.Classes.Add("icon");
-        save.Click += async (_, _) => await SaveLayoutAsync(cancellationToken);
-        Button reset = new() { Content = "↺" };
-        AutomationProperties.SetName(reset, "Reset panels to the default layout");
-        ToolTip.SetTip(reset, "Reset panel layout");
-        reset.Classes.Add("icon");
-        reset.Click += async (_, _) => await ResetLayoutAsync();
-        AutomationProperties.SetName(layoutStatus, "Workbench layout status");
-        layoutStatus.Text = "Default layout";
-        layoutStatus.IsVisible = false;
-        return new StackPanel
-        {
-            Orientation = AvaloniaOrientation.Horizontal,
-            Spacing = 6,
-            VerticalAlignment = VerticalAlignment.Center,
-            Children = { save, reset },
-        };
-    }
-
-    private static void EnsureDefaultTools(
-        IToolDock left,
-        IToolDock right,
-        IToolDock bottom,
-        string stage)
-    {
-        if (left.VisibleDockables?.Count != 2 || right.VisibleDockables?.Count != 2 ||
-            bottom.VisibleDockables?.Count != 3)
-        {
-            throw new InvalidOperationException($"Dock lost the default tool panels {stage}.");
-        }
-    }
-
-    private void ApplyLayout(
-        IRootDock restored,
-        IDocumentDock restoredDocuments,
-        IDockable restoredOverview)
-    {
-        root.ExitWindows?.Execute(null);
-        // Dock's retired deferred presenters otherwise keep direct Control content parented,
-        // which prevents the replacement graph from materializing the same durable controls.
-        foreach (Control context in durableContexts.Values)
-        {
-            WorkbenchDockContent.ReleaseFromPresenter(context);
-        }
-
-        // Restore builds the replacement Dock graph while the durable controls can
-        // still belong to presenters in the retiring graph. Re-apply the rendered
-        // content contract after releasing those presenters so complex controls
-        // (notably Conversation) are materialized by the replacement graph.
-        foreach ((string id, Control context) in durableContexts)
-        {
-            if (FindDockable(restored, id) is { } dockable)
-            {
-                WorkbenchDockContent.Attach(dockable, context);
-            }
-        }
-
-        Control.Layout = null;
-        root = restored;
-        documents = restoredDocuments;
-        overviewDocument = restoredOverview;
-        leftTools = FindDockable<IToolDock>(root, WorkbenchDockIds.Left);
-        rightTools = FindDockable<IToolDock>(root, WorkbenchDockIds.Right);
-        bottomTools = FindDockable<IToolDock>(root, WorkbenchDockIds.Bottom);
-        SetDockContentVisibility(leftTools, visible: true);
-        SetDockContentVisibility(rightTools, visible: true);
-        SetDockContentVisibility(bottomTools, visible: true);
-        adaptiveLeftCollapsed = false;
-        adaptiveRightCollapsed = false;
-        adaptiveBottomCollapsed = false;
-        factory.InitLayout(root);
-        Control.Layout = root;
-        root.ShowWindows?.Execute(null);
-        IDockable restoredActiveDocument = documents.ActiveDockable ?? overviewDocument;
-        factory.SetActiveDockable(restoredActiveDocument);
-        documentsHost.ReplaceDock(documents, overviewDocument);
-        viewportInitialized = true;
-        ApplyViewport(Control.Bounds.Width, Control.Bounds.Height);
-    }
-
-    internal void ApplyViewport(double width, double height)
-    {
-        bool compact = width > 0 && width < 1024;
-        bool narrow = width > 0 && width < 840;
-        // This receives the inner workbench height, after the shell header, footer, and
-        // document toolbar. Keep the primary conversation visible at a normal 800px
-        // window and collapse it only near the minimum-height layout.
-        bool shortViewport = height > 0 && height < 560;
-        IsCompactViewport = compact || shortViewport;
-        if (!viewportInitialized && width > 0 && height > 0)
-        {
-            leftTools.IsExpanded = !narrow;
-            rightTools.IsExpanded = !compact;
-            bottomTools.IsExpanded = !shortViewport;
-            if (narrow)
-            {
-                leftTools.Proportion = 0.06;
-                leftTools.CollapsedProportion = 0.06;
-                leftTools.MaxWidth = 76;
-                SetDockContentVisibility(leftTools, visible: false);
-            }
-            if (compact)
-            {
-                rightTools.Proportion = 0.06;
-                rightTools.CollapsedProportion = 0.06;
-                rightTools.MaxWidth = 76;
-                SetDockContentVisibility(rightTools, visible: false);
-            }
-            if (shortViewport)
-            {
-                bottomTools.Proportion = 0.08;
-                bottomTools.CollapsedProportion = 0.08;
-                bottomTools.MaxHeight = 84;
-                SetDockContentVisibility(bottomTools, visible: false);
-            }
-            adaptiveLeftCollapsed = narrow;
-            adaptiveRightCollapsed = compact;
-            adaptiveBottomCollapsed = shortViewport;
-            viewportInitialized = true;
-            return;
-        }
-
-        SetAdaptiveExpansion(
-            leftTools, narrow, 0.06, constrainWidth: true,
-            ref adaptiveLeftCollapsed, ref expandedLeftProportion);
-        SetAdaptiveExpansion(
-            rightTools, compact, 0.06, constrainWidth: true,
-            ref adaptiveRightCollapsed, ref expandedRightProportion);
-        SetAdaptiveExpansion(
-            bottomTools, shortViewport, 0.08, constrainWidth: false,
-            ref adaptiveBottomCollapsed, ref expandedBottomProportion);
-    }
-
-    private static void SetAdaptiveExpansion(
-        IToolDock dock,
-        bool collapse,
-        double collapsedProportion,
-        bool constrainWidth,
-        ref bool adaptivelyCollapsed,
-        ref double expandedProportion)
-    {
-        if (collapse && !adaptivelyCollapsed)
-        {
-            if (double.IsFinite(dock.Proportion) && dock.Proportion > 0)
-            {
-                expandedProportion = dock.Proportion;
-            }
-            dock.Proportion = collapsedProportion;
-            dock.CollapsedProportion = collapsedProportion;
-            if (constrainWidth)
-            {
-                dock.MaxWidth = 76;
-            }
-            else
-            {
-                dock.MaxHeight = 84;
-            }
-            SetDockContentVisibility(dock, visible: false);
-            dock.IsExpanded = false;
-            adaptivelyCollapsed = true;
-        }
-        else if (!collapse && adaptivelyCollapsed)
-        {
-            dock.Proportion = expandedProportion;
-            dock.CollapsedProportion = expandedProportion;
-            dock.MaxWidth = double.PositiveInfinity;
-            dock.MaxHeight = double.PositiveInfinity;
-            SetDockContentVisibility(dock, visible: true);
-            dock.IsExpanded = true;
-            adaptivelyCollapsed = false;
-        }
-    }
-
-    private PixelRect WorkingArea()
-    {
-        TopLevel? topLevel = TopLevel.GetTopLevel(Control);
-        return topLevel?.Screens?.ScreenFromVisual(Control)?.WorkingArea ??
-               new PixelRect(0, 0, 1920, 1080);
-    }
+    internal void ApplyViewport(double width, double height) =>
+        layoutHost.ApplyViewport(width, height);
 
     internal ValueTask RefreshFilesAsync() => filesTool.RefreshAsync();
     private Control BuildSourceControlTool()
@@ -1186,7 +923,7 @@ internal sealed class WorkbenchDockHost
 
     private bool ActivateTool(string id)
     {
-        IDockable? tool = FindDockable(root, id);
+        IDockable? tool = layoutHost.Find(id);
         bool visibleInOwner = tool?.Owner is IDock visibleOwner &&
                               visibleOwner.VisibleDockables?.Contains(tool) is true;
         if (!visibleInOwner && factory.RestoreDockable(id) is { } restored)
@@ -1201,78 +938,21 @@ internal sealed class WorkbenchDockHost
 
         visibleInOwner = tool.Owner is IDock restoredOwner &&
                          restoredOwner.VisibleDockables?.Contains(tool) is true;
-        if (!visibleInOwner && DefaultToolDock(id) is { } defaultOwner)
+        if (!visibleInOwner && layoutHost.DefaultToolDock(id) is { } defaultOwner)
         {
-            RemoveFromRootSpecialCollections(tool);
+            layoutHost.RemoveFromSpecialCollections(tool);
             factory.AddDockable(defaultOwner, tool);
         }
 
         if (tool.Owner is IToolDock owner)
         {
-            RestoreAdaptiveProportion(owner);
+            layoutHost.RestoreAdaptiveProportion(owner);
             owner.IsExpanded = true;
         }
 
         factory.SetActiveDockable(tool);
         FocusContext(tool);
         return true;
-    }
-
-    private IToolDock? DefaultToolDock(string id) => id switch
-    {
-        WorkbenchDockIds.NavigationTool or WorkbenchDockIds.FilesTool => leftTools,
-        WorkbenchDockIds.ContextTool or WorkbenchDockIds.GitTool => rightTools,
-        WorkbenchDockIds.ConversationTool or WorkbenchDockIds.RunOutputTool or
-            WorkbenchDockIds.ProblemsTool => bottomTools,
-        _ => null,
-    };
-
-    private void RemoveFromRootSpecialCollections(IDockable tool)
-    {
-        root.HiddenDockables?.Remove(tool);
-        root.LeftPinnedDockables?.Remove(tool);
-        root.RightPinnedDockables?.Remove(tool);
-        root.TopPinnedDockables?.Remove(tool);
-        root.BottomPinnedDockables?.Remove(tool);
-    }
-
-    private void RestoreAdaptiveProportion(IToolDock owner)
-    {
-        if (ReferenceEquals(owner, leftTools) && adaptiveLeftCollapsed)
-        {
-            owner.Proportion = expandedLeftProportion;
-            owner.CollapsedProportion = expandedLeftProportion;
-            owner.MaxWidth = double.PositiveInfinity;
-            SetDockContentVisibility(owner, visible: true);
-            adaptiveLeftCollapsed = false;
-        }
-        else if (ReferenceEquals(owner, rightTools) && adaptiveRightCollapsed)
-        {
-            owner.Proportion = expandedRightProportion;
-            owner.CollapsedProportion = expandedRightProportion;
-            owner.MaxWidth = double.PositiveInfinity;
-            SetDockContentVisibility(owner, visible: true);
-            adaptiveRightCollapsed = false;
-        }
-        else if (ReferenceEquals(owner, bottomTools) && adaptiveBottomCollapsed)
-        {
-            owner.Proportion = expandedBottomProportion;
-            owner.CollapsedProportion = expandedBottomProportion;
-            owner.MaxHeight = double.PositiveInfinity;
-            SetDockContentVisibility(owner, visible: true);
-            adaptiveBottomCollapsed = false;
-        }
-    }
-
-    private static void SetDockContentVisibility(IToolDock dock, bool visible)
-    {
-        foreach (IDockable item in dock.VisibleDockables ?? [])
-        {
-            if (item.Context is Control content)
-            {
-                content.IsVisible = visible;
-            }
-        }
     }
 
     private void ApplyDockAutomationNames()
@@ -1376,7 +1056,7 @@ internal sealed class WorkbenchDockHost
         focusRegionIndex = (focusRegionIndex + 1) % regions.Length;
         if (regions[focusRegionIndex] == WorkbenchDockIds.OverviewDocument)
         {
-            IDockable target = documents.ActiveDockable ?? overviewDocument;
+            IDockable target = layoutHost.Documents.ActiveDockable ?? layoutHost.Overview;
             factory.SetActiveDockable(target);
             FocusContext(target);
             return true;
@@ -1402,60 +1082,6 @@ internal sealed class WorkbenchDockHost
         {
             Dispatcher.UIThread.Post(() => target.Focus());
         }
-    }
-
-    private static T FindDockable<T>(IDockable root, string id)
-        where T : class, IDockable =>
-        FindDockable(root, id) as T ?? throw new InvalidOperationException(
-            $"The Dock graph is missing required element '{id}'.");
-
-    private static IDockable? FindDockable(IDockable root, string id)
-    {
-        HashSet<IDockable> visited = new(ReferenceEqualityComparer.Instance);
-        Stack<IDockable> pending = new();
-        pending.Push(root);
-        while (pending.TryPop(out IDockable? current))
-        {
-            if (!visited.Add(current))
-            {
-                continue;
-            }
-
-            if (current.Id == id)
-            {
-                return current;
-            }
-
-            if (current is IDock dock)
-            {
-                foreach (IDockable child in dock.VisibleDockables ?? [])
-                {
-                    pending.Push(child);
-                }
-            }
-
-            if (current is IRootDock rootDock)
-            {
-                foreach (IDockable child in (rootDock.HiddenDockables ?? [])
-                             .Concat(rootDock.LeftPinnedDockables ?? [])
-                             .Concat(rootDock.RightPinnedDockables ?? [])
-                             .Concat(rootDock.TopPinnedDockables ?? [])
-                             .Concat(rootDock.BottomPinnedDockables ?? []))
-                {
-                    pending.Push(child);
-                }
-
-                foreach (IDockWindow window in rootDock.Windows ?? [])
-                {
-                    if (window.Layout is not null)
-                    {
-                        pending.Push(window.Layout);
-                    }
-                }
-            }
-        }
-
-        return null;
     }
 
     private async ValueTask RunAsync(Func<ValueTask> operation)
