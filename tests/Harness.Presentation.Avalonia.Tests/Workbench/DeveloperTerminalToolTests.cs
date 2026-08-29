@@ -63,11 +63,40 @@ public sealed partial class PresentationControlTests
                 TrustedShell(), new(), developerTerminal: new TerminalService());
             Window window = new() { Content = workbench.Control };
             window.Show();
+            Dispatcher.UIThread.RunJobs();
 
             Assert.True(workbench.ShowTerminal());
             Assert.NotNull(Find<Dock.Model.Controls.ITool>(
                 workbench.Root,
                 WorkbenchDockIds.TerminalTool));
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Terminal_restores_only_expired_lifecycle_metadata_after_restart()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            TerminalService terminal = new();
+            terminal.SeedInterrupted();
+            SensitiveGuard guard = new();
+            DeveloperTerminalTool tool = new(
+                terminal, TrustedShell, CancellationToken.None, guard);
+            Window window = new() { Content = tool.Content, Width = 900, Height = 500 };
+            window.Show();
+
+            tool.Update(TrustedShell());
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.NotNull(tool.ActiveTerminal);
+            Assert.Contains("expired", tool.Metadata.Text, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal(1, tool.ActiveTerminal!.Search("No process was restored"));
+            Assert.False(tool.StopButton.IsEnabled);
+            Assert.False(guard.IsSensitive);
+            Assert.Equal(0, terminal.StartCalls);
             window.Close();
         }, CancellationToken.None);
     }
@@ -80,11 +109,30 @@ public sealed partial class PresentationControlTests
         private DeveloperTerminalSessionView? current;
 
         public byte[] Written { get; private set; } = [];
+        public int StartCalls { get; private set; }
+
+        public void SeedInterrupted()
+        {
+            current = new(
+                new("terminal-before-restart"), new("workspace-1"),
+                new(new("workspace-1"), null, new("main"),
+                    WorkbenchWorkspaceScope.OriginalWorkspace,
+                    "Original workspace · user-editable source context"),
+                new("."), new("bash"),
+                new("Inherited host environment with locked terminal policy"),
+                new("Transient · content expired after restart"), new(100, 30),
+                DeveloperTerminalSessionState.Interrupted,
+                DateTimeOffset.Parse("2026-08-29T17:00:00Z"),
+                DateTimeOffset.Parse("2026-08-29T18:00:00Z"), null, true,
+                "application_restarted",
+                "Harness.NET restarted before this terminal session completed.");
+        }
 
         public ValueTask<DeveloperTerminalStartResult> StartAsync(
             DeveloperTerminalStartRequest request,
             CancellationToken cancellationToken = default)
         {
+            StartCalls++;
             current = new(
                 new("terminal-1"),
                 request.Workspace.WorkspaceId,

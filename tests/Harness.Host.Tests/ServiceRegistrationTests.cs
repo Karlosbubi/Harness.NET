@@ -44,6 +44,7 @@ public sealed class ServiceRegistrationTests
         [
             "Harness.BusinessLogic.Terminal.IDeveloperTerminalService",
             "Harness.DataAccess.Terminal.IDeveloperTerminalConnectionFactory",
+            "Harness.DataAccess.Terminal.IDeveloperTerminalSessionStore",
         ],
         StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> ReviewedFeatureRegistrations = new HashSet<string>(
@@ -85,7 +86,7 @@ public sealed class ServiceRegistrationTests
                 {
                     ("Infrastructure", 14),
                     ("Integrations", 31),
-                    ("Workspace", 87),
+                    ("Workspace", 88),
                     ("Goals", 16),
                     ("Presentation", 9),
                 }),

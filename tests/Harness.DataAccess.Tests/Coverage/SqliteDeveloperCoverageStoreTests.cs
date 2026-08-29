@@ -27,7 +27,7 @@ public sealed class SqliteDeveloperCoverageStoreTests : IDisposable
         StoredCoverageImport goal = Assert.IsType<StoredCoverageImport>(
             await store.GetLatestAsync(new("workspace-a"), new("goal-a")));
 
-        Assert.Equal(39, initialized.SchemaVersion.Value);
+        Assert.Equal(40, initialized.SchemaVersion.Value);
         Assert.Equal("original-new", original.Id.Value);
         Assert.Equal("src/Example.cs", Assert.Single(original.Lines).Path.Value);
         Assert.Equal(7, original.Lines[0].Hits.Value);

@@ -14,7 +14,8 @@ public sealed class DeveloperTerminalServiceTests
     {
         FakeConnection connection = new();
         FakeFactory factory = new(connection);
-        await using DeveloperTerminalService service = Service(factory);
+        FakeSessionStore store = new();
+        await using DeveloperTerminalService service = Service(factory, store);
 
         DeveloperTerminalStartResult started = await service.StartAsync(new(
             Workspace(),
@@ -41,6 +42,8 @@ public sealed class DeveloperTerminalServiceTests
         DeveloperTerminalSessionResult stopped = await service.StopAsync(session.Id);
         Assert.Equal(DeveloperTerminalSessionState.Stopped, stopped.Session!.State);
         Assert.True(connection.StopCalled);
+        Assert.Equal(StoredTerminalSessionState.Stopped,
+            store.Sessions.Single().State);
     }
 
     [Fact]
@@ -55,6 +58,7 @@ public sealed class DeveloperTerminalServiceTests
                 "workspace_not_trusted",
                 "Trust the workspace before inspecting its content.")),
             factory,
+            new FakeSessionStore(),
             TimeProvider.System,
             NullLogger<DeveloperTerminalService>.Instance);
 
@@ -90,7 +94,49 @@ public sealed class DeveloperTerminalServiceTests
         Assert.NotNull((await service.StartAsync(new(Workspace(), new(80, 24)))).Session);
     }
 
-    private static DeveloperTerminalService Service(IDeveloperTerminalConnectionFactory factory) =>
+    [Fact]
+    public async Task Persistence_failure_prevents_an_untracked_shell_from_starting()
+    {
+        FakeFactory factory = new(new());
+        FakeSessionStore store = new() { FailStart = true };
+        await using DeveloperTerminalService service = Service(factory, store);
+
+        DeveloperTerminalStartResult result = await service.StartAsync(new(
+            Workspace(), new(80, 24)));
+
+        Assert.Null(result.Session);
+        Assert.Equal("terminal_persistence_failed", result.ErrorCode);
+        Assert.Null(factory.StartRequest);
+    }
+
+    [Fact]
+    public async Task Restart_reconciles_saved_running_metadata_without_starting_a_shell()
+    {
+        DateTimeOffset started = DateTimeOffset.UtcNow.AddMinutes(-5);
+        FakeSessionStore store = new();
+        store.Seed(new(
+            new("saved-terminal"), new("workspace"), null,
+            StoredTerminalSourceScope.OriginalWorkspace, new("main"),
+            new("Original workspace · user-editable source context"), new("."), new("bash"),
+            StoredTerminalEnvironmentProfile.InheritedLocked,
+            StoredTerminalContentPolicy.Transient, new(100, 30),
+            StoredTerminalSessionState.Running, started, null, null, null, null));
+        FakeFactory factory = new(new());
+        await using DeveloperTerminalService service = Service(factory, store);
+
+        DeveloperTerminalSessionView restored = Assert.Single(
+            (await service.ListAsync(Workspace())).Sessions);
+
+        Assert.Equal(DeveloperTerminalSessionState.Interrupted, restored.State);
+        Assert.Contains("expired", restored.ContentPolicy.Value, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("application_restarted", restored.ErrorCode);
+        Assert.Equal(0, factory.ResolveCalls);
+        Assert.Equal(1, store.InterruptCalls);
+    }
+
+    private static DeveloperTerminalService Service(
+        IDeveloperTerminalConnectionFactory factory,
+        FakeSessionStore? store = null) =>
         new(
             new FakeResolver(new(
                 new(new("workspace"), null, new("main"),
@@ -100,10 +146,109 @@ public sealed class DeveloperTerminalServiceTests
                 null,
                 null)),
             factory,
+            store ?? new FakeSessionStore(),
             TimeProvider.System,
             NullLogger<DeveloperTerminalService>.Instance);
 
     private static WorkbenchWorkspaceRequest Workspace() => new(new("workspace"), null);
+
+    private sealed class FakeSessionStore : IDeveloperTerminalSessionStore
+    {
+        private readonly Dictionary<string, StoredTerminalSession> sessions =
+            new(StringComparer.Ordinal);
+
+        public bool FailStart { get; init; }
+        public int InterruptCalls { get; private set; }
+        public IReadOnlyCollection<StoredTerminalSession> Sessions => sessions.Values;
+
+        public void Seed(StoredTerminalSession session) => sessions.Add(session.Id.Value, session);
+
+        public ValueTask<StoredTerminalSession> StartAsync(
+            StoredTerminalSessionStart session,
+            CancellationToken cancellationToken = default)
+        {
+            if (FailStart) throw new InvalidOperationException("simulated persistence failure");
+            StoredTerminalSession stored = new(
+                session.Id, session.WorkspaceId, session.GoalId, session.SourceScope,
+                session.SourceBranch, session.SourceDescription, session.WorkingDirectory,
+                session.Shell, session.EnvironmentProfile, session.ContentPolicy,
+                session.Dimensions, StoredTerminalSessionState.Running, session.StartedAt,
+                null, null, null, null);
+            sessions.Add(session.Id.Value, stored);
+            return ValueTask.FromResult(stored);
+        }
+
+        public ValueTask CompleteAsync(
+            StoredTerminalSessionCompletion completion,
+            CancellationToken cancellationToken = default)
+        {
+            StoredTerminalSession current = sessions[completion.Id.Value];
+            sessions[completion.Id.Value] = current with
+            {
+                State = completion.State,
+                CompletedAt = completion.CompletedAt,
+                ExitCode = completion.ExitCode,
+                ErrorCode = completion.ErrorCode,
+                Error = completion.Error,
+            };
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask UpdateDimensionsAsync(
+            StoredTerminalSessionId sessionId,
+            StoredTerminalDimensions dimensions,
+            CancellationToken cancellationToken = default)
+        {
+            sessions[sessionId.Value] = sessions[sessionId.Value] with
+            {
+                Dimensions = dimensions,
+            };
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask<StoredTerminalSession?> GetAsync(
+            StoredTerminalSessionId sessionId,
+            CancellationToken cancellationToken = default) => ValueTask.FromResult(
+                sessions.GetValueOrDefault(sessionId.Value));
+
+        public ValueTask<IReadOnlyList<StoredTerminalSession>> ListAsync(
+            StoredTerminalWorkspaceId workspaceId,
+            StoredTerminalGoalId? goalId,
+            int maximumResults,
+            CancellationToken cancellationToken = default) => ValueTask.FromResult<
+                IReadOnlyList<StoredTerminalSession>>(sessions.Values
+                    .Where(item => item.WorkspaceId == workspaceId && item.GoalId == goalId)
+                    .Take(maximumResults)
+                    .ToArray());
+
+        public ValueTask<int> InterruptRunningAsync(
+            DateTimeOffset completedAt,
+            DateTimeOffset startedBefore,
+            CancellationToken cancellationToken = default)
+        {
+            InterruptCalls++;
+            int changed = 0;
+            foreach ((string id, StoredTerminalSession session) in sessions.ToArray())
+            {
+                if (session.State != StoredTerminalSessionState.Running ||
+                    session.StartedAt >= startedBefore)
+                {
+                    continue;
+                }
+
+                sessions[id] = session with
+                {
+                    State = StoredTerminalSessionState.Interrupted,
+                    CompletedAt = completedAt,
+                    ErrorCode = "application_restarted",
+                    Error = "Harness.NET restarted before this terminal session completed.",
+                };
+                changed++;
+            }
+
+            return ValueTask.FromResult(changed);
+        }
+    }
 
     private sealed class FakeResolver(WorkbenchWorkspaceResolution resolution)
         : IWorkbenchWorkspaceContextResolver

@@ -108,6 +108,8 @@ internal static class WorkspaceServiceRegistration
             DeveloperDebuggerService>();
         services.AddSingleton<IDeveloperTerminalConnectionFactory,
             PortaDeveloperTerminalConnectionFactory>();
+        services.AddSingleton<IDeveloperTerminalSessionStore,
+            SqliteDeveloperTerminalSessionStore>();
         services.AddSingleton<IDeveloperTerminalService,
             DeveloperTerminalService>();
         services.AddSingleton<IGoalService, GoalService>();

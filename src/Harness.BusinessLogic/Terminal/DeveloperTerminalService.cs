@@ -6,9 +6,10 @@ using Microsoft.Extensions.Logging;
 
 namespace Harness.BusinessLogic.Terminal;
 
-internal sealed class DeveloperTerminalService(
+internal sealed partial class DeveloperTerminalService(
     IWorkbenchWorkspaceContextResolver contextResolver,
     IDeveloperTerminalConnectionFactory connectionFactory,
+    IDeveloperTerminalSessionStore sessionStore,
     TimeProvider timeProvider,
     ILogger<DeveloperTerminalService> logger) : IDeveloperTerminalService, IAsyncDisposable
 {
@@ -44,6 +45,8 @@ internal sealed class DeveloperTerminalService(
                 return StartFailure("terminal_service_stopped", "The terminal service is stopping.");
             }
 
+            await EnsureReconciledAsync(cancellationToken);
+
             if (sessions.Values.Count(session => session.View.State ==
                     DeveloperTerminalSessionState.Running) >= MaximumLiveSessions)
             {
@@ -62,19 +65,10 @@ internal sealed class DeveloperTerminalService(
             }
 
             StoredTerminalShell shell;
-            IDeveloperTerminalConnection connection;
             DeveloperTerminalSessionId id = new(Guid.NewGuid().ToString("N"));
             try
             {
                 shell = await connectionFactory.ResolveDefaultShellAsync(cancellationToken);
-                connection = await connectionFactory.StartAsync(
-                    new(
-                        new(id.Value),
-                        shell,
-                        new(resolution.RootPath),
-                        TerminalEnvironment(),
-                        new(request.Dimensions.Columns, request.Dimensions.Rows)),
-                    cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -103,10 +97,70 @@ internal sealed class DeveloperTerminalService(
                 IsTrusted: true,
                 ErrorCode: null,
                 Error: null);
+
+            try
+            {
+                await PersistStartAsync(view, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                logger.LogWarning(exception, "Developer terminal metadata creation failed");
+                return StartFailure("terminal_persistence_failed",
+                    "The terminal lifecycle could not be recorded, so no shell was started.");
+            }
+
+            IDeveloperTerminalConnection connection;
+            try
+            {
+                connection = await connectionFactory.StartAsync(
+                    new(
+                        new(id.Value),
+                        shell,
+                        new(resolution.RootPath),
+                        TerminalEnvironment(),
+                        new(request.Dimensions.Columns, request.Dimensions.Rows)),
+                    cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                await PersistCompletionSafelyAsync(view with
+                {
+                    State = DeveloperTerminalSessionState.Failed,
+                    CompletedAt = timeProvider.GetUtcNow(),
+                    ErrorCode = "terminal_start_cancelled",
+                    Error = "Terminal creation was cancelled before the shell started.",
+                });
+                throw;
+            }
+            catch (Exception exception)
+            {
+                logger.LogWarning(exception, "Developer terminal creation failed");
+                await PersistCompletionSafelyAsync(view with
+                {
+                    State = DeveloperTerminalSessionState.Failed,
+                    CompletedAt = timeProvider.GetUtcNow(),
+                    ErrorCode = "terminal_start_failed",
+                    Error = "The interactive shell could not be started.",
+                });
+                return StartFailure("terminal_start_failed",
+                    "The interactive shell could not be started.");
+            }
+
             ActiveSession active = new(connection, view);
             if (!sessions.TryAdd(id.Value, active))
             {
                 await connection.DisposeAsync();
+                await PersistCompletionSafelyAsync(view with
+                {
+                    State = DeveloperTerminalSessionState.Failed,
+                    CompletedAt = timeProvider.GetUtcNow(),
+                    ErrorCode = "terminal_identity_conflict",
+                    Error = "The terminal session identity could not be reserved.",
+                });
                 return StartFailure("terminal_identity_conflict",
                     "The terminal session identity could not be reserved.");
             }
@@ -120,29 +174,45 @@ internal sealed class DeveloperTerminalService(
         }
     }
 
-    public ValueTask<DeveloperTerminalListResult> ListAsync(
+    public async ValueTask<DeveloperTerminalListResult> ListAsync(
         WorkbenchWorkspaceRequest request,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        cancellationToken.ThrowIfCancellationRequested();
-        DeveloperTerminalSessionView[] listed = sessions.Values
-            .Select(session => session.View)
-            .Where(session => session.WorkspaceId == request.WorkspaceId &&
-                              session.SourceContext.GoalId == request.GoalId)
-            .OrderByDescending(session => session.StartedAt)
-            .ToArray();
-        return ValueTask.FromResult(new DeveloperTerminalListResult(listed));
+        await EnsureReconciledAsync(cancellationToken);
+        IReadOnlyList<StoredTerminalSession> stored = await sessionStore.ListAsync(
+            new(request.WorkspaceId.Value),
+            request.GoalId is null ? null : new(request.GoalId.Value),
+            20,
+            cancellationToken);
+        Dictionary<string, DeveloperTerminalSessionView> listed = stored
+            .Select(Map)
+            .ToDictionary(item => item.Id.Value, StringComparer.Ordinal);
+        foreach (DeveloperTerminalSessionView live in sessions.Values.Select(item => item.View)
+                     .Where(item => item.WorkspaceId == request.WorkspaceId &&
+                                    item.SourceContext.GoalId == request.GoalId))
+        {
+            listed[live.Id.Value] = live;
+        }
+
+        return new(listed.Values.OrderByDescending(item => item.StartedAt).ToArray());
     }
 
-    public ValueTask<DeveloperTerminalSessionResult> GetAsync(
+    public async ValueTask<DeveloperTerminalSessionResult> GetAsync(
         DeveloperTerminalSessionId sessionId,
         CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        return ValueTask.FromResult(sessions.TryGetValue(sessionId.Value, out ActiveSession? active)
-            ? new DeveloperTerminalSessionResult(active.View, null, null)
-            : SessionFailure("terminal_not_found", "The terminal session is unavailable."));
+        await EnsureReconciledAsync(cancellationToken);
+        if (sessions.TryGetValue(sessionId.Value, out ActiveSession? active))
+        {
+            return new(active.View, null, null);
+        }
+
+        StoredTerminalSession? stored = await sessionStore.GetAsync(
+            new(sessionId.Value), cancellationToken);
+        return stored is null
+            ? SessionFailure("terminal_not_found", "The terminal session is unavailable.")
+            : new(Map(stored), null, null);
     }
 
     public async ValueTask<DeveloperTerminalReadResult> ReadAsync(
@@ -234,8 +304,19 @@ internal sealed class DeveloperTerminalService(
             lock (running.Gate)
             {
                 running.View = running.View with { Dimensions = dimensions };
-                return new(running.View, null, null);
             }
+            try
+            {
+                await sessionStore.UpdateDimensionsAsync(
+                    new(sessionId.Value),
+                    new(dimensions.Columns, dimensions.Rows),
+                    cancellationToken);
+            }
+            catch (Exception exception)
+            {
+                logger.LogWarning(exception, "Developer terminal dimension metadata update failed");
+            }
+            return new(running.View, null, null);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -292,6 +373,7 @@ internal sealed class DeveloperTerminalService(
                     Error = "The terminal process tree could not be stopped.",
                 };
             }
+            await PersistCompletionSafelyAsync(active.View);
         }
 
         return new(active.View, null, null);
@@ -337,6 +419,7 @@ internal sealed class DeveloperTerminalService(
                     ExitCode = exit.ExitCode,
                 };
             }
+            await PersistCompletionSafelyAsync(active.View);
         }
         catch (Exception exception)
         {
@@ -351,6 +434,7 @@ internal sealed class DeveloperTerminalService(
                     Error = "The terminal lifecycle could not be observed.",
                 };
             }
+            await PersistCompletionSafelyAsync(active.View);
         }
     }
 

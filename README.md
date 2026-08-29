@@ -38,8 +38,9 @@ Delivered:
 - a dockable, trusted-workspace developer terminal backed by a real PTY, with multiple
   bounded sessions, Unicode input/output, live resize, scrollback, selection,
   copy/paste, search, detected links, explicit process-tree Stop, and visible source,
-  shell, environment, trust, and transient-content policy; it is deliberately absent
-  from agent tools and durable Run evidence;
+  shell, environment, trust, and transient-content policy; bounded lifecycle metadata
+  survives restart while processes, scrollback, environment values, and links do not;
+  it is deliberately absent from agent tools and durable Run evidence;
 - an editable Avalonia source editor with diagnostics, completion, quick info,
   signature help, semantic classification, occurrence highlighting, folding,
   outline, breadcrumbs, workspace-symbol search, parameter and inferred-type inlay

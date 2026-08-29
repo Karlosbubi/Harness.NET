@@ -240,7 +240,10 @@ requires clarification.
 - Run output shows typed Build/Test/Restore evidence and is not a terminal.
 - The developer terminal is a trusted-user PTY with bounded process-local content.
   Business Logic owns trust and lifecycle, Data Access owns the PTY/process tree, and
-  Presentation owns terminal emulation. Agents have no terminal read or input path.
+  Presentation owns terminal emulation. Durable records contain only bounded lifecycle
+  metadata; restart marks unfinished records interrupted and never restores a process,
+  scrollback, environment value, or detected link. Agents have no terminal read or
+  input path.
 - Visual verification requests one consented XDG Screenshot frame. Captures are
   bounded, goal-scoped, revocable, private, and withheld from remote models unless
   Settings explicitly enables disclosure. No video, background capture, or input

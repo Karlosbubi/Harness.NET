@@ -589,7 +589,7 @@ remote process output. See the
 
 ### 051 — developer terminal and structured tasks
 
-Status: `In progress — real developer PTY delivered; durable metadata and structured tasks open`
+Status: `In progress — durable developer PTY lifecycle delivered; structured tasks open`
 
 Dependencies: 015, 026, 029, 033, 037.
 
@@ -629,9 +629,13 @@ multi-session Avalonia terminal over a real PTY with input/output, Unicode, resi
 bounded scrollback, selection, copy/paste, search, transient detected links, exact
 source/trust/environment/persistence metadata, and complete owned process-tree Stop.
 Real Linux adapter evidence verifies resize, Unicode, and background-child cleanup.
-Terminal services remain absent from the agent catalog and factory. Durable safe
-session metadata, restart reconciliation, accessibility/publish acceptance, and the
-separate structured-task slice remain open.
+Terminal services remain absent from the agent catalog and factory. Schema 40 records
+at most 20 safe lifecycle entries per workspace/goal context, never terminal content,
+environment values, executable paths, or detected links. Startup cutoff reconciliation
+marks unfinished records interrupted exactly once; the terminal pane restores those
+records with an explicit expired-content notice and never resurrects a process. The
+remaining work is accessibility/publish acceptance and the separate structured-task
+slice.
 
 ### 052 — .NET project, Run, Test, and Debug experience
 

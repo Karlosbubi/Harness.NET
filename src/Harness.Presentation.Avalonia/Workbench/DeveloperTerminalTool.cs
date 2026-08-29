@@ -38,7 +38,9 @@ internal sealed partial class DeveloperTerminalTool
     private readonly TextBlock metadata = new() { TextWrapping = TextWrapping.Wrap };
     private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap };
     private readonly ContentControl terminalHost = new();
+    private readonly SemaphoreSlim restoreGate = new(1, 1);
     private ISensitiveDisplayLease? sensitiveDisplayLease;
+    private string? restorationContext;
 
     internal DeveloperTerminalTool(
         IDeveloperTerminalService? service,
@@ -79,6 +81,36 @@ internal sealed partial class DeveloperTerminalTool
         }
     }
 
+    internal void Update(AvaloniaShellState snapshot)
+    {
+        UpdateAvailability();
+        WorkspaceView? workspace = snapshot.Workspaces.Registered
+            .FirstOrDefault(item => item.IsActive);
+        GoalView? goal = snapshot.Goals.SelectedGoal;
+        string? goalId = goal is not null && goal.WorkspaceId == workspace?.Id
+            ? goal.Id.Value
+            : null;
+        string? nextContext = workspace is { IsTrusted: true }
+            ? $"{workspace.Id}\n{goalId ?? string.Empty}"
+            : null;
+        if (service is null || string.Equals(restorationContext, nextContext,
+                StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        restorationContext = nextContext;
+        if (nextContext is null)
+        {
+            return;
+        }
+
+        WorkbenchWorkspaceRequest request = new(new(workspace!.Id),
+            goalId is null ? null : new GoalId(goalId));
+        Dispatcher.UIThread.Post(async () =>
+            await RestoreMetadataAsync(request, nextContext));
+    }
+
     internal async ValueTask CreateAsync()
     {
         WorkspaceView? workspace = ActiveWorkspace();
@@ -93,7 +125,7 @@ internal sealed partial class DeveloperTerminalTool
         bool acquiredDisplay = false;
         try
         {
-            if (sessions.Count == 0 && sensitiveDisplayGuard is not null)
+            if (sensitiveDisplayLease is null && sensitiveDisplayGuard is not null)
             {
                 if (!sensitiveDisplayGuard.TryBeginSensitiveDisplay(
                         SensitiveDisplayKind.DeveloperTerminal,
@@ -120,7 +152,8 @@ internal sealed partial class DeveloperTerminalTool
                 return;
             }
 
-            PresentedSession presented = CreatePresentedSession(result.Session);
+            PresentedSession presented = CreatePresentedSession(result.Session,
+                hasSensitiveContent: true);
             sessions.Add(presented);
             RefreshSessionChoices(presented);
             presented.OutputLoop = ReadOutputAsync(presented);
@@ -133,8 +166,78 @@ internal sealed partial class DeveloperTerminalTool
         }
         finally
         {
-            if (acquiredDisplay && sessions.Count == 0) ReleaseSensitiveDisplay();
+            if (acquiredDisplay && sessions.All(item => !item.HasSensitiveContent))
+            {
+                ReleaseSensitiveDisplay();
+            }
             UpdateAvailability();
+        }
+    }
+
+    private async ValueTask RestoreMetadataAsync(
+        WorkbenchWorkspaceRequest request,
+        string expectedContext)
+    {
+        if (service is null)
+        {
+            return;
+        }
+
+        bool acquired = false;
+        try
+        {
+            await restoreGate.WaitAsync(applicationCancellation);
+            acquired = true;
+            if (!string.Equals(restorationContext, expectedContext, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            DeveloperTerminalListResult result = await service.ListAsync(
+                request, applicationCancellation);
+            if (!string.Equals(restorationContext, expectedContext, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            PresentedSession? newest = null;
+            foreach (DeveloperTerminalSessionView view in result.Sessions
+                         .OrderBy(item => item.StartedAt))
+            {
+                PresentedSession? existing = sessions.FirstOrDefault(item =>
+                    item.View.Id == view.Id);
+                if (existing is not null)
+                {
+                    if (!existing.HasSensitiveContent) existing.View = view;
+                    newest = existing;
+                    continue;
+                }
+
+                PresentedSession restored = CreatePresentedSession(view,
+                    hasSensitiveContent: false);
+                byte[] notice = Encoding.UTF8.GetBytes(
+                    "Terminal content was not persisted. No process was restored.\r\n");
+                restored.Model.Feed(notice, notice.Length);
+                sessions.Add(restored);
+                newest = restored;
+            }
+
+            if (newest is not null)
+            {
+                RefreshSessionChoices(newest);
+                status.Text = "Restored terminal lifecycle metadata; content and processes were not restored.";
+            }
+        }
+        catch (OperationCanceledException) when (applicationCancellation.IsCancellationRequested)
+        {
+        }
+        catch (Exception)
+        {
+            status.Text = "Saved terminal lifecycle metadata is temporarily unavailable.";
+        }
+        finally
+        {
+            if (acquired) restoreGate.Release();
         }
     }
 
@@ -234,7 +337,9 @@ internal sealed partial class DeveloperTerminalTool
         return root;
     }
 
-    private PresentedSession CreatePresentedSession(DeveloperTerminalSessionView view)
+    private PresentedSession CreatePresentedSession(
+        DeveloperTerminalSessionView view,
+        bool hasSensitiveContent)
     {
         TerminalControlModel model = new(new TerminalOptions
         {
@@ -256,7 +361,8 @@ internal sealed partial class DeveloperTerminalTool
             view,
             model,
             control,
-            CancellationTokenSource.CreateLinkedTokenSource(applicationCancellation));
+            CancellationTokenSource.CreateLinkedTokenSource(applicationCancellation),
+            hasSensitiveContent);
         model.UserInput += (_, args) => _ = WriteInputAsync(presented, args.Data.ToArray());
         model.SizeChanged += (_, args) => QueueResize(presented, args.Cols, args.Rows);
         return presented;
@@ -411,7 +517,7 @@ internal sealed partial class DeveloperTerminalTool
         selected.Cancellation.Cancel();
         selected.ResizeCancellation?.Cancel();
         sessions.Remove(selected);
-        if (sessions.Count == 0) ReleaseSensitiveDisplay();
+        if (sessions.All(item => !item.HasSensitiveContent)) ReleaseSensitiveDisplay();
         SessionChoice[] choices = sessions.Select(item => new SessionChoice(item)).ToArray();
         sessionPicker.ItemsSource = choices;
         sessionPicker.SelectedIndex = choices.Length == 0 ? -1 : choices.Length - 1;
@@ -491,12 +597,14 @@ internal sealed partial class DeveloperTerminalTool
         DeveloperTerminalSessionView view,
         TerminalControlModel model,
         TerminalControl control,
-        CancellationTokenSource cancellation)
+        CancellationTokenSource cancellation,
+        bool hasSensitiveContent)
     {
         public DeveloperTerminalSessionView View { get; set; } = view;
         public TerminalControlModel Model { get; } = model;
         public TerminalControl Control { get; } = control;
         public CancellationTokenSource Cancellation { get; } = cancellation;
+        public bool HasSensitiveContent { get; } = hasSensitiveContent;
         public CancellationTokenSource? ResizeCancellation { get; set; }
         public Task OutputLoop { get; set; } = Task.CompletedTask;
         public List<UriChoice> DetectedLinks { get; } = [];

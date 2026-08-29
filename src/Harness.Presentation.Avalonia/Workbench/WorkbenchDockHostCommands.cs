@@ -107,7 +107,7 @@ internal sealed partial class WorkbenchDockHost
         }
 
         runOutputToolUnit.Update(snapshot, selectedGoal?.Id);
-        terminalToolUnit.UpdateAvailability();
+        terminalToolUnit.Update(snapshot);
 
         overviewHost.Update(active);
     }
