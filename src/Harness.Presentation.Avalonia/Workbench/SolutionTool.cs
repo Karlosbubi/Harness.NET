@@ -191,6 +191,19 @@ internal sealed class SolutionTool
                 []));
         }
 
+        if (result.DotNet.SdkHealth is { } health)
+        {
+            children.Add(new(
+                health.State is DotNetSdkHealthStateView.Ready
+                    ? $"SDK health · {health.SelectedVersion?.Value ?? "selected"} · " +
+                      (health.WorkloadManifestsAvailable
+                          ? "workload manifests available"
+                          : "no workload manifests installed")
+                    : $"SDK unavailable · {health.Error ?? health.ErrorCode ?? "unknown error"}",
+                null,
+                []));
+        }
+
         children.AddRange(result.DotNet.Projects.Select(ProjectNode));
         tree.ItemsSource = new[]
         {
@@ -209,6 +222,19 @@ internal sealed class SolutionTool
     private static SolutionTreeNode ProjectNode(DotNetProjectView project)
     {
         List<SolutionTreeNode> children = [];
+        if (project.Details is { } details)
+        {
+            children.Add(new(
+                "Configurations",
+                null,
+                details.Configurations.Select(configuration => new SolutionTreeNode(
+                    configuration.Name.Value +
+                    (configuration.Source is DotNetConfigurationSourceView.Convention
+                        ? " · convention"
+                        : " · declared"),
+                    null,
+                    [])).ToArray()));
+        }
         children.Add(new(
             project.TargetFrameworks.Count == 0
                 ? "Target frameworks · not declared"
@@ -221,6 +247,7 @@ internal sealed class SolutionTool
             null,
             [
                 new($"SDK · {project.Sdk ?? "not declared"}", null, []),
+                new($"Kind · {project.Details?.Kind.ToString() ?? "Unknown"}", null, []),
                 new($"Language · {project.LanguageVersion ?? "default"}", null, []),
                 new($"Nullable · {project.Nullable ?? "default"}", null, []),
             ]));
@@ -233,7 +260,9 @@ internal sealed class SolutionTool
                 null,
                 [])).ToArray()));
         return new(
-            project.Path,
+            project.Path + (project.Details?.IsStartupCandidate is true
+                ? " · startup candidate"
+                : string.Empty),
             new WorkbenchDocumentPath(project.Path),
             children);
     }

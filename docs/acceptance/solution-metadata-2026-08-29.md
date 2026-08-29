@@ -13,8 +13,10 @@ foundation, not MSBuild evaluation, execution, or a claim that Task 052 is compl
   workspace-relative entry point rather than leaking the original absolute path.
 - The tree shows the solution/project entry point, `global.json` SDK policy, bounded
   projects, declared target frameworks, SDK, language version, nullable mode, and
-  declared project/package references. Project and entry-point navigation reuses the
-  typed document boundary.
+  declared project/package references. It also shows typed project kind,
+  declared-or-conventional configurations, startup candidacy, the selected installed
+  SDK, and whether workload manifests are available. Project and entry-point
+  navigation reuses the typed document boundary.
 - The adapter reads bounded `.sln`, `.slnx`, project XML, and `global.json` metadata.
   It does not Restore, evaluate MSBuild targets, load analyzers/generators, or execute
   repository code.
@@ -27,7 +29,8 @@ foundation, not MSBuild evaluation, execution, or a claim that Task 052 is compl
 - Business Logic tests prove original/goal-worktree context resolution, relative
   entry-point mapping, translation, and trust rejection before Data Access.
 - Existing adapter tests cover `.sln`/`.slnx`, multi-targeting, SDK policy, project
-  and package references, bounds, missing entry points, and malformed metadata.
+  kind, configurations, startup candidacy, selected SDK/workload-manifest health,
+  project and package references, bounds, missing entry points, and malformed metadata.
 - Headless Avalonia coverage verifies the semantic tree, source-context request,
   project metadata, shared status, and explicit automation name.
 - The complete typed workbench catalog remains identical to the keybinding enum tail,
@@ -38,7 +41,7 @@ foundation, not MSBuild evaluation, execution, or a claim that Task 052 is compl
 
 ## Remaining Task 052 work
 
-Configuration and startup-project discovery, installed SDK/workload health, loading
-failure nodes, launch profiles and typed overrides, Build/Rebuild, Test Explorer,
-coverage, Hot Reload, and a real debugger adapter remain open. None is inferred from
-display text or represented as available before its typed adapter exists.
+Loading-failure nodes, launch profiles and typed overrides, Build/Rebuild, Test
+Explorer, coverage, Hot Reload, and a real debugger adapter remain open. None is
+inferred from display text or represented as available before its typed adapter
+exists.

@@ -6,4 +6,5 @@ public sealed record DotNetProjectInfo(
     IReadOnlyList<string> TargetFrameworks,
     string? LanguageVersion,
     string? Nullable,
-    IReadOnlyList<DotNetReferenceInfo> References);
+    IReadOnlyList<DotNetReferenceInfo> References,
+    DotNetProjectDetails? Details = null);

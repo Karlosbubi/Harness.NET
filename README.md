@@ -47,9 +47,10 @@ Delivered:
   cross-document refactorings,
   labeled document fix-all choices, and typed project-entry-point Run actions with
   cancellation and transient output;
-- a source-context-aware static .NET Solution view for entry points, SDK policy,
-  projects, target frameworks, project/package references, and project metadata,
-  with no implicit Restore or repository execution;
+- a source-context-aware static .NET Solution view for entry points, SDK policy and
+  selected-SDK/workload-manifest health, projects, target frameworks,
+  declared/conventional configurations, startup candidates, project/package
+  references, and project metadata, with no implicit Restore or repository execution;
 - typed configurable workbench and editor keybindings with conflict validation,
   command discovery, reset, bounded declarative import/export, and optional Vim
   Normal, Insert, Visual, and Visual Line behavior;

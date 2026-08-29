@@ -7,4 +7,5 @@ public sealed record WorkspaceDotNetInfo(
     IReadOnlyList<DotNetProjectInfo> Projects,
     bool IsTruncated,
     string? ErrorCode,
-    string? Error);
+    string? Error,
+    DotNetSdkHealthInfo? SdkHealth = null);

@@ -40,7 +40,11 @@ public sealed class WorkbenchInspectionServiceTests
         Assert.Equal(search.Context, inspection.Context);
         Assert.Equal(search.Context, catalog.Context);
         Assert.Equal(search.Context, solution.Context);
-        Assert.Equal("src/App/App.csproj", Assert.Single(solution.DotNet.Projects).Path);
+        DotNetProjectView project = Assert.Single(solution.DotNet.Projects);
+        Assert.Equal("src/App/App.csproj", project.Path);
+        Assert.Equal(DotNetProjectKindView.Executable, project.Details!.Kind);
+        Assert.True(project.Details.IsStartupCandidate);
+        Assert.Equal(DotNetSdkHealthStateView.Ready, solution.DotNet.SdkHealth!.State);
         Assert.Equal("harness/goal-test", inspection.Context.Branch?.Value);
         Assert.Equal("src/App.cs", Assert.Single(search.Search.Matches).Path);
         Assert.Equal("src/App.cs", Assert.Single(inspection.Git.Changes).Path);
@@ -200,10 +204,20 @@ public sealed class WorkbenchInspectionServiceTests
                 "slnx",
                 new("10.0.100", "latestFeature", false),
                 [new("src/App/App.csproj", "Microsoft.NET.Sdk", ["net10.0"],
-                    "latest", "enable", [new("package", "Example", "1.0.0")])],
+                    "latest", "enable", [new("package", "Example", "1.0.0")],
+                    new(
+                        DotNetProjectKind.Executable,
+                        [new(new("Debug"), DotNetConfigurationSource.Convention)],
+                        IsStartupCandidate: true))],
                 IsTruncated: false,
                 ErrorCode: null,
-                Error: null));
+                Error: null,
+                new(
+                    DotNetSdkHealthState.Ready,
+                    new("10.0.400"),
+                    WorkloadManifestsAvailable: true,
+                    ErrorCode: null,
+                    Error: null)));
         }
     }
 

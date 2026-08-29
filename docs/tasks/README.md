@@ -633,10 +633,11 @@ execution controls, Test Explorer, and debugger needed for ordinary .NET work.
 Progress: the first developer execution slice provides typed project-entry-point Run,
 process-tree cancellation, transient bounded output, and durable lifecycle metadata.
 The second slice adds a source-context-aware static Solution tree for the entry point,
-SDK policy, projects, target frameworks, declared references/packages, language and
-nullable metadata, with typed project-file navigation and no Restore, MSBuild
-evaluation, or repository execution. Configuration/startup discovery, installed
-SDK/workload health, Build/Rebuild UI, Test Explorer, launch profiles, Hot Reload,
+SDK policy, selected-SDK/workload-manifest health, projects, target frameworks,
+declared/conventional configurations, typed project kind and startup candidates,
+declared references/packages, language and nullable metadata, with typed project-file
+navigation and no Restore, MSBuild evaluation, or repository execution.
+Loading-failure nodes, Build/Rebuild UI, Test Explorer, launch profiles, Hot Reload,
 and Debug remain open.
 
 Acceptance criteria:

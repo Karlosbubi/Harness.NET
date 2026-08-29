@@ -1,3 +1,4 @@
+using Harness.DataAccess.CodeIntelligence;
 using Harness.DataAccess.Inspection;
 
 namespace Harness.DataAccess.Tests.Inspection;
@@ -25,6 +26,8 @@ public sealed class WorkspaceDotNetInspectorTests : IDisposable
                 <TargetFrameworks>net10.0;net9.0</TargetFrameworks>
                 <LangVersion>latest</LangVersion>
                 <Nullable>enable</Nullable>
+                <OutputType>Exe</OutputType>
+                <Configurations>Debug;Release;Profile</Configurations>
               </PropertyGroup>
               <ItemGroup>
                 <PackageReference Include="Dapper" Version="2.1.79" />
@@ -38,7 +41,7 @@ public sealed class WorkspaceDotNetInspectorTests : IDisposable
             { "sdk": { "version": "10.0.201", "rollForward": "latestPatch", "allowPrerelease": false } }
             """);
 
-        WorkspaceDotNetInfo result = await new WorkspaceDotNetInspector()
+        WorkspaceDotNetInfo result = await CreateInspector()
             .InspectAsync(root, Path.Combine(root, "Repository.slnx"));
 
         Assert.Null(result.Error);
@@ -53,6 +56,15 @@ public sealed class WorkspaceDotNetInspectorTests : IDisposable
         Assert.Equal("latest", project.LanguageVersion);
         Assert.Equal("enable", project.Nullable);
         Assert.Equal(2, project.References.Count);
+        Assert.Equal(DotNetProjectKind.Executable, project.Details!.Kind);
+        Assert.True(project.Details.IsStartupCandidate);
+        Assert.Equal(["Debug", "Release", "Profile"],
+            project.Details.Configurations.Select(configuration => configuration.Name.Value));
+        Assert.All(project.Details.Configurations, configuration =>
+            Assert.Equal(DotNetConfigurationSource.Declared, configuration.Source));
+        Assert.Equal(DotNetSdkHealthState.Ready, result.SdkHealth!.State);
+        Assert.Equal("10.0.400", result.SdkHealth.SelectedVersion!.Value);
+        Assert.True(result.SdkHealth.WorkloadManifestsAvailable);
     }
 
     [Fact]
@@ -73,12 +85,19 @@ public sealed class WorkspaceDotNetInspectorTests : IDisposable
             EndGlobal
             """);
 
-        WorkspaceDotNetInfo result = await new WorkspaceDotNetInspector()
+        WorkspaceDotNetInfo result = await CreateInspector()
             .InspectAsync(root, "Repository.sln");
 
         Assert.Null(result.Error);
         Assert.Equal("sln", result.EntryPointKind);
-        Assert.Equal("Sample.csproj", Assert.Single(result.Projects).Path);
+        DotNetProjectInfo project = Assert.Single(result.Projects);
+        Assert.Equal("Sample.csproj", project.Path);
+        Assert.Equal(DotNetProjectKind.Library, project.Details!.Kind);
+        Assert.False(project.Details.IsStartupCandidate);
+        Assert.Equal(["Debug", "Release"],
+            project.Details.Configurations.Select(configuration => configuration.Name.Value));
+        Assert.All(project.Details.Configurations, configuration =>
+            Assert.Equal(DotNetConfigurationSource.Convention, configuration.Source));
     }
 
     [Fact]
@@ -88,11 +107,37 @@ public sealed class WorkspaceDotNetInspectorTests : IDisposable
         string outside = Path.Combine(Path.GetDirectoryName(root)!, "outside.csproj");
         await File.WriteAllTextAsync(outside, "<Project />");
 
-        WorkspaceDotNetInfo result = await new WorkspaceDotNetInspector()
+        WorkspaceDotNetInfo result = await CreateInspector()
             .InspectAsync(root, outside);
 
         Assert.Equal("outside_workspace", result.ErrorCode);
         File.Delete(outside);
+    }
+
+    private WorkspaceDotNetInspector CreateInspector()
+    {
+        string sdkBase = Path.Combine(root, ".dotnet", "sdk");
+        string sdkPath = Path.Combine(sdkBase, "10.0.400");
+        Directory.CreateDirectory(sdkPath);
+        File.WriteAllText(Path.Combine(sdkPath, "MSBuild.dll"), string.Empty);
+        Directory.CreateDirectory(Path.Combine(root, ".dotnet", "sdk-manifests", "10.0.100"));
+        return new(new(new DotNetProcess(sdkBase)));
+    }
+
+    private sealed class DotNetProcess(string sdkBase) : IDotNetProcess
+    {
+        public ValueTask<DotNetProcessResult> RunAsync(
+            string workingDirectory,
+            string argument,
+            CancellationToken cancellationToken) => ValueTask.FromResult(argument switch
+            {
+                "--version" => new DotNetProcessResult(0, "10.0.400\n", string.Empty),
+                "--list-sdks" => new DotNetProcessResult(
+                    0,
+                    $"10.0.400 [{sdkBase}]\n",
+                    string.Empty),
+                _ => new DotNetProcessResult(1, string.Empty, "Unexpected argument."),
+            });
     }
 
     public void Dispose()

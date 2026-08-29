@@ -2,10 +2,12 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
+using Harness.DataAccess.CodeIntelligence;
 
 namespace Harness.DataAccess.Inspection;
 
-internal sealed class WorkspaceDotNetInspector : IWorkspaceDotNetInspector
+internal sealed class WorkspaceDotNetInspector(DotNetSdkSelector sdkSelector)
+    : IWorkspaceDotNetInspector
 {
     private const int MaximumProjects = 200;
     private const int MaximumReferencesPerProject = 500;
@@ -14,6 +16,10 @@ internal sealed class WorkspaceDotNetInspector : IWorkspaceDotNetInspector
         "^Project\\(\"[^\"]+\"\\)\\s*=\\s*\"[^\"]*\"\\s*,\\s*\"(?<path>[^\"]+)\"",
         RegexOptions.CultureInvariant,
         TimeSpan.FromMilliseconds(100));
+
+    internal WorkspaceDotNetInspector() : this(new(new DotNetProcess()))
+    {
+    }
 
     public async ValueTask<WorkspaceDotNetInfo> InspectAsync(
         string workspaceRoot,
@@ -106,6 +112,7 @@ internal sealed class WorkspaceDotNetInspector : IWorkspaceDotNetInspector
             }
 
             DotNetSdkPolicy? sdkPolicy = await ReadSdkPolicyAsync(root, cancellationToken);
+            DotNetSdkHealthInfo sdkHealth = await InspectSdkHealthAsync(root, cancellationToken);
             return new(
                 confinedEntryPoint,
                 extension.TrimStart('.'),
@@ -113,7 +120,8 @@ internal sealed class WorkspaceDotNetInspector : IWorkspaceDotNetInspector
                 projects,
                 isTruncated,
                 ErrorCode: null,
-                Error: null);
+                Error: null,
+                sdkHealth);
         }
         catch (Exception exception) when (
             exception is IOException or UnauthorizedAccessException or XmlException or
@@ -184,13 +192,65 @@ internal sealed class WorkspaceDotNetInspector : IWorkspaceDotNetInspector
             .Where(reference => !string.IsNullOrWhiteSpace(reference.Identity))
             .Take(MaximumReferencesPerProject)
             .ToArray();
+        DotNetProjectKind kind = ProjectKind(
+            sdk,
+            Values(document, "OutputType").LastOrDefault(),
+            Values(document, "IsTestProject").LastOrDefault());
+        string[] declaredConfigurations = Values(document, "Configurations")
+            .SelectMany(value => value.Split(
+                ';',
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        DotNetConfigurationSource configurationSource = declaredConfigurations.Length == 0
+            ? DotNetConfigurationSource.Convention
+            : DotNetConfigurationSource.Declared;
+        string[] configurations = declaredConfigurations.Length == 0
+            ? ["Debug", "Release"]
+            : declaredConfigurations;
         return new(
             relativePath,
             sdk,
             targetFrameworks,
             Values(document, "LangVersion").LastOrDefault(),
             Values(document, "Nullable").LastOrDefault(),
-            references);
+            references,
+            new(
+                kind,
+                configurations.Select(value => new DotNetProjectConfiguration(
+                    new(value),
+                    configurationSource)).ToArray(),
+                kind is DotNetProjectKind.Executable or DotNetProjectKind.Web or
+                    DotNetProjectKind.Worker));
+    }
+
+    private static DotNetProjectKind ProjectKind(
+        string? sdk,
+        string? outputType,
+        string? isTestProject)
+    {
+        if (bool.TryParse(isTestProject, out bool test) && test ||
+            sdk?.Contains("Test", StringComparison.OrdinalIgnoreCase) is true)
+        {
+            return DotNetProjectKind.Test;
+        }
+
+        if (sdk?.Contains(".Web", StringComparison.OrdinalIgnoreCase) is true)
+        {
+            return DotNetProjectKind.Web;
+        }
+
+        if (sdk?.Contains(".Worker", StringComparison.OrdinalIgnoreCase) is true)
+        {
+            return DotNetProjectKind.Worker;
+        }
+
+        return outputType?.ToLowerInvariant() switch
+        {
+            "exe" or "winexe" => DotNetProjectKind.Executable,
+            "library" or null or "" => DotNetProjectKind.Library,
+            _ => DotNetProjectKind.Unknown,
+        };
     }
 
     private static async ValueTask<DotNetSdkPolicy?> ReadSdkPolicyAsync(
@@ -229,6 +289,33 @@ internal sealed class WorkspaceDotNetInspector : IWorkspaceDotNetInspector
             StringValue(sdk, "version"),
             StringValue(sdk, "rollForward"),
             BooleanValue(sdk, "allowPrerelease"));
+    }
+
+    private async ValueTask<DotNetSdkHealthInfo> InspectSdkHealthAsync(
+        string root,
+        CancellationToken cancellationToken)
+    {
+        DotNetSdkSelection selection = await sdkSelector.SelectAsync(root, cancellationToken);
+        if (selection.Version is null || selection.Path is null)
+        {
+            return new(
+                DotNetSdkHealthState.Unavailable,
+                null,
+                WorkloadManifestsAvailable: false,
+                selection.ErrorCode,
+                selection.Error);
+        }
+
+        string? sdkDirectory = Path.GetDirectoryName(selection.Path.Value);
+        string? dotNetRoot = sdkDirectory is null ? null : Path.GetDirectoryName(sdkDirectory);
+        bool workloadManifests = dotNetRoot is not null &&
+                                 Directory.Exists(Path.Combine(dotNetRoot, "sdk-manifests"));
+        return new(
+            DotNetSdkHealthState.Ready,
+            new(selection.Version.Value),
+            workloadManifests,
+            ErrorCode: null,
+            Error: null);
     }
 
     private static async ValueTask<XDocument> LoadXmlAsync(

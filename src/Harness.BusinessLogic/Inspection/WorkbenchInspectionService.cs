@@ -153,27 +153,6 @@ internal sealed class WorkbenchInspectionService(
             cancellationToken);
         return new(
             resolution.Context,
-            new(
-                result.EntryPoint,
-                result.EntryPointKind,
-                result.SdkPolicy is null
-                    ? null
-                    : new(
-                        result.SdkPolicy.Version,
-                        result.SdkPolicy.RollForward,
-                        result.SdkPolicy.AllowPrerelease),
-                result.Projects.Select(project => new DotNetProjectView(
-                    project.Path,
-                    project.Sdk,
-                    project.TargetFrameworks,
-                    project.LanguageVersion,
-                    project.Nullable,
-                    project.References.Select(reference => new DotNetReferenceView(
-                        reference.Kind,
-                        reference.Identity,
-                        reference.Version)).ToArray())).ToArray(),
-                result.IsTruncated,
-                result.ErrorCode,
-                result.Error));
+            DotNetInspectionMapper.Map(result));
     }
 }

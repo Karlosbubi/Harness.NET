@@ -38,12 +38,17 @@ public sealed class SolutionToolTests
             Assert.Equal("Harness.slnx", root.Label);
             Assert.Equal("Harness.slnx", root.Path?.Value);
             Assert.Contains(root.Children, node => node.Label.StartsWith("SDK policy", StringComparison.Ordinal));
+            Assert.Contains(root.Children, node => node.Label.Contains(
+                "workload manifests available",
+                StringComparison.Ordinal));
             SolutionTool.SolutionTreeNode project = Assert.Single(
                 root.Children,
                 node => node.Path is not null);
             Assert.Equal("src/App/App.csproj", project.Path?.Value);
             Assert.Contains(project.Children, node => node.Label == "Target frameworks");
+            Assert.Contains(project.Children, node => node.Label == "Configurations");
             Assert.Contains(project.Children, node => node.Label == "Dependencies");
+            Assert.EndsWith("startup candidate", project.Label, StringComparison.Ordinal);
             Assert.Contains("1 project(s)", tool.StatusText, StringComparison.Ordinal);
             Assert.Equal(".NET solution project tree", AutomationProperties.GetName(tool.Tree));
             Assert.Equal("workspace-1", Assert.Single(inspection.Requests).WorkspaceId.Value);
@@ -96,10 +101,20 @@ public sealed class SolutionToolTests
                         ["net10.0"],
                         "latest",
                         "enable",
-                        [new("package", "Avalonia", "11.3.8")])],
+                        [new("package", "Avalonia", "11.3.8")],
+                        new(
+                            DotNetProjectKindView.Executable,
+                            [new(new("Debug"), DotNetConfigurationSourceView.Convention)],
+                            IsStartupCandidate: true))],
                     IsTruncated: false,
                     ErrorCode: null,
-                    Error: null)));
+                    Error: null,
+                    new(
+                        DotNetSdkHealthStateView.Ready,
+                        new("10.0.400"),
+                        WorkloadManifestsAvailable: true,
+                        ErrorCode: null,
+                        Error: null))));
         }
 
         public ValueTask<WorkbenchFileCatalogResult> ListFilesAsync(
