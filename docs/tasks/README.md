@@ -589,7 +589,7 @@ remote process output. See the
 
 ### 051 — developer terminal and structured tasks
 
-Status: `In progress — durable workflow status slice delivered`
+Status: `In progress — terminal and task authority ADR accepted`
 
 Dependencies: 015, 026, 029, 033, 037.
 
@@ -620,6 +620,11 @@ Acceptance criteria:
    agent command must be a separate closed typed operation under ADR 016.
 10. Linux acceptance covers common shells, Unicode, IME, resize, large output,
     process trees, cancellation, crash cleanup, AT-SPI, restart, and publish.
+
+Progress: ADR 029 now separates the trusted developer-only PTY, structured task
+contracts, typed agent operations, and durable Run evidence. It fixes layer ownership,
+transient-content privacy, restart behavior, process-tree cleanup, and the prohibition
+on exposing terminal authority to agents before the first PTY process contract lands.
 
 ### 052 — .NET project, Run, Test, and Debug experience
 
