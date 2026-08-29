@@ -606,7 +606,8 @@ now live in bounded `DocumentsHost` and `DocumentSessionFactory` units. Persiste
 replacement and adaptive viewport behavior now live in `WorkbenchLayoutHost`, while
 `WorkbenchNavigator` and `WorkbenchOverview` own cross-tool focus/accessibility and
 overview documents. The 795-line coordinator has left the source-size allowlist.
-Slices 060.6–060.8 follow.
+Slice 060.6 now has a 523-line state/reducer coordinator and bounded feature command
+partials; its test split remains. Slices 060.7–060.8 follow.
 
 ### Complete: Task 061 — architecture enforcement and composition seams
 

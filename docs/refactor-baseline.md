@@ -18,7 +18,11 @@ stashes. Slice 060.4 is also implemented: `GitRemotesTool`, `GitHistoryTool`, an
 the conflict editor's Roslyn session lifecycle. Slice 060.5 is implemented: bounded
 run-output, Problems, document-session, semantic editor, layout, navigation, and
 overview collaborators leave a 795-line `WorkbenchDockHost` coordinator.
-Slices 060.6–060.8 remain and continue to follow the sequencing and evidence rules below.
+Slice 060.6 has moved store commands into bounded conversation, workspace, goal,
+settings, research, visual-capture, MCP, operations, and workflow partials; the
+523-line state/reducer coordinator has left the source allowlist while test splitting
+remains. Slices 060.7–060.8 remain and continue to follow the sequencing and evidence
+rules below.
 
 ## Measured baseline (2026-08-24)
 
