@@ -33,7 +33,8 @@ public sealed record CodeIntelligenceTestDiscoveryRequest(
     CodeIntelligenceSessionId SessionId,
     string? Query,
     int MaximumResults,
-    int Offset);
+    int Offset,
+    CodeIntelligenceTestFramework? Framework = null);
 
 public sealed record CodeIntelligenceTestDiscoveryResult(
     CodeIntelligenceContextId ContextId,

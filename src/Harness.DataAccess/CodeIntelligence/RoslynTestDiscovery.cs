@@ -15,7 +15,8 @@ internal sealed partial class RoslynCodeIntelligenceEngine
     {
         ArgumentNullException.ThrowIfNull(request);
         if (request.MaximumResults is < 1 or > 2_000 || request.Offset < 0 ||
-            request.Offset > MaximumDiscoveredTests || request.Query?.Length > 256)
+            request.Offset > MaximumDiscoveredTests || request.Query?.Length > 256 ||
+            request.Framework is { } framework && !Enum.IsDefined(framework))
         {
             return TestDiscoveryFailure(request, "invalid_test_query",
                 "The test query, result limit, or continuation is outside the bounded range.");
@@ -53,6 +54,9 @@ internal sealed partial class RoslynCodeIntelligenceEngine
                         cancellationToken.ThrowIfCancellationRequested();
                         if (model.GetDeclaredSymbol(declaration, cancellationToken) is not
                             IMethodSymbol method || !TryClassifyTest(method, out TestClassification test))
+                            continue;
+                        if (request.Framework is { } selectedFramework &&
+                            test.Framework != selectedFramework)
                             continue;
                         Location location = method.Locations.FirstOrDefault(item => item.IsInSource)
                             ?? Location.None;

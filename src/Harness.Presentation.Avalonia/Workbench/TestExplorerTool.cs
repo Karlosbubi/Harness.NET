@@ -23,6 +23,16 @@ internal sealed class TestExplorerTool
     private readonly Func<ValueTask> refreshRunOutput;
     private readonly TreeView tree = new();
     private readonly TextBox filter = new() { PlaceholderText = "Search tests or traits" };
+    private readonly ComboBox frameworkFilter = new()
+    {
+        ItemsSource = FrameworkFilterChoice.All,
+        SelectedIndex = 0,
+    };
+    private readonly ComboBox stateFilter = new()
+    {
+        ItemsSource = StateFilterChoice.All,
+        SelectedIndex = 0,
+    };
     private readonly StatusIndicator status = new() { TextWrapping = TextWrapping.Wrap };
     private bool busy;
     private string? workspaceId;
@@ -49,6 +59,8 @@ internal sealed class TestExplorerTool
     internal Control Content { get; }
     internal TreeView Tree => tree;
     internal TextBox Filter => filter;
+    internal ComboBox FrameworkFilter => frameworkFilter;
+    internal ComboBox StateFilter => stateFilter;
     internal string StatusText => status.Message ?? string.Empty;
 
     internal ValueTask NavigateAsync(WorkbenchCodeTestCase test) =>
@@ -108,7 +120,8 @@ internal sealed class TestExplorerTool
                 session.SessionId,
                 string.IsNullOrWhiteSpace(filter.Text) ? null : filter.Text.Trim(),
                 MaximumResults: 2_000,
-                Offset: 0), context.CancellationToken);
+                Offset: 0,
+                SelectedFramework()), context.CancellationToken);
             if (result.State is WorkbenchCodeResultState.Failed or
                 WorkbenchCodeResultState.Stale or WorkbenchCodeResultState.Cancelled)
             {
@@ -142,7 +155,7 @@ internal sealed class TestExplorerTool
     {
         Grid grid = new()
         {
-            RowDefinitions = new("Auto,Auto,Auto,*"),
+            RowDefinitions = new("Auto,Auto,Auto,Auto,*"),
             Margin = new Thickness(8),
             RowSpacing = 6,
         };
@@ -170,6 +183,15 @@ internal sealed class TestExplorerTool
         Grid.SetRow(filter, 1);
         grid.Children.Add(filter);
 
+        Grid filters = new() { ColumnDefinitions = new("*,*"), ColumnSpacing = 6 };
+        AutomationProperties.SetName(frameworkFilter, "Test framework filter");
+        filters.Children.Add(frameworkFilter);
+        AutomationProperties.SetName(stateFilter, "Test lifecycle state filter");
+        Grid.SetColumn(stateFilter, 1);
+        filters.Children.Add(stateFilter);
+        Grid.SetRow(filters, 2);
+        grid.Children.Add(filters);
+
         tree.ItemTemplate = new FuncTreeDataTemplate<TestTreeNode>(
             (node, _) => node.Test is null ? new TextBlock
             {
@@ -178,11 +200,11 @@ internal sealed class TestExplorerTool
             } : TestControl(node),
             node => node.Children);
         AutomationProperties.SetName(tree, "Roslyn test hierarchy");
-        Grid.SetRow(tree, 3);
+        Grid.SetRow(tree, 4);
         grid.Children.Add(tree);
 
         AutomationProperties.SetName(status, "Test Explorer status");
-        Grid.SetRow(status, 2);
+        Grid.SetRow(status, 3);
         grid.Children.Add(status);
         return grid;
     }
@@ -316,7 +338,10 @@ internal sealed class TestExplorerTool
                 item.Test is not null)
             .GroupBy(item => item.Test!.Id.Value, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
-        TestTreeNode[] projects = result.Tests
+        WorkbenchCodeTestCase[] visibleTests = result.Tests
+            .Where(item => MatchesState(latest.GetValueOrDefault(item.Id.Value)))
+            .ToArray();
+        TestTreeNode[] projects = visibleTests
             .GroupBy(item => item.ProjectPath.Value, StringComparer.Ordinal)
             .OrderBy(group => group.Key, StringComparer.Ordinal)
             .Select(project => new TestTreeNode(
@@ -335,7 +360,8 @@ internal sealed class TestExplorerTool
                     .ToArray()))
             .ToArray();
         tree.ItemsSource = projects;
-        status.Message = $"{result.Tests.Count:N0} test(s) discovered with Roslyn" +
+        status.Message = $"{result.Tests.Count:N0} test(s) discovered with Roslyn · " +
+                         $"{visibleTests.Length:N0} shown" +
                          (result.IsTruncated ? " · bounded result" : string.Empty) +
                          (history.Error is null ? string.Empty : " · history unavailable") + ".";
         status.Severity = result.IsTruncated || result.State is WorkbenchCodeResultState.Degraded ||
@@ -351,6 +377,26 @@ internal sealed class TestExplorerTool
             : $"{execution.DurationMilliseconds:N0} ms";
         string exit = execution.ExitCode is null ? string.Empty : $" · exit {execution.ExitCode}";
         return $"{execution.State} · {duration}{exit}";
+    }
+
+    private WorkbenchCodeTestFramework? SelectedFramework() =>
+        (frameworkFilter.SelectedItem as FrameworkFilterChoice)?.Framework;
+
+    private bool MatchesState(DeveloperExecutionView? execution)
+    {
+        TestHistoryFilter selected =
+            (stateFilter.SelectedItem as StateFilterChoice)?.Filter ?? TestHistoryFilter.All;
+        return selected switch
+        {
+            TestHistoryFilter.All => true,
+            TestHistoryFilter.NotRun => execution is null,
+            TestHistoryFilter.Running => execution?.State is DeveloperExecutionState.Running,
+            TestHistoryFilter.Succeeded => execution?.State is DeveloperExecutionState.Succeeded,
+            TestHistoryFilter.Failed => execution?.State is DeveloperExecutionState.Failed,
+            TestHistoryFilter.Cancelled => execution?.State is DeveloperExecutionState.Cancelled,
+            TestHistoryFilter.Interrupted => execution?.State is DeveloperExecutionState.Interrupted,
+            _ => false,
+        };
     }
 
     private void RenderUnavailable(
@@ -373,4 +419,41 @@ internal sealed class TestExplorerTool
         IReadOnlyList<TestTreeNode> Children,
         WorkbenchCodeTestCase? Test = null,
         DeveloperExecutionView? Execution = null);
+
+    private sealed record FrameworkFilterChoice(
+        string Label,
+        WorkbenchCodeTestFramework? Framework)
+    {
+        internal static IReadOnlyList<FrameworkFilterChoice> All { get; } =
+        [
+            new("All frameworks", null),
+            new("xUnit", WorkbenchCodeTestFramework.XUnit),
+            new("NUnit", WorkbenchCodeTestFramework.NUnit),
+            new("MSTest", WorkbenchCodeTestFramework.MSTest),
+        ];
+
+        public override string ToString() => Label;
+    }
+
+    private enum TestHistoryFilter
+    {
+        All,
+        NotRun,
+        Running,
+        Succeeded,
+        Failed,
+        Cancelled,
+        Interrupted,
+    }
+
+    private sealed record StateFilterChoice(string Label, TestHistoryFilter Filter)
+    {
+        internal static IReadOnlyList<StateFilterChoice> All { get; } =
+            Enum.GetValues<TestHistoryFilter>()
+                .Select(value => new StateFilterChoice(
+                    value is TestHistoryFilter.NotRun ? "Not run" : value.ToString(), value))
+                .ToArray();
+
+        public override string ToString() => Label;
+    }
 }

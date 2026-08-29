@@ -652,6 +652,9 @@ exit, duration, failure, and restart history. Multi-test selection, project/type
 runs, per-case adapter results, test Debug, coverage, typed one-run overrides, Hot
 Reload, and Debug remain open. The sixth slice projects the newest exact-test history
 back into Test Explorer with state, duration, exit code, Rerun, and in-place Stop.
+The seventh adds typed xUnit/NUnit/MSTest filtering before Roslyn paging and exact
+not-run/running/succeeded/failed/cancelled/interrupted lifecycle filtering after the
+history join. Name and trait search remains bounded and compiler-session scoped.
 
 Acceptance criteria:
 

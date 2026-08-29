@@ -32,7 +32,8 @@ public sealed record WorkbenchCodeTestDiscoveryRequest(
     WorkbenchCodeSessionId SessionId,
     string? Query,
     int MaximumResults,
-    int Offset);
+    int Offset,
+    WorkbenchCodeTestFramework? Framework = null);
 
 public sealed record WorkbenchCodeTestDiscoveryView(
     WorkbenchCodeSessionId SessionId,

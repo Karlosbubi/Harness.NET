@@ -66,6 +66,7 @@ public sealed class TestExplorerToolTests
             Window window = new() { Width = 800, Height = 700, Content = tool.Content };
             window.Show();
             tool.Filter.Text = "Fast";
+            tool.FrameworkFilter.SelectedIndex = 1;
 
             tool.RefreshAsync().AsTask().GetAwaiter().GetResult();
             Dispatcher.UIThread.RunJobs();
@@ -79,6 +80,7 @@ public sealed class TestExplorerToolTests
             Assert.Equal("Fast", discovery.Query);
             Assert.Equal(2_000, discovery.MaximumResults);
             Assert.Equal(0, discovery.Offset);
+            Assert.Equal(WorkbenchCodeTestFramework.XUnit, discovery.Framework);
 
             TestExplorerTool.TestTreeNode project = Assert.Single(
                 Assert.IsAssignableFrom<IEnumerable<TestExplorerTool.TestTreeNode>>(
@@ -94,6 +96,10 @@ public sealed class TestExplorerToolTests
             Assert.Contains("2 test(s) discovered", tool.StatusText, StringComparison.Ordinal);
             Assert.Equal("Roslyn test hierarchy", AutomationProperties.GetName(tool.Tree));
             Assert.Equal("Test Explorer search", AutomationProperties.GetName(tool.Filter));
+            Assert.Equal("Test framework filter",
+                AutomationProperties.GetName(tool.FrameworkFilter));
+            Assert.Equal("Test lifecycle state filter",
+                AutomationProperties.GetName(tool.StateFilter));
 
             tool.NavigateAsync(first).AsTask().GetAwaiter().GetResult();
             Assert.Same(first, navigated);
@@ -111,6 +117,15 @@ public sealed class TestExplorerToolTests
             Assert.Equal("execution-running", Assert.Single(execution.Cancelled).Value);
             Assert.Equal(2, refreshed);
             Assert.Contains("Stopping", tool.StatusText, StringComparison.Ordinal);
+
+            tool.StateFilter.SelectedIndex = 4;
+            tool.RefreshAsync().AsTask().GetAwaiter().GetResult();
+            TestExplorerTool.TestTreeNode filteredProject = Assert.Single(
+                Assert.IsAssignableFrom<IEnumerable<TestExplorerTool.TestTreeNode>>(
+                    tool.Tree.ItemsSource));
+            TestExplorerTool.TestTreeNode filteredType = Assert.Single(filteredProject.Children);
+            Assert.Equal("Adds values", Assert.Single(filteredType.Children).Label);
+            Assert.Contains("1 shown", tool.StatusText, StringComparison.Ordinal);
             window.Close();
         }, CancellationToken.None);
     }

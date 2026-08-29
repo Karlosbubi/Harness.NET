@@ -12,7 +12,8 @@ internal sealed partial class WorkbenchCodeIntelligenceService
         if (request.SessionId is null ||
             !sessions.TryGetValue(request.SessionId.Value, out ActiveSession? session) ||
             request.Query?.Length > 256 || request.MaximumResults is < 1 or > 2_000 ||
-            request.Offset is < 0 or > 10_000)
+            request.Offset is < 0 or > 10_000 ||
+            request.Framework is { } framework && !Enum.IsDefined(framework))
         {
             return TestDiscoveryFailure(
                 request.SessionId ?? new(string.Empty),
@@ -28,7 +29,15 @@ internal sealed partial class WorkbenchCodeIntelligenceService
                 session.SessionId,
                 request.Query,
                 request.MaximumResults,
-                request.Offset), cancellationToken);
+                request.Offset,
+                request.Framework switch
+                {
+                    WorkbenchCodeTestFramework.XUnit => CodeIntelligenceTestFramework.XUnit,
+                    WorkbenchCodeTestFramework.NUnit => CodeIntelligenceTestFramework.NUnit,
+                    WorkbenchCodeTestFramework.MSTest => CodeIntelligenceTestFramework.MSTest,
+                    null => null,
+                    _ => throw new ArgumentOutOfRangeException(nameof(request)),
+                }), cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

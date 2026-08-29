@@ -69,6 +69,9 @@ including derived attributes, and returns stable semantic identities, framework,
 parameterization, bounded traits, project path, source path, and exact source range.
 Search and paging operate over this catalog. File names, text patterns, restored test
 adapters, and executed discovery processes are not authoritative test evidence.
+Framework filtering uses the same closed xUnit/NUnit/MSTest value before deterministic
+paging. Presentation may additionally filter the exact source-context lifecycle view;
+it does not reinterpret compiler framework identity or invent a test result.
 
 Presentation may build a project/type/test hierarchy and navigate through the typed
 source destination. Discovery never restores, loads a test assembly, or executes

@@ -57,6 +57,9 @@ public sealed partial class RoslynCodeIntelligenceEngineTests
             contextId, session.SessionId!, "Fast", MaximumResults: 20, Offset: 0));
         CodeIntelligenceTestDiscoveryResult page = await engine.DiscoverTestsAsync(new(
             contextId, session.SessionId!, Query: null, MaximumResults: 2, Offset: 0));
+        CodeIntelligenceTestDiscoveryResult nunit = await engine.DiscoverTestsAsync(new(
+            contextId, session.SessionId!, Query: null, MaximumResults: 20, Offset: 0,
+            CodeIntelligenceTestFramework.NUnit));
 
         Assert.Equal(CodeIntelligenceResultState.Ready, all.State);
         Assert.Equal(4, all.Tests.Count);
@@ -84,5 +87,7 @@ public sealed partial class RoslynCodeIntelligenceEngineTests
         Assert.Equal(2, page.Tests.Count);
         Assert.True(page.IsTruncated);
         Assert.Equal(2, page.Continuation);
+        Assert.Equal(CodeIntelligenceTestFramework.NUnit,
+            Assert.Single(nunit.Tests).Framework);
     }
 }

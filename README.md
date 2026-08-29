@@ -61,7 +61,7 @@ Delivered:
   project/type/test hierarchy, bounded search across names and traits, parameterized
   test labels, exact source navigation, and closed per-test Run actions with
   no-Restore execution, in-place Stop/Rerun, duration and failure history, transient
-  output, and durable result metadata;
+  output, durable result metadata, and typed framework/lifecycle filtering;
 - typed configurable workbench and editor keybindings with conflict validation,
   command discovery, reset, bounded declarative import/export, and optional Vim
   Normal, Insert, Visual, and Visual Line behavior;

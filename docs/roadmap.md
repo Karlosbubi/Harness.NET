@@ -537,6 +537,15 @@ store degrades the status without hiding compiler discovery. Multi-selection,
 project/type runs, adapter-level case results and richer filters, Test Debug,
 coverage, typed one-run overrides, Hot Reload, and the debugger remain planned.
 
+Delivered seventh slice: Test Explorer adds accessible closed framework and lifecycle
+filters alongside bounded name/trait search. Framework selection crosses Business
+Logic as an enum and is applied by Roslyn before deterministic sorting and paging.
+Lifecycle selection is applied only after exact-context durable Test history is joined
+and distinguishes not-run, running, succeeded, failed, cancelled, and interrupted.
+The live status reports discovered and shown counts. Multi-selection, project/type
+runs, adapter-level case results, Test Debug, coverage, typed one-run overrides, Hot
+Reload, and the debugger remain planned.
+
 Use the existing trust and Restore boundaries. Selecting a launch profile does not
 authorize execution; debug attach, expression evaluation, mutation, dumps, network
 listeners, and external processes remain separately classified. ASP.NET endpoint

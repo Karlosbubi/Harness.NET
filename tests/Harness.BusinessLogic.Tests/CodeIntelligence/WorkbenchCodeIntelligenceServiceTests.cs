@@ -147,26 +147,30 @@ public sealed partial class WorkbenchCodeIntelligenceServiceTests
     [Fact]
     public async Task Test_discovery_maps_only_exact_confined_session_results()
     {
+        CodeIntelligenceTestFramework? requestedFramework = null;
         DeterministicCodeIntelligenceEngine engine = new()
         {
             TestDiscovery = (request, _) =>
-                ValueTask.FromResult<CodeIntelligenceTestDiscoveryResult>(new(
-                request.ContextId,
-                request.SessionId,
-                CodeIntelligenceResultState.Ready,
-                [new(
-                    new("test-id"),
-                    new("tests/App.Tests/App.Tests.csproj"),
-                    CodeIntelligenceTestFramework.XUnit,
-                    new("App.Tests.WidgetTests.Works"),
-                    new("Works"),
-                    new("tests/App.Tests/WidgetTests.cs"),
-                    new(new(10, 4), new(10, 9)),
-                    [new(new("Category"), new("Fast"))],
-                    IsParameterized: false)],
-                Continuation: null,
-                IsTruncated: false,
-                [])),
+            {
+                requestedFramework = request.Framework;
+                return ValueTask.FromResult<CodeIntelligenceTestDiscoveryResult>(new(
+                    request.ContextId,
+                    request.SessionId,
+                    CodeIntelligenceResultState.Ready,
+                    [new(
+                        new("test-id"),
+                        new("tests/App.Tests/App.Tests.csproj"),
+                        CodeIntelligenceTestFramework.XUnit,
+                        new("App.Tests.WidgetTests.Works"),
+                        new("Works"),
+                        new("tests/App.Tests/WidgetTests.cs"),
+                        new(new(10, 4), new(10, 9)),
+                        [new(new("Category"), new("Fast"))],
+                        IsParameterized: false)],
+                    Continuation: null,
+                    IsTruncated: false,
+                    []));
+            },
         };
         WorkbenchCodeIntelligenceService service = new(
             new ContextResolver(OriginalResolution()),
@@ -175,13 +179,15 @@ public sealed partial class WorkbenchCodeIntelligenceServiceTests
             new("workspace-id"), null, new("Harness.slnx")))).SessionId!;
 
         WorkbenchCodeTestDiscoveryView result = await service.DiscoverTestsAsync(new(
-            sessionId, "Fast", MaximumResults: 100, Offset: 0));
+            sessionId, "Fast", MaximumResults: 100, Offset: 0,
+            WorkbenchCodeTestFramework.XUnit));
 
         WorkbenchCodeTestCase test = Assert.Single(result.Tests);
         Assert.Equal(WorkbenchCodeTestFramework.XUnit, test.Framework);
         Assert.Equal("tests/App.Tests/App.Tests.csproj", test.ProjectPath.Value);
         Assert.Equal("tests/App.Tests/WidgetTests.cs", test.Path.Value);
         Assert.Equal("Fast", Assert.Single(test.Traits).Value.Value);
+        Assert.Equal(CodeIntelligenceTestFramework.XUnit, requestedFramework);
     }
 
     [Fact]
