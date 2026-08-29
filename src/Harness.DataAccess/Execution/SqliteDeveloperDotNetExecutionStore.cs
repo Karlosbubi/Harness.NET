@@ -64,6 +64,7 @@ internal sealed class SqliteDeveloperDotNetExecutionStore(
             throw new ArgumentException("A completion must be terminal.", nameof(completion));
         }
         await using SqliteConnection connection = await OpenAsync(cancellationToken);
+        await using SqliteTransaction transaction = connection.BeginTransaction();
         DynamicParameters parameters = new();
         parameters.Add("id", completion.Id.Value);
         parameters.Add("state", completion.State.ToString());
@@ -72,6 +73,7 @@ internal sealed class SqliteDeveloperDotNetExecutionStore(
         parameters.Add("durationMilliseconds", completion.DurationMilliseconds);
         parameters.Add("errorCode", completion.ErrorCode);
         parameters.Add("error", completion.Error);
+        parameters.Add("testCasesTruncated", completion.AreTestCasesTruncated ? 1 : 0);
         int changed = await connection.ExecuteAsync(new CommandDefinition("""
             UPDATE developer_dotnet_executions
             SET state = @state,
@@ -79,13 +81,33 @@ internal sealed class SqliteDeveloperDotNetExecutionStore(
                 exit_code = @exitCode,
                 duration_milliseconds = @durationMilliseconds,
                 error_code = @errorCode,
-                error = @error
+                error = @error,
+                test_cases_truncated = @testCasesTruncated
             WHERE id = @id AND state = 'Running';
-            """, parameters, cancellationToken: cancellationToken));
+            """, parameters, transaction, cancellationToken: cancellationToken));
         if (changed != 1)
         {
             throw new InvalidOperationException("The developer execution is not running.");
         }
+        if (!completion.TestCases.IsDefaultOrEmpty)
+        {
+            await connection.ExecuteAsync(new CommandDefinition("""
+                INSERT INTO developer_dotnet_test_case_results (
+                    execution_id, ordinal, fully_qualified_name,
+                    outcome, duration_milliseconds)
+                VALUES (
+                    @executionId, @ordinal, @fullyQualifiedName,
+                    @outcome, @durationMilliseconds);
+                """, completion.TestCases.Select((item, ordinal) => new
+                {
+                    executionId = completion.Id.Value,
+                    ordinal,
+                    fullyQualifiedName = item.FullyQualifiedName.Value,
+                    outcome = item.Outcome.ToString(),
+                    durationMilliseconds = item.DurationMilliseconds,
+                }), transaction, cancellationToken: cancellationToken));
+        }
+        await transaction.CommitAsync(cancellationToken);
     }
 
     public async ValueTask<IReadOnlyList<StoredDeveloperExecution>> ListAsync(
@@ -96,7 +118,7 @@ internal sealed class SqliteDeveloperDotNetExecutionStore(
     {
         int limit = Math.Clamp(maximumResults, 1, 200);
         await using SqliteConnection connection = await OpenAsync(cancellationToken);
-        IEnumerable<Row> rows = await connection.QueryAsync<Row>(new CommandDefinition("""
+        Row[] rows = (await connection.QueryAsync<Row>(new CommandDefinition("""
             SELECT id AS Id,
                    workspace_id AS WorkspaceId,
                    goal_id AS GoalId,
@@ -115,6 +137,7 @@ internal sealed class SqliteDeveloperDotNetExecutionStore(
                    completed_at AS CompletedAt,
                    exit_code AS ExitCode,
                    duration_milliseconds AS DurationMilliseconds,
+                   test_cases_truncated AS TestCasesTruncated,
                    error_code AS ErrorCode,
                    error AS Error
             FROM developer_dotnet_executions
@@ -123,8 +146,26 @@ internal sealed class SqliteDeveloperDotNetExecutionStore(
             ORDER BY started_at DESC
             LIMIT @limit;
             """, new { workspaceId = workspaceId.Value, goalId = goalId?.Value, limit },
-            cancellationToken: cancellationToken));
-        return rows.Select(row => row.ToRecord()).ToArray();
+            cancellationToken: cancellationToken))).ToArray();
+        if (rows.Length == 0) return [];
+        CaseRow[] cases = (await connection.QueryAsync<CaseRow>(new CommandDefinition("""
+            SELECT execution_id AS ExecutionId,
+                   ordinal AS Ordinal,
+                   fully_qualified_name AS FullyQualifiedName,
+                   outcome AS Outcome,
+                   duration_milliseconds AS DurationMilliseconds
+            FROM developer_dotnet_test_case_results
+            WHERE execution_id IN @ids
+            ORDER BY execution_id, ordinal;
+            """, new { ids = rows.Select(row => row.Id).ToArray() },
+            cancellationToken: cancellationToken))).ToArray();
+        Dictionary<string, ImmutableArray<StoredDeveloperTestCaseResult>> byExecution = cases
+            .GroupBy(item => item.ExecutionId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key,
+                group => group.Select(item => item.ToRecord()).ToImmutableArray(),
+                StringComparer.Ordinal);
+        return rows.Select(row => row.ToRecord(
+            byExecution.GetValueOrDefault(row.Id, []))).ToArray();
     }
 
     public async ValueTask<int> InterruptRunningAsync(
@@ -176,10 +217,12 @@ internal sealed class SqliteDeveloperDotNetExecutionStore(
         public string? CompletedAt { get; init; }
         public long? ExitCode { get; init; }
         public long DurationMilliseconds { get; init; }
+        public long TestCasesTruncated { get; init; }
         public string? ErrorCode { get; init; }
         public string? Error { get; init; }
 
-        internal StoredDeveloperExecution ToRecord() => new(
+        internal StoredDeveloperExecution ToRecord(
+            ImmutableArray<StoredDeveloperTestCaseResult> testCases) => new(
             new(Id), new(WorkspaceId), GoalId is null ? null : new(GoalId),
             new(SourceDescription), Enum.Parse<StoredDeveloperExecutionOperation>(Operation),
             new(ProjectPath), TargetFramework is null ? null : new(TargetFramework),
@@ -196,6 +239,21 @@ internal sealed class SqliteDeveloperDotNetExecutionStore(
             TestSelectionJson is null
                 ? []
                 : (JsonSerializer.Deserialize<string[]>(TestSelectionJson) ?? [])
-                    .Select(item => new StoredDeveloperTestName(item)).ToImmutableArray());
+                    .Select(item => new StoredDeveloperTestName(item)).ToImmutableArray(),
+            testCases,
+            TestCasesTruncated != 0);
+    }
+
+    private sealed class CaseRow
+    {
+        public string ExecutionId { get; init; } = string.Empty;
+        public long Ordinal { get; init; }
+        public string FullyQualifiedName { get; init; } = string.Empty;
+        public string Outcome { get; init; } = string.Empty;
+        public long DurationMilliseconds { get; init; }
+
+        internal StoredDeveloperTestCaseResult ToRecord() => new(
+            new(FullyQualifiedName), Enum.Parse<StoredDeveloperTestOutcome>(Outcome),
+            DurationMilliseconds);
     }
 }

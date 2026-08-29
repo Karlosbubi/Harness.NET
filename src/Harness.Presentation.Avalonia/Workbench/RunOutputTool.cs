@@ -176,7 +176,7 @@ internal sealed class RunOutputTool
             : cancelled.Error ?? "The selected project run could not be stopped.";
     }
 
-    private static string Format(DeveloperExecutionView output)
+    internal static string Format(DeveloperExecutionView output)
     {
         List<string> lines =
         [
@@ -192,6 +192,21 @@ internal sealed class RunOutputTool
         ];
         if (output.Test is not null)
             lines.Insert(2, $"Test: {output.Test.FullyQualifiedName.Value}");
+        if (!output.TestCases.IsDefaultOrEmpty)
+        {
+            lines.Add($"Cases: {output.TestCases.Count(item => item.Outcome is DeveloperTestOutcome.Passed)} passed · " +
+                      $"{output.TestCases.Count(item => item.Outcome is DeveloperTestOutcome.Failed)} failed · " +
+                      $"{output.TestCases.Count(item => item.Outcome is DeveloperTestOutcome.Skipped)} skipped" +
+                      (output.AreTestCasesTruncated ? " · truncated" : string.Empty));
+            foreach (DeveloperTestCaseResult testCase in output.TestCases)
+                lines.Add($"  {testCase.Outcome} · {testCase.DurationMilliseconds:N0} ms · " +
+                          testCase.DisplayName.Value);
+        }
+        else if (output.Operation is DeveloperExecutionOperation.Test &&
+                 output.AreTestCasesTruncated)
+        {
+            lines.Add("Cases: adapter results unavailable or truncated");
+        }
         if (output.Error is not null) lines.Add($"Operation error: {output.Error}");
         lines.Add(string.Empty);
         if (!output.IsOutputAvailable)

@@ -2,6 +2,8 @@ using System.Collections.Immutable;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Text;
+using System.Xml;
+using Harness.DataAccess.Configuration;
 using Harness.DataAccess.Inspection;
 
 namespace Harness.DataAccess.Execution;
@@ -10,14 +12,22 @@ internal sealed class DotNetProjectRunner : IDotNetProjectRunner
 {
     private const int MaximumOutputCharacters = 256 * 1024;
     private readonly string executable;
+    private readonly string testResultRoot;
 
-    public DotNetProjectRunner() : this("dotnet")
+    public DotNetProjectRunner(IApplicationPaths applicationPaths) : this(
+        "dotnet", Path.Combine(applicationPaths.Current.CacheDirectory, "test-results"))
     {
     }
 
-    internal DotNetProjectRunner(string executable)
+    internal DotNetProjectRunner(string executable) : this(
+        executable, Path.Combine(Path.GetTempPath(), "harness-test-results"))
+    {
+    }
+
+    internal DotNetProjectRunner(string executable, string testResultRoot)
     {
         this.executable = executable;
+        this.testResultRoot = testResultRoot;
     }
 
     public async ValueTask<DotNetProjectExecutionResult> RunAsync(
@@ -99,80 +109,118 @@ internal sealed class DotNetProjectRunner : IDotNetProjectRunner
                 "A test selector is valid only for the Test operation.");
         }
 
-        ProcessStartInfo startInfo = new(executable)
+        string? resultDirectory = null;
+        if (request.Operation is DotNetProjectOperation.Test)
         {
-            WorkingDirectory = canonicalRoot,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-        };
-        foreach (string argument in Arguments(
-                     request.Operation, projectPath, request.Test, request.TestScope,
-                     request.SelectedTests))
-        {
-            startInfo.ArgumentList.Add(argument);
+            resultDirectory = Path.Combine(testResultRoot, Guid.NewGuid().ToString("N"));
         }
-        if (request.TargetFramework is { Value: { } target } && target != "unknown")
-        {
-            startInfo.ArgumentList.Add("--framework");
-            startInfo.ArgumentList.Add(target);
-        }
-        if (request.Configuration is { Value: { } selectedConfiguration })
-        {
-            startInfo.ArgumentList.Add("--configuration");
-            startInfo.ArgumentList.Add(selectedConfiguration);
-        }
-        startInfo.Environment["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1";
-        startInfo.Environment["DOTNET_NOLOGO"] = "1";
-
-        using Process process = new() { StartInfo = startInfo };
-        Stopwatch duration = Stopwatch.StartNew();
         try
         {
-            if (!process.Start())
+            if (resultDirectory is not null) Directory.CreateDirectory(resultDirectory);
+            ProcessStartInfo startInfo = new(executable)
             {
-                return Failure(confined, "process_start_failed",
-                    "The dotnet process did not start.");
-            }
-        }
-        catch (Exception exception) when (exception is InvalidOperationException or Win32Exception)
-        {
-            return Failure(confined, "process_start_failed", exception.Message);
-        }
-
-        Task<BoundedText> output = ReadBoundedAsync(process.StandardOutput);
-        Task<BoundedText> diagnostic = ReadBoundedAsync(process.StandardError);
-        bool cancelled = false;
-        try
-        {
-            await process.WaitForExitAsync(cancellationToken);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            cancelled = true;
-            if (!process.HasExited)
+                WorkingDirectory = canonicalRoot,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            foreach (string argument in Arguments(
+                         request.Operation, projectPath, request.Test, request.TestScope,
+                         request.SelectedTests, resultDirectory))
             {
-                process.Kill(entireProcessTree: true);
+                startInfo.ArgumentList.Add(argument);
             }
-            await process.WaitForExitAsync(CancellationToken.None);
-        }
+            if (request.TargetFramework is { Value: { } target } && target != "unknown")
+            {
+                startInfo.ArgumentList.Add("--framework");
+                startInfo.ArgumentList.Add(target);
+            }
+            if (request.Configuration is { Value: { } selectedConfiguration })
+            {
+                startInfo.ArgumentList.Add("--configuration");
+                startInfo.ArgumentList.Add(selectedConfiguration);
+            }
+            startInfo.Environment["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1";
+            startInfo.Environment["DOTNET_NOLOGO"] = "1";
 
-        BoundedText standardOutput = await output;
-        BoundedText standardError = await diagnostic;
-        duration.Stop();
-        return new(
-            confined.ProjectPath,
-            confined.TargetFramework,
-            process.ExitCode,
-            new(standardOutput.Value),
-            new(standardError.Value),
-            standardOutput.IsTruncated,
-            standardError.IsTruncated,
-            cancelled,
-            duration.ElapsedMilliseconds,
-            cancelled ? "cancelled" : null,
-            cancelled ? $"The project {request.Operation.ToString().ToLowerInvariant()} was cancelled." : null);
+            using Process process = new() { StartInfo = startInfo };
+            Stopwatch duration = Stopwatch.StartNew();
+            try
+            {
+                if (!process.Start())
+                {
+                    return Failure(confined, "process_start_failed",
+                        "The dotnet process did not start.");
+                }
+            }
+            catch (Exception exception) when (exception is InvalidOperationException or Win32Exception)
+            {
+                return Failure(confined, "process_start_failed", exception.Message);
+            }
+
+            Task<BoundedText> output = ReadBoundedAsync(process.StandardOutput);
+            Task<BoundedText> diagnostic = ReadBoundedAsync(process.StandardError);
+            bool cancelled = false;
+            try
+            {
+                await process.WaitForExitAsync(cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                cancelled = true;
+                if (!process.HasExited)
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+                await process.WaitForExitAsync(CancellationToken.None);
+            }
+
+            BoundedText standardOutput = await output;
+            BoundedText standardError = await diagnostic;
+            duration.Stop();
+            TrxTestResultParse testResults = new([], false);
+            if (resultDirectory is not null)
+            {
+                try
+                {
+                    testResults = TrxTestResultParser.ParseDirectory(resultDirectory);
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+                                                    or XmlException or InvalidOperationException
+                                                    or ArgumentException)
+                {
+                    testResults = new([], true);
+                }
+            }
+            bool resultsRemoved = TryDeleteResults(resultDirectory);
+            string? resultErrorCode = !resultsRemoved
+                ? "test_result_cleanup_failed"
+                : cancelled ? "cancelled" : null;
+            string? resultError = !resultsRemoved
+                ? "The private test result files could not be removed."
+                : cancelled
+                    ? $"The project {request.Operation.ToString().ToLowerInvariant()} was cancelled."
+                    : null;
+            return new(
+                confined.ProjectPath,
+                confined.TargetFramework,
+                process.ExitCode,
+                new(standardOutput.Value),
+                new(standardError.Value),
+                standardOutput.IsTruncated,
+                standardError.IsTruncated,
+                cancelled,
+                duration.ElapsedMilliseconds,
+                resultErrorCode,
+                resultError,
+                testResults.Cases,
+                testResults.IsTruncated);
+        }
+        finally
+        {
+            TryDeleteResults(resultDirectory);
+        }
     }
 
     private static IReadOnlyList<string> Arguments(
@@ -180,25 +228,30 @@ internal sealed class DotNetProjectRunner : IDotNetProjectRunner
         string projectPath,
         DotNetTestFullyQualifiedName? test,
         DotNetTestScope testScope,
-        ImmutableArray<DotNetTestFullyQualifiedName> selectedTests) =>
+        ImmutableArray<DotNetTestFullyQualifiedName> selectedTests,
+        string? resultDirectory) =>
         operation switch
-    {
-        DotNetProjectOperation.Build => ["build", projectPath, "--no-restore"],
-        DotNetProjectOperation.Rebuild =>
-            ["build", projectPath, "--no-restore", "--no-incremental"],
-        DotNetProjectOperation.Test when testScope is DotNetTestScope.Exact =>
-            ["test", projectPath, "--no-restore", "--filter",
-                $"FullyQualifiedName={test!.Value}"],
-        DotNetProjectOperation.Test when testScope is DotNetTestScope.Type =>
-            ["test", projectPath, "--no-restore", "--filter",
-                $"FullyQualifiedName~{test!.Value}."],
-        DotNetProjectOperation.Test when testScope is DotNetTestScope.Selection =>
-            ["test", projectPath, "--no-restore", "--filter",
+        {
+            DotNetProjectOperation.Build => ["build", projectPath, "--no-restore"],
+            DotNetProjectOperation.Rebuild =>
+                ["build", projectPath, "--no-restore", "--no-incremental"],
+            DotNetProjectOperation.Test when testScope is DotNetTestScope.Exact =>
+                ["test", projectPath, "--no-restore", "--filter",
+                $"FullyQualifiedName={test!.Value}", "--logger", "trx",
+                "--results-directory", resultDirectory!],
+            DotNetProjectOperation.Test when testScope is DotNetTestScope.Type =>
+                ["test", projectPath, "--no-restore", "--filter",
+                $"FullyQualifiedName~{test!.Value}.", "--logger", "trx",
+                "--results-directory", resultDirectory!],
+            DotNetProjectOperation.Test when testScope is DotNetTestScope.Selection =>
+                ["test", projectPath, "--no-restore", "--filter",
                 string.Join('|', selectedTests.Select(item =>
-                    $"FullyQualifiedName={item.Value}"))],
-        DotNetProjectOperation.Test => ["test", projectPath, "--no-restore"],
-        _ => ["run", "--project", projectPath, "--no-restore", "--no-launch-profile"],
-    };
+                    $"FullyQualifiedName={item.Value}")), "--logger", "trx",
+                "--results-directory", resultDirectory!],
+            DotNetProjectOperation.Test => ["test", projectPath, "--no-restore",
+            "--logger", "trx", "--results-directory", resultDirectory!],
+            _ => ["run", "--project", projectPath, "--no-restore", "--no-launch-profile"],
+        };
 
     private static bool IsValidFramework(string value) =>
         !string.IsNullOrWhiteSpace(value) && value.Length <= 128 &&
@@ -260,6 +313,24 @@ internal sealed class DotNetProjectRunner : IDotNetProjectRunner
         DurationMilliseconds: 0,
         code,
         error);
+
+    private static bool TryDeleteResults(string? directory)
+    {
+        if (directory is null || !Directory.Exists(directory)) return true;
+        try
+        {
+            Directory.Delete(directory, recursive: true);
+            return true;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
 
     private sealed record BoundedText(string Value, bool IsTruncated);
 }

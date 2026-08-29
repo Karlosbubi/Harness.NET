@@ -7,6 +7,21 @@ public sealed record DotNetTargetFramework(string Value);
 public sealed record DotNetConfigurationName(string Value);
 public sealed record DotNetTestFullyQualifiedName(string Value);
 public sealed record DotNetExecutionOutput(string Value);
+public sealed record DotNetTestDisplayName(string Value);
+
+public enum DotNetTestOutcome
+{
+    Passed,
+    Failed,
+    Skipped,
+    Other,
+}
+
+public sealed record DotNetTestCaseResult(
+    DotNetTestFullyQualifiedName FullyQualifiedName,
+    DotNetTestDisplayName DisplayName,
+    DotNetTestOutcome Outcome,
+    long DurationMilliseconds);
 
 public enum DotNetProjectOperation
 {
@@ -44,7 +59,9 @@ public sealed record DotNetProjectExecutionResult(
     bool WasCancelled,
     long DurationMilliseconds,
     string? ErrorCode,
-    string? Error);
+    string? Error,
+    ImmutableArray<DotNetTestCaseResult> TestCases = default,
+    bool AreTestCasesTruncated = false);
 
 public interface IDotNetProjectRunner
 {

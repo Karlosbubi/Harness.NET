@@ -9,6 +9,18 @@ public sealed record StoredDeveloperSourceDescription(string Value);
 public sealed record StoredDeveloperDeclarationId(string Value);
 public sealed record StoredDeveloperTestId(string Value);
 public sealed record StoredDeveloperTestName(string Value);
+public enum StoredDeveloperTestOutcome
+{
+    Passed,
+    Failed,
+    Skipped,
+    Other,
+}
+
+public sealed record StoredDeveloperTestCaseResult(
+    StoredDeveloperTestName FullyQualifiedName,
+    StoredDeveloperTestOutcome Outcome,
+    long DurationMilliseconds);
 
 public enum StoredDeveloperExecutionOperation
 {
@@ -55,7 +67,9 @@ public sealed record StoredDeveloperExecution(
     StoredDeveloperTestId? TestId = null,
     StoredDeveloperTestName? TestName = null,
     StoredDeveloperTestScope? TestScope = null,
-    ImmutableArray<StoredDeveloperTestName> SelectedTests = default);
+    ImmutableArray<StoredDeveloperTestName> SelectedTests = default,
+    ImmutableArray<StoredDeveloperTestCaseResult> TestCases = default,
+    bool AreTestCasesTruncated = false);
 
 public sealed record StoredDeveloperExecutionStart(
     StoredDeveloperExecutionId Id,
@@ -80,7 +94,9 @@ public sealed record StoredDeveloperExecutionCompletion(
     int? ExitCode,
     long DurationMilliseconds,
     string? ErrorCode,
-    string? Error);
+    string? Error,
+    ImmutableArray<StoredDeveloperTestCaseResult> TestCases = default,
+    bool AreTestCasesTruncated = false);
 
 public interface IDeveloperDotNetExecutionStore
 {

@@ -298,7 +298,13 @@ internal sealed class DeveloperProjectExecutionService(
                 new(result.StandardOutput.Value),
                 new(result.StandardError.Value),
                 result.IsOutputTruncated,
-                result.IsErrorTruncated);
+                result.IsErrorTruncated,
+                result.TestCases.IsDefaultOrEmpty
+                    ? []
+                    : result.TestCases.Select(item => new DeveloperTestCaseResult(
+                        new(item.FullyQualifiedName.Value), new(item.DisplayName.Value),
+                        MapView(item.Outcome), item.DurationMilliseconds)).ToImmutableArray(),
+                result.AreTestCasesTruncated);
             TrimOutput();
             try
             {
@@ -309,7 +315,14 @@ internal sealed class DeveloperProjectExecutionService(
                     result.ExitCode,
                     result.DurationMilliseconds,
                     result.ErrorCode,
-                    result.Error), CancellationToken.None);
+                    result.Error,
+                    result.TestCases.IsDefaultOrEmpty
+                        ? []
+                        : result.TestCases.Select(item => new StoredDeveloperTestCaseResult(
+                            new(item.FullyQualifiedName.Value),
+                            Map(item.Outcome),
+                            item.DurationMilliseconds)).ToImmutableArray(),
+                    result.AreTestCasesTruncated), CancellationToken.None);
             }
             catch (Exception exception)
             {
@@ -489,7 +502,14 @@ internal sealed class DeveloperProjectExecutionService(
             available,
             execution.ErrorCode,
             execution.Error,
-            test);
+            test,
+            streams?.TestCases ?? (execution.TestCases.IsDefaultOrEmpty
+                ? []
+                : execution.TestCases.Select(item => new DeveloperTestCaseResult(
+                    new(item.FullyQualifiedName.Value),
+                    new(item.FullyQualifiedName.Value),
+                    Map(item.Outcome), item.DurationMilliseconds)).ToImmutableArray()),
+            streams?.AreTestCasesTruncated ?? execution.AreTestCasesTruncated);
     }
 
     private static WorkbenchExecutionTarget? EntryPoint(StoredDeveloperExecution execution) =>
@@ -565,6 +585,33 @@ internal sealed class DeveloperProjectExecutionService(
         DeveloperTestScope.Project => StoredDeveloperTestScope.Project,
         DeveloperTestScope.Selection => StoredDeveloperTestScope.Selection,
         _ => throw new ArgumentOutOfRangeException(nameof(scope)),
+    };
+
+    private static StoredDeveloperTestOutcome Map(DotNetTestOutcome outcome) => outcome switch
+    {
+        DotNetTestOutcome.Passed => StoredDeveloperTestOutcome.Passed,
+        DotNetTestOutcome.Failed => StoredDeveloperTestOutcome.Failed,
+        DotNetTestOutcome.Skipped => StoredDeveloperTestOutcome.Skipped,
+        DotNetTestOutcome.Other => StoredDeveloperTestOutcome.Other,
+        _ => throw new ArgumentOutOfRangeException(nameof(outcome)),
+    };
+
+    private static DeveloperTestOutcome MapView(DotNetTestOutcome outcome) => outcome switch
+    {
+        DotNetTestOutcome.Passed => DeveloperTestOutcome.Passed,
+        DotNetTestOutcome.Failed => DeveloperTestOutcome.Failed,
+        DotNetTestOutcome.Skipped => DeveloperTestOutcome.Skipped,
+        DotNetTestOutcome.Other => DeveloperTestOutcome.Other,
+        _ => throw new ArgumentOutOfRangeException(nameof(outcome)),
+    };
+
+    private static DeveloperTestOutcome Map(StoredDeveloperTestOutcome outcome) => outcome switch
+    {
+        StoredDeveloperTestOutcome.Passed => DeveloperTestOutcome.Passed,
+        StoredDeveloperTestOutcome.Failed => DeveloperTestOutcome.Failed,
+        StoredDeveloperTestOutcome.Skipped => DeveloperTestOutcome.Skipped,
+        StoredDeveloperTestOutcome.Other => DeveloperTestOutcome.Other,
+        _ => throw new ArgumentOutOfRangeException(nameof(outcome)),
     };
 
     private static bool IsValidSelection(
@@ -659,5 +706,7 @@ internal sealed class DeveloperProjectExecutionService(
         DeveloperExecutionOutput StandardOutput,
         DeveloperExecutionOutput StandardError,
         bool IsOutputTruncated,
-        bool IsErrorTruncated);
+        bool IsErrorTruncated,
+        ImmutableArray<DeveloperTestCaseResult> TestCases,
+        bool AreTestCasesTruncated);
 }

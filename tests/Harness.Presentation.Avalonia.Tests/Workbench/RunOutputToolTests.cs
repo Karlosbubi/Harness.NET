@@ -8,11 +8,38 @@ using Harness.BusinessLogic.Evidence;
 using Harness.BusinessLogic.Execution;
 using Harness.BusinessLogic.Mutations;
 using Harness.BusinessLogic.Workspaces;
+using Harness.Presentation.Avalonia.Workbench;
 
 namespace Harness.Presentation.Avalonia.Tests;
 
 public sealed partial class PresentationControlTests
 {
+    [Fact]
+    public void Run_output_formats_typed_adapter_case_results()
+    {
+        DateTimeOffset started = DateTimeOffset.Parse("2026-08-29T12:00:00Z");
+        DeveloperExecutionView execution = new(
+            new("test-1"), new("workspace-1"), null, "Original workspace",
+            DeveloperExecutionOperation.Test,
+            new(new("tests/App.Tests.csproj"), null, null), null,
+            DeveloperExecutionState.Failed, started, started.AddMilliseconds(500),
+            1, 500, null, null, false, false, false, null, null,
+            new(new(new string('a', 64)), new("Demo.Tests"), DeveloperTestScope.Type),
+            [
+                new(new("Demo.Tests.First"), new("First"),
+                    DeveloperTestOutcome.Passed, 100),
+                new(new("Demo.Tests.Second"), new("Second"),
+                    DeveloperTestOutcome.Failed, 250),
+            ],
+            AreTestCasesTruncated: true);
+
+        string formatted = RunOutputTool.Format(execution);
+
+        Assert.Contains("Cases: 1 passed · 1 failed · 0 skipped · truncated", formatted,
+            StringComparison.Ordinal);
+        Assert.Contains("Failed · 250 ms · Second", formatted, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task Run_output_tool_renders_typed_developer_build_metadata_and_streams()
     {

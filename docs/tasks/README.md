@@ -661,8 +661,10 @@ confined no-Restore process per action and schema 34 persists its scope. Multi-t
 selection is delivered by the ninth slice: accessible leaf checkboxes select 2–24
 exact tests from one project, Business Logic derives a stable sorted identity, and
 Data Access constructs one bounded VSTest OR filter for one process. Schema 35 stores
-the exact members. Per-case adapter results, test Debug, coverage, typed one-run
-overrides, Hot Reload, and Debug remain open.
+the exact members. The tenth slice collects standard TRX only in a private ephemeral
+directory, parses at most 2,000 typed case outcomes, deletes raw files, keeps adapter
+display text process-local, and persists safe case identity/outcome/duration in schema
+36. Test Debug, coverage, typed one-run overrides, Hot Reload, and Debug remain open.
 
 Acceptance criteria:
 

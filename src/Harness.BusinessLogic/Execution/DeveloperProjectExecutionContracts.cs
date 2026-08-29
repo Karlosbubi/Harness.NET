@@ -14,6 +14,21 @@ public sealed record DeveloperTargetFramework(string Value);
 public sealed record DeveloperConfigurationName(string Value);
 public sealed record DeveloperTestId(string Value);
 public sealed record DeveloperTestName(string Value);
+public sealed record DeveloperTestDisplayName(string Value);
+
+public enum DeveloperTestOutcome
+{
+    Passed,
+    Failed,
+    Skipped,
+    Other,
+}
+
+public sealed record DeveloperTestCaseResult(
+    DeveloperTestName FullyQualifiedName,
+    DeveloperTestDisplayName DisplayName,
+    DeveloperTestOutcome Outcome,
+    long DurationMilliseconds);
 
 public enum DeveloperExecutionOperation
 {
@@ -116,7 +131,9 @@ public sealed record DeveloperExecutionView(
     bool IsOutputAvailable,
     string? ErrorCode,
     string? Error,
-    DeveloperTestTarget? Test = null);
+    DeveloperTestTarget? Test = null,
+    ImmutableArray<DeveloperTestCaseResult> TestCases = default,
+    bool AreTestCasesTruncated = false);
 
 public sealed record DeveloperExecutionStartRequest(
     WorkbenchWorkspaceRequest Workspace,

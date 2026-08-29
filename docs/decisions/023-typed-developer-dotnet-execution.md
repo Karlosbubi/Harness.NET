@@ -44,6 +44,12 @@ processes. Business Logic recomputes group identities before granting execution.
 Selection carries 2–24 distinct compiler-discovered exact names from one inspected
 project. Harness sorts and hashes them, then constructs the VSTest OR filter inside
 Data Access; neither Presentation nor a model may supply filter syntax.
+Test operations direct the standard TRX logger to a unique Harness.NET-private cache
+directory. Data Access parses at most 2,000 cases from bounded XML with DTD processing
+disabled and deletes the directory immediately. Fully qualified name, closed outcome,
+and duration are durable; adapter display text is process-local because parameterized
+names may contain runtime values. Raw XML, test output, stacks, and failure messages
+are never persisted by this lifecycle.
 There is no shell string, implicit Restore, adapter discovery process outside
 `dotnet test`, or model-facing execution authority. The operation records test
 identity, state, exit code, duration, cancellation, and errors; stdout/stderr remain
@@ -78,6 +84,8 @@ the developer UI does not imply agent authority.
   selector and start one process per user action.
 - Arbitrary same-project multi-selection remains one bounded process and persists its
   exact sorted member identities for restart-safe history.
+- Adapter case summaries survive restart without turning TRX or failure output into a
+  durable content store; incomplete or malformed result capture remains explicit.
 - Debug is visibly absent rather than misleading until its actual adapter is ready.
 - The same typed target and execution identity can later back Solution, Test Explorer,
   launch profiles, Hot Reload, and debugger UI.

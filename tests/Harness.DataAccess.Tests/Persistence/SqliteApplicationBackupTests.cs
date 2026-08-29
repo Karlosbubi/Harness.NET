@@ -36,7 +36,7 @@ public sealed class SqliteApplicationBackupTests : IDisposable
         ApplicationBackupResult result = await backup.CreateAsync(new(new(destination)));
 
         Assert.Null(result.Error);
-        Assert.Equal(35, result.SchemaVersion?.Value);
+        Assert.Equal(36, result.SchemaVersion?.Value);
         Assert.True(File.Exists(destination));
         Assert.Equal(await HashAsync(destination), result.ArchiveSha256?.Value);
         using ZipArchive archive = ZipFile.OpenRead(destination);
@@ -47,7 +47,7 @@ public sealed class SqliteApplicationBackupTests : IDisposable
         using JsonDocument manifest = await JsonDocument.ParseAsync(manifestEntry.Open());
         Assert.Equal("harness-backup-v2",
             manifest.RootElement.GetProperty("Format").GetString());
-        Assert.Equal(35, manifest.RootElement.GetProperty("SchemaVersion").GetInt32());
+        Assert.Equal(36, manifest.RootElement.GetProperty("SchemaVersion").GetInt32());
         Assert.Equal(result.DatabaseSha256?.Value,
             manifest.RootElement.GetProperty("DatabaseSha256").GetString());
         JsonElement layoutManifest = manifest.RootElement.GetProperty("WorkbenchLayout");
@@ -122,6 +122,7 @@ public sealed class SqliteApplicationBackupTests : IDisposable
                 DROP TABLE editor_intelligence_preferences;
                 DROP TABLE keybinding_preferences;
                 DROP TABLE keybinding_configuration;
+                DROP TABLE developer_dotnet_test_case_results;
                 DROP TABLE developer_dotnet_executions;
                 DELETE FROM SchemaVersions
                 WHERE ScriptName LIKE '%018_AppearancePreferences.sql'
@@ -141,7 +142,8 @@ public sealed class SqliteApplicationBackupTests : IDisposable
                    OR ScriptName LIKE '%032_DeveloperDotNetBuildOperations.sql'
                    OR ScriptName LIKE '%033_DeveloperDotNetTestOperations.sql'
                    OR ScriptName LIKE '%034_DeveloperDotNetTestScopes.sql'
-                   OR ScriptName LIKE '%035_DeveloperDotNetTestSelections.sql';
+                   OR ScriptName LIKE '%035_DeveloperDotNetTestSelections.sql'
+                   OR ScriptName LIKE '%036_DeveloperDotNetTestCaseResults.sql';
                 UPDATE application_metadata SET value = '17' WHERE key = 'schema_version';
                 """);
         }
@@ -149,7 +151,7 @@ public sealed class SqliteApplicationBackupTests : IDisposable
         DatabaseInitializationResult upgraded = await new SqliteDatabaseInitializer(
             applicationPaths, new FixedTimeProvider()).InitializeAsync();
 
-        Assert.Equal(35, upgraded.SchemaVersion.Value);
+        Assert.Equal(36, upgraded.SchemaVersion.Value);
         Assert.NotNull(upgraded.PreUpgradeBackup);
         Assert.True(File.Exists(upgraded.PreUpgradeBackup.Value));
         using ZipArchive archive = ZipFile.OpenRead(upgraded.PreUpgradeBackup.Value);

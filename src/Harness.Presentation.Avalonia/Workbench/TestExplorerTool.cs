@@ -502,13 +502,19 @@ internal sealed class TestExplorerTool
             : StatusSeverity.Success;
     }
 
-    private static string History(DeveloperExecutionView execution)
+    internal static string History(DeveloperExecutionView execution)
     {
         string duration = execution.State is DeveloperExecutionState.Running
             ? "running"
             : $"{execution.DurationMilliseconds:N0} ms";
         string exit = execution.ExitCode is null ? string.Empty : $" · exit {execution.ExitCode}";
-        return $"{execution.State} · {duration}{exit}";
+        string cases = execution.TestCases.IsDefaultOrEmpty
+            ? string.Empty
+            : $" · {execution.TestCases.Count(item => item.Outcome is DeveloperTestOutcome.Passed)} passed" +
+              $" · {execution.TestCases.Count(item => item.Outcome is DeveloperTestOutcome.Failed)} failed" +
+              $" · {execution.TestCases.Count(item => item.Outcome is DeveloperTestOutcome.Skipped)} skipped" +
+              (execution.AreTestCasesTruncated ? " · truncated" : string.Empty);
+        return $"{execution.State} · {duration}{exit}{cases}";
     }
 
     private WorkbenchCodeTestFramework? SelectedFramework() =>

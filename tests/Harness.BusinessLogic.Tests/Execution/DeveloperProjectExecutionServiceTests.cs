@@ -222,6 +222,9 @@ public sealed class DeveloperProjectExecutionServiceTests
         DeveloperExecutionView completed = await WaitForCompletionAsync(service);
         Assert.Equal(selection.Id, completed.Test?.Id);
         Assert.Equal(selection.SelectedTests, completed.Test?.SelectedTests);
+        DeveloperTestCaseResult testCase = Assert.Single(completed.TestCases);
+        Assert.Equal(DeveloperTestOutcome.Passed, testCase.Outcome);
+        Assert.Equal("Demo.CalculatorTests.Adds", testCase.FullyQualifiedName.Value);
     }
 
     [Fact]
@@ -269,6 +272,30 @@ public sealed class DeveloperProjectExecutionServiceTests
         Assert.Equal(1, completed.ExitCode);
         Assert.Equal(12, completed.DurationMilliseconds);
         Assert.Equal("test failure", completed.StandardError?.Value);
+    }
+
+    [Fact]
+    public async Task Reconstructs_safe_adapter_case_history_without_raw_display_content()
+    {
+        Store store = new();
+        store.Items.Add(new(
+            new("test-history"), new("workspace-a"), null, new("Original workspace"),
+            StoredDeveloperExecutionOperation.Test, new("App.csproj"), null, null, null,
+            StoredDeveloperExecutionState.Succeeded,
+            DateTimeOffset.Parse("2026-08-29T12:00:00Z"),
+            DateTimeOffset.Parse("2026-08-29T12:00:01Z"), 0, 1_000, null, null,
+            new(new string('d', 64)), new("Demo.Tests.Passes"),
+            StoredDeveloperTestScope.Exact, [],
+            [new(new("Demo.Tests.Passes"), StoredDeveloperTestOutcome.Passed, 125)]));
+        using DeveloperProjectExecutionService service = CreateService(new Runner(), store);
+
+        DeveloperExecutionView execution = Assert.Single((await service.ListAsync(
+            new(new("workspace-a"), null))).Executions);
+
+        DeveloperTestCaseResult testCase = Assert.Single(execution.TestCases);
+        Assert.Equal(DeveloperTestOutcome.Passed, testCase.Outcome);
+        Assert.Equal(testCase.FullyQualifiedName.Value, testCase.DisplayName.Value);
+        Assert.False(execution.IsOutputAvailable);
     }
 
     private static DeveloperProjectExecutionService CreateService(Runner runner, Store store) => new(
@@ -374,7 +401,11 @@ public sealed class DeveloperProjectExecutionServiceTests
                 await completion.Task.WaitAsync(cancellationToken);
                 return new(request.ProjectPath, request.TargetFramework, Fail ? 1 : 0,
                     new("synthetic process output"), new(Fail ? "test failure" : string.Empty), false, false,
-                    false, 12, null, null);
+                    false, 12, null, null,
+                    request.Operation is DotNetProjectOperation.Test
+                        ? [new(new("Demo.CalculatorTests.Adds"), new("Adds"),
+                            DotNetTestOutcome.Passed, 5)]
+                        : []);
             }
             catch (OperationCanceledException)
             {
@@ -417,6 +448,8 @@ public sealed class DeveloperProjectExecutionServiceTests
                     DurationMilliseconds = completion.DurationMilliseconds,
                     ErrorCode = completion.ErrorCode,
                     Error = completion.Error,
+                    TestCases = completion.TestCases,
+                    AreTestCasesTruncated = completion.AreTestCasesTruncated,
                 };
             }
             return ValueTask.CompletedTask;

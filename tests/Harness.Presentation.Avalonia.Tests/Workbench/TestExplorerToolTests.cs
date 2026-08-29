@@ -107,6 +107,8 @@ public sealed class TestExplorerToolTests
             Assert.Same(first, type.Children[0].Test);
             Assert.Same(failed, type.Children[0].Execution);
             Assert.Same(running, type.Children[1].Execution);
+            Assert.Contains("1 failed", TestExplorerTool.History(failed),
+                StringComparison.Ordinal);
             Assert.Contains("2 test(s) discovered", tool.StatusText, StringComparison.Ordinal);
             Assert.Equal("Roslyn test hierarchy", AutomationProperties.GetName(tool.Tree));
             Assert.Equal("Test Explorer search", AutomationProperties.GetName(tool.Filter));
@@ -222,7 +224,14 @@ public sealed class TestExplorerToolTests
             IsOutputAvailable: false,
             ErrorCode: state is DeveloperExecutionState.Failed ? "process_failed" : null,
             Error: state is DeveloperExecutionState.Failed ? "The test failed." : null,
-            test);
+            test,
+            state is DeveloperExecutionState.Running
+                ? []
+                : [new(new(test.FullyQualifiedName.Value), new(test.FullyQualifiedName.Value),
+                    state is DeveloperExecutionState.Failed
+                        ? DeveloperTestOutcome.Failed
+                        : DeveloperTestOutcome.Passed,
+                    duration)]);
 
     private static AvaloniaShellState TrustedShell()
     {

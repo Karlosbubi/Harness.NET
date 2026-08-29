@@ -105,11 +105,16 @@ public sealed class DotNetProjectRunnerTests : IDisposable
             new("Demo.CalculatorTests.Adds")));
 
         Assert.Null(result.Error);
+        string[] arguments = result.StandardOutput.Value.Split('\n');
         Assert.Equal([
             "test", Path.Combine(root, "Tests.csproj"), "--no-restore", "--filter",
-            "FullyQualifiedName=Demo.CalculatorTests.Adds", "--framework", "net10.0",
+            "FullyQualifiedName=Demo.CalculatorTests.Adds",
+        ], arguments[..5]);
+        AssertPrivateTrxArguments(arguments, 5);
+        Assert.Equal([
+            "--framework", "net10.0",
             "--configuration", "Release",
-        ], result.StandardOutput.Value.Split('\n'));
+        ], arguments[9..]);
     }
 
     [Theory]
@@ -141,7 +146,9 @@ public sealed class DotNetProjectRunnerTests : IDisposable
             expected.Add(filterArgument);
             expected.Add(filterValue);
         }
-        Assert.Equal(expected, result.StandardOutput.Value.Split('\n'));
+        string[] arguments = result.StandardOutput.Value.Split('\n');
+        Assert.Equal(expected, arguments[..expected.Count]);
+        AssertPrivateTrxArguments(arguments, expected.Count);
     }
 
     [Fact]
@@ -164,11 +171,43 @@ public sealed class DotNetProjectRunnerTests : IDisposable
             ]));
 
         Assert.Null(result.Error);
+        string[] arguments = result.StandardOutput.Value.Split('\n');
         Assert.Equal([
             "test", Path.Combine(root, "Tests.csproj"), "--no-restore", "--filter",
             "FullyQualifiedName=Demo.CalculatorTests.Adds|" +
             "FullyQualifiedName=Demo.CalculatorTests.Subtracts",
-        ], result.StandardOutput.Value.Split('\n'));
+        ], arguments[..5]);
+        AssertPrivateTrxArguments(arguments, 5);
+    }
+
+    [Fact]
+    public async Task Collects_adapter_cases_from_a_private_result_directory_then_removes_it()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        Directory.CreateDirectory(root);
+        await File.WriteAllTextAsync(Path.Combine(root, "Tests.csproj"), "<Project />");
+        string executable = await CreateExecutableAsync("""
+            results=''
+            while [ "$#" -gt 0 ]; do
+              if [ "$1" = '--results-directory' ]; then shift; results="$1"; fi
+              shift
+            done
+            mkdir -p "$results"
+            printf '%s' '<TestRun><Results><UnitTestResult testId="a" testName="Adds" outcome="Failed" duration="00:00:00.250" /></Results><TestDefinitions><UnitTest id="a"><TestMethod className="Demo.Tests" name="Adds" /></UnitTest></TestDefinitions></TestRun>' > "$results/results.trx"
+            """);
+        string resultRoot = Path.Combine(root, "private-results");
+        DotNetProjectRunner runner = new(executable, resultRoot);
+
+        DotNetProjectExecutionResult result = await runner.RunAsync(root, new(
+            new("Tests.csproj"), null, DotNetProjectOperation.Test,
+            Test: new("Demo.Tests.Adds")));
+
+        DotNetTestCaseResult test = Assert.Single(result.TestCases);
+        Assert.Equal("Demo.Tests.Adds", test.FullyQualifiedName.Value);
+        Assert.Equal(DotNetTestOutcome.Failed, test.Outcome);
+        Assert.Equal(250, test.DurationMilliseconds);
+        Assert.False(result.AreTestCasesTruncated);
+        Assert.Empty(Directory.EnumerateDirectories(resultRoot));
     }
 
     [Fact]
@@ -226,5 +265,15 @@ public sealed class DotNetProjectRunnerTests : IDisposable
         File.SetUnixFileMode(path,
             UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         return path;
+    }
+
+    private static void AssertPrivateTrxArguments(string[] arguments, int offset)
+    {
+        Assert.Equal("--logger", arguments[offset]);
+        Assert.Equal("trx", arguments[offset + 1]);
+        Assert.Equal("--results-directory", arguments[offset + 2]);
+        Assert.Contains("harness-test-results", arguments[offset + 3],
+            StringComparison.Ordinal);
+        Assert.False(Directory.Exists(arguments[offset + 3]));
     }
 }

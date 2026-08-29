@@ -563,6 +563,15 @@ there is no child-process fan-out or raw filter boundary. Schema 35 persists the
 ordered selection for restart-safe history. Adapter-level case results, Test Debug,
 coverage, typed one-run overrides, Hot Reload, and the debugger remain planned.
 
+Delivered tenth slice: every Test operation requests the standard TRX logger in a
+unique private cache directory, parses bounded case results with hardened XML settings,
+and removes the files immediately. Closed Passed/Failed/Skipped/Other outcomes,
+fully qualified names, and durations cross typed boundaries and persist in schema 36;
+adapter display text remains process-local because parameterized names can contain
+runtime values. Run output lists case summaries and Test Explorer history shows
+aggregate counts with explicit truncation. Test Debug, coverage, typed one-run
+overrides, Hot Reload, and the debugger remain planned.
+
 Use the existing trust and Restore boundaries. Selecting a launch profile does not
 authorize execution; debug attach, expression evaluation, mutation, dumps, network
 listeners, and external processes remain separately classified. ASP.NET endpoint
