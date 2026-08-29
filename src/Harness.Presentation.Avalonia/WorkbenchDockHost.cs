@@ -97,6 +97,7 @@ internal sealed class WorkbenchDockHost
     private readonly RunOutputTool runOutputToolUnit;
     private readonly ProblemsTool problemsToolUnit;
     private readonly DocumentIntelligence documentIntelligence;
+    private readonly DocumentInteractions documentInteractions;
     private TextBlock GitStatus => gitChangesTool.Status;
     private string GitFingerprint => gitChangesTool.Fingerprint;
     private WorkbenchWorkspaceContext? CurrentGitContext => gitChangesTool.CurrentContext;
@@ -226,6 +227,12 @@ internal sealed class WorkbenchDockHost
             ActiveWorkspace,
             () => sourceDocuments,
             problemsToolUnit,
+            cancellationToken);
+        documentInteractions = new(
+            codeIntelligenceService,
+            documentIntelligence,
+            OwnerWindow,
+            NavigateToSymbolAsync,
             cancellationToken);
 
         Control files = filesTool.Content;
@@ -1436,7 +1443,7 @@ internal sealed class WorkbenchDockHost
         {
             if (args.Position is { } position)
             {
-                _ = ShowQuickInfoOnHoverAsync(
+                _ = documentInteractions.ShowQuickInfoOnHoverAsync(
                     session,
                     position,
                     session.BeginHover(cancellationToken));
@@ -1446,10 +1453,10 @@ internal sealed class WorkbenchDockHost
         surface.Save.Click += async (_, _) => await SaveSourceDocumentAsync(session);
         surface.Reload.Click += async (_, _) => await ReloadSourceDocumentAsync(session, confirmDiscard: true);
         surface.Close.Click += async (_, _) => await RequestSourceDocumentCloseAsync(session);
-        surface.Completion.Click += async (_, _) => await ShowCompletionAsync(
+        surface.Completion.Click += async (_, _) => await documentInteractions.ShowCompletionAsync(
             session, WorkbenchCodeCompletionTriggerKind.Invoke, triggerCharacter: null);
-        surface.WorkspaceSymbols.Click += async (_, _) => await ShowWorkspaceSymbolsAsync(session);
-        surface.SymbolInfo.Click += async (_, _) => await ShowQuickInfoAsync(session);
+        surface.WorkspaceSymbols.Click += async (_, _) => await documentInteractions.ShowWorkspaceSymbolsAsync(session);
+        surface.SymbolInfo.Click += async (_, _) => await documentInteractions.ShowQuickInfoAsync(session);
         surface.Definition.Click += async (_, _) => await NavigateSymbolAsync(
             session, SemanticNavigationKind.Definition);
         surface.References.Click += async (_, _) => await NavigateSymbolAsync(
@@ -1479,103 +1486,6 @@ internal sealed class WorkbenchDockHost
         documentIntelligence.ScheduleDiagnostics(session, immediate: true);
         documentIntelligence.SchedulePresentation(session, immediate: true);
         return session;
-    }
-
-    private async ValueTask ShowWorkspaceSymbolsAsync(SourceDocumentSession session)
-    {
-        if (!DocumentIntelligence.CanUse(session) || OwnerWindow() is not { } owner)
-        {
-            return;
-        }
-
-        (WorkbenchCodeBufferVersion version, CancellationToken token) =
-            session.BeginInteraction(cancellationToken);
-        try
-        {
-            WorkbenchCodeSessionId? codeSession = await documentIntelligence.EnsureSessionAsync(session, token);
-            if (codeSession is null || !session.IsCurrentInteraction(version))
-            {
-                return;
-            }
-
-            WorkbenchCodeInteractiveSnapshot snapshot = DocumentIntelligence.Snapshot(
-                session, codeSession, version);
-            WorkspaceSymbolSearchDialog dialog = new(
-                async (value, searchCancellation) =>
-                {
-                    using CancellationTokenSource linked =
-                        CancellationTokenSource.CreateLinkedTokenSource(token, searchCancellation);
-                    return await codeIntelligenceService.SearchSymbolsAsync(
-                        new(snapshot, value, MaximumResults: 200, Offset: 0), linked.Token);
-                },
-                destination => NavigateToSymbolAsync(destination, session.View.GoalId));
-            await dialog.ShowDialog(owner);
-        }
-        catch (OperationCanceledException) when (token.IsCancellationRequested)
-        {
-        }
-    }
-
-    private async ValueTask ShowCompletionAsync(
-        SourceDocumentSession session,
-        WorkbenchCodeCompletionTriggerKind triggerKind,
-        char? triggerCharacter)
-    {
-        if (!DocumentIntelligence.CanUse(session))
-        {
-            return;
-        }
-
-        (WorkbenchCodeBufferVersion version, CancellationToken token) =
-            session.BeginInteraction(cancellationToken);
-        try
-        {
-            WorkbenchCodeSessionId? codeSession = await documentIntelligence.EnsureSessionAsync(session, token);
-            if (codeSession is null || !session.IsCurrentInteraction(version))
-            {
-                return;
-            }
-
-            WorkbenchCodeInteractiveSnapshot snapshot = DocumentIntelligence.Snapshot(
-                session, codeSession, version);
-            WorkbenchCodeCompletionView result = await codeIntelligenceService.GetCompletionsAsync(
-                new(snapshot, triggerKind, triggerCharacter), token);
-            if (!session.IsCurrentInteraction(version) || result.ListId is null ||
-                result.Items.Count == 0 || result.State is WorkbenchCodeResultState.Stale or
-                    WorkbenchCodeResultState.Cancelled or WorkbenchCodeResultState.Failed)
-            {
-                return;
-            }
-
-            session.CompletionWindow?.Hide();
-            CompletionWindow window = new RoslynCompletionWindow(session.NativeEditor.TextArea)
-            {
-                StartOffset = session.Editor.GetOffset(result.ApplicableRange.Start),
-                EndOffset = session.Editor.GetOffset(result.ApplicableRange.End),
-                CloseWhenCaretAtBeginning = triggerKind is WorkbenchCodeCompletionTriggerKind.Invoke,
-            };
-            foreach (WorkbenchCodeCompletionItem item in result.Items)
-            {
-                window.CompletionList.CompletionData.Add(new RoslynCompletionData(
-                    item,
-                    (selected, commitCharacter) =>
-                        _ = CommitCompletionAsync(
-                            session,
-                            snapshot,
-                            result.ListId,
-                            selected,
-                            commitCharacter)));
-            }
-
-            AutomationProperties.SetName(
-                window.CompletionList,
-                $"Code completions for {session.View.Path.Value}");
-            session.CompletionWindow = window;
-            window.Show();
-        }
-        catch (OperationCanceledException) when (token.IsCancellationRequested)
-        {
-        }
     }
 
     private async ValueTask RenameSymbolAsync(SourceDocumentSession session)
@@ -1712,7 +1622,7 @@ internal sealed class WorkbenchDockHost
         char value = text[0];
         if (value is '(' or ',')
         {
-            await ShowSignatureHelpAsync(session);
+            await documentInteractions.ShowSignatureHelpAsync(session);
         }
         else if (value == ')')
         {
@@ -1722,7 +1632,7 @@ internal sealed class WorkbenchDockHost
 
         if (char.IsLetterOrDigit(value) || value is '_' or '.')
         {
-            await ShowCompletionAsync(
+            await documentInteractions.ShowCompletionAsync(
                 session,
                 WorkbenchCodeCompletionTriggerKind.Insertion,
                 value);
@@ -1803,10 +1713,10 @@ internal sealed class WorkbenchDockHost
                 await RequestSourceDocumentCloseAsync(session);
                 break;
             case KeybindingCommand.ShowCompletion:
-                await ShowCompletionAsync(session, WorkbenchCodeCompletionTriggerKind.Invoke, null);
+                await documentInteractions.ShowCompletionAsync(session, WorkbenchCodeCompletionTriggerKind.Invoke, null);
                 break;
             case KeybindingCommand.ShowQuickInfo:
-                await ShowQuickInfoAsync(session);
+                await documentInteractions.ShowQuickInfoAsync(session);
                 break;
             case KeybindingCommand.GoToDefinition:
                 await NavigateSymbolAsync(session, SemanticNavigationKind.Definition);
@@ -2362,192 +2272,6 @@ internal sealed class WorkbenchDockHost
         finally
         {
             active.SetBusy(false);
-        }
-    }
-
-    private async Task CommitCompletionAsync(
-        SourceDocumentSession session,
-        WorkbenchCodeInteractiveSnapshot snapshot,
-        WorkbenchCodeCompletionListId listId,
-        WorkbenchCodeCompletionItem item,
-        char? commitCharacter)
-    {
-        try
-        {
-            WorkbenchCodeCompletionCommitView result =
-                await codeIntelligenceService.CommitCompletionAsync(
-                    new(snapshot, listId, item.Id, commitCharacter),
-                    cancellationToken);
-            if (!session.IsCurrentInteraction(snapshot.BufferVersion) ||
-                result.State is WorkbenchCodeResultState.Stale or
-                    WorkbenchCodeResultState.Cancelled or WorkbenchCodeResultState.Failed)
-            {
-                session.SetStatus("Completion expired because the document changed.");
-                return;
-            }
-
-            foreach (WorkbenchCodeTextChange change in result.Changes
-                         .OrderByDescending(value => session.Editor.GetOffset(value.Range.Start)))
-            {
-                int start = session.Editor.GetOffset(change.Range.Start);
-                int end = session.Editor.GetOffset(change.Range.End);
-                session.Editor.Replace(start, Math.Max(0, end - start), change.Text.Value);
-            }
-
-            if (result.NewPosition is { } position)
-            {
-                session.Editor.CaretOffset = session.Editor.GetOffset(position);
-            }
-            else if (result.Changes.LastOrDefault() is { } last)
-            {
-                session.Editor.CaretOffset =
-                    session.Editor.GetOffset(last.Range.Start) + last.Text.Value.Length;
-            }
-
-            if (commitCharacter is { } value && value is not '\t' and not '\n' &&
-                (session.Editor.CaretOffset >= session.Editor.TextLength ||
-                 session.Editor.GetCharAt(session.Editor.CaretOffset) != value))
-            {
-                session.Editor.Insert(session.Editor.CaretOffset, value.ToString());
-                session.Editor.CaretOffset++;
-            }
-
-            session.SetStatus($"Completed {item.DisplayText.Value} with Roslyn.");
-            session.Editor.Focus();
-            if (commitCharacter == '(')
-            {
-                await ShowSignatureHelpAsync(session);
-            }
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-        }
-    }
-
-    private async Task ShowQuickInfoOnHoverAsync(
-        SourceDocumentSession session,
-        WorkbenchCodePosition position,
-        CancellationToken hoverToken)
-    {
-        try
-        {
-            await Task.Delay(TimeSpan.FromMilliseconds(600), hoverToken);
-            if (session.CompletionWindow?.IsVisible is true)
-            {
-                return;
-            }
-            await ShowQuickInfoAsync(session, position);
-        }
-        catch (OperationCanceledException) when (hoverToken.IsCancellationRequested)
-        {
-        }
-    }
-
-    private async ValueTask ShowQuickInfoAsync(
-        SourceDocumentSession session,
-        WorkbenchCodePosition? requestedPosition = null)
-    {
-        if (!DocumentIntelligence.CanUse(session))
-        {
-            return;
-        }
-
-        session.CompletionWindow?.Hide();
-        session.CompletionWindow = null;
-
-        (WorkbenchCodeBufferVersion version, CancellationToken token) =
-            session.BeginInteraction(cancellationToken);
-        try
-        {
-            WorkbenchCodeSessionId? codeSession = await documentIntelligence.EnsureSessionAsync(session, token);
-            if (codeSession is null)
-            {
-                return;
-            }
-
-            WorkbenchCodeQuickInfoView result = await codeIntelligenceService.GetQuickInfoAsync(
-                DocumentIntelligence.Snapshot(session, codeSession, version, requestedPosition), token);
-            if (!session.IsCurrentInteraction(version) || result.Sections.Count == 0)
-            {
-                session.SetStatus("No symbol information is available at the caret.");
-                return;
-            }
-
-            session.QuickInfoWindow?.Hide();
-            StackPanel content = new() { Spacing = 6, MaxWidth = 760 };
-            foreach (WorkbenchCodeMessage section in result.Sections)
-            {
-                content.Children.Add(new TextBlock
-                {
-                    Text = section.Value,
-                    TextWrapping = TextWrapping.Wrap,
-                    FontFamily = new("Cascadia Code,JetBrains Mono,Consolas,Menlo,monospace"),
-                });
-            }
-
-            Border card = new() { Child = content, Padding = new(10) };
-            card.Classes.Add("semantic-insight");
-            AutomationProperties.SetName(card,
-                $"Quick info for {session.View.Path.Value}: " +
-                string.Join(" ", result.Sections.Select(section => section.Value)));
-            InsightWindow window = new(session.NativeEditor.TextArea)
-            {
-                Child = card,
-                StartOffset = result.ApplicableRange is null
-                    ? session.Editor.CaretOffset
-                    : session.Editor.GetOffset(result.ApplicableRange.Start),
-                EndOffset = result.ApplicableRange is null
-                    ? session.Editor.CaretOffset
-                    : session.Editor.GetOffset(result.ApplicableRange.End),
-            };
-            session.QuickInfoWindow = window;
-            window.Show();
-        }
-        catch (OperationCanceledException) when (token.IsCancellationRequested)
-        {
-        }
-    }
-
-    private async ValueTask ShowSignatureHelpAsync(SourceDocumentSession session)
-    {
-        if (!DocumentIntelligence.CanUse(session))
-        {
-            return;
-        }
-
-        session.CompletionWindow?.Hide();
-        session.CompletionWindow = null;
-
-        (WorkbenchCodeBufferVersion version, CancellationToken token) =
-            session.BeginInteraction(cancellationToken);
-        try
-        {
-            WorkbenchCodeSessionId? codeSession = await documentIntelligence.EnsureSessionAsync(session, token);
-            if (codeSession is null)
-            {
-                return;
-            }
-
-            WorkbenchCodeSignatureHelpView result =
-                await codeIntelligenceService.GetSignatureHelpAsync(
-                    DocumentIntelligence.Snapshot(session, codeSession, version), token);
-            if (!session.IsCurrentInteraction(version) || result.Signatures.Count == 0)
-            {
-                return;
-            }
-
-            session.SignatureWindow?.Hide();
-            OverloadInsightWindow window = new(session.NativeEditor.TextArea)
-            {
-                Provider = new RoslynOverloadProvider(result),
-                StartOffset = Math.Max(0, session.Editor.CaretOffset - 1),
-                EndOffset = session.Editor.TextLength,
-            };
-            session.SignatureWindow = window;
-            window.Show();
-        }
-        catch (OperationCanceledException) when (token.IsCancellationRequested)
-        {
         }
     }
 
