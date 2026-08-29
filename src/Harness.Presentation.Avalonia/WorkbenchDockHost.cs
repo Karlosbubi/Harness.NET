@@ -93,28 +93,11 @@ internal sealed class WorkbenchDockHost
     };
     private readonly FilesTool filesTool;
     private readonly GitChangesTool gitChangesTool;
+    private readonly GitBranchesTool gitBranchesTool;
+    private readonly GitWorktreesTool gitWorktreesTool;
     private TextBlock GitStatus => gitChangesTool.Status;
     private string GitFingerprint => gitChangesTool.Fingerprint;
     private WorkbenchWorkspaceContext? CurrentGitContext => gitChangesTool.CurrentContext;
-    private readonly ListBox gitBranches = new();
-    private readonly TextBox gitBranchName = new() { PlaceholderText = "New branch name" };
-    private readonly CheckBox forceBranchDelete = new() { Content = "Force unmerged deletion" };
-    private DeveloperGitBranchInspectionResult? currentBranchInspection;
-    private readonly ListBox gitTags = new();
-    private readonly TextBox gitTagName = new() { PlaceholderText = "Tag name" };
-    private readonly TextBox gitTagMessage = new() { PlaceholderText = "Annotated tag message" };
-    private readonly CheckBox annotatedGitTag = new() { Content = "Annotated tag" };
-    private DeveloperGitTagInspectionResult? currentTagInspection;
-    private readonly ListBox gitWorktrees = new();
-    private readonly TextBox gitWorktreePath = new() { PlaceholderText = "Absolute worktree path" };
-    private readonly TextBox gitWorktreeBranch = new() { PlaceholderText = "Existing or new branch" };
-    private readonly CheckBox createWorktreeBranch = new() { Content = "Create new branch at HEAD" };
-    private readonly CheckBox forceWorktreeRemove = new() { Content = "Force removal of dirty worktree" };
-    private DeveloperGitWorktreeInspectionResult? currentWorktreeInspection;
-    private readonly ListBox gitStashes = new();
-    private readonly TextBox gitStashMessage = new() { PlaceholderText = "Stash message" };
-    private readonly CheckBox includeUntrackedInStash = new() { Content = "Include untracked files" };
-    private DeveloperGitStashInspectionResult? currentStashInspection;
     private readonly ListBox gitRemotes = new();
     private readonly TextBox gitRemoteSource = new() { PlaceholderText = "Source branch" };
     private readonly TextBox gitRemoteDestination = new() { PlaceholderText = "Destination branch" };
@@ -267,6 +250,17 @@ internal sealed class WorkbenchDockHost
         };
         filesTool = new(toolContext);
         gitChangesTool = new(toolContext);
+        gitBranchesTool = new(
+            toolContext,
+            gitChangesTool.Render,
+            gitChangesTool.ReportStatus,
+            PrepareForWorkspaceChangeAsync,
+            async () => await this.refreshWorkspaceContext());
+        gitWorktreesTool = new(
+            toolContext,
+            gitChangesTool.Render,
+            gitChangesTool.ReportStatus,
+            async path => await this.manageWorkspaceAt(path));
 
         Control files = filesTool.Content;
         Control sourceControl = BuildSourceControlTool();
@@ -807,20 +801,20 @@ internal sealed class WorkbenchDockHost
             {
                 DeveloperGitBranchInspectionResult branches = await developerGitService.InspectBranchesAsync(
                     WorkbenchRequest(active), cancellationToken);
-                RenderGitBranches(branches);
+                gitBranchesTool.RenderBranches(branches);
                 if (branches.State is not null &&
                     !branches.State.Fingerprint.Equals(git.Fingerprint, StringComparison.Ordinal))
                     RenderGitState(branches.Context, branches.State);
                 DeveloperGitTagInspectionResult tags = await developerGitService.InspectTagsAsync(
                     WorkbenchRequest(active), cancellationToken);
-                RenderGitTags(tags);
+                gitBranchesTool.RenderTags(tags);
                 DeveloperGitWorktreeInspectionResult worktrees =
                     await developerGitService.InspectWorktreesAsync(
                         WorkbenchRequest(active), cancellationToken);
-                RenderGitWorktrees(worktrees);
+                gitWorktreesTool.RenderWorktrees(worktrees);
                 DeveloperGitStashInspectionResult stashes = await developerGitService.InspectStashesAsync(
                     WorkbenchRequest(active), cancellationToken);
-                RenderGitStashes(stashes);
+                gitWorktreesTool.RenderStashes(stashes);
                 RenderGitRemotes(await developerGitService.InspectRemotesAsync(
                     WorkbenchRequest(active), cancellationToken));
             }
@@ -841,358 +835,36 @@ internal sealed class WorkbenchDockHost
         gitChangesTool.UpdateSelectedIndexAsync(action);
 
     internal ValueTask ComposeAndCommitGitAsync() => gitChangesTool.ComposeAndCommitAsync();
-    internal async ValueTask RefreshGitBranchesAsync()
-    {
-        WorkspaceView? active = ActiveWorkspace();
-        if (busy || active is null || developerGitService is null) return;
-        await RunAsync(async () =>
-        {
-            DeveloperGitBranchInspectionResult result = await developerGitService.InspectBranchesAsync(
-                WorkbenchRequest(active), cancellationToken);
-            RenderGitBranches(result);
-        });
-    }
+    internal ValueTask RefreshGitBranchesAsync() => gitBranchesTool.RefreshBranchesAsync();
 
-    internal async ValueTask ApplyGitBranchAsync(DeveloperGitBranchAction action)
-    {
-        WorkspaceView? active = ActiveWorkspace();
-        DeveloperGitBranchView? selected = (gitBranches.SelectedItem as BranchChoice)?.Branch;
-        if (busy || active is null || developerGitService is null ||
-            currentBranchInspection?.State is null)
-        {
-            GitStatus.Text = "Refresh local branches first.";
-            return;
-        }
-        bool changesActiveContext = action == DeveloperGitBranchAction.Switch ||
-                                    action == DeveloperGitBranchAction.Rename && selected?.IsCurrent == true;
-        if (changesActiveContext && selected is not null &&
-            !await PrepareForWorkspaceChangeAsync())
-        {
-            GitStatus.Text = "Branch switch cancelled; unsaved documents remain open.";
-            return;
-        }
-        string name = gitBranchName.Text?.Trim() ?? string.Empty;
-        await RunAsync(async () =>
-        {
-            DeveloperGitBranchInspectionResult result = await developerGitService.ApplyBranchAsync(new(
-                WorkbenchRequest(active), new(currentBranchInspection.State.Fingerprint), action,
-                selected?.Name, string.IsNullOrWhiteSpace(name) ? null : new(name)), cancellationToken);
-            RenderGitBranches(result);
-            if (result.State is not null) RenderGitState(result.Context, result.State);
-            if (result.Error is not null)
-            {
-                GitStatus.Text = result.Error;
-                return;
-            }
-            if (action == DeveloperGitBranchAction.Switch ||
-                action == DeveloperGitBranchAction.Rename && selected?.IsCurrent == true)
-                await refreshWorkspaceContext();
-            GitStatus.Text = $"Branch {action.ToString().ToLowerInvariant()} completed.";
-        });
-    }
+    internal ValueTask ApplyGitBranchAsync(DeveloperGitBranchAction action) =>
+        gitBranchesTool.ApplyBranchAsync(action);
 
-    internal async ValueTask DeleteSelectedGitBranchAsync()
-    {
-        WorkspaceView? active = ActiveWorkspace();
-        if (busy || active is null || developerGitService is null ||
-            currentBranchInspection?.State is null ||
-            gitBranches.SelectedItem is not BranchChoice selected)
-        {
-            GitStatus.Text = "Select a current local branch first.";
-            return;
-        }
-        await RunAsync(async () =>
-        {
-            DeveloperGitBranchDeletePreviewResult result = await developerGitService.PreviewBranchDeleteAsync(new(
-                WorkbenchRequest(active), new(currentBranchInspection.State.Fingerprint),
-                selected.Branch.Name, forceBranchDelete.IsChecked == true), cancellationToken);
-            RenderGitBranches(result.Inspection);
-            if (result.Preview is null)
-            {
-                GitStatus.Text = result.Error ?? "The branch deletion preview is unavailable.";
-                return;
-            }
-            if (!await documentPrompt.ConfirmGitBranchDeleteAsync(result.Preview, OwnerWindow()))
-            {
-                GitStatus.Text = "Branch deletion cancelled; no reference was changed.";
-                return;
-            }
-            DeveloperGitBranchInspectionResult applied = await developerGitService.ApplyBranchDeleteAsync(
-                result.Preview, cancellationToken);
-            RenderGitBranches(applied);
-            if (applied.State is not null) RenderGitState(applied.Context, applied.State);
-            GitStatus.Text = applied.Error ?? $"Deleted local branch {selected.Branch.Name.Value}.";
-        });
-    }
+    internal ValueTask DeleteSelectedGitBranchAsync() =>
+        gitBranchesTool.DeleteSelectedBranchAsync();
 
-    private void RenderGitBranches(DeveloperGitBranchInspectionResult result)
-    {
-        currentBranchInspection = result;
-        gitBranches.ItemsSource = result.Branches.Select(branch => new BranchChoice(branch)).ToArray();
-        gitBranches.SelectedIndex = result.Branches.Count > 0 ? 0 : -1;
-        if (result.Error is not null) GitStatus.Text = result.Error;
-    }
+    internal ValueTask RefreshGitTagsAsync() => gitBranchesTool.RefreshTagsAsync();
 
-    internal async ValueTask RefreshGitTagsAsync()
-    {
-        WorkspaceView? active = ActiveWorkspace();
-        if (busy || active is null || developerGitService is null) return;
-        await RunAsync(async () => RenderGitTags(await developerGitService.InspectTagsAsync(
-            WorkbenchRequest(active), cancellationToken)));
-    }
+    internal ValueTask CreateGitTagAsync() => gitBranchesTool.CreateTagAsync();
 
-    internal async ValueTask CreateGitTagAsync()
-    {
-        WorkspaceView? active = ActiveWorkspace();
-        if (busy || active is null || developerGitService is null || currentTagInspection?.State is null)
-        {
-            GitStatus.Text = "Refresh local tags first.";
-            return;
-        }
-        string name = gitTagName.Text?.Trim() ?? string.Empty;
-        string message = gitTagMessage.Text?.Trim() ?? string.Empty;
-        await RunAsync(async () =>
-        {
-            DeveloperGitTagInspectionResult result = await developerGitService.CreateTagAsync(new(
-                WorkbenchRequest(active), new(currentTagInspection.State.Fingerprint), new(name),
-                annotatedGitTag.IsChecked == true,
-                string.IsNullOrWhiteSpace(message) ? null : new(message)), cancellationToken);
-            RenderGitTags(result);
-            if (result.State is not null) RenderGitState(result.Context, result.State);
-            GitStatus.Text = result.Error ?? $"Created local tag {name}.";
-        });
-    }
+    internal ValueTask DeleteSelectedGitTagAsync() => gitBranchesTool.DeleteSelectedTagAsync();
 
-    internal async ValueTask DeleteSelectedGitTagAsync()
-    {
-        WorkspaceView? active = ActiveWorkspace();
-        if (busy || active is null || developerGitService is null || currentTagInspection?.State is null ||
-            gitTags.SelectedItem is not TagChoice selected)
-        {
-            GitStatus.Text = "Select a current local tag first.";
-            return;
-        }
-        await RunAsync(async () =>
-        {
-            DeveloperGitTagDeletePreviewResult result = await developerGitService.PreviewTagDeleteAsync(new(
-                WorkbenchRequest(active), new(currentTagInspection.State.Fingerprint),
-                selected.Tag.Name), cancellationToken);
-            RenderGitTags(result.Inspection);
-            if (result.Preview is null)
-            {
-                GitStatus.Text = result.Error ?? "The tag deletion preview is unavailable.";
-                return;
-            }
-            if (!await documentPrompt.ConfirmGitTagDeleteAsync(result.Preview, OwnerWindow()))
-            {
-                GitStatus.Text = "Tag deletion cancelled; no reference was changed.";
-                return;
-            }
-            DeveloperGitTagInspectionResult applied = await developerGitService.ApplyTagDeleteAsync(
-                result.Preview, cancellationToken);
-            RenderGitTags(applied);
-            if (applied.State is not null) RenderGitState(applied.Context, applied.State);
-            GitStatus.Text = applied.Error ?? $"Deleted local tag {selected.Tag.Name.Value}.";
-        });
-    }
+    internal ValueTask RefreshGitWorktreesAsync() => gitWorktreesTool.RefreshWorktreesAsync();
 
-    private void RenderGitTags(DeveloperGitTagInspectionResult result)
-    {
-        currentTagInspection = result;
-        gitTags.ItemsSource = result.Tags.Select(tag => new TagChoice(tag)).ToArray();
-        gitTags.SelectedIndex = result.Tags.Count > 0 ? 0 : -1;
-        if (result.Error is not null) GitStatus.Text = result.Error;
-    }
+    internal ValueTask CreateGitWorktreeAsync() => gitWorktreesTool.CreateWorktreeAsync();
 
-    internal async ValueTask RefreshGitWorktreesAsync()
-    {
-        WorkspaceView? active = ActiveWorkspace();
-        if (busy || active is null || developerGitService is null) return;
-        await RunAsync(async () => RenderGitWorktrees(await developerGitService.InspectWorktreesAsync(
-            WorkbenchRequest(active), cancellationToken)));
-    }
+    internal ValueTask OpenSelectedGitWorktreeAsync() => gitWorktreesTool.OpenSelectedWorktreeAsync();
 
-    internal async ValueTask CreateGitWorktreeAsync()
-    {
-        WorkspaceView? active = ActiveWorkspace();
-        if (busy || active is null || developerGitService is null ||
-            currentWorktreeInspection?.State is null ||
-            currentWorktreeInspection.WorktreeFingerprint is null)
-        {
-            GitStatus.Text = "Refresh linked worktrees first.";
-            return;
-        }
-        string path = gitWorktreePath.Text?.Trim() ?? string.Empty;
-        string branch = gitWorktreeBranch.Text?.Trim() ?? string.Empty;
-        await RunAsync(async () =>
-        {
-            DeveloperGitWorktreeInspectionResult result = await developerGitService.CreateWorktreeAsync(new(
-                WorkbenchRequest(active),
-                new(currentWorktreeInspection.State.Fingerprint),
-                currentWorktreeInspection.WorktreeFingerprint,
-                new(path),
-                createWorktreeBranch.IsChecked == true ? null : new(branch),
-                createWorktreeBranch.IsChecked == true ? new(branch) : null), cancellationToken);
-            RenderGitWorktrees(result);
-            if (result.State is not null) RenderGitState(result.Context, result.State);
-            GitStatus.Text = result.Error ?? $"Created linked worktree at {path}.";
-        });
-    }
+    internal ValueTask RemoveSelectedGitWorktreeAsync() =>
+        gitWorktreesTool.RemoveSelectedWorktreeAsync();
 
-    internal async ValueTask OpenSelectedGitWorktreeAsync()
-    {
-        if (busy || gitWorktrees.SelectedItem is not WorktreeChoice selected)
-        {
-            GitStatus.Text = "Select a linked worktree first.";
-            return;
-        }
-        if (selected.Worktree.IsMain)
-        {
-            GitStatus.Text = "The original worktree is already the active workspace.";
-            return;
-        }
-        await manageWorkspaceAt(selected.Worktree.Path.Value);
-    }
+    internal ValueTask RefreshGitStashesAsync() => gitWorktreesTool.RefreshStashesAsync();
 
-    internal async ValueTask RemoveSelectedGitWorktreeAsync()
-    {
-        WorkspaceView? active = ActiveWorkspace();
-        if (busy || active is null || developerGitService is null ||
-            currentWorktreeInspection?.State is null ||
-            currentWorktreeInspection.WorktreeFingerprint is null ||
-            gitWorktrees.SelectedItem is not WorktreeChoice selected)
-        {
-            GitStatus.Text = "Select a current linked worktree first.";
-            return;
-        }
-        await RunAsync(async () =>
-        {
-            DeveloperGitWorktreeRemovePreviewResult result =
-                await developerGitService.PreviewWorktreeRemoveAsync(new(
-                    WorkbenchRequest(active),
-                    new(currentWorktreeInspection.State.Fingerprint),
-                    currentWorktreeInspection.WorktreeFingerprint,
-                    selected.Worktree.Path,
-                    forceWorktreeRemove.IsChecked == true), cancellationToken);
-            RenderGitWorktrees(result.Inspection);
-            if (result.Preview is null)
-            {
-                GitStatus.Text = result.Error ?? "The worktree removal preview is unavailable.";
-                return;
-            }
-            if (!await documentPrompt.ConfirmGitWorktreeRemoveAsync(result.Preview, OwnerWindow()))
-            {
-                GitStatus.Text = "Worktree removal cancelled; no directory was deleted.";
-                return;
-            }
-            DeveloperGitWorktreeInspectionResult applied =
-                await developerGitService.ApplyWorktreeRemoveAsync(result.Preview, cancellationToken);
-            RenderGitWorktrees(applied);
-            if (applied.State is not null) RenderGitState(applied.Context, applied.State);
-            GitStatus.Text = applied.Error ?? $"Removed linked worktree {selected.Worktree.Path.Value}.";
-        });
-    }
+    internal ValueTask CreateGitStashAsync() => gitWorktreesTool.CreateStashAsync();
 
-    private void RenderGitWorktrees(DeveloperGitWorktreeInspectionResult result)
-    {
-        currentWorktreeInspection = result;
-        gitWorktrees.ItemsSource = result.Worktrees.Select(worktree => new WorktreeChoice(worktree)).ToArray();
-        gitWorktrees.SelectedIndex = result.Worktrees.Count > 0 ? 0 : -1;
-        if (result.Error is not null) GitStatus.Text = result.Error;
-    }
+    internal ValueTask ApplySelectedGitStashAsync() => gitWorktreesTool.ApplySelectedStashAsync();
 
-    internal async ValueTask RefreshGitStashesAsync()
-    {
-        WorkspaceView? active = ActiveWorkspace();
-        if (busy || active is null || developerGitService is null) return;
-        await RunAsync(async () => RenderGitStashes(await developerGitService.InspectStashesAsync(
-            WorkbenchRequest(active), cancellationToken)));
-    }
-
-    internal async ValueTask CreateGitStashAsync()
-    {
-        WorkspaceView? active = ActiveWorkspace();
-        if (busy || active is null || developerGitService is null ||
-            currentStashInspection?.State is null)
-        {
-            GitStatus.Text = "Refresh Git stashes first.";
-            return;
-        }
-        string message = gitStashMessage.Text?.Trim() ?? string.Empty;
-        await RunAsync(async () =>
-        {
-            DeveloperGitStashInspectionResult result = await developerGitService.CreateStashAsync(new(
-                WorkbenchRequest(active),
-                new(currentStashInspection.State.Fingerprint),
-                new(message),
-                includeUntrackedInStash.IsChecked == true), cancellationToken);
-            RenderGitStashes(result);
-            if (result.State is not null) RenderGitState(result.Context, result.State);
-            GitStatus.Text = result.Error ?? "Created a new stash from the displayed working state.";
-        });
-    }
-
-    internal async ValueTask ApplySelectedGitStashAsync()
-    {
-        WorkspaceView? active = ActiveWorkspace();
-        if (busy || active is null || developerGitService is null ||
-            currentStashInspection?.State is null || gitStashes.SelectedItem is not StashChoice selected)
-        {
-            GitStatus.Text = "Select a current Git stash first.";
-            return;
-        }
-        await RunAsync(async () =>
-        {
-            DeveloperGitStashInspectionResult result = await developerGitService.ApplyStashAsync(new(
-                WorkbenchRequest(active), new(currentStashInspection.State.Fingerprint),
-                selected.Stash.CommitSha), cancellationToken);
-            RenderGitStashes(result);
-            if (result.State is not null) RenderGitState(result.Context, result.State);
-            GitStatus.Text = result.Error ??
-                $"Applied {selected.Stash.Selector}; the stash remains available until explicitly deleted.";
-        });
-    }
-
-    internal async ValueTask DropSelectedGitStashAsync()
-    {
-        WorkspaceView? active = ActiveWorkspace();
-        if (busy || active is null || developerGitService is null ||
-            currentStashInspection?.State is null || gitStashes.SelectedItem is not StashChoice selected)
-        {
-            GitStatus.Text = "Select a current Git stash first.";
-            return;
-        }
-        await RunAsync(async () =>
-        {
-            DeveloperGitStashDropPreviewResult result = await developerGitService.PreviewStashDropAsync(new(
-                WorkbenchRequest(active), new(currentStashInspection.State.Fingerprint),
-                selected.Stash.CommitSha), cancellationToken);
-            RenderGitStashes(result.Inspection);
-            if (result.Preview is null)
-            {
-                GitStatus.Text = result.Error ?? "The stash deletion preview is unavailable.";
-                return;
-            }
-            if (!await documentPrompt.ConfirmGitStashDropAsync(result.Preview, OwnerWindow()))
-            {
-                GitStatus.Text = "Stash deletion cancelled; the stash remains available.";
-                return;
-            }
-            DeveloperGitStashInspectionResult applied = await developerGitService.ApplyStashDropAsync(
-                result.Preview, cancellationToken);
-            RenderGitStashes(applied);
-            if (applied.State is not null) RenderGitState(applied.Context, applied.State);
-            GitStatus.Text = applied.Error ?? $"Deleted stash {selected.Stash.Selector}.";
-        });
-    }
-
-    private void RenderGitStashes(DeveloperGitStashInspectionResult result)
-    {
-        currentStashInspection = result;
-        gitStashes.ItemsSource = result.Stashes.Select(stash => new StashChoice(stash)).ToArray();
-        gitStashes.SelectedIndex = result.Stashes.Count > 0 ? 0 : -1;
-        if (result.Error is not null) GitStatus.Text = result.Error;
-    }
+    internal ValueTask DropSelectedGitStashAsync() => gitWorktreesTool.DropSelectedStashAsync();
 
     internal async ValueTask RefreshGitRemotesAsync()
     {
@@ -2023,133 +1695,10 @@ internal sealed class WorkbenchDockHost
         Grid.SetRow(gitChangesTool.Actions, 1);
         grid.Children.Add(gitChangesTool.Actions);
         Control changePanel = gitChangesTool.Content;
-        WrapPanel branchActions = new() { Orientation = AvaloniaOrientation.Horizontal };
-        Button refreshBranches = new() { Content = "Refresh branches" };
-        Button createBranch = new() { Content = "Create" };
-        Button switchBranch = new() { Content = "Switch" };
-        Button renameBranch = new() { Content = "Rename" };
-        Button deleteBranch = new() { Content = "Delete" };
-        foreach (Button button in new[] { refreshBranches, createBranch, switchBranch, renameBranch, deleteBranch })
-            button.Margin = new Thickness(0, 0, 6, 6);
-        AutomationProperties.SetName(refreshBranches, "Refresh local Git branches");
-        AutomationProperties.SetName(createBranch, "Create local Git branch");
-        AutomationProperties.SetName(switchBranch, "Switch to selected local Git branch");
-        AutomationProperties.SetName(renameBranch, "Rename selected local Git branch");
-        AutomationProperties.SetName(deleteBranch, "Preview deletion of selected local Git branch");
-        refreshBranches.Click += async (_, _) => await RefreshGitBranchesAsync();
-        createBranch.Click += async (_, _) => await ApplyGitBranchAsync(DeveloperGitBranchAction.Create);
-        switchBranch.Click += async (_, _) => await ApplyGitBranchAsync(DeveloperGitBranchAction.Switch);
-        renameBranch.Click += async (_, _) => await ApplyGitBranchAsync(DeveloperGitBranchAction.Rename);
-        deleteBranch.Click += async (_, _) => await DeleteSelectedGitBranchAsync();
-        branchActions.Children.Add(refreshBranches);
-        branchActions.Children.Add(createBranch);
-        branchActions.Children.Add(switchBranch);
-        branchActions.Children.Add(renameBranch);
-        branchActions.Children.Add(deleteBranch);
-        branchActions.Children.Add(forceBranchDelete);
-        AutomationProperties.SetName(gitBranchName, "New local Git branch name");
-        AutomationProperties.SetName(forceBranchDelete, "Force deletion of unmerged local Git branch");
-        AutomationProperties.SetName(gitBranches, "Local Git branches");
-        Grid branchPanel = new() { RowDefinitions = new("Auto,Auto,*"), RowSpacing = 8 };
-        branchPanel.Children.Add(gitBranchName);
-        Grid.SetRow(branchActions, 1);
-        branchPanel.Children.Add(branchActions);
-        Grid.SetRow(gitBranches, 2);
-        branchPanel.Children.Add(gitBranches);
-
-        WrapPanel tagActions = new() { Orientation = AvaloniaOrientation.Horizontal };
-        Button refreshTags = new() { Content = "Refresh tags" };
-        Button createTag = new() { Content = "Create tag" };
-        Button deleteTag = new() { Content = "Delete tag" };
-        foreach (Button button in new[] { refreshTags, createTag, deleteTag })
-            button.Margin = new Thickness(0, 0, 6, 6);
-        AutomationProperties.SetName(refreshTags, "Refresh local Git tags");
-        AutomationProperties.SetName(createTag, "Create local Git tag at HEAD");
-        AutomationProperties.SetName(deleteTag, "Preview deletion of selected local Git tag");
-        AutomationProperties.SetName(gitTagName, "New local Git tag name");
-        AutomationProperties.SetName(gitTagMessage, "Annotated local Git tag message");
-        AutomationProperties.SetName(annotatedGitTag, "Create annotated local Git tag");
-        AutomationProperties.SetName(gitTags, "Local Git tags");
-        refreshTags.Click += async (_, _) => await RefreshGitTagsAsync();
-        createTag.Click += async (_, _) => await CreateGitTagAsync();
-        deleteTag.Click += async (_, _) => await DeleteSelectedGitTagAsync();
-        tagActions.Children.Add(refreshTags);
-        tagActions.Children.Add(createTag);
-        tagActions.Children.Add(deleteTag);
-        tagActions.Children.Add(annotatedGitTag);
-        Grid tagPanel = new() { RowDefinitions = new("Auto,Auto,Auto,*"), RowSpacing = 8 };
-        tagPanel.Children.Add(gitTagName);
-        Grid.SetRow(gitTagMessage, 1);
-        tagPanel.Children.Add(gitTagMessage);
-        Grid.SetRow(tagActions, 2);
-        tagPanel.Children.Add(tagActions);
-        Grid.SetRow(gitTags, 3);
-        tagPanel.Children.Add(gitTags);
-
-        WrapPanel worktreeActions = new() { Orientation = AvaloniaOrientation.Horizontal };
-        Button refreshWorktrees = new() { Content = "Refresh worktrees" };
-        Button createWorktree = new() { Content = "Create" };
-        Button openWorktree = new() { Content = "Open as workspace…" };
-        Button removeWorktree = new() { Content = "Remove…" };
-        foreach (Button button in new[] { refreshWorktrees, createWorktree, openWorktree, removeWorktree })
-            button.Margin = new Thickness(0, 0, 6, 6);
-        AutomationProperties.SetName(refreshWorktrees, "Refresh linked Git worktrees");
-        AutomationProperties.SetName(createWorktree, "Create linked Git worktree");
-        AutomationProperties.SetName(openWorktree, "Open selected linked Git worktree as a workspace");
-        AutomationProperties.SetName(removeWorktree, "Preview removal of selected linked Git worktree");
-        AutomationProperties.SetName(gitWorktreePath, "New linked Git worktree absolute path");
-        AutomationProperties.SetName(gitWorktreeBranch, "Linked Git worktree branch name");
-        AutomationProperties.SetName(createWorktreeBranch, "Create new local branch for linked Git worktree");
-        AutomationProperties.SetName(forceWorktreeRemove, "Force removal of dirty linked Git worktree");
-        AutomationProperties.SetName(gitWorktrees, "Linked Git worktrees");
-        refreshWorktrees.Click += async (_, _) => await RefreshGitWorktreesAsync();
-        createWorktree.Click += async (_, _) => await CreateGitWorktreeAsync();
-        openWorktree.Click += async (_, _) => await OpenSelectedGitWorktreeAsync();
-        removeWorktree.Click += async (_, _) => await RemoveSelectedGitWorktreeAsync();
-        worktreeActions.Children.Add(refreshWorktrees);
-        worktreeActions.Children.Add(createWorktree);
-        worktreeActions.Children.Add(openWorktree);
-        worktreeActions.Children.Add(removeWorktree);
-        worktreeActions.Children.Add(createWorktreeBranch);
-        worktreeActions.Children.Add(forceWorktreeRemove);
-        Grid worktreePanel = new() { RowDefinitions = new("Auto,Auto,Auto,*"), RowSpacing = 8 };
-        worktreePanel.Children.Add(gitWorktreePath);
-        Grid.SetRow(gitWorktreeBranch, 1);
-        worktreePanel.Children.Add(gitWorktreeBranch);
-        Grid.SetRow(worktreeActions, 2);
-        worktreePanel.Children.Add(worktreeActions);
-        Grid.SetRow(gitWorktrees, 3);
-        worktreePanel.Children.Add(gitWorktrees);
-
-        WrapPanel stashActions = new() { Orientation = AvaloniaOrientation.Horizontal };
-        Button refreshStashes = new() { Content = "Refresh stashes" };
-        Button createStash = new() { Content = "Create stash" };
-        Button applyStash = new() { Content = "Apply" };
-        Button dropStash = new() { Content = "Delete…" };
-        foreach (Button button in new[] { refreshStashes, createStash, applyStash, dropStash })
-            button.Margin = new Thickness(0, 0, 6, 6);
-        AutomationProperties.SetName(refreshStashes, "Refresh local Git stashes");
-        AutomationProperties.SetName(createStash, "Create Git stash from displayed working state");
-        AutomationProperties.SetName(applyStash, "Apply selected Git stash and keep it");
-        AutomationProperties.SetName(dropStash, "Preview deletion of selected Git stash");
-        AutomationProperties.SetName(gitStashMessage, "New Git stash message");
-        AutomationProperties.SetName(includeUntrackedInStash, "Include untracked files in new Git stash");
-        AutomationProperties.SetName(gitStashes, "Local Git stashes");
-        refreshStashes.Click += async (_, _) => await RefreshGitStashesAsync();
-        createStash.Click += async (_, _) => await CreateGitStashAsync();
-        applyStash.Click += async (_, _) => await ApplySelectedGitStashAsync();
-        dropStash.Click += async (_, _) => await DropSelectedGitStashAsync();
-        stashActions.Children.Add(refreshStashes);
-        stashActions.Children.Add(createStash);
-        stashActions.Children.Add(applyStash);
-        stashActions.Children.Add(dropStash);
-        stashActions.Children.Add(includeUntrackedInStash);
-        Grid stashPanel = new() { RowDefinitions = new("Auto,Auto,*"), RowSpacing = 8 };
-        stashPanel.Children.Add(gitStashMessage);
-        Grid.SetRow(stashActions, 1);
-        stashPanel.Children.Add(stashActions);
-        Grid.SetRow(gitStashes, 2);
-        stashPanel.Children.Add(gitStashes);
+        Control branchPanel = gitBranchesTool.BranchesContent;
+        Control tagPanel = gitBranchesTool.TagsContent;
+        Control worktreePanel = gitWorktreesTool.WorktreesContent;
+        Control stashPanel = gitWorktreesTool.StashesContent;
 
         WrapPanel remoteActions = new() { Orientation = AvaloniaOrientation.Horizontal };
         Button refreshRemotes = new() { Content = "Refresh remotes" };
@@ -5645,44 +5194,6 @@ internal sealed class WorkbenchDockHost
         {
             busy = false;
         }
-    }
-
-    private sealed record BranchChoice(DeveloperGitBranchView Branch)
-    {
-        public override string ToString() =>
-            $"{(Branch.IsCurrent ? "● " : string.Empty)}{Branch.Name.Value} · {Branch.TipSha[..Math.Min(8, Branch.TipSha.Length)]}" +
-            (Branch.IsMergedIntoHead ? " · merged" : string.Empty);
-    }
-
-    private sealed record TagChoice(DeveloperGitTagView Tag)
-    {
-        public override string ToString() =>
-            $"{Tag.Name.Value} · {Tag.TargetSha[..Math.Min(8, Tag.TargetSha.Length)]}" +
-            (Tag.IsAnnotated ? " · annotated" : string.Empty);
-    }
-
-    private sealed record WorktreeChoice(DeveloperGitWorktreeView Worktree)
-    {
-        public override string ToString()
-        {
-            string branch = Worktree.Branch?.Value ?? "detached HEAD";
-            string flags = (Worktree.IsMain ? " · original" : string.Empty) +
-                           (Worktree.IsDirty ? " · dirty" : string.Empty) +
-                           (Worktree.HasConflicts ? " · conflicts" : string.Empty) +
-                           (Worktree.IsLocked ? " · locked" : string.Empty) +
-                           (Worktree.IsHarnessManaged ? " · goal-managed" : string.Empty) +
-                           (Worktree.IsRegisteredWorkspace ? " · registered" : string.Empty);
-            return $"{branch} · {Worktree.HeadSha[..Math.Min(8, Worktree.HeadSha.Length)]} · " +
-                   $"{Worktree.Path.Value}{flags}";
-        }
-    }
-
-    private sealed record StashChoice(DeveloperGitStashView Stash)
-    {
-        public override string ToString() =>
-            $"{Stash.Selector} · {Stash.CommitSha.Value[..Math.Min(8, Stash.CommitSha.Value.Length)]} · " +
-            $"{Stash.CreatedAt.LocalDateTime:g} · {Stash.Message}" +
-            (Stash.MessageIsTruncated ? "…" : string.Empty);
     }
 
     private sealed record RemoteChoice(DeveloperGitRemoteView Remote)

@@ -594,10 +594,10 @@ and acceptance evidence per slice.
 The [refactor baseline](refactor-baseline.md) records the 2026-08-24 measurements,
 target structure, ordered slices 060.0–060.8, and delegation protocol. PR #2 merged
 slice 060.0 (SDK pin, ignore rules, continuous verification) and the shrink-only
-source budget. Slices 060.1 and 060.2 extracted Files, Search, and exact-state Git
-changes into bounded composition units with focused tests. Extraction slices
-060.3–060.8 remain sequential and coordinate with in-progress Task 052 before
-touching run output and document surfaces.
+source budget. Slices 060.1–060.3 extracted Files, Search, exact-state Git changes,
+branches, tags, linked worktrees, and stashes into bounded composition units with
+focused tests. Extraction slices 060.4–060.8 remain sequential and coordinate with
+in-progress Task 052 before touching run output and document surfaces.
 
 ### Complete: Task 061 — architecture enforcement and composition seams
 
