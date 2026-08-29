@@ -613,7 +613,7 @@ bounded section/dialog units with matching focused tests; both production window
 have left the allowlist. Slice 060.8 has completed its presentation UX audit: all
 Avalonia source/test files are bounded, every fixed palette and core workbench tool
 action has one typed keybinding identity, and core tool status is consistently live.
-The shared global size-budget allowlist still has 9 non-Avalonia entries to burn
+The shared global size-budget allowlist still has 4 test-fixture entries to burn
 down before the slice and Task 060 close.
 
 ### Complete: Task 061 — architecture enforcement and composition seams

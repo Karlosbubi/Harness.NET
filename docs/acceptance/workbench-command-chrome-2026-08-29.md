@@ -23,5 +23,5 @@ This record covers the presentation UX portion of Task 060 slice 060.8.
 The production AT-SPI verifier opens the real command palette, settings, workspace
 and goal flows, exercises Roslyn editor actions, persists/restarts the Dock layout,
 and checks explicit automation names. The global source-size guard has no remaining
-Avalonia production or test entries; 9 non-Avalonia entries remain visible and keep
+Avalonia production or test entries; 4 non-Avalonia test fixtures remain visible and keep
 Task 060 open.

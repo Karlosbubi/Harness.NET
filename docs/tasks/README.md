@@ -893,8 +893,9 @@ partials; both the production and test stores have left the allowlist. Slice 060
 has extracted bounded settings sections and goal workflow dialogs with matching
 focused tests; both production windows have left the allowlist. Slice 060.8 has
 completed the Avalonia UX audit, with bounded shell/test units, a complete typed
-palette for 45 core tool actions, and shared live tool status. Nine non-Avalonia
-entries remain in the shared global size-budget allowlist, so the slice remains open.
+palette for 45 core tool actions, and shared live tool status. Four non-Avalonia
+test-fixture entries remain in the shared global size-budget allowlist, so the slice
+remains open.
 
 Dependencies: 049, 050. Coordinates with in-progress 052.
 
