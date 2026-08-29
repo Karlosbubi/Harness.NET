@@ -598,8 +598,9 @@ source budget. Slices 060.1–060.3 extracted Files, Search, exact-state Git cha
 branches, tags, linked worktrees, and stashes into bounded composition units with
 focused tests. Slice 060.4 extracted remotes, history/blame, and the exact-state
 conflict editor, including ownership of its Roslyn diagnostics lifecycle. Slices
-060.5 has extracted run output and Problems after confirming no Task 052 branch is
-ahead of `main`; document hosting remains in that slice. Slices 060.6–060.8 follow.
+060.5 has extracted run output, Problems, and the Roslyn document lifecycle after
+confirming no Task 052 branch is ahead of `main`; remaining document hosting and
+interactions stay in that slice. Slices 060.6–060.8 follow.
 
 ### Complete: Task 061 — architecture enforcement and composition seams
 

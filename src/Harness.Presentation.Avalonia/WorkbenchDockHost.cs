@@ -55,7 +55,6 @@ internal sealed class WorkbenchDockHost
     private readonly Dictionary<string, Control> durableContexts = new(StringComparer.Ordinal);
     private readonly Dictionary<string, SourceDocumentSession> sourceDocuments = new(StringComparer.Ordinal);
     private readonly Dictionary<string, TextEditor> virtualDocuments = new(StringComparer.Ordinal);
-    private readonly SemaphoreSlim codeSessionGate = new(1, 1);
     private readonly TextBlock layoutStatus = new()
     {
         MaxWidth = 180,
@@ -97,6 +96,7 @@ internal sealed class WorkbenchDockHost
     private readonly GitConflictsTool gitConflictsTool;
     private readonly RunOutputTool runOutputToolUnit;
     private readonly ProblemsTool problemsToolUnit;
+    private readonly DocumentIntelligence documentIntelligence;
     private TextBlock GitStatus => gitChangesTool.Status;
     private string GitFingerprint => gitChangesTool.Fingerprint;
     private WorkbenchWorkspaceContext? CurrentGitContext => gitChangesTool.CurrentContext;
@@ -115,10 +115,6 @@ internal sealed class WorkbenchDockHost
     private bool viewportInitialized;
     private int focusRegionIndex = -1;
     private IDockable? activeDocument;
-    private WorkbenchCodeSessionId? codeSessionId;
-    private string? codeSessionKey;
-    private EditorIntelligencePreferences editorIntelligencePreferences =
-        EditorIntelligencePreferences.Default;
     private KeybindingSettingsSnapshot keybindingSettings = KeybindingSettingsSnapshot.Default;
     private static readonly KeybindingCommand[] EditorKeyCommands =
     [
@@ -224,6 +220,13 @@ internal sealed class WorkbenchDockHost
             HasOpenSourceDocument);
         runOutputToolUnit = new(toolContext, runOutputService, developerExecutionService);
         problemsToolUnit = new(NavigateToProblemAsync);
+        documentIntelligence = new(
+            codeIntelligenceService,
+            developerExecutionService,
+            ActiveWorkspace,
+            () => sourceDocuments,
+            problemsToolUnit,
+            cancellationToken);
 
         Control files = filesTool.Content;
         Control sourceControl = BuildSourceControlTool();
@@ -565,10 +568,8 @@ internal sealed class WorkbenchDockHost
     internal void Update(AvaloniaShellState snapshot)
     {
         filesTool.Update(snapshot);
-        EditorIntelligencePreferences nextEditorPreferences = snapshot.Settings
-            .EditorIntelligenceSettings?.Preferences ?? EditorIntelligencePreferences.Default;
-        bool editorPreferencesChanged = nextEditorPreferences != editorIntelligencePreferences;
-        editorIntelligencePreferences = nextEditorPreferences;
+        documentIntelligence.UpdatePreferences(snapshot.Settings
+            .EditorIntelligenceSettings?.Preferences ?? EditorIntelligencePreferences.Default);
         KeybindingSettingsSnapshot nextKeybindings = snapshot.Settings.KeybindingSettings ??
                                                      KeybindingSettingsSnapshot.Default;
         bool keybindingsChanged = nextKeybindings != keybindingSettings;
@@ -580,10 +581,6 @@ internal sealed class WorkbenchDockHost
             {
                 session.Surface.ApplyKeybindings(keybindingSettings);
                 session.Vim.SetInputMode(keybindingSettings.InputMode);
-            }
-            if (editorPreferencesChanged)
-            {
-                SchedulePresentation(session, immediate: true, includeStructure: false);
             }
         }
 
@@ -1291,360 +1288,10 @@ internal sealed class WorkbenchDockHost
         return grid;
     }
 
-    private void ScheduleDiagnostics(SourceDocumentSession session, bool immediate = false)
-    {
-        if (session.IsDisposed) return;
-        if (session.View.Sha256 is null || session.View.IsTruncated ||
-            !IsDotNetSource(session.View.Path.Value))
-        {
-            session.Surface.SetCodeHealthNotApplicable();
-            return;
-        }
-
-        session.Surface.BeginCodeHealthUpdate();
-        if (session.Document.Id is { } documentId) problemsToolUnit.Remove(documentId);
-
-        (WorkbenchCodeBufferVersion version, CancellationToken token) =
-            session.BeginDiagnostics(cancellationToken);
-        _ = SynchronizeDiagnosticsAsync(session, version, token, immediate);
-    }
-
-    private async Task SynchronizeDiagnosticsAsync(
-        SourceDocumentSession session,
-        WorkbenchCodeBufferVersion version,
-        CancellationToken requestCancellation,
-        bool immediate)
-    {
-        try
-        {
-            if (!immediate)
-            {
-                await Task.Delay(TimeSpan.FromMilliseconds(250), requestCancellation);
-            }
-
-            WorkbenchCodeSessionId? sessionId = await EnsureCodeSessionAsync(
-                session,
-                requestCancellation);
-            if (sessionId is null || !session.IsCurrentDiagnostics(version))
-            {
-                return;
-            }
-
-            WorkbenchCodeDiagnosticView result = await codeIntelligenceService.SynchronizeAsync(
-                new(
-                    sessionId,
-                    new(session.View.Path.Value),
-                    new(session.View.Sha256!.Value),
-                    version,
-                    new(session.Editor.Text)),
-                requestCancellation);
-            if (!session.IsCurrentDiagnostics(version) ||
-                result.State is WorkbenchCodeResultState.Stale or
-                    WorkbenchCodeResultState.Cancelled)
-            {
-                return;
-            }
-
-            await Dispatcher.UIThread.InvokeAsync(() =>
-            {
-                if (session.Document.Id is not { } documentId ||
-                    !sourceDocuments.TryGetValue(documentId, out SourceDocumentSession? current) ||
-                    !ReferenceEquals(current, session) || !session.IsCurrentDiagnostics(version))
-                {
-                    return;
-                }
-
-                session.Surface.UpdateCodeHealth(result);
-                problemsToolUnit.Set(documentId, session.View.GoalId, result);
-            });
-        }
-        catch (OperationCanceledException) when (requestCancellation.IsCancellationRequested)
-        {
-        }
-        catch (Exception exception) when (
-            exception is InvalidOperationException or IOException or ArgumentException)
-        {
-            await Dispatcher.UIThread.InvokeAsync(() =>
-            {
-                problemsToolUnit.Status.Text = $"Code intelligence failed · {exception.Message}";
-            });
-        }
-    }
-
-    private void SchedulePresentation(
-        SourceDocumentSession session,
-        bool immediate = false,
-        bool includeStructure = true)
-    {
-        if (session.IsDisposed) return;
-        if (!CanUseSemanticAssistance(session))
-        {
-            return;
-        }
-
-        CancellationToken token = session.BeginPresentation(cancellationToken);
-        _ = SynchronizePresentationAsync(session, token, immediate, includeStructure);
-    }
-
-    private async Task SynchronizePresentationAsync(
-        SourceDocumentSession session,
-        CancellationToken requestCancellation,
-        bool immediate,
-        bool includeStructure)
-    {
-        try
-        {
-            if (!immediate)
-            {
-                await Task.Delay(TimeSpan.FromMilliseconds(90), requestCancellation);
-            }
-
-            WorkbenchCodeSessionId? sessionId = await EnsureCodeSessionAsync(
-                session, requestCancellation);
-            if (sessionId is null || !session.IsCurrentPresentation(requestCancellation))
-            {
-                return;
-            }
-
-            WorkbenchCodeBufferVersion version = new(Math.Max(1, session.CurrentBufferVersion));
-            WorkbenchCodeDocumentPresentationView? result = null;
-            for (int attempt = 0; attempt < 4; attempt++)
-            {
-                result = await codeIntelligenceService.GetDocumentPresentationAsync(
-                    new(
-                        InteractiveSnapshot(session, sessionId, version),
-                        session.Editor.GetVisibleRange(),
-                        includeStructure
-                            ? WorkbenchCodeDocumentPresentationScope.ClassificationAndStructure
-                            : WorkbenchCodeDocumentPresentationScope.VisibleClassification,
-                        new(
-                            editorIntelligencePreferences.ShowParameterNameHints,
-                            editorIntelligencePreferences.ShowInferredTypeHints),
-                        new(
-                            editorIntelligencePreferences.ShowReferenceCodeLens,
-                            editorIntelligencePreferences.ShowImplementationCodeLens,
-                            editorIntelligencePreferences.ShowTestCodeLens,
-                            ShowRun: editorIntelligencePreferences.ShowRunCodeLens &&
-                                developerExecutionService?.Capabilities
-                                    .CanRunProjectEntryPoint is true,
-                            ShowDebug: editorIntelligencePreferences.ShowDebugCodeLens &&
-                                developerExecutionService?.Capabilities
-                                    .CanDebugProjectEntryPoint is true)),
-                    requestCancellation);
-                if (!session.IsCurrentPresentation(requestCancellation) ||
-                    result.State is WorkbenchCodeResultState.Cancelled)
-                {
-                    return;
-                }
-                if (result.State is not (WorkbenchCodeResultState.Stale or
-                    WorkbenchCodeResultState.Failed))
-                {
-                    break;
-                }
-                if (attempt < 3)
-                {
-                    await Task.Delay(TimeSpan.FromMilliseconds(250), requestCancellation);
-                }
-            }
-            if (result is null || !session.IsCurrentPresentation(requestCancellation))
-            {
-                return;
-            }
-
-            if (result.State is WorkbenchCodeResultState.Stale or
-                WorkbenchCodeResultState.Failed)
-            {
-                string detail = result.Issues.FirstOrDefault()?.Message.Value ??
-                                "Roslyn did not return a current presentation.";
-                await Dispatcher.UIThread.InvokeAsync(() =>
-                    session.SetStatus($"Semantic presentation unavailable · {detail}"));
-                return;
-            }
-
-            await Dispatcher.UIThread.InvokeAsync(() =>
-            {
-                if (session.IsCurrentPresentation(requestCancellation))
-                {
-                    session.Surface.UpdateDocumentPresentation(result);
-                }
-            });
-        }
-        catch (OperationCanceledException) when (requestCancellation.IsCancellationRequested)
-        {
-        }
-        catch (Exception exception) when (
-            exception is InvalidOperationException or IOException or ArgumentException)
-        {
-            await Dispatcher.UIThread.InvokeAsync(() =>
-                session.SetStatus($"Semantic presentation failed · {exception.Message}"));
-        }
-    }
-
-    private void ScheduleOccurrences(SourceDocumentSession session)
-    {
-        if (session.IsDisposed) return;
-        if (!CanUseSemanticAssistance(session))
-        {
-            session.Editor.SetOccurrences([]);
-            return;
-        }
-
-        CancellationToken token = session.BeginOccurrences(cancellationToken);
-        _ = SynchronizeOccurrencesAsync(session, token);
-    }
-
-    private async Task SynchronizeOccurrencesAsync(
-        SourceDocumentSession session,
-        CancellationToken requestCancellation)
-    {
-        try
-        {
-            await Task.Delay(TimeSpan.FromMilliseconds(140), requestCancellation);
-            WorkbenchCodeSessionId? sessionId = await EnsureCodeSessionAsync(
-                session, requestCancellation);
-            if (sessionId is null || !session.IsCurrentOccurrence(requestCancellation))
-            {
-                return;
-            }
-
-            WorkbenchCodeBufferVersion version = new(Math.Max(1, session.CurrentBufferVersion));
-            WorkbenchCodeOccurrenceView result = await codeIntelligenceService.FindOccurrencesAsync(
-                InteractiveSnapshot(session, sessionId, version), requestCancellation);
-            if (!session.IsCurrentOccurrence(requestCancellation) ||
-                result.State is WorkbenchCodeResultState.Stale or
-                    WorkbenchCodeResultState.Cancelled or WorkbenchCodeResultState.Failed)
-            {
-                return;
-            }
-
-            await Dispatcher.UIThread.InvokeAsync(() =>
-            {
-                if (session.IsCurrentOccurrence(requestCancellation))
-                {
-                    session.Editor.SetOccurrences(result.Occurrences);
-                }
-            });
-        }
-        catch (OperationCanceledException) when (requestCancellation.IsCancellationRequested)
-        {
-        }
-        catch (Exception exception) when (
-            exception is InvalidOperationException or IOException or ArgumentException)
-        {
-            await Dispatcher.UIThread.InvokeAsync(() =>
-                session.SetStatus($"Occurrence lookup failed · {exception.Message}"));
-        }
-    }
-
-    private async ValueTask<WorkbenchCodeSessionId?> EnsureCodeSessionAsync(
-        SourceDocumentSession document,
-        CancellationToken requestCancellation)
-    {
-        WorkspaceView? active = ActiveWorkspace();
-        if (active is null || !active.IsTrusted || active.Id != document.View.WorkspaceId.Value)
-        {
-            return null;
-        }
-
-        return await EnsureCodeSessionAsync(
-            active, document.View.GoalId, document.View.Branch, requestCancellation);
-    }
-
-    private async ValueTask<WorkbenchCodeSessionId?> EnsureCodeSessionAsync(
-        WorkspaceView active,
-        GoalId? goalId,
-        WorkspaceBranchName? branch,
-        CancellationToken requestCancellation)
-    {
-
-        string key = $"{active.Id}:{goalId?.Value ?? "original"}:" +
-                     $"{branch?.Value ?? active.Branch}:{active.EntryPoint}";
-        await codeSessionGate.WaitAsync(requestCancellation);
-        try
-        {
-            if (codeSessionId is not null && string.Equals(codeSessionKey, key, StringComparison.Ordinal))
-            {
-                return codeSessionId;
-            }
-
-            if (codeSessionId is not null)
-            {
-                await codeIntelligenceService.StopAsync(codeSessionId, requestCancellation);
-                codeSessionId = null;
-                codeSessionKey = null;
-            }
-
-            string entryPoint = Path.IsPathRooted(active.EntryPoint)
-                ? Path.GetRelativePath(active.RootPath, active.EntryPoint)
-                : active.EntryPoint;
-            if (entryPoint == ".." ||
-                entryPoint.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
-            {
-                await Dispatcher.UIThread.InvokeAsync(() =>
-                    problemsToolUnit.Status.Text =
-                        "Code intelligence unavailable · invalid workspace entry point.");
-                return null;
-            }
-
-            IProgress<WorkbenchCodeLoadProgress> progress = new UiLoadProgress(problemsToolUnit.Status);
-            WorkbenchCodeSessionView started = await codeIntelligenceService.StartAsync(
-                new(
-                    new(active.Id),
-                    goalId,
-                    new(entryPoint)),
-                progress,
-                requestCancellation);
-            if (started.SessionId is null)
-            {
-                await Dispatcher.UIThread.InvokeAsync(() =>
-                {
-                    problemsToolUnit.Status.Text = started.Issues.Count == 0
-                        ? "Code intelligence unavailable."
-                        : $"Code intelligence unavailable · {started.Issues[0].Message.Value}";
-                });
-                return null;
-            }
-
-            codeSessionId = started.SessionId;
-            codeSessionKey = key;
-            return started.SessionId;
-        }
-        finally
-        {
-            codeSessionGate.Release();
-        }
-    }
-
     private async ValueTask InvalidateCodeIntelligenceAsync()
     {
         await gitConflictsTool.InvalidateCodeIntelligenceAsync();
-        try
-        {
-            await codeSessionGate.WaitAsync(cancellationToken);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            return;
-        }
-
-        try
-        {
-            if (codeSessionId is not null)
-            {
-                await codeIntelligenceService.StopAsync(codeSessionId, cancellationToken);
-            }
-
-            codeSessionId = null;
-            codeSessionKey = null;
-            problemsToolUnit.Clear();
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-        }
-        finally
-        {
-            codeSessionGate.Release();
-        }
+        await documentIntelligence.InvalidateAsync();
     }
 
     private async ValueTask NavigateToProblemAsync(
@@ -1673,9 +1320,6 @@ internal sealed class WorkbenchDockHost
         session.Editor.ScrollTo(position);
         session.Editor.Focus();
     }
-
-    private static bool IsDotNetSource(string path) =>
-        Path.GetExtension(path).Equals(".cs", StringComparison.OrdinalIgnoreCase);
 
     internal ValueTask RefreshRunOutputAsync() => runOutputToolUnit.RefreshAsync();
 
@@ -1753,15 +1397,15 @@ internal sealed class WorkbenchDockHost
             session.CancelHover();
             editor.SetOccurrences([]);
             session.SynchronizeDirtyState();
-            ScheduleDiagnostics(session);
-            SchedulePresentation(session);
+            documentIntelligence.ScheduleDiagnostics(session);
+            documentIntelligence.SchedulePresentation(session);
         };
-        editor.CaretChanged += (_, _) => ScheduleOccurrences(session);
+        editor.CaretChanged += (_, _) => documentIntelligence.ScheduleOccurrences(session);
         editor.CodeLensInvoked += async (_, args) =>
             await InvokeCodeLensAsync(session, args.Lens);
         surface.CodeLensInvoked += async (_, args) =>
             await InvokeCodeLensAsync(session, args.Lens);
-        editor.ViewportChanged += (_, _) => SchedulePresentation(
+        editor.ViewportChanged += (_, _) => documentIntelligence.SchedulePresentation(
             session,
             includeStructure: false);
         editor.KeyDown += async (_, args) =>
@@ -1832,14 +1476,14 @@ internal sealed class WorkbenchDockHost
         };
         sourceDocuments.Add(id, session);
         session.SynchronizeDirtyState();
-        ScheduleDiagnostics(session, immediate: true);
-        SchedulePresentation(session, immediate: true);
+        documentIntelligence.ScheduleDiagnostics(session, immediate: true);
+        documentIntelligence.SchedulePresentation(session, immediate: true);
         return session;
     }
 
     private async ValueTask ShowWorkspaceSymbolsAsync(SourceDocumentSession session)
     {
-        if (!CanUseSemanticAssistance(session) || OwnerWindow() is not { } owner)
+        if (!DocumentIntelligence.CanUse(session) || OwnerWindow() is not { } owner)
         {
             return;
         }
@@ -1848,13 +1492,13 @@ internal sealed class WorkbenchDockHost
             session.BeginInteraction(cancellationToken);
         try
         {
-            WorkbenchCodeSessionId? codeSession = await EnsureCodeSessionAsync(session, token);
+            WorkbenchCodeSessionId? codeSession = await documentIntelligence.EnsureSessionAsync(session, token);
             if (codeSession is null || !session.IsCurrentInteraction(version))
             {
                 return;
             }
 
-            WorkbenchCodeInteractiveSnapshot snapshot = InteractiveSnapshot(
+            WorkbenchCodeInteractiveSnapshot snapshot = DocumentIntelligence.Snapshot(
                 session, codeSession, version);
             WorkspaceSymbolSearchDialog dialog = new(
                 async (value, searchCancellation) =>
@@ -1877,7 +1521,7 @@ internal sealed class WorkbenchDockHost
         WorkbenchCodeCompletionTriggerKind triggerKind,
         char? triggerCharacter)
     {
-        if (!CanUseSemanticAssistance(session))
+        if (!DocumentIntelligence.CanUse(session))
         {
             return;
         }
@@ -1886,13 +1530,13 @@ internal sealed class WorkbenchDockHost
             session.BeginInteraction(cancellationToken);
         try
         {
-            WorkbenchCodeSessionId? codeSession = await EnsureCodeSessionAsync(session, token);
+            WorkbenchCodeSessionId? codeSession = await documentIntelligence.EnsureSessionAsync(session, token);
             if (codeSession is null || !session.IsCurrentInteraction(version))
             {
                 return;
             }
 
-            WorkbenchCodeInteractiveSnapshot snapshot = InteractiveSnapshot(
+            WorkbenchCodeInteractiveSnapshot snapshot = DocumentIntelligence.Snapshot(
                 session, codeSession, version);
             WorkbenchCodeCompletionView result = await codeIntelligenceService.GetCompletionsAsync(
                 new(snapshot, triggerKind, triggerCharacter), token);
@@ -1938,7 +1582,7 @@ internal sealed class WorkbenchDockHost
     {
         if (mutationService is null || session.View.GoalId is null ||
             session.View.Access is not WorkbenchDocumentAccess.Editable ||
-            !CanUseSemanticAssistance(session) || OwnerWindow() is not { } owner)
+            !DocumentIntelligence.CanUse(session) || OwnerWindow() is not { } owner)
         {
             session.SetStatus("Semantic rename requires an editable approved goal source document.");
             return;
@@ -2041,7 +1685,7 @@ internal sealed class WorkbenchDockHost
 
     private ValueTask HandlePasteAsync(
         SourceDocumentSession session,
-        WorkbenchCodeRange range) => editorIntelligencePreferences.FormatOnPaste
+        WorkbenchCodeRange range) => documentIntelligence.Preferences.FormatOnPaste
         ? TransformDocumentAsync(
             session,
             WorkbenchCodeDocumentTransformationKind.FormatPaste,
@@ -2084,7 +1728,7 @@ internal sealed class WorkbenchDockHost
                 value);
         }
 
-        if (editorIntelligencePreferences.FormatOnType &&
+        if (documentIntelligence.Preferences.FormatOnType &&
             FormattingTrigger(value) is { } formattingTrigger)
         {
             int end = editor.CaretOffset;
@@ -2102,7 +1746,7 @@ internal sealed class WorkbenchDockHost
         activeDocument?.Id is { } id &&
         sourceDocuments.TryGetValue(id, out SourceDocumentSession? session) &&
         session.View.Access is WorkbenchDocumentAccess.Editable &&
-        CanUseSemanticAssistance(session) &&
+        DocumentIntelligence.CanUse(session) &&
         (kind is not WorkbenchCodeDocumentTransformationKind.FormatSelection ||
             session.Editor.SelectionRange is not null);
 
@@ -2121,10 +1765,10 @@ internal sealed class WorkbenchDockHost
                 session.View.Access is WorkbenchDocumentAccess.Editable,
             KeybindingCommand.ShowCompletion or KeybindingCommand.ShowQuickInfo or
                 KeybindingCommand.GoToDefinition or KeybindingCommand.FindReferences or
-                KeybindingCommand.FindImplementations => CanUseSemanticAssistance(session),
+                KeybindingCommand.FindImplementations => DocumentIntelligence.CanUse(session),
             KeybindingCommand.RenameSymbol => mutationService is not null &&
                 session.View.Access is WorkbenchDocumentAccess.Editable &&
-                CanUseSemanticAssistance(session),
+                DocumentIntelligence.CanUse(session),
             KeybindingCommand.FormatDocument => CanTransformActiveDocument(
                 WorkbenchCodeDocumentTransformationKind.FormatDocument),
             KeybindingCommand.FormatSelection => CanTransformActiveDocument(
@@ -2207,7 +1851,7 @@ internal sealed class WorkbenchDockHost
         bool automatic = false)
     {
         if (session.View.Access is not WorkbenchDocumentAccess.Editable ||
-            !CanUseSemanticAssistance(session))
+            !DocumentIntelligence.CanUse(session))
         {
             session.SetStatus("Formatting requires an editable C# source document.");
             return;
@@ -2247,13 +1891,13 @@ internal sealed class WorkbenchDockHost
         }
         try
         {
-            WorkbenchCodeSessionId? codeSession = await EnsureCodeSessionAsync(session, token);
+            WorkbenchCodeSessionId? codeSession = await documentIntelligence.EnsureSessionAsync(session, token);
             if (codeSession is null || !session.IsCurrentInteraction(version))
             {
                 return;
             }
 
-            WorkbenchCodeInteractiveSnapshot snapshot = InteractiveSnapshot(
+            WorkbenchCodeInteractiveSnapshot snapshot = DocumentIntelligence.Snapshot(
                 session, codeSession, version);
             WorkbenchCodeDocumentTransformationPreviewView preview =
                 await codeIntelligenceService.PreviewDocumentTransformationAsync(
@@ -2352,8 +1996,8 @@ internal sealed class WorkbenchDockHost
                         : $"Applied Roslyn quick fix · {edit.ReplacementCount:N0} edit(s) · undo available.",
                 _ => "Applied deterministic Roslyn transformation to the live buffer.",
             });
-            ScheduleDiagnostics(session, immediate: true);
-            SchedulePresentation(session, immediate: true);
+            documentIntelligence.ScheduleDiagnostics(session, immediate: true);
+            documentIntelligence.SchedulePresentation(session, immediate: true);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
@@ -2452,7 +2096,7 @@ internal sealed class WorkbenchDockHost
         session.SetStatus(
             $"Applied Roslyn refactoring atomically to {result.Files.Count:N0} file(s).");
         await InvalidateCodeIntelligenceAsync();
-        ScheduleDiagnostics(session, immediate: true);
+        documentIntelligence.ScheduleDiagnostics(session, immediate: true);
     }
 
     private static WorkbenchCodeFormattingTrigger? FormattingTrigger(char value) => value switch
@@ -2500,7 +2144,7 @@ internal sealed class WorkbenchDockHost
     private async ValueTask ShowImportFixesAsync(SourceDocumentSession session)
     {
         if (session.View.Access is not WorkbenchDocumentAccess.Editable ||
-            !CanUseSemanticAssistance(session))
+            !DocumentIntelligence.CanUse(session))
         {
             session.SetStatus("Quick fixes require an editable C# source document.");
             return;
@@ -2511,13 +2155,13 @@ internal sealed class WorkbenchDockHost
         session.SetBusy(true, "Finding Roslyn fixes at the caret…");
         try
         {
-            WorkbenchCodeSessionId? codeSession = await EnsureCodeSessionAsync(session, token);
+            WorkbenchCodeSessionId? codeSession = await documentIntelligence.EnsureSessionAsync(session, token);
             if (codeSession is null || !session.IsCurrentInteraction(version))
             {
                 return;
             }
 
-            WorkbenchCodeInteractiveSnapshot snapshot = InteractiveSnapshot(
+            WorkbenchCodeInteractiveSnapshot snapshot = DocumentIntelligence.Snapshot(
                 session, codeSession, version);
             WorkbenchCodeRange? codeActionRange = session.Editor.SelectionRange;
             WorkbenchCodeMissingImportView result =
@@ -2707,7 +2351,7 @@ internal sealed class WorkbenchDockHost
             }
 
             await InvalidateCodeIntelligenceAsync();
-            ScheduleDiagnostics(active, immediate: true);
+            documentIntelligence.ScheduleDiagnostics(active, immediate: true);
             return result;
         }
         catch (OperationCanceledException)
@@ -2803,7 +2447,7 @@ internal sealed class WorkbenchDockHost
         SourceDocumentSession session,
         WorkbenchCodePosition? requestedPosition = null)
     {
-        if (!CanUseSemanticAssistance(session))
+        if (!DocumentIntelligence.CanUse(session))
         {
             return;
         }
@@ -2815,14 +2459,14 @@ internal sealed class WorkbenchDockHost
             session.BeginInteraction(cancellationToken);
         try
         {
-            WorkbenchCodeSessionId? codeSession = await EnsureCodeSessionAsync(session, token);
+            WorkbenchCodeSessionId? codeSession = await documentIntelligence.EnsureSessionAsync(session, token);
             if (codeSession is null)
             {
                 return;
             }
 
             WorkbenchCodeQuickInfoView result = await codeIntelligenceService.GetQuickInfoAsync(
-                InteractiveSnapshot(session, codeSession, version, requestedPosition), token);
+                DocumentIntelligence.Snapshot(session, codeSession, version, requestedPosition), token);
             if (!session.IsCurrentInteraction(version) || result.Sections.Count == 0)
             {
                 session.SetStatus("No symbol information is available at the caret.");
@@ -2866,7 +2510,7 @@ internal sealed class WorkbenchDockHost
 
     private async ValueTask ShowSignatureHelpAsync(SourceDocumentSession session)
     {
-        if (!CanUseSemanticAssistance(session))
+        if (!DocumentIntelligence.CanUse(session))
         {
             return;
         }
@@ -2878,7 +2522,7 @@ internal sealed class WorkbenchDockHost
             session.BeginInteraction(cancellationToken);
         try
         {
-            WorkbenchCodeSessionId? codeSession = await EnsureCodeSessionAsync(session, token);
+            WorkbenchCodeSessionId? codeSession = await documentIntelligence.EnsureSessionAsync(session, token);
             if (codeSession is null)
             {
                 return;
@@ -2886,7 +2530,7 @@ internal sealed class WorkbenchDockHost
 
             WorkbenchCodeSignatureHelpView result =
                 await codeIntelligenceService.GetSignatureHelpAsync(
-                    InteractiveSnapshot(session, codeSession, version), token);
+                    DocumentIntelligence.Snapshot(session, codeSession, version), token);
             if (!session.IsCurrentInteraction(version) || result.Signatures.Count == 0)
             {
                 return;
@@ -2911,7 +2555,7 @@ internal sealed class WorkbenchDockHost
         SourceDocumentSession session,
         SemanticNavigationKind kind)
     {
-        if (!CanUseSemanticAssistance(session))
+        if (!DocumentIntelligence.CanUse(session))
         {
             return;
         }
@@ -2922,13 +2566,13 @@ internal sealed class WorkbenchDockHost
             session.BeginInteraction(cancellationToken);
         try
         {
-            WorkbenchCodeSessionId? codeSession = await EnsureCodeSessionAsync(session, token);
+            WorkbenchCodeSessionId? codeSession = await documentIntelligence.EnsureSessionAsync(session, token);
             if (codeSession is null)
             {
                 return;
             }
 
-            WorkbenchCodeInteractiveSnapshot snapshot = InteractiveSnapshot(
+            WorkbenchCodeInteractiveSnapshot snapshot = DocumentIntelligence.Snapshot(
                 session, codeSession, version);
             session.SetStatus(kind switch
             {
@@ -3109,7 +2753,7 @@ internal sealed class WorkbenchDockHost
 
     private async ValueTask ShowAssociatedTestsAsync(SourceDocumentSession session)
     {
-        if (!CanUseSemanticAssistance(session))
+        if (!DocumentIntelligence.CanUse(session))
         {
             return;
         }
@@ -3119,7 +2763,7 @@ internal sealed class WorkbenchDockHost
             session.BeginInteraction(cancellationToken);
         try
         {
-            WorkbenchCodeSessionId? codeSession = await EnsureCodeSessionAsync(session, token);
+            WorkbenchCodeSessionId? codeSession = await documentIntelligence.EnsureSessionAsync(session, token);
             if (codeSession is null)
             {
                 return;
@@ -3128,7 +2772,7 @@ internal sealed class WorkbenchDockHost
             session.SetStatus("Finding associated tests with Roslyn…");
             WorkbenchCodeSemanticView result = await codeIntelligenceService
                 .FindAssociatedTestsAsync(new(
-                    InteractiveSnapshot(session, codeSession, version),
+                    DocumentIntelligence.Snapshot(session, codeSession, version),
                     Query: null,
                     MaximumResults: 100,
                     Offset: 0), token);
@@ -3238,11 +2882,11 @@ internal sealed class WorkbenchDockHost
     {
         (WorkbenchCodeBufferVersion version, CancellationToken token) =
             source.BeginInteraction(cancellationToken);
-        WorkbenchCodeSessionId? sessionId = await EnsureCodeSessionAsync(source, token);
+        WorkbenchCodeSessionId? sessionId = await documentIntelligence.EnsureSessionAsync(source, token);
         if (sessionId is null || !source.IsCurrentInteraction(version)) return;
         WorkbenchCodeVirtualDocumentView virtualDocument =
             await codeIntelligenceService.GetVirtualDocumentAsync(new(
-                InteractiveSnapshot(source, sessionId, version),
+                DocumentIntelligence.Snapshot(source, sessionId, version),
                 destination.VirtualDocumentId!), token);
         if (!source.IsCurrentInteraction(version) || virtualDocument.Text is null ||
             virtualDocument.Title is null || virtualDocument.Origin is null)
@@ -3316,17 +2960,17 @@ internal sealed class WorkbenchDockHost
         SourceDocumentSession source,
         WorkbenchCodeInspectionKind kind)
     {
-        if (!CanUseSemanticAssistance(source)) return;
+        if (!DocumentIntelligence.CanUse(source)) return;
         source.CloseInteractiveWindows();
         (WorkbenchCodeBufferVersion version, CancellationToken token) =
             source.BeginInteraction(cancellationToken);
         try
         {
-            WorkbenchCodeSessionId? sessionId = await EnsureCodeSessionAsync(source, token);
+            WorkbenchCodeSessionId? sessionId = await documentIntelligence.EnsureSessionAsync(source, token);
             if (sessionId is null || !source.IsCurrentInteraction(version)) return;
             source.SetStatus($"Building {InspectionKindLabel(kind).ToLowerInvariant()} from the exact buffer…");
             WorkbenchCodeInspectionView result = await codeIntelligenceService.InspectAsync(new(
-                InteractiveSnapshot(source, sessionId, version), kind), token);
+                DocumentIntelligence.Snapshot(source, sessionId, version), kind), token);
             if (!source.IsCurrentInteraction(version)) return;
             if (result.Text is null || result.Title is null || result.Origin is null)
             {
@@ -3382,22 +3026,6 @@ internal sealed class WorkbenchDockHost
         _ => "Virtual source",
     };
 
-    private static WorkbenchCodeInteractiveSnapshot InteractiveSnapshot(
-        SourceDocumentSession session,
-        WorkbenchCodeSessionId codeSession,
-        WorkbenchCodeBufferVersion version,
-        WorkbenchCodePosition? requestedPosition = null) => new(
-        codeSession,
-        new(session.View.Path.Value),
-        new(session.View.Sha256!.Value),
-        version,
-        new(session.Editor.Text),
-        requestedPosition ?? session.Editor.CaretPosition);
-
-    private static bool CanUseSemanticAssistance(SourceDocumentSession session) =>
-        session.View.Sha256 is not null && !session.View.IsTruncated &&
-        IsDotNetSource(session.View.Path.Value);
-
     private async ValueTask<bool> SaveSourceDocumentAsync(
         SourceDocumentSession session,
         WorkbenchDocumentSha256? overrideBaseline = null)
@@ -3430,7 +3058,7 @@ internal sealed class WorkbenchDockHost
                     result.SavedSha256 is not null)
                 {
                     session.AcceptSaved(result.SavedSha256, result.BytesWritten);
-                    ScheduleDiagnostics(session, immediate: true);
+                    documentIntelligence.ScheduleDiagnostics(session, immediate: true);
                     return true;
                 }
 
@@ -3739,7 +3367,7 @@ internal sealed class WorkbenchDockHost
             (!session.Surface.HasDocumentPresentation ||
              !session.Surface.HasCodeLensActions))
         {
-            SchedulePresentation(session, immediate: true);
+            documentIntelligence.SchedulePresentation(session, immediate: true);
         }
     }
 
