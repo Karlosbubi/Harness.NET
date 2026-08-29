@@ -600,8 +600,10 @@ focused tests. Slice 060.4 extracted remotes, history/blame, and the exact-state
 conflict editor, including ownership of its Roslyn diagnostics lifecycle. Slices
 060.5 has extracted run output, Problems, the Roslyn lifecycle, and editor interaction
 services, rename, transformations, navigation, virtual documents, inspection, and
-CodeLens after confirming no Task 052 branch is ahead of `main`; document session
-hosting remains in that slice.
+CodeLens after confirming no Task 052 branch is ahead of `main`. Document session
+creation, dirty/save/reload/close transitions, Dock activation, and Roslyn invalidation
+now live in bounded `DocumentsHost` and `DocumentSessionFactory` units; workbench
+arrangement, adaptive layout, and cross-tool navigation remain in slice 060.5.
 Slices 060.6–060.8 follow.
 
 ### Complete: Task 061 — architecture enforcement and composition seams

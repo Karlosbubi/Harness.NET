@@ -38,11 +38,7 @@ internal sealed class WorkbenchDockHost
 {
     private readonly IWorkbenchInspectionService inspectionService;
     private readonly IDeveloperGitService? developerGitService;
-    private readonly IWorkbenchDocumentService documentService;
-    private readonly IWorkbenchCodeIntelligenceService codeIntelligenceService;
-    private readonly IWorkspaceMutationService? mutationService;
     private readonly IWorkbenchLayoutService layoutService;
-    private readonly IWorkbenchDocumentPrompt documentPrompt;
     private readonly Func<AvaloniaShellState> state;
     private readonly Func<bool, Task> manageWorkspace;
     private readonly Func<string, Task> manageWorkspaceAt;
@@ -53,18 +49,10 @@ internal sealed class WorkbenchDockHost
     private readonly Factory factory = new();
     private readonly WorkbenchDockLayoutCodec layoutCodec;
     private readonly Dictionary<string, Control> durableContexts = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, SourceDocumentSession> sourceDocuments = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, TextEditor> virtualDocuments = new(StringComparer.Ordinal);
     private readonly TextBlock layoutStatus = new()
     {
         MaxWidth = 180,
         TextTrimming = TextTrimming.CharacterEllipsis,
-        VerticalAlignment = VerticalAlignment.Center,
-    };
-    private readonly ComboBox documentSwitcher = new()
-    {
-        MinWidth = 170,
-        MaxWidth = 260,
         VerticalAlignment = VerticalAlignment.Center,
     };
     private IDocumentDock documents = null!;
@@ -95,21 +83,14 @@ internal sealed class WorkbenchDockHost
     private readonly GitHistoryTool gitHistoryTool;
     private readonly GitConflictsTool gitConflictsTool;
     private readonly RunOutputTool runOutputToolUnit;
+    private readonly DocumentsHost documentsHost;
     private readonly ProblemsTool problemsToolUnit;
-    private readonly DocumentIntelligence documentIntelligence;
-    private readonly DocumentNavigation documentNavigation;
-    private readonly DocumentInteractions documentInteractions;
-    private readonly DocumentRename documentRename;
-    private readonly DocumentTransformations documentTransformations;
     private TextBlock GitStatus => gitChangesTool.Status;
     private string GitFingerprint => gitChangesTool.Fingerprint;
     private WorkbenchWorkspaceContext? CurrentGitContext => gitChangesTool.CurrentContext;
     private string? workspaceId;
     private string? selectedGoalId;
     private bool busy;
-    private bool suppressDocumentActivation;
-    private bool renderingDocumentSwitcher;
-    private bool resolvingDocumentTransition;
     private bool adaptiveLeftCollapsed;
     private bool adaptiveRightCollapsed;
     private bool adaptiveBottomCollapsed;
@@ -118,23 +99,7 @@ internal sealed class WorkbenchDockHost
     private double expandedBottomProportion = 0.45;
     private bool viewportInitialized;
     private int focusRegionIndex = -1;
-    private IDockable? activeDocument;
     private KeybindingSettingsSnapshot keybindingSettings = KeybindingSettingsSnapshot.Default;
-    private static readonly KeybindingCommand[] EditorKeyCommands =
-    [
-        KeybindingCommand.SaveDocument,
-        KeybindingCommand.CloseDocument,
-        KeybindingCommand.ShowCompletion,
-        KeybindingCommand.ShowQuickInfo,
-        KeybindingCommand.GoToDefinition,
-        KeybindingCommand.FindReferences,
-        KeybindingCommand.FindImplementations,
-        KeybindingCommand.RenameSymbol,
-        KeybindingCommand.FormatDocument,
-        KeybindingCommand.FormatSelection,
-        KeybindingCommand.OrganizeImports,
-        KeybindingCommand.ShowQuickFixes,
-    ];
     private static readonly KeybindingCommand[] WorkbenchKeyCommands =
     [
         KeybindingCommand.ShowFiles,
@@ -165,11 +130,7 @@ internal sealed class WorkbenchDockHost
         Func<string, Task>? manageWorkspaceAt = null)
     {
         this.inspectionService = inspectionService;
-        this.documentService = documentService;
-        this.codeIntelligenceService = codeIntelligenceService;
-        this.mutationService = mutationService;
         this.layoutService = layoutService;
-        this.documentPrompt = documentPrompt;
         this.state = state;
         this.manageWorkspace = manageWorkspace ?? (_ => Task.CompletedTask);
         this.manageWorkspaceAt = manageWorkspaceAt ?? (_ => Task.CompletedTask);
@@ -217,59 +178,31 @@ internal sealed class WorkbenchDockHost
             PrepareForWorkspaceChangeAsync,
             async () => await this.refreshWorkspaceContext());
         gitHistoryTool = new(toolContext, gitChangesTool.ReportStatus);
+        runOutputToolUnit = new(toolContext, runOutputService, developerExecutionService);
+        documentsHost = new(
+            documentService,
+            codeIntelligenceService,
+            mutationService,
+            documentPrompt,
+            developerExecutionService,
+            state,
+            () => busy,
+            RunAsync,
+            filesTool.ReportStatus,
+            () => filesTool.StatusText,
+            IsActiveConflictDocument,
+            OwnerWindow,
+            InvalidateCodeIntelligenceAsync,
+            ShowRunOutput,
+            RefreshRunOutputAsync,
+            factory,
+            cancellationToken);
+        problemsToolUnit = documentsHost.Problems;
         gitConflictsTool = new(
             toolContext,
             codeIntelligenceService,
             gitChangesTool.Render,
-            HasOpenSourceDocument);
-        runOutputToolUnit = new(toolContext, runOutputService, developerExecutionService);
-        problemsToolUnit = new(NavigateToProblemAsync);
-        documentIntelligence = new(
-            codeIntelligenceService,
-            developerExecutionService,
-            ActiveWorkspace,
-            () => sourceDocuments,
-            problemsToolUnit,
-            cancellationToken);
-        documentNavigation = new(
-            codeIntelligenceService,
-            documentIntelligence,
-            developerExecutionService,
-            ActiveWorkspace,
-            WorkbenchRequest,
-            () => sourceDocuments,
-            virtualDocuments,
-            OpenFileAsync,
-            SetActiveDocument,
-            PrepareActiveDocumentTransitionAsync,
-            OpenOrReplaceDocument,
-            () => documents,
-            factory,
-            ShowRunOutput,
-            RefreshRunOutputAsync,
-            cancellationToken);
-        documentInteractions = new(
-            codeIntelligenceService,
-            documentIntelligence,
-            OwnerWindow,
-            documentNavigation.NavigateToSymbolAsync,
-            cancellationToken);
-        documentRename = new(
-            mutationService,
-            ActiveSourceSession,
-            () => sourceDocuments,
-            OwnerWindow,
-            InvalidateCodeIntelligenceAsync,
-            documentIntelligence.ScheduleDiagnostics,
-            cancellationToken);
-        documentTransformations = new(
-            mutationService,
-            codeIntelligenceService,
-            documentIntelligence,
-            documentInteractions,
-            () => sourceDocuments,
-            InvalidateCodeIntelligenceAsync,
-            cancellationToken);
+            documentsHost.HasOpen);
 
         Control files = filesTool.Content;
         Control sourceControl = BuildSourceControlTool();
@@ -381,6 +314,7 @@ internal sealed class WorkbenchDockHost
         bottom.ActiveDockable = conversationTool;
         documents.VisibleDockables = factory.CreateList<IDockable>(overviewDocument);
         documents.ActiveDockable = overviewDocument;
+        documentsHost.Attach(documents, overviewDocument);
         WorkbenchDockContent.Attach(navigationTool!, navigation);
         WorkbenchDockContent.Attach(filesDockTool!, files);
         WorkbenchDockContent.Attach(contextTool!, context);
@@ -395,9 +329,6 @@ internal sealed class WorkbenchDockHost
         left.IsExpanded = true;
         right.IsExpanded = true;
         bottom.IsExpanded = true;
-        activeDocument = overviewDocument;
-        factory.ActiveDockableChanged += OnActiveDockableChanged;
-        factory.DockableClosed += OnDockableClosed;
         factory.WindowAdded += (_, args) =>
         {
             if (args.Window is { } window)
@@ -421,13 +352,16 @@ internal sealed class WorkbenchDockHost
         Control.SizeChanged += (_, _) => ApplyViewport(Control.Bounds.Width, Control.Bounds.Height);
         Control.LayoutUpdated += (_, _) => ApplyDockAutomationNames();
         LayoutActions = BuildLayoutActions();
-        DocumentActions = BuildDocumentActions();
+        DocumentActions = documentsHost.BuildActions(
+            layoutStatus,
+            control => LastRequestedFocusTarget = control,
+            FocusContext);
     }
 
     internal DockControl Control { get; }
     internal Control LayoutActions { get; }
     internal Control DocumentActions { get; }
-    internal ComboBox DocumentSwitcher => documentSwitcher;
+    internal ComboBox DocumentSwitcher => documentsHost.Switcher;
     internal Button OverviewAction => overviewAction;
     internal IDocumentDock Documents => documents;
     internal IRootDock Root => root;
@@ -435,70 +369,22 @@ internal sealed class WorkbenchDockHost
     internal string? LayoutStatusText => layoutStatus.Text;
     internal bool IsCompactViewport { get; private set; }
     internal Control? LastRequestedFocusTarget { get; private set; }
-    internal int SourceDocumentCount => sourceDocuments.Count;
-    internal int VirtualDocumentCount => virtualDocuments.Count;
+    internal int SourceDocumentCount => documentsHost.SourceCount;
+    internal int VirtualDocumentCount => documentsHost.VirtualCount;
     internal TreeView FileTree => filesTool.Tree;
     internal TextBox FileFilter => filesTool.Filter;
-    internal TextEditor? ActiveSourceEditor => activeDocument?.Id is { } id &&
-                                               sourceDocuments.TryGetValue(id, out SourceDocumentSession? session)
-        ? session.NativeEditor
-        : null;
-    internal TextEditor? ActiveVirtualEditor => activeDocument?.Id is { } id &&
-                                                virtualDocuments.TryGetValue(id, out TextEditor? editor)
-        ? editor
-        : activeDocument?.Context as TextEditor;
+    internal TextEditor? ActiveSourceEditor => documentsHost.ActiveSourceEditor;
+    internal TextEditor? ActiveVirtualEditor => documentsHost.ActiveVirtualEditor;
     internal ListBox Problems => problemsToolUnit.List;
     internal string? ProblemsStatusText => problemsToolUnit.Status.Text;
-    internal bool ActiveSourceDocumentIsDirty => activeDocument?.Id is { } id &&
-                                                 sourceDocuments.TryGetValue(id, out SourceDocumentSession? session) &&
-                                                 session.IsDirty;
+    internal bool ActiveSourceDocumentIsDirty => documentsHost.ActiveSourceIsDirty;
     internal IReadOnlyList<InboundOpenDocumentView> InboundOpenDocuments =>
-        sourceDocuments.Values.Select(session => new InboundOpenDocumentView(
-            session.View.Path.Value,
-            session.View.GoalId?.Value,
-            session.View.Sha256?.Value,
-            session.CurrentBufferVersion,
-            session.IsDirty,
-            session.View.Access is WorkbenchDocumentAccess.Editable,
-            ReferenceEquals(activeDocument, session.Document))).ToArray();
-
-    internal int ActiveCompletionItemCount => activeDocument?.Id is { } completionId &&
-                                               sourceDocuments.TryGetValue(
-                                                   completionId,
-                                                   out SourceDocumentSession? completionSession)
-        ? completionSession.CompletionWindow?.CompletionList.CompletionData.Count ?? 0
-        : 0;
-
-    internal CompletionWindow? ActiveCompletionWindow => activeDocument?.Id is { } windowId &&
-                                                          sourceDocuments.TryGetValue(
-                                                              windowId,
-                                                              out SourceDocumentSession? windowSession)
-        ? windowSession.CompletionWindow
-        : null;
-
-    internal bool ActiveQuickInfoIsOpen => activeDocument?.Id is { } quickInfoId &&
-                                           sourceDocuments.TryGetValue(
-                                               quickInfoId,
-                                               out SourceDocumentSession? quickInfoSession) &&
-                                           quickInfoSession.QuickInfoWindow?.IsVisible is true;
-
-    private SourceDocumentSession? ActiveSourceSession() =>
-        activeDocument?.Id is { } id &&
-        sourceDocuments.TryGetValue(id, out SourceDocumentSession? session)
-            ? session
-            : null;
-
-    internal ValueTask<bool> SaveActiveSourceDocumentAsync() =>
-        activeDocument?.Id is { } id &&
-        sourceDocuments.TryGetValue(id, out SourceDocumentSession? session)
-            ? SaveSourceDocumentAsync(session)
-            : ValueTask.FromResult(false);
-
-    internal ValueTask CloseActiveSourceDocumentAsync() =>
-        activeDocument?.Id is { } id &&
-        sourceDocuments.TryGetValue(id, out SourceDocumentSession? session)
-            ? RequestSourceDocumentCloseAsync(session)
-            : ValueTask.CompletedTask;
+        documentsHost.InboundOpenDocuments;
+    internal int ActiveCompletionItemCount => documentsHost.ActiveCompletionItemCount;
+    internal CompletionWindow? ActiveCompletionWindow => documentsHost.ActiveCompletionWindow;
+    internal bool ActiveQuickInfoIsOpen => documentsHost.ActiveQuickInfoIsOpen;
+    internal ValueTask<bool> SaveActiveSourceDocumentAsync() => documentsHost.SaveActiveAsync();
+    internal ValueTask CloseActiveSourceDocumentAsync() => documentsHost.CloseActiveAsync();
 
     internal async ValueTask RestoreLayoutAsync()
     {
@@ -555,7 +441,7 @@ internal sealed class WorkbenchDockHost
 
     internal async ValueTask ResetLayoutAsync()
     {
-        if (!await CloseAllSourceDocumentsAsync(WorkbenchDocumentTransition.Close))
+        if (!await documentsHost.CloseAllAsync(WorkbenchDocumentTransition.Close))
         {
             layoutStatus.Text = "Layout reset cancelled · unsaved source changes kept";
             return;
@@ -592,53 +478,29 @@ internal sealed class WorkbenchDockHost
     internal async ValueTask<bool> PrepareForShutdownAsync()
     {
         if (!await gitConflictsTool.ResolveUnsavedAsync(WorkbenchDocumentTransition.Exit)) return false;
-        foreach (SourceDocumentSession session in sourceDocuments.Values
-                     .Where(item => item.IsDirty)
-                     .ToArray())
-        {
-            if (!await ResolveUnsavedAsync(
-                    session,
-                    WorkbenchDocumentTransition.Exit,
-                    discardKeepsDocument: true))
-            {
-                return false;
-            }
-        }
-        await InvalidateCodeIntelligenceAsync();
+        if (!await documentsHost.PrepareForShutdownAsync()) return false;
+        await gitConflictsTool.InvalidateCodeIntelligenceAsync();
         return true;
     }
 
     internal async ValueTask<bool> PrepareForWorkspaceChangeAsync()
     {
         if (!await gitConflictsTool.ResolveUnsavedAsync(WorkbenchDocumentTransition.Switch)) return false;
-        return await CloseAllSourceDocumentsAsync(WorkbenchDocumentTransition.Switch);
+        return await documentsHost.PrepareForWorkspaceChangeAsync();
     }
 
     internal void Update(AvaloniaShellState snapshot)
     {
         filesTool.Update(snapshot);
-        documentIntelligence.UpdatePreferences(snapshot.Settings
-            .EditorIntelligenceSettings?.Preferences ?? EditorIntelligencePreferences.Default);
-        KeybindingSettingsSnapshot nextKeybindings = snapshot.Settings.KeybindingSettings ??
-                                                     KeybindingSettingsSnapshot.Default;
-        bool keybindingsChanged = nextKeybindings != keybindingSettings;
-        keybindingSettings = nextKeybindings;
-        foreach (SourceDocumentSession session in sourceDocuments.Values)
-        {
-            session.Editor.ApplyTheme();
-            if (keybindingsChanged)
-            {
-                session.Surface.ApplyKeybindings(keybindingSettings);
-                session.Vim.SetInputMode(keybindingSettings.InputMode);
-            }
-        }
+        documentsHost.Update(snapshot);
+        keybindingSettings = snapshot.Settings.KeybindingSettings ?? KeybindingSettingsSnapshot.Default;
 
         WorkspaceView? active = snapshot.Workspaces.Registered.FirstOrDefault(item => item.IsActive);
         if (!string.Equals(workspaceId, active?.Id, StringComparison.Ordinal))
         {
             workspaceId = active?.Id;
             Dispatcher.UIThread.Post(async () =>
-                await CloseAllSourceDocumentsAsync(WorkbenchDocumentTransition.Close));
+                await documentsHost.CloseAllAsync(WorkbenchDocumentTransition.Close));
             Dispatcher.UIThread.Post(async () => await InvalidateCodeIntelligenceAsync());
             gitChangesTool.Reset(active, sourceContextChanged: false);
             gitConflictsTool.Clear();
@@ -687,20 +549,13 @@ internal sealed class WorkbenchDockHost
     }
 
     internal ValueTask OpenFileAsync(string relativePath) =>
-        OpenFileAsync(relativePath, state().Goals.SelectedGoal?.Id);
+        documentsHost.OpenAsync(relativePath);
 
-    internal async ValueTask<InboundUiActionResult> OpenInboundDocumentAsync(
-        InboundUiDocumentRequest request)
-    {
-        GoalId? goalId = string.IsNullOrWhiteSpace(request.GoalId) ? null : new(request.GoalId);
-        await OpenFileAsync(request.RelativePath, goalId);
-        SourceDocumentSession? opened = sourceDocuments.Values.FirstOrDefault(item =>
-            item.View.Path.Value.Equals(request.RelativePath, StringComparison.Ordinal) &&
-            item.View.GoalId == goalId);
-        return opened is not null
-            ? new(new("document.open"), true, null, null)
-            : new(new("document.open"), false, "document_open_failed", filesTool.StatusText);
-    }
+    private ValueTask OpenFileAsync(string relativePath, GoalId? goalId) =>
+        documentsHost.OpenAsync(relativePath, goalId);
+
+    internal ValueTask<InboundUiActionResult> OpenInboundDocumentAsync(
+        InboundUiDocumentRequest request) => documentsHost.OpenInboundAsync(request);
 
     /// <summary>
     /// Offers each Git-tracked file as a command that opens it. The catalog is loaded on
@@ -709,65 +564,6 @@ internal sealed class WorkbenchDockHost
     /// </summary>
     internal async ValueTask<IReadOnlyList<PaletteCommand>> BuildFileCommandsAsync()
         => await filesTool.BuildFileCommandsAsync();
-
-    private async ValueTask OpenFileAsync(string relativePath, GoalId? requestedGoalId)
-    {
-        WorkspaceView? active = ActiveWorkspace();
-        if (busy || active is null || !active.IsTrusted || string.IsNullOrWhiteSpace(relativePath))
-        {
-            filesTool.ReportStatus(active is null
-                ? "Select a workspace first."
-                : active.IsTrusted
-                    ? "Enter a relative file path."
-                    : "Trust the workspace before reading files.");
-            return;
-        }
-        if (gitConflictsTool.HasActiveDocument(relativePath.Trim(), requestedGoalId))
-        {
-            filesTool.ReportStatus("That path is active in the Git conflict result editor. " +
-                                   "Save and stage it there before opening a second buffer.");
-            return;
-        }
-
-        await RunAsync(async () =>
-        {
-            WorkbenchDocumentView file = await documentService.OpenAsync(
-                new(
-                    new(active.Id),
-                    requestedGoalId,
-                    new(relativePath.Trim())),
-                cancellationToken);
-            if (file.Error is not null)
-            {
-                filesTool.ReportStatus(file.Error);
-                return;
-            }
-
-            string id = SourceDocumentId(file);
-            if (sourceDocuments.TryGetValue(id, out SourceDocumentSession? existing))
-            {
-                if (await TrySwitchDocumentAsync(existing.Document))
-                {
-                    filesTool.ReportStatus($"Activated {file.Path.Value}.");
-                }
-
-                return;
-            }
-
-            if (!await PrepareActiveDocumentTransitionAsync(WorkbenchDocumentTransition.Switch))
-            {
-                filesTool.ReportStatus($"Kept unsaved changes; {file.Path.Value} was not opened.");
-                return;
-            }
-
-            SourceDocumentSession session = CreateSourceDocument(id, file);
-            documents.AddDocument(session.Document);
-            SetActiveDocument(session.Document);
-            filesTool.ReportStatus($"Opened {file.Path.Value} · {file.Size.Value:N0} bytes · " +
-                                   file.AccessDescription.TrimEnd('.') +
-                                   (file.IsTruncated ? " · truncated." : "."));
-        });
-    }
 
     internal async ValueTask RefreshGitAsync()
     {
@@ -873,12 +669,8 @@ internal sealed class WorkbenchDockHost
 
     internal ValueTask RefreshGitConflictsAsync() => gitConflictsTool.RefreshAsync();
 
-    private bool HasOpenSourceDocument(
-        WorkbenchWorkspaceContext context,
-        DeveloperGitPath path) => sourceDocuments.Values.Any(session =>
-        session.View.WorkspaceId == context.WorkspaceId &&
-        session.View.GoalId == context.GoalId &&
-        session.View.Path.Value.Equals(path.Value, StringComparison.Ordinal));
+    private bool IsActiveConflictDocument(string path, GoalId? goalId) =>
+        gitConflictsTool.HasActiveDocument(path, goalId);
 
     internal ValueTask SaveGitConflictResultAsync() => gitConflictsTool.SaveAsync();
 
@@ -887,29 +679,12 @@ internal sealed class WorkbenchDockHost
     internal ValueTask PreviewAndApplyGitDestructiveAsync(DeveloperGitDestructiveAction action) =>
         gitChangesTool.PreviewAndApplyDestructiveAsync(action);
 
-    private bool IsOriginalDocumentDirty(string path)
-    {
-        SourceDocumentSession? session = sourceDocuments.Values.FirstOrDefault(item =>
-            item.View.GoalId is null && item.View.Path.Value.Equals(path, StringComparison.Ordinal));
-        session?.SynchronizeDirtyState();
-        return session?.IsDirty == true;
-    }
+    private bool IsOriginalDocumentDirty(string path) => documentsHost.IsOriginalDirty(path);
 
-    private bool HasDirtyOriginalDocuments()
-    {
-        foreach (SourceDocumentSession session in sourceDocuments.Values.Where(item =>
-                     item.View.GoalId is null))
-            session.SynchronizeDirtyState();
-        return sourceDocuments.Values.Any(item => item.View.GoalId is null && item.IsDirty);
-    }
+    private bool HasDirtyOriginalDocuments() => documentsHost.HasDirtyOriginals();
 
-    private async ValueTask ReloadOriginalDocumentAsync(string path)
-    {
-        SourceDocumentSession? session = sourceDocuments.Values.FirstOrDefault(item =>
-            item.View.GoalId is null && item.View.Path.Value.Equals(path, StringComparison.Ordinal));
-        if (session is not null)
-            await ReloadSourceDocumentAsync(session, confirmDiscard: false);
-    }
+    private ValueTask ReloadOriginalDocumentAsync(string path) =>
+        documentsHost.ReloadOriginalAsync(path);
 
     internal async ValueTask OpenDiffAsync()
     {
@@ -940,7 +715,7 @@ internal sealed class WorkbenchDockHost
                 return;
             }
 
-            OpenOrReplaceDocument(
+            documentsHost.OpenOrReplace(
                 DiffDocumentId(inspected.Context),
                 $"{git.Branch} working diff",
                 CreateDiffView(git.Diff));
@@ -953,11 +728,11 @@ internal sealed class WorkbenchDockHost
         if (state().Goals.CurrentPlan is not { } plan)
         {
             overviewDetails.Text = "The selected goal has no current plan to open.";
-            ActivateOverview();
+            documentsHost.ActivateOverview();
             return;
         }
 
-        OpenOrReplaceDocument(
+        documentsHost.OpenOrReplace(
             WorkbenchDockIds.PlanDocument,
             $"Plan · revision {plan.Revision.Value}",
             new ScrollViewer
@@ -972,7 +747,7 @@ internal sealed class WorkbenchDockHost
         if (state().Goals.Workflow?.Evidence is not { Count: > 0 } items)
         {
             overviewDetails.Text = "The selected goal has no durable workflow evidence to open.";
-            ActivateOverview();
+            documentsHost.ActivateOverview();
             return;
         }
 
@@ -987,7 +762,7 @@ internal sealed class WorkbenchDockHost
             content.Children.Add(MarkdownContentView.Create(item.Content.Value, _ => null));
         }
 
-        OpenOrReplaceDocument(
+        documentsHost.OpenOrReplace(
             WorkbenchDockIds.EvidenceDocument,
             "Workflow evidence",
             new ScrollViewer { Content = content, Padding = new Thickness(18) });
@@ -1015,85 +790,6 @@ internal sealed class WorkbenchDockHost
             VerticalAlignment = VerticalAlignment.Center,
             Children = { save, reset },
         };
-    }
-
-    private Control BuildDocumentActions()
-    {
-        AutomationProperties.SetName(documentSwitcher, "Open editor documents");
-        documentSwitcher.SelectionChanged += async (_, _) =>
-        {
-            if (renderingDocumentSwitcher ||
-                documentSwitcher.SelectedItem is not DocumentChoice choice)
-            {
-                return;
-            }
-
-            if (!await TrySwitchDocumentAsync(choice.Document))
-            {
-                UpdateDocumentSwitcher();
-            }
-        };
-        UpdateDocumentSwitcher();
-        Button focusEditor = new() { Content = "Focus editor" };
-        AutomationProperties.SetName(focusEditor, "Focus the active editor document");
-        focusEditor.Click += (_, _) => FocusActiveEditor();
-        StackPanel actions = new()
-        {
-            Orientation = AvaloniaOrientation.Horizontal,
-            Spacing = 6,
-            VerticalAlignment = VerticalAlignment.Center,
-            Children =
-            {
-                new TextBlock
-                {
-                    Text = "Document",
-                    VerticalAlignment = VerticalAlignment.Center,
-                },
-                documentSwitcher,
-                focusEditor,
-                layoutStatus,
-            },
-        };
-        AutomationProperties.SetName(actions, "Editor document navigation");
-        return actions;
-    }
-
-    private void UpdateDocumentSwitcher()
-    {
-        renderingDocumentSwitcher = true;
-        try
-        {
-            DocumentChoice[] choices = documents.VisibleDockables?
-                .Where(IsDocument)
-                .Select(item => new DocumentChoice(item))
-                .ToArray() ?? [];
-            documentSwitcher.ItemsSource = choices;
-            documentSwitcher.SelectedItem = choices.FirstOrDefault(item =>
-                ReferenceEquals(item.Document, activeDocument));
-        }
-        finally
-        {
-            renderingDocumentSwitcher = false;
-        }
-    }
-
-    private void FocusActiveEditor()
-    {
-        OwnerWindow()?.Activate();
-        if ((ActiveSourceEditor ?? ActiveVirtualEditor) is { } editor)
-        {
-            LastRequestedFocusTarget = editor;
-            if (!editor.Focus())
-            {
-                Dispatcher.UIThread.Post(() => editor.Focus());
-            }
-            return;
-        }
-
-        if (activeDocument is { } document)
-        {
-            FocusContext(document);
-        }
     }
 
     private static void EnsureDefaultTools(
@@ -1152,8 +848,7 @@ internal sealed class WorkbenchDockHost
         root.ShowWindows?.Execute(null);
         IDockable restoredActiveDocument = documents.ActiveDockable ?? overviewDocument;
         factory.SetActiveDockable(restoredActiveDocument);
-        activeDocument = restoredActiveDocument;
-        UpdateDocumentSwitcher();
+        documentsHost.ReplaceDock(documents, overviewDocument);
         viewportInitialized = true;
         ApplyViewport(Control.Bounds.Width, Control.Bounds.Height);
     }
@@ -1340,34 +1035,7 @@ internal sealed class WorkbenchDockHost
     private async ValueTask InvalidateCodeIntelligenceAsync()
     {
         await gitConflictsTool.InvalidateCodeIntelligenceAsync();
-        await documentIntelligence.InvalidateAsync();
-    }
-
-    private async ValueTask NavigateToProblemAsync(
-        WorkbenchCodeDiagnostic diagnostic,
-        GoalId? goalId)
-    {
-        SourceDocumentSession? session = sourceDocuments.Values.FirstOrDefault(item =>
-            item.View.GoalId == goalId &&
-            item.View.Path.Value.Equals(diagnostic.Path.Value, StringComparison.Ordinal));
-        if (session is null)
-        {
-            await OpenFileAsync(diagnostic.Path.Value, goalId);
-            session = sourceDocuments.Values.FirstOrDefault(item =>
-                item.View.GoalId == goalId &&
-                item.View.Path.Value.Equals(diagnostic.Path.Value, StringComparison.Ordinal));
-        }
-
-        if (session is null)
-        {
-            return;
-        }
-
-        SetActiveDocument(session.Document);
-        WorkbenchCodePosition position = diagnostic.Range.Start;
-        session.Editor.SetCaretPosition(position);
-        session.Editor.ScrollTo(position);
-        session.Editor.Focus();
+        await documentsHost.InvalidateAsync();
     }
 
     internal ValueTask RefreshRunOutputAsync() => runOutputToolUnit.RefreshAsync();
@@ -1414,686 +1082,42 @@ internal sealed class WorkbenchDockHost
         };
     }
 
-    private SourceDocumentSession CreateSourceDocument(
-        string id,
-        WorkbenchDocumentView view)
-    {
-        SourceEditorSurface surface = SourceEditorSurface.Create(view, keybindingSettings);
-        IWorkbenchEditorAdapter editor = surface.Editor;
-        AutomationProperties.SetName(
-            editor.Control,
-            view.Access is WorkbenchDocumentAccess.Editable
-                ? $"Editable source editor for {view.Path.Value}"
-                : $"Read-only source editor for {view.Path.Value}");
-
-        SourceDockDocument document = new()
-        {
-            Id = id,
-            Title = SourceDocumentTitle(view),
-            Factory = factory,
-            CanClose = true,
-            CanFloat = true,
-        };
-        WorkbenchDockContent.Attach(document, surface.Control);
-        SourceDocumentSession session = new(
-            document,
-            surface,
-            view,
-            keybindingSettings.InputMode);
-        document.CloseRequested = () => OnSourceDocumentCloseRequested(session);
-        editor.TextChanged += (_, _) =>
-        {
-            session.CancelHover();
-            editor.SetOccurrences([]);
-            session.SynchronizeDirtyState();
-            documentIntelligence.ScheduleDiagnostics(session);
-            documentIntelligence.SchedulePresentation(session);
-        };
-        editor.CaretChanged += (_, _) => documentIntelligence.ScheduleOccurrences(session);
-        editor.CodeLensInvoked += async (_, args) =>
-            await documentNavigation.InvokeCodeLensAsync(session, args.Lens);
-        surface.CodeLensInvoked += async (_, args) =>
-            await documentNavigation.InvokeCodeLensAsync(session, args.Lens);
-        editor.ViewportChanged += (_, _) => documentIntelligence.SchedulePresentation(
-            session,
-            includeStructure: false);
-        editor.KeyDown += async (_, args) =>
-        {
-            KeybindingCommand? command = KeybindingInput.Match(
-                args, keybindingSettings, EditorKeyCommands);
-            if (command is not null)
-            {
-                args.Handled = true;
-                await ExecuteEditorCommandAsync(session, command.Value);
-                return;
-            }
-            if (session.Vim.ShouldHandle(args))
-            {
-                args.Handled = true;
-                _ = session.Vim.Handle(args);
-            }
-        };
-        editor.TextEntered += async (_, args) =>
-        {
-            await documentTransformations.HandleTextEnteredAsync(session, args.Text);
-        };
-        editor.TextPasted += async (_, args) =>
-        {
-            await documentTransformations.HandlePasteAsync(session, args.Range);
-        };
-        editor.PointerPositionChanged += (_, args) =>
-        {
-            if (args.Position is { } position)
-            {
-                _ = documentInteractions.ShowQuickInfoOnHoverAsync(
-                    session,
-                    position,
-                    session.BeginHover(cancellationToken));
-            }
-        };
-        editor.PointerExited += (_, _) => session.CancelHover();
-        surface.Save.Click += async (_, _) => await SaveSourceDocumentAsync(session);
-        surface.Reload.Click += async (_, _) => await ReloadSourceDocumentAsync(session, confirmDiscard: true);
-        surface.Close.Click += async (_, _) => await RequestSourceDocumentCloseAsync(session);
-        surface.Completion.Click += async (_, _) => await documentInteractions.ShowCompletionAsync(
-            session, WorkbenchCodeCompletionTriggerKind.Invoke, triggerCharacter: null);
-        surface.WorkspaceSymbols.Click += async (_, _) => await documentInteractions.ShowWorkspaceSymbolsAsync(session);
-        surface.SymbolInfo.Click += async (_, _) => await documentInteractions.ShowQuickInfoAsync(session);
-        surface.Definition.Click += async (_, _) => await documentNavigation.NavigateAsync(
-            session, SemanticNavigationKind.Definition);
-        surface.References.Click += async (_, _) => await documentNavigation.NavigateAsync(
-            session, SemanticNavigationKind.References);
-        surface.Implementations.Click += async (_, _) => await documentNavigation.NavigateAsync(
-            session, SemanticNavigationKind.Implementations);
-        surface.InspectionRequested += async kind => await documentNavigation.ShowInspectionAsync(session, kind);
-        surface.FormatDocument.Click += async (_, _) => await documentTransformations.TransformAsync(
-            session, WorkbenchCodeDocumentTransformationKind.FormatDocument);
-        surface.FormatSelection.Click += async (_, _) => await documentTransformations.TransformAsync(
-            session, WorkbenchCodeDocumentTransformationKind.FormatSelection);
-        surface.FormatChangedSpans.Click += async (_, _) => await documentTransformations.TransformAsync(
-            session, WorkbenchCodeDocumentTransformationKind.FormatChangedSpans);
-        surface.OrganizeImports.Click += async (_, _) => await documentTransformations.TransformAsync(
-            session, WorkbenchCodeDocumentTransformationKind.OrganizeImports);
-        surface.RemoveUnusedImports.Click += async (_, _) => await documentTransformations.TransformAsync(
-            session, WorkbenchCodeDocumentTransformationKind.RemoveUnusedImports);
-        surface.QuickFix.Click += async (_, _) => await documentTransformations.ShowQuickFixesAsync(session);
-        surface.NavigationRequested += position =>
-        {
-            editor.SetCaretPosition(position);
-            editor.ScrollTo(position);
-            editor.Focus();
-        };
-        sourceDocuments.Add(id, session);
-        session.SynchronizeDirtyState();
-        documentIntelligence.ScheduleDiagnostics(session, immediate: true);
-        documentIntelligence.SchedulePresentation(session, immediate: true);
-        return session;
-    }
-
     internal ValueTask TransformActiveDocumentAsync(
-        WorkbenchCodeDocumentTransformationKind kind)
-    {
-        if (activeDocument?.Id is not { } id ||
-            !sourceDocuments.TryGetValue(id, out SourceDocumentSession? session))
-        {
-            return ValueTask.CompletedTask;
-        }
+        WorkbenchCodeDocumentTransformationKind kind) => documentsHost.TransformActiveAsync(kind);
 
-        return documentTransformations.TransformAsync(session, kind);
-    }
+    internal ValueTask InspectActiveDocumentAsync(WorkbenchCodeInspectionKind kind) =>
+        documentsHost.InspectActiveAsync(kind);
 
-    internal ValueTask InspectActiveDocumentAsync(WorkbenchCodeInspectionKind kind)
-    {
-        if (activeDocument?.Id is not { } id ||
-            !sourceDocuments.TryGetValue(id, out SourceDocumentSession? session))
-        {
-            return ValueTask.CompletedTask;
-        }
+    internal ValueTask ShowActiveQuickFixesAsync() => documentsHost.ShowActiveQuickFixesAsync();
 
-        return documentNavigation.ShowInspectionAsync(session, kind);
-    }
+    internal ValueTask ApplyActiveCodeActionAsync(WorkbenchCodeActionCandidate candidate) =>
+        documentsHost.ApplyActiveCodeActionAsync(candidate);
 
-    internal ValueTask ShowActiveQuickFixesAsync()
-    {
-        if (activeDocument?.Id is not { } id ||
-            !sourceDocuments.TryGetValue(id, out SourceDocumentSession? session))
-        {
-            return ValueTask.CompletedTask;
-        }
+    internal ValueTask HandleActiveTextEnteredAsync(string? text) =>
+        documentsHost.HandleTextEnteredAsync(text);
 
-        return documentTransformations.ShowQuickFixesAsync(session);
-    }
-
-    internal ValueTask ApplyActiveCodeActionAsync(WorkbenchCodeActionCandidate candidate)
-    {
-        ArgumentNullException.ThrowIfNull(candidate);
-        if (activeDocument?.Id is not { } id ||
-            !sourceDocuments.TryGetValue(id, out SourceDocumentSession? session))
-        {
-            return ValueTask.CompletedTask;
-        }
-
-        return documentTransformations.TransformAsync(
-            session,
-            WorkbenchCodeDocumentTransformationKind.ApplyCodeAction,
-            codeActionId: candidate.Id,
-            codeActionScope: candidate.Scope);
-    }
-
-    internal ValueTask HandleActiveTextEnteredAsync(string? text)
-    {
-        if (activeDocument?.Id is not { } id ||
-            !sourceDocuments.TryGetValue(id, out SourceDocumentSession? session))
-        {
-            return ValueTask.CompletedTask;
-        }
-
-        return documentTransformations.HandleTextEnteredAsync(session, text);
-    }
-
-    internal ValueTask HandleActivePasteAsync(WorkbenchCodeRange range)
-    {
-        if (activeDocument?.Id is not { } id ||
-            !sourceDocuments.TryGetValue(id, out SourceDocumentSession? session))
-        {
-            return ValueTask.CompletedTask;
-        }
-
-        return documentTransformations.HandlePasteAsync(session, range);
-    }
+    internal ValueTask HandleActivePasteAsync(WorkbenchCodeRange range) =>
+        documentsHost.HandlePasteAsync(range);
 
     internal bool CanTransformActiveDocument(WorkbenchCodeDocumentTransformationKind kind) =>
-        activeDocument?.Id is { } id &&
-        sourceDocuments.TryGetValue(id, out SourceDocumentSession? session) &&
-        documentTransformations.CanTransform(session, kind);
+        documentsHost.CanTransform(kind);
 
-    internal bool CanInvokeActiveEditorCommand(KeybindingCommand command)
-    {
-        if (activeDocument?.Id is not { } id ||
-            !sourceDocuments.TryGetValue(id, out SourceDocumentSession? session))
-        {
-            return false;
-        }
+    internal bool CanInvokeActiveEditorCommand(KeybindingCommand command) =>
+        documentsHost.CanInvoke(command);
 
-        return command switch
-        {
-            KeybindingCommand.CloseDocument => true,
-            KeybindingCommand.SaveDocument =>
-                session.View.Access is WorkbenchDocumentAccess.Editable,
-            KeybindingCommand.ShowCompletion or KeybindingCommand.ShowQuickInfo or
-                KeybindingCommand.GoToDefinition or KeybindingCommand.FindReferences or
-                KeybindingCommand.FindImplementations => DocumentIntelligence.CanUse(session),
-            KeybindingCommand.RenameSymbol => mutationService is not null &&
-                session.View.Access is WorkbenchDocumentAccess.Editable &&
-                DocumentIntelligence.CanUse(session),
-            KeybindingCommand.FormatDocument => CanTransformActiveDocument(
-                WorkbenchCodeDocumentTransformationKind.FormatDocument),
-            KeybindingCommand.FormatSelection => CanTransformActiveDocument(
-                WorkbenchCodeDocumentTransformationKind.FormatSelection),
-            KeybindingCommand.OrganizeImports => CanTransformActiveDocument(
-                WorkbenchCodeDocumentTransformationKind.OrganizeImports),
-            KeybindingCommand.ShowQuickFixes => CanTransformActiveDocument(
-                WorkbenchCodeDocumentTransformationKind.AddMissingImport),
-            _ => false,
-        };
-    }
-
-    internal async ValueTask InvokeActiveEditorCommandAsync(KeybindingCommand command)
-    {
-        if (activeDocument?.Id is { } id &&
-            sourceDocuments.TryGetValue(id, out SourceDocumentSession? session))
-        {
-            await ExecuteEditorCommandAsync(session, command);
-        }
-    }
-
-    private async ValueTask ExecuteEditorCommandAsync(
-        SourceDocumentSession session,
-        KeybindingCommand command)
-    {
-        switch (command)
-        {
-            case KeybindingCommand.SaveDocument:
-                await SaveSourceDocumentAsync(session);
-                break;
-            case KeybindingCommand.CloseDocument:
-                await RequestSourceDocumentCloseAsync(session);
-                break;
-            case KeybindingCommand.ShowCompletion:
-                await documentInteractions.ShowCompletionAsync(session, WorkbenchCodeCompletionTriggerKind.Invoke, null);
-                break;
-            case KeybindingCommand.ShowQuickInfo:
-                await documentInteractions.ShowQuickInfoAsync(session);
-                break;
-            case KeybindingCommand.GoToDefinition:
-                await documentNavigation.NavigateAsync(session, SemanticNavigationKind.Definition);
-                break;
-            case KeybindingCommand.FindReferences:
-                await documentNavigation.NavigateAsync(session, SemanticNavigationKind.References);
-                break;
-            case KeybindingCommand.FindImplementations:
-                await documentNavigation.NavigateAsync(session, SemanticNavigationKind.Implementations);
-                break;
-            case KeybindingCommand.RenameSymbol:
-                await documentRename.RenameAsync(session);
-                break;
-            case KeybindingCommand.FormatDocument:
-                await documentTransformations.TransformAsync(
-                    session, WorkbenchCodeDocumentTransformationKind.FormatDocument);
-                break;
-            case KeybindingCommand.FormatSelection:
-                await documentTransformations.TransformAsync(
-                    session, WorkbenchCodeDocumentTransformationKind.FormatSelection);
-                break;
-            case KeybindingCommand.OrganizeImports:
-                await documentTransformations.TransformAsync(
-                    session, WorkbenchCodeDocumentTransformationKind.OrganizeImports);
-                break;
-            case KeybindingCommand.ShowQuickFixes:
-                await documentTransformations.ShowQuickFixesAsync(session);
-                break;
-            default:
-                throw new ArgumentOutOfRangeException(nameof(command));
-        }
-    }
+    internal ValueTask InvokeActiveEditorCommandAsync(KeybindingCommand command) =>
+        documentsHost.InvokeActiveAsync(command);
 
     internal ValueTask<PendingWorkbenchRename?> PreviewActiveRenameAsync(string newName) =>
-        documentRename.PreviewActiveAsync(newName);
+        documentsHost.PreviewRenameAsync(newName);
 
     internal ValueTask<RenameSymbolApplyView?> ApplyActiveRenameAsync(
-        PendingWorkbenchRename pending) => documentRename.ApplyActiveAsync(pending);
+        PendingWorkbenchRename pending) => documentsHost.ApplyRenameAsync(pending);
 
-    private async ValueTask<bool> SaveSourceDocumentAsync(
-        SourceDocumentSession session,
-        WorkbenchDocumentSha256? overrideBaseline = null)
-    {
-        if (session.View.Access is not WorkbenchDocumentAccess.Editable || !session.IsDirty)
-        {
-            return !session.IsDirty;
-        }
-
-        session.SetBusy(
-            true,
-            session.View.GoalId is null
-                ? "Saving to the active trusted workspace…"
-                : "Saving through the approved goal worktree…");
-        try
-        {
-            WorkbenchDocumentSha256? baseline = overrideBaseline ?? session.View.Sha256;
-            while (true)
-            {
-                WorkbenchDocumentSaveResult result = await documentService.SaveAsync(
-                    new(
-                        session.View.WorkspaceId,
-                        session.View.GoalId,
-                        NewEditCorrelation(),
-                        session.View.Path,
-                        baseline,
-                        new(session.Editor.Text)),
-                    cancellationToken);
-                if (result.Outcome is WorkbenchDocumentSaveOutcome.Saved &&
-                    result.SavedSha256 is not null)
-                {
-                    session.AcceptSaved(result.SavedSha256, result.BytesWritten);
-                    documentIntelligence.ScheduleDiagnostics(session, immediate: true);
-                    return true;
-                }
-
-                if (result.Outcome is WorkbenchDocumentSaveOutcome.Conflict)
-                {
-                    session.SetStatus(
-                        result.CurrentSha256 is null
-                            ? "Save conflict: the file was deleted in the goal worktree."
-                            : "Save conflict: the file changed in the goal worktree.");
-                    WorkbenchConflictDecision decision = await documentPrompt.DecideConflictAsync(
-                        new(session.View.Path.Value, result.CurrentSha256 is null),
-                        OwnerWindow());
-                    if (decision is WorkbenchConflictDecision.Reload)
-                    {
-                        return await ReloadSourceDocumentAsync(session, confirmDiscard: false);
-                    }
-
-                    if (decision is WorkbenchConflictDecision.Overwrite)
-                    {
-                        baseline = result.CurrentSha256;
-                        continue;
-                    }
-
-                    if (decision is not WorkbenchConflictDecision.Cancel)
-                    {
-                        throw new ArgumentOutOfRangeException(nameof(decision));
-                    }
-
-                    return false;
-                }
-
-                session.SetStatus(result.Error ?? "The source document was not saved.");
-                return false;
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            session.SetStatus("Source save cancelled; editor changes are still present.");
-            return false;
-        }
-        catch (Exception exception)
-        {
-            session.SetStatus($"Source save failed: {exception.Message}");
-            return false;
-        }
-        finally
-        {
-            session.SetBusy(false);
-        }
-    }
-
-    private async ValueTask<bool> ReloadSourceDocumentAsync(
-        SourceDocumentSession session,
-        bool confirmDiscard)
-    {
-        if (confirmDiscard && session.IsDirty)
-        {
-            WorkbenchUnsavedDecision decision = await documentPrompt.DecideUnsavedAsync(
-                new(session.View.Path.Value, WorkbenchDocumentTransition.Reload),
-                OwnerWindow());
-            if (decision is WorkbenchUnsavedDecision.Cancel)
-            {
-                return false;
-            }
-
-            if (decision is WorkbenchUnsavedDecision.Save)
-            {
-                return await SaveSourceDocumentAsync(session);
-            }
-        }
-
-        session.SetBusy(true, "Reloading from the workspace…");
-        try
-        {
-            WorkbenchDocumentView current = await documentService.OpenAsync(
-                new(session.View.WorkspaceId, session.View.GoalId, session.View.Path),
-                cancellationToken);
-            if (current.ErrorCode == "file_missing")
-            {
-                session.AllowClose = true;
-                factory.CloseDockable(session.Document);
-                filesTool.ReportStatus(
-                    $"{session.View.Path.Value} no longer exists; the stale document was closed.");
-                return true;
-            }
-
-            if (current.Error is not null)
-            {
-                session.SetStatus($"Reload failed: {current.Error}");
-                return false;
-            }
-
-            session.ReplaceWith(current);
-            return true;
-        }
-        catch (OperationCanceledException)
-        {
-            session.SetStatus("Reload cancelled; editor content was kept.");
-            return false;
-        }
-        catch (Exception exception)
-        {
-            session.SetStatus($"Reload failed: {exception.Message}");
-            return false;
-        }
-        finally
-        {
-            session.SetBusy(false);
-        }
-    }
-
-    private async ValueTask RequestSourceDocumentCloseAsync(SourceDocumentSession session)
-    {
-        if (!session.IsDirty || await ResolveUnsavedAsync(
-                session,
-                WorkbenchDocumentTransition.Close,
-                discardKeepsDocument: false))
-        {
-            session.AllowClose = true;
-            factory.CloseDockable(session.Document);
-        }
-    }
-
-    private bool OnSourceDocumentCloseRequested(SourceDocumentSession session)
-    {
-        if (!session.IsDirty || session.AllowClose)
-        {
-            return true;
-        }
-
-        if (resolvingDocumentTransition)
-        {
-            return false;
-        }
-
-        resolvingDocumentTransition = true;
-        Dispatcher.UIThread.Post(async () =>
-        {
-            try
-            {
-                await RequestSourceDocumentCloseAsync(session);
-                if (sourceDocuments.ContainsKey(session.Document.Id ?? string.Empty))
-                {
-                    session.IgnoreNextActivationChange = true;
-                    SetActiveDocument(session.Document);
-                }
-            }
-            finally
-            {
-                resolvingDocumentTransition = false;
-            }
-        });
-        return false;
-    }
-
-    private async ValueTask<bool> ResolveUnsavedAsync(
-        SourceDocumentSession session,
-        WorkbenchDocumentTransition transition,
-        bool discardKeepsDocument)
-    {
-        WorkbenchUnsavedDecision decision = await documentPrompt.DecideUnsavedAsync(
-            new(session.View.Path.Value, transition),
-            OwnerWindow());
-        switch (decision)
-        {
-            case WorkbenchUnsavedDecision.Save:
-                return await SaveSourceDocumentAsync(session);
-            case WorkbenchUnsavedDecision.Discard:
-                if (discardKeepsDocument)
-                {
-                    session.DiscardChanges();
-                }
-
-                return true;
-            case WorkbenchUnsavedDecision.Cancel:
-                return false;
-            default:
-                throw new ArgumentOutOfRangeException(nameof(decision));
-        }
-    }
-
-    private async ValueTask<bool> PrepareActiveDocumentTransitionAsync(
-        WorkbenchDocumentTransition transition)
-    {
-        if (activeDocument?.Id is null ||
-            !sourceDocuments.TryGetValue(activeDocument.Id, out SourceDocumentSession? session) ||
-            !session.IsDirty)
-        {
-            return true;
-        }
-
-        return await ResolveUnsavedAsync(
-            session,
-            transition,
-            discardKeepsDocument: true);
-    }
-
-    private async ValueTask<bool> TrySwitchDocumentAsync(IDockable next)
-    {
-        if (ReferenceEquals(activeDocument, next))
-        {
-            return true;
-        }
-
-        if (!await PrepareActiveDocumentTransitionAsync(WorkbenchDocumentTransition.Switch))
-        {
-            return false;
-        }
-
-        SetActiveDocument(next);
-        return true;
-    }
-
-    private async void OnActiveDockableChanged(
-        object? sender,
-        Dock.Model.Core.Events.ActiveDockableChangedEventArgs args)
-    {
-        IDockable? next = args.Dockable;
-        if (next is null || suppressDocumentActivation || resolvingDocumentTransition ||
-            !IsDocument(next) || ReferenceEquals(activeDocument, next))
-        {
-            return;
-        }
-
-        IDockable? previous = activeDocument;
-        if (previous?.Id is not null &&
-            sourceDocuments.TryGetValue(previous.Id, out SourceDocumentSession? pending) &&
-            pending.IgnoreNextActivationChange)
-        {
-            pending.IgnoreNextActivationChange = false;
-            SetActiveDocument(previous);
-            return;
-        }
-
-        if (previous?.Id is null ||
-            !sourceDocuments.TryGetValue(previous.Id, out SourceDocumentSession? session) ||
-            !session.IsDirty || session.AllowClose)
-        {
-            activeDocument = next;
-            UpdateDocumentSwitcher();
-            RefreshActivatedSourceDocument(next);
-            return;
-        }
-
-        resolvingDocumentTransition = true;
-        try
-        {
-            SetActiveDocument(previous);
-            if (await ResolveUnsavedAsync(
-                    session,
-                    WorkbenchDocumentTransition.Switch,
-                    discardKeepsDocument: true))
-            {
-                SetActiveDocument(next);
-            }
-        }
-        finally
-        {
-            resolvingDocumentTransition = false;
-        }
-    }
-
-    private void OnDockableClosed(
-        object? sender,
-        Dock.Model.Core.Events.DockableClosedEventArgs args)
-    {
-        IDockable? dockable = args.Dockable;
-        if (dockable?.Id is { } id && sourceDocuments.Remove(id, out SourceDocumentSession? session))
-        {
-            problemsToolUnit.Remove(id);
-            session.Dispose();
-        }
-        if (dockable?.Id is { } virtualId)
-            virtualDocuments.Remove(virtualId);
-
-        if (ReferenceEquals(activeDocument, dockable))
-        {
-            activeDocument = overviewDocument;
-        }
-
-        Dispatcher.UIThread.Post(UpdateDocumentSwitcher);
-    }
-
-    private void SetActiveDocument(IDockable document)
-    {
-        suppressDocumentActivation = true;
-        try
-        {
-            factory.SetActiveDockable(document);
-            activeDocument = document;
-            UpdateDocumentSwitcher();
-            RefreshActivatedSourceDocument(document);
-        }
-        finally
-        {
-            suppressDocumentActivation = false;
-        }
-    }
-
-    internal void ReactivateDocumentForTest(IDockable document) => SetActiveDocument(document);
-
-    private void RefreshActivatedSourceDocument(IDockable? document)
-    {
-        if (document?.Id is { } id &&
-            sourceDocuments.TryGetValue(id, out SourceDocumentSession? session) &&
-            (!session.Surface.HasDocumentPresentation ||
-             !session.Surface.HasCodeLensActions))
-        {
-            documentIntelligence.SchedulePresentation(session, immediate: true);
-        }
-    }
-
-    private static bool IsDocument(IDockable dockable) =>
-        dockable is IDocument && dockable is not ITool;
+    internal void ReactivateDocumentForTest(IDockable document) =>
+        documentsHost.ReactivateForTest(document);
 
     private Window? OwnerWindow() => TopLevel.GetTopLevel(Control) as Window;
-
-    private static ToolCorrelationId NewEditCorrelation() =>
-        new($"desktop-edit-{Guid.NewGuid():N}");
-
-    private static string SourceDocumentId(WorkbenchDocumentView view) =>
-        $"document.file.{view.WorkspaceId.Value}.{view.GoalId?.Value ?? "original"}.{view.Path.Value}";
-
-    private static string SourceDocumentTitle(WorkbenchDocumentView view)
-    {
-        string title = Path.GetFileName(view.Path.Value);
-        if (view.IsTruncated)
-        {
-            return $"{title} · truncated";
-        }
-
-        return view.Branch is null ? title : $"{title} · {view.Branch.Value}";
-    }
-
-    private IDockable OpenOrReplaceDocument(string id, string title, Control content)
-    {
-        IDockable? existing = documents.VisibleDockables?.FirstOrDefault(item =>
-            string.Equals(item.Id, id, StringComparison.Ordinal));
-        if (existing is not null)
-        {
-            existing.Title = title;
-            WorkbenchDockContent.Attach(existing, content);
-            SetActiveDocument(existing);
-            return existing;
-        }
-
-        factory.Document(out IDocument? document, item => item
-            .WithId(id)
-            .WithTitle(title)
-            .WithCanClose(true)
-            .WithCanFloat(true)
-            .WithContext(content));
-        IDocument created = document ?? throw new InvalidOperationException("Dock did not create the document.");
-        WorkbenchDockContent.Attach(created, content);
-        documents.AddDocument(created);
-        SetActiveDocument(created);
-        return created;
-    }
 
     private static Control CreateDiffView(string diff)
     {
@@ -2105,53 +1129,9 @@ internal sealed class WorkbenchDockHost
     private static Control CreateEditor(string content, string path, bool showLineNumbers)
     {
         TextEditor editor = CodeEditorView.Create(
-            content,
-            isReadOnly: true,
-            wordWrap: false,
-            showLineNumbers: showLineNumbers,
-            path: path);
+            content, isReadOnly: true, wordWrap: false, showLineNumbers: showLineNumbers, path: path);
         AutomationProperties.SetName(editor, $"Read-only editor for {path}");
         return editor;
-    }
-
-    private async ValueTask<bool> CloseAllSourceDocumentsAsync(
-        WorkbenchDocumentTransition transition)
-    {
-        foreach (SourceDocumentSession session in sourceDocuments.Values.ToArray())
-        {
-            if (session.IsDirty && !await ResolveUnsavedAsync(
-                    session,
-                    transition,
-                    discardKeepsDocument: false))
-            {
-                SetActiveDocument(session.Document);
-                return false;
-            }
-
-            session.AllowClose = true;
-            factory.CloseDockable(session.Document);
-        }
-
-        foreach (IDockable document in documents.VisibleDockables?
-                     .Where(item => !string.Equals(
-                         item.Id,
-                         WorkbenchDockIds.OverviewDocument,
-                         StringComparison.Ordinal))
-                     .ToArray() ?? [])
-        {
-            factory.CloseDockable(document);
-        }
-
-        SetActiveDocument(overviewDocument);
-        return true;
-    }
-
-    private void ActivateOverview() => SetActiveDocument(overviewDocument);
-
-    private sealed record DocumentChoice(IDockable Document)
-    {
-        public override string ToString() =>
-            string.IsNullOrWhiteSpace(Document.Title) ? "Untitled document" : Document.Title;
     }
 
     private WorkspaceView? ActiveWorkspace() =>
