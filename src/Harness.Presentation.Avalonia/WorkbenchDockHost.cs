@@ -15,6 +15,7 @@ using Dock.Model.Avalonia;
 using Dock.Model.Controls;
 using Dock.Model.Core;
 using Harness.BusinessLogic.CodeIntelligence;
+using Harness.BusinessLogic.Coverage;
 using Harness.BusinessLogic.Documents;
 using Harness.BusinessLogic.Editor;
 using Harness.BusinessLogic.Evidence;
@@ -99,7 +100,8 @@ internal sealed partial class WorkbenchDockHost
         IDeveloperProjectExecutionService? developerExecutionService = null,
         IDeveloperGitService? developerGitService = null,
         Func<Task>? refreshWorkspaceContext = null,
-        Func<string, Task>? manageWorkspaceAt = null)
+        Func<string, Task>? manageWorkspaceAt = null,
+        IDeveloperCoverageService? coverageService = null)
     {
         this.inspectionService = inspectionService;
         this.state = state;
@@ -176,7 +178,9 @@ internal sealed partial class WorkbenchDockHost
             developerExecutionService,
             documentsHost.NavigateToTestAsync,
             () => { ShowRunOutput(); },
-            RefreshRunOutputAsync);
+            RefreshRunOutputAsync,
+            coverageService,
+            documentsHost.NavigateToCoverageAsync);
         problemsToolUnit = documentsHost.Problems;
         gitConflictsTool = new(
             toolContext,

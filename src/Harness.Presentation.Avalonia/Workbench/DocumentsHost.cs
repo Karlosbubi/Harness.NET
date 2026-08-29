@@ -10,6 +10,7 @@ using Dock.Model.Avalonia;
 using Dock.Model.Controls;
 using Dock.Model.Core;
 using Harness.BusinessLogic.CodeIntelligence;
+using Harness.BusinessLogic.Coverage;
 using Harness.BusinessLogic.Documents;
 using Harness.BusinessLogic.Editor;
 using Harness.BusinessLogic.Execution;
@@ -226,6 +227,25 @@ internal sealed class DocumentsHost
         target.Editor.ScrollTo(test.Range.Start);
         target.Editor.Focus();
     }
+
+    internal async ValueTask NavigateToCoverageAsync(
+        DeveloperCoverageLine line,
+        GoalId? goalId)
+    {
+        ArgumentNullException.ThrowIfNull(line);
+        await OpenAsync(line.Path.Value, goalId);
+        SourceDocumentSession? target = sources.Values.FirstOrDefault(item =>
+            item.View.GoalId == goalId && item.View.Path.Value == line.Path.Value);
+        if (target is null) return;
+        SetActive(target.Document);
+        WorkbenchCodePosition position = CoveragePosition(line);
+        target.Editor.SetCaretPosition(position);
+        target.Editor.ScrollTo(position);
+        target.Editor.Focus();
+    }
+
+    internal static WorkbenchCodePosition CoveragePosition(DeveloperCoverageLine line) =>
+        new(Math.Max(0, line.Line.Value - 1), 0);
 
     internal async ValueTask OpenAsync(string path, GoalId? goalId)
     {

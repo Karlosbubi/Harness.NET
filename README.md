@@ -63,7 +63,10 @@ Delivered:
   actions plus bounded same-project multi-selection with one no-Restore process per
   action, in-place Stop/Rerun, duration and failure history, transient output, durable
   scoped result metadata, typed framework/lifecycle filtering, and bounded adapter
-  case outcomes collected from private ephemeral TRX files;
+  case outcomes collected from private ephemeral TRX files; its Coverage subview
+  imports an explicitly selected, workspace-confined Cobertura report, records safe
+  provenance, and navigates exact uncovered source lines without treating them as
+  defects;
 - typed configurable workbench and editor keybindings with conflict validation,
   command discovery, reset, bounded declarative import/export, and optional Vim
   Normal, Insert, Visual, and Visual Line behavior;

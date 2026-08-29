@@ -623,7 +623,7 @@ Acceptance criteria:
 
 ### 052 — .NET project, Run, Test, and Debug experience
 
-Status: `In progress — typed Run, Solution, Build/Rebuild, discovery, and scoped Test delivered`
+Status: `In progress — typed Run, Solution, Build/Rebuild, discovery, scoped Test, and coverage delivered`
 
 Dependencies: 018, 042, 047, 049, 051.
 
@@ -664,7 +664,11 @@ Data Access constructs one bounded VSTest OR filter for one process. Schema 35 s
 the exact members. The tenth slice collects standard TRX only in a private ephemeral
 directory, parses at most 2,000 typed case outcomes, deletes raw files, keeps adapter
 display text process-local, and persists safe case identity/outcome/duration in schema
-36. Test Debug, coverage, typed one-run overrides, Hot Reload, and Debug remain open.
+36. The eleventh slice adds explicit, exact-context Cobertura import and navigation.
+Reports and mapped source files are workspace-confined and bounded; schema 37 keeps
+safe provenance and line hits, while the accessible Coverage tree opens exact
+uncovered lines and clearly labels them as evidence rather than defects. Test Debug,
+typed one-run overrides, Hot Reload, and Debug remain open.
 
 Acceptance criteria:
 

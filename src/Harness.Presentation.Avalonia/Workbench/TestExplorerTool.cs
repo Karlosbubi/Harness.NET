@@ -6,6 +6,7 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Harness.BusinessLogic.CodeIntelligence;
+using Harness.BusinessLogic.Coverage;
 using Harness.BusinessLogic.Execution;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Workspaces;
@@ -21,6 +22,7 @@ internal sealed class TestExplorerTool
     private readonly Func<WorkbenchCodeTestCase, GoalId?, ValueTask> navigate;
     private readonly Action showRunOutput;
     private readonly Func<ValueTask> refreshRunOutput;
+    private readonly CoverageTool coverageTool;
     private readonly TreeView tree = new();
     private readonly TextBox filter = new() { PlaceholderText = "Search tests or traits" };
     private readonly ComboBox frameworkFilter = new()
@@ -48,7 +50,9 @@ internal sealed class TestExplorerTool
         IDeveloperProjectExecutionService? execution,
         Func<WorkbenchCodeTestCase, GoalId?, ValueTask> navigate,
         Action showRunOutput,
-        Func<ValueTask> refreshRunOutput)
+        Func<ValueTask> refreshRunOutput,
+        IDeveloperCoverageService? coverageService = null,
+        Func<DeveloperCoverageLine, GoalId?, ValueTask>? navigateCoverage = null)
     {
         this.context = context;
         this.codeIntelligence = codeIntelligence;
@@ -56,7 +60,9 @@ internal sealed class TestExplorerTool
         this.navigate = navigate;
         this.showRunOutput = showRunOutput;
         this.refreshRunOutput = refreshRunOutput;
-        Content = BuildContent();
+        coverageTool = new(context, coverageService,
+            navigateCoverage ?? ((_, _) => ValueTask.CompletedTask));
+        Content = BuildTabs();
         RenderUnavailable("Select a trusted workspace to discover tests with Roslyn.");
     }
 
@@ -66,6 +72,7 @@ internal sealed class TestExplorerTool
     internal ComboBox FrameworkFilter => frameworkFilter;
     internal ComboBox StateFilter => stateFilter;
     internal Button RunSelected => runSelected;
+    internal CoverageTool Coverage => coverageTool;
     internal string StatusText => status.Message ?? string.Empty;
 
     internal ValueTask NavigateAsync(WorkbenchCodeTestCase test) =>
@@ -78,6 +85,7 @@ internal sealed class TestExplorerTool
                            selected.WorkspaceId == active.Id
             ? selected.Id.Value
             : null;
+        coverageTool.Update(snapshot);
         if (workspaceId == active?.Id && goalId == nextGoal) return;
         workspaceId = active?.Id;
         goalId = nextGoal;
@@ -214,6 +222,21 @@ internal sealed class TestExplorerTool
         Grid.SetRow(status, 3);
         grid.Children.Add(status);
         return grid;
+    }
+
+    private Control BuildTabs()
+    {
+        TabItem tests = new() { Header = "Tests", Content = BuildContent() };
+        TabItem coverage = new() { Header = "Coverage", Content = coverageTool.Content };
+        AutomationProperties.SetName(tests, "Discovered tests tab");
+        AutomationProperties.SetName(coverage, "Coverage navigation tab");
+        TabControl tabs = new() { Items = { tests, coverage }, SelectedIndex = 0 };
+        AutomationProperties.SetName(tabs, "Tests and coverage");
+        tabs.SelectionChanged += async (_, _) =>
+        {
+            if (tabs.SelectedIndex == 1) await coverageTool.RefreshAsync();
+        };
+        return tabs;
     }
 
     private Control TestControl(TestTreeNode node)

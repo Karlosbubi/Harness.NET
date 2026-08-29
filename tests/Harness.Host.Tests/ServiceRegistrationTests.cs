@@ -17,6 +17,15 @@ public sealed class ServiceRegistrationTests
             "Harness.BusinessLogic.Agents.IAgentActivityReader",
         ],
         StringComparer.Ordinal);
+    private static readonly IReadOnlySet<string> Task052CoverageRegistrations = new HashSet<string>(
+        [
+            "Harness.DataAccess.Coverage.IWorkspaceCoverageReader",
+            "Harness.DataAccess.Coverage.IDeveloperCoverageStore",
+            "Harness.BusinessLogic.Coverage.IDeveloperCoverageService",
+        ],
+        StringComparer.Ordinal);
+    private static readonly IReadOnlySet<string> ReviewedFeatureRegistrations = new HashSet<string>(
+        Task071GoalRegistrations.Concat(Task052CoverageRegistrations), StringComparer.Ordinal);
 
     [Fact]
     public void Feature_modules_preserve_the_baseline_plus_reviewed_feature_registrations()
@@ -52,23 +61,23 @@ public sealed class ServiceRegistrationTests
                 {
                     ("Infrastructure", 14),
                     ("Integrations", 31),
-                    ("Workspace", 70),
+                    ("Workspace", 73),
                     ("Goals", 16),
                     ("Presentation", 9),
                 }),
             "Registration inventory changed: " +
             string.Join(", ", actual.Select(item => $"{item.Name}={item.Count}")));
 
-        ServiceDescriptor[] task071 = services
-            .Where(descriptor => Task071GoalRegistrations.Contains(
+        ServiceDescriptor[] reviewed = services
+            .Where(descriptor => ReviewedFeatureRegistrations.Contains(
                 descriptor.ServiceType.FullName ?? string.Empty))
             .ToArray();
-        Assert.Equal(Task071GoalRegistrations.Count, task071.Length);
-        Assert.All(task071, descriptor =>
+        Assert.Equal(ReviewedFeatureRegistrations.Count, reviewed.Length);
+        Assert.All(reviewed, descriptor =>
             Assert.Equal(ServiceLifetime.Singleton, descriptor.Lifetime));
 
         string serviceInventory = string.Join('\n', services
-            .Where(descriptor => !Task071GoalRegistrations.Contains(
+            .Where(descriptor => !ReviewedFeatureRegistrations.Contains(
                 descriptor.ServiceType.FullName ?? string.Empty))
             .Select(descriptor => string.Join('|',
                 descriptor.ServiceType.FullName,

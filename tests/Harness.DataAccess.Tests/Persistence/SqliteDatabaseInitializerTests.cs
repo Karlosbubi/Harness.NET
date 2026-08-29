@@ -30,7 +30,7 @@ public sealed class SqliteDatabaseInitializerTests : IDisposable
 
         Assert.Equal(DatabaseInitializationKind.Created, first.Kind);
         Assert.Equal(DatabaseInitializationKind.Existing, second.Kind);
-        Assert.Equal(36, first.SchemaVersion.Value);
+        Assert.Equal(37, first.SchemaVersion.Value);
         Assert.Equal(first.SchemaVersion, second.SchemaVersion);
         Assert.True(File.Exists(databasePath));
 
@@ -43,8 +43,9 @@ public sealed class SqliteDatabaseInitializerTests : IDisposable
             "'goal_workflow_checkpoints', 'goal_workflow_tasks', " +
             "'goal_commit_approvals', 'appearance_preferences', 'agent_role_defaults', " +
             "'goal_budget_extensions', 'remote_spend_preferences', " +
-            "'visual_capture_preferences', 'editor_intelligence_preferences');";
-        Assert.Equal(11L, (long)command.ExecuteScalar()!);
+            "'visual_capture_preferences', 'editor_intelligence_preferences', " +
+            "'developer_coverage_imports', 'developer_coverage_lines');";
+        Assert.Equal(13L, (long)command.ExecuteScalar()!);
     }
 
     public void Dispose()

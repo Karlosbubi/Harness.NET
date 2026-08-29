@@ -572,6 +572,19 @@ runtime values. Run output lists case summaries and Test Explorer history shows
 aggregate counts with explicit truncation. Test Debug, coverage, typed one-run
 overrides, Hot Reload, and the debugger remain planned.
 
+Delivered eleventh slice: Test Explorer adds an accessible Coverage subview for an
+explicit workspace-relative Cobertura XML report. Data Access confines the report and
+each existing mapped C#/F#/VB file to the exact original workspace or approved goal
+worktree, rejects symbolic or oversized inputs, hardens XML parsing, and bounds imports
+to 500 source files and 100,000 line records. Schema 37 stores safe source-context
+provenance, report SHA-256, producer/version/timestamps, unmapped/truncation state, and
+relative line hit counts—not report XML, source content, machine paths, or failure
+payloads—and retains the latest ten imports per exact source context. The UI reports
+line coverage by file and navigates up to 2,000 exact uncovered
+lines through the typed editor boundary while explicitly treating them as evidence,
+not defects. Harness does not auto-discover stale reports or assume a collector exists.
+Test Debug, typed one-run launch overrides, Hot Reload, and the debugger remain planned.
+
 Use the existing trust and Restore boundaries. Selecting a launch profile does not
 authorize execution; debug attach, expression evaluation, mutation, dumps, network
 listeners, and external processes remain separately classified. ASP.NET endpoint

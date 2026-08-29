@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Threading;
 using Harness.BusinessLogic.CodeIntelligence;
+using Harness.BusinessLogic.Coverage;
 using Harness.BusinessLogic.Execution;
 using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Workspaces;
@@ -13,6 +14,75 @@ namespace Harness.Presentation.Avalonia.Tests.Workbench;
 [Collection("Avalonia UI")]
 public sealed class TestExplorerToolTests
 {
+    [Fact]
+    public async Task Coverage_import_projects_provenance_and_navigates_exact_uncovered_line()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            AvaloniaShellState shell = TrustedShell();
+            CoverageService coverage = new();
+            DeveloperCoverageLine? navigated = null;
+            TestExplorerTool tool = new(
+                new(
+                    new NullInspectionService(),
+                    () => shell,
+                    () => false,
+                    async operation => await operation(),
+                    (_, _) => ValueTask.CompletedTask,
+                    CancellationToken.None),
+                new PresentationControlTests.CodeIntelligenceService(),
+                execution: null,
+                (_, _) => ValueTask.CompletedTask,
+                () => { },
+                () => ValueTask.CompletedTask,
+                coverage,
+                (line, goalId) =>
+                {
+                    Assert.Null(goalId);
+                    navigated = line;
+                    return ValueTask.CompletedTask;
+                });
+            tool.Update(shell);
+            Window window = new() { Width = 800, Height = 700, Content = tool.Content };
+            window.Show();
+            tool.Coverage.ReportPath.Text = "artifacts/coverage.xml";
+
+            tool.Coverage.ImportAsync().AsTask().GetAwaiter().GetResult();
+            Dispatcher.UIThread.RunJobs();
+
+            DeveloperCoverageImportRequest request = Assert.Single(coverage.Imports);
+            Assert.Equal("workspace-1", request.Workspace.WorkspaceId.Value);
+            Assert.Equal("artifacts/coverage.xml", request.ReportPath.Value);
+            CoverageTool.CoverageTreeNode source = Assert.Single(
+                Assert.IsAssignableFrom<IEnumerable<CoverageTool.CoverageTreeNode>>(
+                    tool.Coverage.Tree.ItemsSource));
+            Assert.Contains("1/2 lines", source.Label, StringComparison.Ordinal);
+            CoverageTool.CoverageTreeNode uncovered = Assert.Single(source.Children);
+            Assert.Equal(18, uncovered.Line?.Line.Value);
+            Assert.Contains("Cobertura", tool.Coverage.StatusText, StringComparison.Ordinal);
+            Assert.Contains("coverlet 6.0.4", tool.Coverage.StatusText,
+                StringComparison.Ordinal);
+            Assert.Equal("Coverage report path",
+                AutomationProperties.GetName(tool.Coverage.ReportPath));
+            Assert.Equal("Import Cobertura coverage",
+                AutomationProperties.GetName(tool.Coverage.Import));
+            Assert.Equal("Coverage source hierarchy",
+                AutomationProperties.GetName(tool.Coverage.Tree));
+            Assert.Equal("Open coverage source src/Example.cs",
+                AutomationProperties.GetName(tool.Coverage.CreateNodeControl(source)));
+            Assert.Equal("Open uncovered line 18 in src/Example.cs",
+                AutomationProperties.GetName(tool.Coverage.CreateNodeControl(uncovered)));
+
+            tool.Coverage.NavigateAsync(uncovered).AsTask().GetAwaiter().GetResult();
+            Assert.Same(uncovered.Line, navigated);
+            Assert.Equal(new WorkbenchCodePosition(17, 0),
+                DocumentsHost.CoveragePosition(uncovered.Line!));
+            window.Close();
+        }, CancellationToken.None);
+    }
+
     [Fact]
     public async Task Test_explorer_builds_a_searchable_Roslyn_hierarchy_and_navigates_exact_source()
     {
@@ -328,5 +398,34 @@ public sealed class TestExplorerToolTests
             Cancelled.Add(executionId);
             return ValueTask.FromResult(new DeveloperExecutionCancelResult(true, null, null));
         }
+    }
+
+    private sealed class CoverageService : IDeveloperCoverageService
+    {
+        internal List<DeveloperCoverageImportRequest> Imports { get; } = [];
+
+        public ValueTask<DeveloperCoverageResult> ImportAsync(
+            DeveloperCoverageImportRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            Imports.Add(request);
+            return ValueTask.FromResult(Result());
+        }
+
+        public ValueTask<DeveloperCoverageResult> GetLatestAsync(
+            WorkbenchWorkspaceRequest request,
+            CancellationToken cancellationToken = default) => ValueTask.FromResult(Result());
+
+        private static DeveloperCoverageResult Result() => new(new(
+            new("coverage-1"), new("workspace-1"), null, new("Original workspace"),
+            new("artifacts/coverage.xml"), new(new string('c', 64)),
+            DeveloperCoverageFormat.Cobertura, new("coverlet"), new("6.0.4"),
+            DateTimeOffset.Parse("2026-08-29T11:00:00Z"),
+            DateTimeOffset.Parse("2026-08-29T12:00:00Z"),
+            UnmappedFileCount: 0, IsTruncated: false,
+            [
+                new(new("src/Example.cs"), new(12), new(4)),
+                new(new("src/Example.cs"), new(18), new(0)),
+            ]), null, null);
     }
 }

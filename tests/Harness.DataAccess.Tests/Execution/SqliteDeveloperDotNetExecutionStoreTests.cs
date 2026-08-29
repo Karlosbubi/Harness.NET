@@ -86,7 +86,7 @@ public sealed class SqliteDeveloperDotNetExecutionStoreTests : IDisposable
 
         StoredDeveloperExecution execution = Assert.Single(await store.ListAsync(
             new("workspace-a"), null, 10));
-        Assert.Equal(36, initialized.SchemaVersion.Value);
+        Assert.Equal(37, initialized.SchemaVersion.Value);
         Assert.Equal(StoredDeveloperExecutionOperation.Test, execution.Operation);
         Assert.Equal(new string('a', 64), execution.TestId?.Value);
         Assert.Equal(selector, execution.TestName?.Value);
@@ -145,6 +145,8 @@ public sealed class SqliteDeveloperDotNetExecutionStoreTests : IDisposable
             await connection.OpenAsync();
             await using SqliteCommand command = connection.CreateCommand();
             command.CommandText = """
+                DROP TABLE developer_coverage_lines;
+                DROP TABLE developer_coverage_imports;
                 DROP TABLE developer_dotnet_test_case_results;
                 DROP TABLE developer_dotnet_executions;
                 CREATE TABLE developer_dotnet_executions (
@@ -185,7 +187,8 @@ public sealed class SqliteDeveloperDotNetExecutionStoreTests : IDisposable
                 DELETE FROM SchemaVersions
                 WHERE ScriptName LIKE '%034_DeveloperDotNetTestScopes.sql'
                    OR ScriptName LIKE '%035_DeveloperDotNetTestSelections.sql'
-                   OR ScriptName LIKE '%036_DeveloperDotNetTestCaseResults.sql';
+                   OR ScriptName LIKE '%036_DeveloperDotNetTestCaseResults.sql'
+                   OR ScriptName LIKE '%037_DeveloperCoverage.sql';
                 UPDATE application_metadata SET value = '33' WHERE key = 'schema_version';
                 """;
             await command.ExecuteNonQueryAsync();
@@ -197,7 +200,7 @@ public sealed class SqliteDeveloperDotNetExecutionStoreTests : IDisposable
             await new SqliteDeveloperDotNetExecutionStore(paths).ListAsync(
                 new("workspace-a"), null, 10));
 
-        Assert.Equal(36, migrated.SchemaVersion.Value);
+        Assert.Equal(37, migrated.SchemaVersion.Value);
         Assert.Equal(StoredDeveloperTestScope.Exact, execution.TestScope);
     }
 
@@ -219,10 +222,13 @@ public sealed class SqliteDeveloperDotNetExecutionStoreTests : IDisposable
         {
             await connection.OpenAsync();
             await connection.ExecuteAsync("""
+                DROP TABLE developer_coverage_lines;
+                DROP TABLE developer_coverage_imports;
                 DROP TABLE developer_dotnet_test_case_results;
                 ALTER TABLE developer_dotnet_executions DROP COLUMN test_cases_truncated;
                 DELETE FROM SchemaVersions
-                WHERE ScriptName LIKE '%036_DeveloperDotNetTestCaseResults.sql';
+                WHERE ScriptName LIKE '%036_DeveloperDotNetTestCaseResults.sql'
+                   OR ScriptName LIKE '%037_DeveloperCoverage.sql';
                 UPDATE application_metadata SET value = '35' WHERE key = 'schema_version';
                 """);
         }
@@ -232,7 +238,7 @@ public sealed class SqliteDeveloperDotNetExecutionStoreTests : IDisposable
         StoredDeveloperExecution execution = Assert.Single(await store.ListAsync(
             new("workspace-a"), null, 10));
 
-        Assert.Equal(36, migrated.SchemaVersion.Value);
+        Assert.Equal(37, migrated.SchemaVersion.Value);
         Assert.Equal(StoredDeveloperTestScope.Selection, execution.TestScope);
         Assert.Equal(2, execution.SelectedTests.Length);
         Assert.Empty(execution.TestCases);
@@ -248,6 +254,8 @@ public sealed class SqliteDeveloperDotNetExecutionStoreTests : IDisposable
             await connection.OpenAsync();
             await using SqliteCommand command = connection.CreateCommand();
             command.CommandText = """
+                DROP TABLE developer_coverage_lines;
+                DROP TABLE developer_coverage_imports;
                 DROP TABLE developer_dotnet_test_case_results;
                 DROP TABLE developer_dotnet_executions;
                 CREATE TABLE developer_dotnet_executions (
@@ -279,7 +287,8 @@ public sealed class SqliteDeveloperDotNetExecutionStoreTests : IDisposable
                    OR ScriptName LIKE '%033_DeveloperDotNetTestOperations.sql'
                    OR ScriptName LIKE '%034_DeveloperDotNetTestScopes.sql'
                    OR ScriptName LIKE '%035_DeveloperDotNetTestSelections.sql'
-                   OR ScriptName LIKE '%036_DeveloperDotNetTestCaseResults.sql';
+                   OR ScriptName LIKE '%036_DeveloperDotNetTestCaseResults.sql'
+                   OR ScriptName LIKE '%037_DeveloperCoverage.sql';
                 UPDATE application_metadata SET value = '31' WHERE key = 'schema_version';
                 """;
             await command.ExecuteNonQueryAsync();
@@ -291,7 +300,7 @@ public sealed class SqliteDeveloperDotNetExecutionStoreTests : IDisposable
             await new SqliteDeveloperDotNetExecutionStore(paths).ListAsync(
                 new("workspace-a"), null, 10));
 
-        Assert.Equal(36, migrated.SchemaVersion.Value);
+        Assert.Equal(37, migrated.SchemaVersion.Value);
         Assert.Equal(StoredDeveloperExecutionOperation.Run, execution.Operation);
         Assert.Null(execution.Configuration);
         Assert.Equal("M:Program.Main", execution.DeclarationId?.Value);

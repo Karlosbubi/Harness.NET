@@ -50,6 +50,20 @@ disabled and deletes the directory immediately. Fully qualified name, closed out
 and duration are durable; adapter display text is process-local because parameterized
 names may contain runtime values. Raw XML, test output, stacks, and failure messages
 are never persisted by this lifecycle.
+
+Coverage is imported only through a developer-selected workspace-relative Cobertura
+XML file. Data Access confines the report and every mapped C#, F#, or Visual Basic
+source to the exact active original workspace or approved goal worktree, rejects
+symbolic and oversized inputs, disables DTD processing and external resolution, and
+bounds files and instrumented lines. Business Logic durably records the source
+context, report path and SHA-256, closed format, bounded producer/version, timestamps,
+unmapped count, truncation, and exact relative source-line hit counts. Persistence
+retains only the latest ten imports per exact source context. It does not
+persist report XML, machine paths, branch-rate summaries, stacks, messages, or source
+content. Presentation labels uncovered lines as evidence rather than defects and
+navigates them through the existing typed document boundary. Harness never searches
+for or automatically adopts a stale coverage report and does not imply that a test
+collector or adapter is installed.
 There is no shell string, implicit Restore, adapter discovery process outside
 `dotnet test`, or model-facing execution authority. The operation records test
 identity, state, exit code, duration, cancellation, and errors; stdout/stderr remain
@@ -86,6 +100,8 @@ the developer UI does not imply agent authority.
   exact sorted member identities for restart-safe history.
 - Adapter case summaries survive restart without turning TRX or failure output into a
   durable content store; incomplete or malformed result capture remains explicit.
+- Explicit Cobertura imports provide restart-safe, exact-context line navigation with
+  provenance while remaining independent of test execution and collector availability.
 - Debug is visibly absent rather than misleading until its actual adapter is ready.
 - The same typed target and execution identity can later back Solution, Test Explorer,
   launch profiles, Hot Reload, and debugger UI.

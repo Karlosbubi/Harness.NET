@@ -410,6 +410,17 @@ def verify_test_explorer_accessibility(application: AtSpiApplication) -> None:
     application.wait_for_name_containing(
         "1 test(s) discovered", "label", timeout=60
     )
+    application.wait_for_name("Coverage navigation tab", "page tab")
+    application.invoke("Coverage navigation tab", "page tab")
+    application.wait_for_name("Coverage report path", "entry")
+    application.wait_for_name("Import Cobertura coverage", "push button")
+    application.wait_for_name("Coverage source hierarchy", "tree")
+    application.set_text("Coverage report path", "coverage.xml")
+    application.invoke("Import Cobertura coverage", "push button")
+    application.wait_for_name_containing(
+        "1/2 instrumented lines covered", "label", timeout=30
+    )
+    application.wait_for_name("Open coverage source Program.cs", "push button")
 
 
 def verify_orca_speech(debug_log: Path) -> None:
@@ -783,6 +794,17 @@ def main() -> int:
                 "        return value.Capacity;\n"
                 "    }\n"
                 "}\n",
+                encoding="utf-8",
+            )
+            (repository / "coverage.xml").write_text(
+                "<?xml version=\"1.0\"?>\n"
+                "<coverage generator=\"acceptance-fixture\" version=\"1\" "
+                "timestamp=\"1788000000\">\n"
+                "  <packages><package><classes><class filename=\"Program.cs\">\n"
+                "    <lines><line number=\"8\" hits=\"1\" />"
+                "<line number=\"18\" hits=\"0\" /></lines>\n"
+                "  </class></classes></package></packages>\n"
+                "</coverage>\n",
                 encoding="utf-8",
             )
             project_file = repository / "Representative.csproj"
