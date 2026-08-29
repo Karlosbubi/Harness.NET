@@ -54,6 +54,46 @@ public sealed class DeveloperProjectExecutionServiceTests
     }
 
     [Fact]
+    public async Task Validates_and_forwards_typed_nonpersistent_one_run_overrides()
+    {
+        Runner runner = new();
+        using DeveloperProjectExecutionService service = CreateService(runner, new Store());
+        DeveloperRunOverrides overrides = new(
+            new("Development"),
+            [new("--message"), new("hello")],
+            [new(new("HARNESS_MODE"), new("one-run"))],
+            new("src"));
+
+        DeveloperExecutionStartResult started = await service.StartRunAsync(new(
+            new(new("workspace-a"), null), Target(), overrides));
+
+        Assert.NotNull(started.Execution);
+        Assert.Same(overrides, started.Execution.RunOverrides);
+        Assert.Equal("Development", runner.LastRequest?.RunOverrides?.LaunchProfile?.Value);
+        Assert.Equal(["--message", "hello"],
+            runner.LastRequest?.RunOverrides?.Arguments.Select(item => item.Value));
+        Assert.Equal("HARNESS_MODE",
+            Assert.Single(runner.LastRequest!.RunOverrides!.Environment).Name.Value);
+        runner.Complete();
+        DeveloperExecutionView completed = await WaitForCompletionAsync(service);
+        Assert.Null(completed.RunOverrides);
+    }
+
+    [Fact]
+    public async Task Rejects_a_launch_profile_not_in_the_exact_inspected_project()
+    {
+        Runner runner = new();
+        using DeveloperProjectExecutionService service = CreateService(runner, new Store());
+
+        DeveloperExecutionStartResult result = await service.StartRunAsync(new(
+            new(new("workspace-a"), null), Target(),
+            new(new("Uninspected"), [], [], null)));
+
+        Assert.Equal("run_overrides_invalid", result.ErrorCode);
+        Assert.Equal(0, runner.Calls);
+    }
+
+    [Fact]
     public async Task Cancellation_reaches_the_owned_project_process()
     {
         Runner runner = new();
@@ -369,7 +409,10 @@ public sealed class DeveloperProjectExecutionServiceTests
                             new(new("Debug"), DotNetConfigurationSource.Convention),
                             new(new("Release"), DotNetConfigurationSource.Convention),
                         ],
-                        IsStartupCandidate: true))],
+                        IsStartupCandidate: true,
+                        LaunchProfiles: new(
+                            [new(new("Development"), DotNetLaunchProfileKind.Project,
+                                false, false, [])], null, null)))],
                 false, null, null));
     }
 

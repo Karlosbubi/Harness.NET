@@ -33,6 +33,66 @@ public sealed class DotNetProjectRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task Applies_typed_one_run_overrides_without_a_shell()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        Directory.CreateDirectory(Path.Combine(root, "src"));
+        await File.WriteAllTextAsync(Path.Combine(root, "App.csproj"), "<Project />");
+        string executable = await CreateExecutableAsync(
+            "printf 'cwd=%s\\nenv=%s\\n' \"$PWD\" \"$HARNESS_MODE\"; printf '%s\\n' \"$@\"");
+        DotNetProjectRunner runner = new(executable);
+
+        DotNetProjectExecutionResult result = await runner.RunAsync(root, new(
+            new("App.csproj"), null,
+            RunOverrides: new(
+                new("Development"),
+                [new("--message"), new("hello world")],
+                [new(new("HARNESS_MODE"), new("one-run"))],
+                new("src"))));
+
+        Assert.Null(result.Error);
+        Assert.Contains($"cwd={Path.Combine(root, "src")}", result.StandardOutput.Value,
+            StringComparison.Ordinal);
+        Assert.Contains("env=one-run", result.StandardOutput.Value, StringComparison.Ordinal);
+        Assert.DoesNotContain("--no-launch-profile", result.StandardOutput.Value,
+            StringComparison.Ordinal);
+        Assert.Contains("--launch-profile\nDevelopment\n--\n--message\nhello world",
+            result.StandardOutput.Value, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Rejects_run_overrides_for_non_run_operations()
+    {
+        Directory.CreateDirectory(root);
+        await File.WriteAllTextAsync(Path.Combine(root, "App.csproj"), "<Project />");
+        DotNetProjectRunner runner = new(Path.Combine(root, "missing-dotnet"));
+
+        DotNetProjectExecutionResult result = await runner.RunAsync(root, new(
+            new("App.csproj"), null, DotNetProjectOperation.Build,
+            RunOverrides: new(null, [new("argument")], [], null)));
+
+        Assert.Equal("run_overrides_invalid", result.ErrorCode);
+        Assert.Null(result.ExitCode);
+    }
+
+    [Theory]
+    [InlineData("DOTNET_CLI_TELEMETRY_OPTOUT")]
+    [InlineData("DOTNET_NOLOGO")]
+    public async Task Rejects_environment_overrides_owned_by_the_runner(string name)
+    {
+        Directory.CreateDirectory(root);
+        await File.WriteAllTextAsync(Path.Combine(root, "App.csproj"), "<Project />");
+        DotNetProjectRunner runner = new(Path.Combine(root, "missing-dotnet"));
+
+        DotNetProjectExecutionResult result = await runner.RunAsync(root, new(
+            new("App.csproj"), null,
+            RunOverrides: new(null, [], [new(new(name), new("0"))], null)));
+
+        Assert.Equal("run_overrides_invalid", result.ErrorCode);
+        Assert.Null(result.ExitCode);
+    }
+
+    [Fact]
     public async Task Rejects_a_project_outside_the_source_context_before_process_start()
     {
         Directory.CreateDirectory(root);

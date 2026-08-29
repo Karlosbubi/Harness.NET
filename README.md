@@ -46,7 +46,9 @@ Delivered:
   formatting and import organization, contextual compiler fixes, local/selection and named
   cross-document refactorings,
   labeled document fix-all choices, and typed project-entry-point Run actions with
-  cancellation and transient output;
+  cancellation and transient output; each Run uses an accessible one-run dialog for
+  an inspected launch profile, confined working directory, bounded application
+  arguments, and bounded environment overrides whose values remain process-local;
 - a source-context-aware static .NET Solution view for entry points, SDK policy and
   selected-SDK/workload-manifest health, projects, target frameworks,
   declared/conventional configurations, startup candidates, project/package

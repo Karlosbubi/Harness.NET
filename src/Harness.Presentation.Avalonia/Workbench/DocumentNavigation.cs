@@ -174,18 +174,33 @@ internal sealed class DocumentNavigation
             document.SetStatus("Save this document before running its entry point.");
             return;
         }
+        Window? owner = TopLevel.GetTopLevel(document.NativeEditor) as Window;
+        if (owner is null)
+        {
+            document.SetStatus("The one-run override dialog requires an active editor window.");
+            return;
+        }
+        DeveloperRunOverrideDialogResult? selected = await new DeveloperRunOverrideDialog(
+            lens.ExecutionTarget.ProjectPath.Value).ShowDialog<DeveloperRunOverrideDialogResult?>(
+            owner);
+        if (selected is null)
+        {
+            document.SetStatus("Run cancelled before start; no overrides were retained.");
+            return;
+        }
         document.SetBusy(true, $"Starting {lens.ExecutionTarget.ProjectPath.Value}…");
         try
         {
             DeveloperExecutionStartResult started = await execution.StartRunAsync(new(
-                request(workspace), lens.ExecutionTarget), cancellationToken);
+                request(workspace), lens.ExecutionTarget, selected.Overrides), cancellationToken);
             if (started.Execution is null)
             {
                 document.SetStatus(started.Error ?? "The project run could not start.");
                 return;
             }
             document.SetStatus($"Run {started.Execution.Id.Value[..8]} started for " +
-                               $"{started.Execution.Project.ProjectPath.Value}.");
+                               $"{started.Execution.Project.ProjectPath.Value} · " +
+                               $"{OverrideSummary(selected.Overrides)}.");
             showRunOutput();
             await refreshRunOutput();
             _ = PollRunAsync(started.Execution.Id);
@@ -194,6 +209,21 @@ internal sealed class DocumentNavigation
         {
             document.SetBusy(false);
         }
+    }
+
+    internal static string OverrideSummary(DeveloperRunOverrides overrides)
+    {
+        List<string> values = [];
+        if (overrides.LaunchProfile is { } profile)
+            values.Add($"profile {profile.Value}");
+        if (!overrides.Arguments.IsDefaultOrEmpty)
+            values.Add($"{overrides.Arguments.Length} argument(s)");
+        if (!overrides.Environment.IsDefaultOrEmpty)
+            values.Add("environment " + string.Join(", ",
+                overrides.Environment.Select(variable => variable.Name.Value)));
+        if (overrides.WorkingDirectory is { } directory)
+            values.Add($"working directory {directory.Value}");
+        return values.Count == 0 ? "default launch" : string.Join(" · ", values);
     }
 
     private async Task PollRunAsync(DeveloperExecutionId id)

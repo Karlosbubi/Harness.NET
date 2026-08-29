@@ -15,6 +15,26 @@ public sealed record DeveloperConfigurationName(string Value);
 public sealed record DeveloperTestId(string Value);
 public sealed record DeveloperTestName(string Value);
 public sealed record DeveloperTestDisplayName(string Value);
+public sealed record DeveloperLaunchProfileName(string Value);
+public sealed record DeveloperLaunchArgument(string Value);
+public sealed record DeveloperLaunchEnvironmentName(string Value);
+public sealed record DeveloperLaunchEnvironmentValue(string Value);
+public sealed record DeveloperLaunchWorkingDirectory(string Value);
+
+public sealed record DeveloperLaunchEnvironmentVariable(
+    DeveloperLaunchEnvironmentName Name,
+    DeveloperLaunchEnvironmentValue Value);
+
+public sealed record DeveloperRunOverrides(
+    DeveloperLaunchProfileName? LaunchProfile,
+    ImmutableArray<DeveloperLaunchArgument> Arguments,
+    ImmutableArray<DeveloperLaunchEnvironmentVariable> Environment,
+    DeveloperLaunchWorkingDirectory? WorkingDirectory)
+{
+    public static DeveloperRunOverrides None { get; } = new(null, [], [], null);
+    public bool HasValues => LaunchProfile is not null || !Arguments.IsDefaultOrEmpty ||
+                             !Environment.IsDefaultOrEmpty || WorkingDirectory is not null;
+}
 
 public enum DeveloperTestOutcome
 {
@@ -133,11 +153,13 @@ public sealed record DeveloperExecutionView(
     string? Error,
     DeveloperTestTarget? Test = null,
     ImmutableArray<DeveloperTestCaseResult> TestCases = default,
-    bool AreTestCasesTruncated = false);
+    bool AreTestCasesTruncated = false,
+    DeveloperRunOverrides? RunOverrides = null);
 
 public sealed record DeveloperExecutionStartRequest(
     WorkbenchWorkspaceRequest Workspace,
-    WorkbenchExecutionTarget Target);
+    WorkbenchExecutionTarget Target,
+    DeveloperRunOverrides? Overrides = null);
 
 public sealed record DeveloperExecutionStartResult(
     DeveloperExecutionView? Execution,

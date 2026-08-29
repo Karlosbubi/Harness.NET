@@ -667,8 +667,11 @@ display text process-local, and persists safe case identity/outcome/duration in 
 36. The eleventh slice adds explicit, exact-context Cobertura import and navigation.
 Reports and mapped source files are workspace-confined and bounded; schema 37 keeps
 safe provenance and line hits, while the accessible Coverage tree opens exact
-uncovered lines and clearly labels them as evidence rather than defects. Test Debug,
-typed one-run overrides, Hot Reload, and Debug remain open.
+uncovered lines and clearly labels them as evidence rather than defects. The twelfth
+slice adds an accessible one-run confirmation with an exact inspected profile, confined relative
+working directory, and bounded argument/environment lists. Values flow directly to
+`dotnet` without a shell and remain process-local; safe names and counts are visible,
+but no override is persisted. Test Debug, Hot Reload, and Debug remain open.
 
 Acceptance criteria:
 

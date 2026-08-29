@@ -54,6 +54,9 @@ internal sealed class DeveloperProjectExecutionService(
         {
             return new(null, resolution.ErrorCode, resolution.Error);
         }
+        string? overrideError = ValidateOverrides(request.Overrides, resolution.Project);
+        if (overrideError is not null)
+            return new(null, "run_overrides_invalid", overrideError);
         DeveloperProjectTarget project = new(
             new(request.Target.ProjectPath.Value),
             request.Target.TargetFramework.Value == "unknown"
@@ -67,6 +70,7 @@ internal sealed class DeveloperProjectExecutionService(
             project,
             request.Target,
             test: null,
+            request.Overrides,
             cancellationToken);
     }
 
@@ -97,6 +101,7 @@ internal sealed class DeveloperProjectExecutionService(
             request.Project,
             entryPoint: null,
             test: null,
+            runOverrides: null,
             cancellationToken);
     }
 
@@ -127,6 +132,7 @@ internal sealed class DeveloperProjectExecutionService(
             request.Project,
             entryPoint: null,
             request.Test,
+            runOverrides: null,
             cancellationToken);
     }
 
@@ -137,6 +143,7 @@ internal sealed class DeveloperProjectExecutionService(
         DeveloperProjectTarget project,
         WorkbenchExecutionTarget? entryPoint,
         DeveloperTestTarget? test,
+        DeveloperRunOverrides? runOverrides,
         CancellationToken cancellationToken)
     {
         WorkbenchWorkspaceContext context = resolution.Context
@@ -199,8 +206,9 @@ internal sealed class DeveloperProjectExecutionService(
             project,
             rootPath,
             test,
+            runOverrides,
             executionCancellation);
-        return new(Map(stored, entryPoint, test), null, null);
+        return new(Map(stored, entryPoint, test, runOverrides), null, null);
     }
 
     public async ValueTask<DeveloperExecutionListResult> ListAsync(
@@ -253,6 +261,7 @@ internal sealed class DeveloperProjectExecutionService(
         DeveloperProjectTarget project,
         string rootPath,
         DeveloperTestTarget? test,
+        DeveloperRunOverrides? runOverrides,
         CancellationTokenSource cancellation)
     {
         DotNetProjectExecutionResult result;
@@ -275,7 +284,8 @@ internal sealed class DeveloperProjectExecutionService(
                 test is null || test.SelectedTests.IsDefaultOrEmpty
                     ? []
                     : test.SelectedTests.Select(item =>
-                        new DotNetTestFullyQualifiedName(item.Value)).ToImmutableArray()),
+                        new DotNetTestFullyQualifiedName(item.Value)).ToImmutableArray(),
+                Map(runOverrides)),
                 cancellation.Token);
         }
         catch (Exception exception)
@@ -398,7 +408,7 @@ internal sealed class DeveloperProjectExecutionService(
             return Failure("execution_source_changed",
                 "The entry-point source changed after CodeLens discovery. Refresh and try again.");
         }
-        return new(resolution.Context, resolution.RootPath, null, null);
+        return new(resolution.Context, resolution.RootPath, null, null, project);
     }
 
     private async ValueTask<Resolution> ResolveProjectAsync(
@@ -453,7 +463,7 @@ internal sealed class DeveloperProjectExecutionService(
             return Failure("execution_configuration_unavailable",
                 "The build configuration is not available for the selected project.");
         }
-        return new(resolution.Context, resolution.RootPath, null, null);
+        return new(resolution.Context, resolution.RootPath, null, null, project);
     }
 
     private async ValueTask EnsureReconciledAsync(CancellationToken cancellationToken)
@@ -480,7 +490,8 @@ internal sealed class DeveloperProjectExecutionService(
     private DeveloperExecutionView Map(
         StoredDeveloperExecution execution,
         WorkbenchExecutionTarget? entryPoint,
-        DeveloperTestTarget? test)
+        DeveloperTestTarget? test,
+        DeveloperRunOverrides? runOverrides = null)
     {
         bool available = output.TryGetValue(execution.Id.Value, out TransientOutput? streams);
         return new(
@@ -509,7 +520,8 @@ internal sealed class DeveloperProjectExecutionService(
                     new(item.FullyQualifiedName.Value),
                     new(item.FullyQualifiedName.Value),
                     Map(item.Outcome), item.DurationMilliseconds)).ToImmutableArray()),
-            streams?.AreTestCasesTruncated ?? execution.AreTestCasesTruncated);
+            streams?.AreTestCasesTruncated ?? execution.AreTestCasesTruncated,
+            runOverrides);
     }
 
     private static WorkbenchExecutionTarget? EntryPoint(StoredDeveloperExecution execution) =>
@@ -577,6 +589,56 @@ internal sealed class DeveloperProjectExecutionService(
         value.Equals(value.Trim(), StringComparison.Ordinal) &&
         value.All(character => char.IsLetterOrDigit(character) ||
             character is '.' or '_' or '+' or '`');
+
+    private static string? ValidateOverrides(
+        DeveloperRunOverrides? overrides,
+        DotNetProjectInfo? project)
+    {
+        if (overrides is null) return null;
+        if (overrides.Arguments.IsDefault || overrides.Arguments.Length > 32 ||
+            overrides.Arguments.Any(argument =>
+                !IsBounded(argument.Value, 1_024) || argument.Value.Any(char.IsControl)) ||
+            overrides.Arguments.Sum(argument => argument.Value.Length) > 8_192)
+            return "Enter at most 32 bounded application arguments, one per line.";
+        if (overrides.Environment.IsDefault || overrides.Environment.Length > 32 ||
+            overrides.Environment.Select(variable => variable.Name.Value)
+                .Distinct(StringComparer.Ordinal).Count() != overrides.Environment.Length ||
+            overrides.Environment.Any(variable => !IsEnvironmentName(variable.Name.Value) ||
+                variable.Value.Value.Length > 4_096 || variable.Value.Value.Contains('\0')) ||
+            overrides.Environment.Sum(variable => variable.Value.Value.Length) > 16_384)
+            return "Enter at most 32 distinct NAME=value environment overrides.";
+        if (overrides.LaunchProfile is { } selected)
+        {
+            DotNetLaunchProfileInfo? profile = project?.Details?.LaunchProfiles?.Profiles
+                .FirstOrDefault(item => item.Name.Value.Equals(
+                    selected.Value, StringComparison.Ordinal));
+            if (profile is not { Kind: DotNetLaunchProfileKind.Project })
+                return "Select an inspected project launch profile from the exact source context.";
+        }
+        if (overrides.WorkingDirectory is { } directory &&
+            (!IsBounded(directory.Value, 1_024) || Path.IsPathRooted(directory.Value)))
+            return "Enter a workspace-relative one-run working directory.";
+        return null;
+    }
+
+    private static bool IsBounded(string value, int maximum) =>
+        !string.IsNullOrWhiteSpace(value) && value.Length <= maximum &&
+        value.Equals(value.Trim(), StringComparison.Ordinal);
+
+    private static bool IsEnvironmentName(string value) =>
+        IsBounded(value, 128) && (char.IsLetter(value[0]) || value[0] == '_') &&
+        value.All(character => char.IsLetterOrDigit(character) || character == '_') &&
+        !value.Equals("DOTNET_CLI_TELEMETRY_OPTOUT", StringComparison.Ordinal) &&
+        !value.Equals("DOTNET_NOLOGO", StringComparison.Ordinal);
+
+    private static DotNetRunOverrides? Map(DeveloperRunOverrides? overrides) =>
+        overrides is null ? null : new(
+            overrides.LaunchProfile is null ? null : new(overrides.LaunchProfile.Value),
+            overrides.Arguments.Select(argument =>
+                new DotNetLaunchArgument(argument.Value)).ToImmutableArray(),
+            overrides.Environment.Select(variable => new DotNetLaunchEnvironmentVariable(
+                new(variable.Name.Value), new(variable.Value.Value))).ToImmutableArray(),
+            overrides.WorkingDirectory is null ? null : new(overrides.WorkingDirectory.Value));
 
     private static StoredDeveloperTestScope Map(DeveloperTestScope scope) => scope switch
     {
@@ -681,7 +743,8 @@ internal sealed class DeveloperProjectExecutionService(
             _ => DeveloperExecutionOperation.Run,
         };
 
-    private static Resolution Failure(string code, string error) => new(null, null, code, error);
+    private static Resolution Failure(string code, string error) =>
+        new(null, null, code, error, null);
 
     public void Dispose()
     {
@@ -700,7 +763,8 @@ internal sealed class DeveloperProjectExecutionService(
         WorkbenchWorkspaceContext? Context,
         string? RootPath,
         string? ErrorCode,
-        string? Error);
+        string? Error,
+        DotNetProjectInfo? Project);
 
     private sealed record TransientOutput(
         DeveloperExecutionOutput StandardOutput,

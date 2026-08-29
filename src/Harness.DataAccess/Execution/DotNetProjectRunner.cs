@@ -11,6 +11,8 @@ namespace Harness.DataAccess.Execution;
 internal sealed class DotNetProjectRunner : IDotNetProjectRunner
 {
     private const int MaximumOutputCharacters = 256 * 1024;
+    private const int MaximumLaunchArguments = 32;
+    private const int MaximumLaunchEnvironmentVariables = 32;
     private readonly string executable;
     private readonly string testResultRoot;
 
@@ -108,6 +110,12 @@ internal sealed class DotNetProjectRunner : IDotNetProjectRunner
             return Failure(confined, "test_target_invalid",
                 "A test selector is valid only for the Test operation.");
         }
+        if (!TryValidateRunOverrides(
+                request.Operation, request.RunOverrides, canonicalRoot,
+                out string? workingDirectory, out string? overrideError))
+        {
+            return Failure(confined, "run_overrides_invalid", overrideError!);
+        }
 
         string? resultDirectory = null;
         if (request.Operation is DotNetProjectOperation.Test)
@@ -119,7 +127,7 @@ internal sealed class DotNetProjectRunner : IDotNetProjectRunner
             if (resultDirectory is not null) Directory.CreateDirectory(resultDirectory);
             ProcessStartInfo startInfo = new(executable)
             {
-                WorkingDirectory = canonicalRoot,
+                WorkingDirectory = workingDirectory ?? canonicalRoot,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
@@ -127,7 +135,7 @@ internal sealed class DotNetProjectRunner : IDotNetProjectRunner
             };
             foreach (string argument in Arguments(
                          request.Operation, projectPath, request.Test, request.TestScope,
-                         request.SelectedTests, resultDirectory))
+                         request.SelectedTests, resultDirectory, request.RunOverrides))
             {
                 startInfo.ArgumentList.Add(argument);
             }
@@ -143,6 +151,11 @@ internal sealed class DotNetProjectRunner : IDotNetProjectRunner
             }
             startInfo.Environment["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1";
             startInfo.Environment["DOTNET_NOLOGO"] = "1";
+            if (request.RunOverrides is { Environment.IsDefaultOrEmpty: false } overrides)
+            {
+                foreach (DotNetLaunchEnvironmentVariable variable in overrides.Environment)
+                    startInfo.Environment[variable.Name.Value] = variable.Value.Value;
+            }
 
             using Process process = new() { StartInfo = startInfo };
             Stopwatch duration = Stopwatch.StartNew();
@@ -229,7 +242,8 @@ internal sealed class DotNetProjectRunner : IDotNetProjectRunner
         DotNetTestFullyQualifiedName? test,
         DotNetTestScope testScope,
         ImmutableArray<DotNetTestFullyQualifiedName> selectedTests,
-        string? resultDirectory) =>
+        string? resultDirectory,
+        DotNetRunOverrides? runOverrides) =>
         operation switch
         {
             DotNetProjectOperation.Build => ["build", projectPath, "--no-restore"],
@@ -250,8 +264,96 @@ internal sealed class DotNetProjectRunner : IDotNetProjectRunner
                 "--results-directory", resultDirectory!],
             DotNetProjectOperation.Test => ["test", projectPath, "--no-restore",
             "--logger", "trx", "--results-directory", resultDirectory!],
-            _ => ["run", "--project", projectPath, "--no-restore", "--no-launch-profile"],
+            _ => RunArguments(projectPath, runOverrides),
         };
+
+    private static IReadOnlyList<string> RunArguments(
+        string projectPath,
+        DotNetRunOverrides? overrides)
+    {
+        List<string> arguments = ["run", "--project", projectPath, "--no-restore"];
+        if (overrides?.LaunchProfile is { } profile)
+        {
+            arguments.Add("--launch-profile");
+            arguments.Add(profile.Value);
+        }
+        else
+        {
+            arguments.Add("--no-launch-profile");
+        }
+        if (overrides is { Arguments.IsDefaultOrEmpty: false })
+        {
+            arguments.Add("--");
+            arguments.AddRange(overrides.Arguments.Select(argument => argument.Value));
+        }
+        return arguments;
+    }
+
+    private static bool TryValidateRunOverrides(
+        DotNetProjectOperation operation,
+        DotNetRunOverrides? overrides,
+        string root,
+        out string? workingDirectory,
+        out string? error)
+    {
+        workingDirectory = null;
+        error = null;
+        if (overrides is null) return true;
+        if (operation is not DotNetProjectOperation.Run)
+        {
+            error = "One-run overrides are valid only for Run.";
+            return false;
+        }
+        if (overrides.LaunchProfile is { Value: { } profile } &&
+            (!IsBoundedText(profile, 128) || profile.Any(char.IsControl)))
+        {
+            error = "The launch profile name is invalid.";
+            return false;
+        }
+        if (overrides.Arguments.IsDefault ||
+            overrides.Arguments.Length > MaximumLaunchArguments ||
+            overrides.Arguments.Any(argument =>
+                !IsBoundedText(argument.Value, 1_024) || argument.Value.Any(char.IsControl)) ||
+            overrides.Arguments.Sum(argument => argument.Value.Length) > 8_192)
+        {
+            error = $"Run accepts at most {MaximumLaunchArguments} bounded arguments.";
+            return false;
+        }
+        if (overrides.Environment.IsDefault ||
+            overrides.Environment.Length > MaximumLaunchEnvironmentVariables ||
+            overrides.Environment.Select(variable => variable.Name.Value)
+                .Distinct(StringComparer.Ordinal).Count() != overrides.Environment.Length ||
+            overrides.Environment.Any(variable =>
+                !IsEnvironmentName(variable.Name.Value) ||
+                variable.Value.Value.Length > 4_096 ||
+                variable.Value.Value.Contains('\0')) ||
+            overrides.Environment.Sum(variable => variable.Value.Value.Length) > 16_384)
+        {
+            error = $"Run accepts at most {MaximumLaunchEnvironmentVariables} bounded environment overrides.";
+            return false;
+        }
+        if (overrides.WorkingDirectory is null) return true;
+        if (!WorkspacePathPolicy.TryResolve(
+                root, overrides.WorkingDirectory.Value, out _, out _,
+                out string absolute, out _, out _) || !Directory.Exists(absolute))
+        {
+            error = "The one-run working directory must be an existing workspace directory.";
+            return false;
+        }
+        workingDirectory = absolute;
+        return true;
+    }
+
+    private static bool IsBoundedText(string value, int maximum) =>
+        !string.IsNullOrWhiteSpace(value) && value.Length <= maximum &&
+        value.Equals(value.Trim(), StringComparison.Ordinal);
+
+    private static bool IsEnvironmentName(string value) =>
+        IsBoundedText(value, 128) &&
+        (char.IsLetter(value[0]) || value[0] == '_') &&
+        value.All(character => char.IsLetterOrDigit(character) || character == '_') &&
+        !value.Equals("DOTNET_CLI_TELEMETRY_OPTOUT", StringComparison.Ordinal) &&
+        !value.Equals("DOTNET_NOLOGO", StringComparison.Ordinal);
 
     private static bool IsValidFramework(string value) =>
         !string.IsNullOrWhiteSpace(value) && value.Length <= 128 &&

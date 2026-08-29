@@ -8,6 +8,21 @@ public sealed record DotNetConfigurationName(string Value);
 public sealed record DotNetTestFullyQualifiedName(string Value);
 public sealed record DotNetExecutionOutput(string Value);
 public sealed record DotNetTestDisplayName(string Value);
+public sealed record DotNetLaunchProfileName(string Value);
+public sealed record DotNetLaunchArgument(string Value);
+public sealed record DotNetLaunchEnvironmentName(string Value);
+public sealed record DotNetLaunchEnvironmentValue(string Value);
+public sealed record DotNetLaunchWorkingDirectory(string Value);
+
+public sealed record DotNetLaunchEnvironmentVariable(
+    DotNetLaunchEnvironmentName Name,
+    DotNetLaunchEnvironmentValue Value);
+
+public sealed record DotNetRunOverrides(
+    DotNetLaunchProfileName? LaunchProfile,
+    ImmutableArray<DotNetLaunchArgument> Arguments,
+    ImmutableArray<DotNetLaunchEnvironmentVariable> Environment,
+    DotNetLaunchWorkingDirectory? WorkingDirectory);
 
 public enum DotNetTestOutcome
 {
@@ -46,7 +61,8 @@ public sealed record DotNetProjectExecutionRequest(
     DotNetConfigurationName? Configuration = null,
     DotNetTestFullyQualifiedName? Test = null,
     DotNetTestScope TestScope = DotNetTestScope.Exact,
-    ImmutableArray<DotNetTestFullyQualifiedName> SelectedTests = default);
+    ImmutableArray<DotNetTestFullyQualifiedName> SelectedTests = default,
+    DotNetRunOverrides? RunOverrides = null);
 
 public sealed record DotNetProjectExecutionResult(
     DotNetProjectPath ProjectPath,

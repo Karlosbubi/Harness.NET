@@ -80,6 +80,18 @@ implements launch, breakpoints, threads, stacks, scopes, variables, stepping, an
 termination. Harness.NET must not label an ordinary process launch as Debug. A Debug
 lens is emitted only when that capability is present.
 
+Every developer Run confirmation exposes optional typed one-run overrides: one exact
+inspected project-profile name, one workspace-relative existing working directory, up
+to 32 application arguments, and up to 32 distinct environment entries. Presentation
+accepts one argument or `NAME=value` entry per line and summarizes only the profile,
+argument count, environment names, and relative directory. Business Logic revalidates
+the profile against the exact inspected project and source context. Data Access
+revalidates all bounds, confines the directory, passes arguments through
+`ProcessStartInfo.ArgumentList` after `--`, and sets environment entries directly; no
+shell or command string exists. Runner-owned telemetry/no-logo variables remain locked.
+Overrides and environment values are process-local and
+are absent from durable lifecycle metadata, restart reconstruction, logs, and status.
+
 Agent execution remains outside this slice. Adding a model-callable Run or Debug
 operation requires the role, phase, trust, target, and authority policy in Task 052;
 the developer UI does not imply agent authority.
@@ -88,6 +100,8 @@ the developer UI does not imply agent authority.
 
 - Run CodeLens can bind an exact declaration to a validated project without parsing
   UI text or accepting a shell command.
+- A visible confirmation can specialize one Run without creating a persistent launch
+  configuration or exposing environment values in lifecycle history.
 - Unsaved code is never presented as the code being executed.
 - Output and cancellation remain inspectable in the Run output tool.
 - Solution Build/Rebuild actions and command-palette entries share the same typed

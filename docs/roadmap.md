@@ -583,7 +583,16 @@ payloads—and retains the latest ten imports per exact source context. The UI r
 line coverage by file and navigates up to 2,000 exact uncovered
 lines through the typed editor boundary while explicitly treating them as evidence,
 not defects. Harness does not auto-discover stale reports or assume a collector exists.
-Test Debug, typed one-run launch overrides, Hot Reload, and the debugger remain planned.
+
+Delivered twelfth slice: every Run CodeLens action opens an accessible confirmation
+whose optional launch profile, workspace-relative working directory, application
+arguments, and environment entries cross typed boundaries. Profiles are revalidated
+against the exact inspected project; directories are confined and must exist; argument
+and environment counts, item sizes, totals, names, and duplicates are bounded at both
+Business Logic and Data Access. `dotnet run` receives a direct argument list with no
+shell, Restore, or implicit unselected profile. The dialog and start status expose safe
+profile/count/name/path summaries, while all override values are process-local and no
+override is persisted. Test Debug, Hot Reload, and the debugger remain planned.
 
 Use the existing trust and Restore boundaries. Selecting a launch profile does not
 authorize execution; debug attach, expression evaluation, mutation, dumps, network
