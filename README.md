@@ -74,7 +74,10 @@ Delivered:
   actions plus bounded same-project multi-selection with one no-Restore process per
   action, in-place Stop/Rerun, duration and failure history, transient output, durable
   scoped result metadata, typed framework/lifecycle filtering, and bounded adapter
-  case outcomes collected from private ephemeral TRX files; its Coverage subview
+  case outcomes collected from private ephemeral TRX files; exact source tests also
+  expose Linux Test Debug after Roslyn revalidates identity and location, with Harness
+  starting one no-Restore operation, discovering and rechecking only its waiting
+  `testhost` descendant, and attaching the verified adapter without a PID input; its Coverage subview
   imports an explicitly selected, workspace-confined Cobertura report, records safe
   provenance, and navigates exact uncovered source lines without treating them as
   defects;

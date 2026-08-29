@@ -194,7 +194,13 @@ internal sealed partial class WorkbenchDockHost
             () => { ShowRunOutput(); },
             RefreshRunOutputAsync,
             coverageService,
-            documentsHost.NavigateToCoverageAsync);
+            documentsHost.NavigateToCoverageAsync,
+            debuggerService,
+            session =>
+            {
+                ShowDebugger();
+                return debuggerToolUnit.TrackAsync(session);
+            });
         problemsToolUnit = documentsHost.Problems;
         gitConflictsTool = new(
             toolContext,

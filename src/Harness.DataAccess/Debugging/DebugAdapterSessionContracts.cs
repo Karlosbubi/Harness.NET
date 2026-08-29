@@ -38,7 +38,8 @@ public sealed record StoredDebugAdapterStartRequest(
     ImmutableArray<StoredDebugEnvironmentEntry> Environment,
     StoredDebugProcessId? OwnedProcessId,
     bool StopAtEntry,
-    bool JustMyCode);
+    bool JustMyCode,
+    StoredDebugProcessId? OwnedRootProcessId = null);
 
 public sealed record StoredDebugAdapterCapabilities(
     bool SupportsConfigurationDone,
@@ -113,7 +114,8 @@ public sealed record StoredDebugEvent(
     StoredDebugThreadId? ThreadId,
     string? Message,
     int? ExitCode,
-    bool AllThreadsStopped);
+    bool AllThreadsStopped,
+    StoredDebugBreakpoint? Breakpoint = null);
 
 public interface IDebugAdapterSession : IAsyncDisposable
 {
@@ -186,5 +188,21 @@ public interface IDotNetDebugSessionFactory
     ValueTask<IDebugAdapterSession> StartLaunchAsync(
         string sourceRoot,
         StoredDotNetDebugLaunchRequest request,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed record StoredDotNetTestDebugRequest(
+    StoredDebugSessionId SessionId,
+    DotNetProjectPath ProjectPath,
+    DotNetTargetFramework? TargetFramework,
+    DotNetConfigurationName? Configuration,
+    DotNetTestFullyQualifiedName Test,
+    bool JustMyCode);
+
+public interface IDotNetTestDebugSessionFactory
+{
+    ValueTask<IDebugAdapterSession> StartAsync(
+        string sourceRoot,
+        StoredDotNetTestDebugRequest request,
         CancellationToken cancellationToken = default);
 }

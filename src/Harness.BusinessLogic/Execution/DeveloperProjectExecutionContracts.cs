@@ -137,7 +137,8 @@ public sealed record DeveloperExecutionCapabilities(
     bool CanDebugProjectEntryPoint,
     string DebugStatus,
     bool CanTest = false,
-    bool CanHotReload = false);
+    bool CanHotReload = false,
+    bool CanDebugTest = false);
 
 public sealed record DeveloperExecutionView(
     DeveloperExecutionId Id,

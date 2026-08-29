@@ -4,6 +4,7 @@ using Avalonia.Headless;
 using Avalonia.Threading;
 using Harness.BusinessLogic.CodeIntelligence;
 using Harness.BusinessLogic.Coverage;
+using Harness.BusinessLogic.Debugging;
 using Harness.BusinessLogic.Execution;
 using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Workspaces;
@@ -14,6 +15,43 @@ namespace Harness.Presentation.Avalonia.Tests.Workbench;
 [Collection("Avalonia UI")]
 public sealed class TestExplorerToolTests
 {
+    [Fact]
+    public async Task Exact_test_debug_uses_the_typed_owned_test_lifecycle_and_opens_debugger()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            AvaloniaShellState shell = TrustedShell();
+            WorkbenchCodeTestCase test = TestCase(
+                new string('a', 64), "Example.Tests.CalculatorTests.Adds", "Adds", 12, false);
+            ExecutionService execution = new(canDebugTest: true);
+            DebuggerService debugger = new();
+            DeveloperDebugSessionView? shown = null;
+            TestExplorerTool tool = new(
+                new(new NullInspectionService(), () => shell, () => false,
+                    async operation => await operation(), (_, _) => ValueTask.CompletedTask,
+                    CancellationToken.None),
+                new PresentationControlTests.CodeIntelligenceService(),
+                execution,
+                (_, _) => ValueTask.CompletedTask,
+                () => { },
+                () => ValueTask.CompletedTask,
+                debugger: debugger,
+                showDebugger: value => { shown = value; return ValueTask.CompletedTask; });
+
+            tool.StartTestDebugAsync(
+                new(new(test.ProjectPath.Value), null, null), test)
+                .AsTask().GetAwaiter().GetResult();
+
+            DeveloperTestDebugStartRequest request = Assert.Single(debugger.Requests);
+            Assert.Equal(test.Id.Value, request.Test.Id.Value);
+            Assert.Equal(test.FullyQualifiedName.Value, request.Test.FullyQualifiedName.Value);
+            Assert.Same(debugger.Session, shown);
+            Assert.Contains("owned testhost", tool.StatusText, StringComparison.Ordinal);
+        }, CancellationToken.None);
+    }
+
     [Fact]
     public async Task Coverage_import_projects_provenance_and_navigates_exact_uncovered_line()
     {
@@ -341,13 +379,14 @@ public sealed class TestExplorerToolTests
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
-    private sealed class ExecutionService : IDeveloperProjectExecutionService
+    private sealed class ExecutionService(bool canDebugTest = false) : IDeveloperProjectExecutionService
     {
         internal List<DeveloperTestStartRequest> Tests { get; } = [];
         internal List<DeveloperExecutionView> History { get; } = [];
         internal List<DeveloperExecutionId> Cancelled { get; } = [];
         public DeveloperExecutionCapabilities Capabilities { get; } = new(
-            true, true, true, false, "Debug unavailable.", CanTest: true);
+            true, true, true, canDebugTest, "Debug unavailable.", CanTest: true,
+            CanDebugTest: canDebugTest);
 
         public ValueTask<DeveloperExecutionStartResult> StartTestAsync(
             DeveloperTestStartRequest request,
@@ -398,6 +437,47 @@ public sealed class TestExplorerToolTests
             Cancelled.Add(executionId);
             return ValueTask.FromResult(new DeveloperExecutionCancelResult(true, null, null));
         }
+    }
+
+    private sealed class DebuggerService : IDeveloperDebuggerService
+    {
+        internal List<DeveloperTestDebugStartRequest> Requests { get; } = [];
+        internal DeveloperDebugSessionView Session { get; } = new(
+            new("test-debug"), new("workspace-1"), null, "Original workspace",
+            new(new("tests/App.Tests.csproj"), null, null), null,
+            DeveloperDebugSessionState.Running, DeveloperDebugStopReason.None,
+            null, null, DateTimeOffset.UnixEpoch, null, "Debugging test…", [], [], [],
+            new(string.Empty), false,
+            new(new(new string('a', 64)), new("Example.Tests.CalculatorTests.Adds")));
+
+        public ValueTask<DeveloperDebugStartResult> StartTestAsync(
+            DeveloperTestDebugStartRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            Requests.Add(request);
+            return ValueTask.FromResult(new DeveloperDebugStartResult(Session, null, null));
+        }
+
+        public ValueTask<DeveloperDebugStartResult> StartAsync(
+            DeveloperDebugStartRequest request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+        public ValueTask<DeveloperDebugSessionResult> GetAsync(
+            DeveloperDebugSessionId sessionId, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+        public ValueTask<DeveloperDebugSessionResult> CommandAsync(
+            DeveloperDebugSessionId sessionId, DeveloperDebugCommand command,
+            DeveloperDebugThreadId threadId, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+        public ValueTask<DeveloperDebugSessionResult> StopAsync(
+            DeveloperDebugSessionId sessionId, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+        public ValueTask<DeveloperDebugInspectionResult<DeveloperDebugScope>> GetScopesAsync(
+            DeveloperDebugSessionId sessionId, DeveloperDebugStackFrameId frameId,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<DeveloperDebugInspectionResult<DeveloperDebugVariable>> GetVariablesAsync(
+            DeveloperDebugSessionId sessionId,
+            DeveloperDebugVariablesReference variablesReference,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     private sealed class CoverageService : IDeveloperCoverageService

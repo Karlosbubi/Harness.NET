@@ -621,6 +621,17 @@ debuggee deterministically. No PATH adapter, custom executable, TCP listener,
 expression evaluation, value mutation, or arbitrary attach is introduced. Test Debug
 remains planned.
 
+Delivered sixteenth slice: exact Test Explorer leaves expose Test Debug on Linux.
+Harness opens and closes a short-lived Roslyn session to revalidate the exact test ID,
+fully qualified name, project, source path, and line immediately before execution. It
+starts one confined `dotnet test --no-restore` operation with `VSTEST_HOST_DEBUG=1`,
+walks only the bounded descendant tree of that owned process, identifies exactly one
+managed `testhost`, and rechecks live ancestry and command identity immediately before
+private stdio attach. The verified source breakpoint and the existing debugger
+workspace then provide the same inspection and control lifecycle. No UI, model, or
+configuration boundary accepts a PID. Parent/testhost output is bounded and
+process-local, and Stop or failure kills the complete owned tree.
+
 Use the existing trust and Restore boundaries. Selecting a launch profile does not
 authorize execution; debug attach, expression evaluation, mutation, dumps, network
 listeners, and external processes remain separately classified. ASP.NET endpoint

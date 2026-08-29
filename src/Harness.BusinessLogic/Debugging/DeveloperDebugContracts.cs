@@ -25,7 +25,8 @@ public sealed record DeveloperDebugBreakpoint(
     DeveloperDebugBreakpointLocation Location,
     bool IsVerified,
     DeveloperDebugLineNumber? ActualLine,
-    string? Message);
+    string? Message,
+    int? AdapterId = null);
 
 public enum DeveloperDebugSessionState
 {
@@ -88,7 +89,7 @@ public sealed record DeveloperDebugSessionView(
     GoalId? GoalId,
     string SourceDescription,
     DeveloperProjectTarget Project,
-    WorkbenchExecutionTarget Target,
+    WorkbenchExecutionTarget? Target,
     DeveloperDebugSessionState State,
     DeveloperDebugStopReason StopReason,
     DeveloperDebugThreadId? StoppedThreadId,
@@ -100,7 +101,8 @@ public sealed record DeveloperDebugSessionView(
     ImmutableArray<DeveloperDebugThread> Threads,
     ImmutableArray<DeveloperDebugStackFrame> Stack,
     DeveloperDebugOutput Output,
-    bool IsOutputTruncated);
+    bool IsOutputTruncated,
+    DeveloperTestTarget? Test = null);
 
 public sealed record DeveloperDebugStartRequest(
     WorkbenchWorkspaceRequest Workspace,
@@ -108,6 +110,11 @@ public sealed record DeveloperDebugStartRequest(
     ImmutableArray<DeveloperDebugBreakpointLocation> Breakpoints,
     DeveloperRunOverrides? RunOverrides = null,
     bool StopAtEntry = false);
+
+public sealed record DeveloperTestDebugStartRequest(
+    WorkbenchWorkspaceRequest Workspace,
+    DeveloperProjectTarget Project,
+    DeveloperTestTarget Test);
 
 public sealed record DeveloperDebugStartResult(
     DeveloperDebugSessionView? Session,
@@ -129,6 +136,12 @@ public interface IDeveloperDebuggerService
     ValueTask<DeveloperDebugStartResult> StartAsync(
         DeveloperDebugStartRequest request,
         CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperDebugStartResult> StartTestAsync(
+        DeveloperTestDebugStartRequest request,
+        CancellationToken cancellationToken = default) => ValueTask.FromResult(
+            new DeveloperDebugStartResult(
+                null, "test_debug_not_supported", "Owned Test Debug is unavailable."));
 
     ValueTask<DeveloperDebugSessionResult> GetAsync(
         DeveloperDebugSessionId sessionId,

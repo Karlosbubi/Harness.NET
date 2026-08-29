@@ -21,7 +21,8 @@ internal sealed partial class DeveloperProjectExecutionService(
     IDeveloperDotNetExecutionStore store,
     TimeProvider timeProvider,
     ILogger<DeveloperProjectExecutionService> logger,
-    IDeveloperDebuggerSettingsService? debuggerSettingsService = null) :
+    IDeveloperDebuggerSettingsService? debuggerSettingsService = null,
+    IDeveloperTestIdentityVerifier? testIdentityVerifier = null) :
     IDeveloperProjectExecutionService, IDeveloperExecutionTargetResolver, IDisposable
 {
     private const int MaximumExecutions = 200;
@@ -50,7 +51,8 @@ internal sealed partial class DeveloperProjectExecutionService(
                     ? "Verified managed debugger ready."
                     : "Install or repair the verified managed debugger in Settings.",
                 CanTest: true,
-                CanHotReload: true);
+                CanHotReload: true,
+                CanDebugTest: debuggerReady && OperatingSystem.IsLinux());
         }
     }
 

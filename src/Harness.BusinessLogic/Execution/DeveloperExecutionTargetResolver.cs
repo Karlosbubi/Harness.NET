@@ -11,6 +11,15 @@ internal sealed record DeveloperExecutionTargetResolution(
     string? ErrorCode,
     string? Error);
 
+internal sealed record DeveloperTestDebugTargetResolution(
+    WorkbenchWorkspaceContext? Context,
+    string? RootPath,
+    DotNetProjectInfo? Project,
+    DeveloperTestSourcePath? Source,
+    DeveloperTestSourceLine? Line,
+    string? ErrorCode,
+    string? Error);
+
 internal interface IDeveloperExecutionTargetResolver
 {
     ValueTask<DeveloperExecutionTargetResolution> ResolveDebugTargetAsync(
@@ -18,4 +27,13 @@ internal interface IDeveloperExecutionTargetResolver
         WorkbenchExecutionTarget target,
         DeveloperRunOverrides? runOverrides,
         CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperTestDebugTargetResolution> ResolveTestDebugTargetAsync(
+        WorkbenchWorkspaceRequest workspace,
+        DeveloperProjectTarget project,
+        DeveloperTestTarget test,
+        CancellationToken cancellationToken = default) => ValueTask.FromResult(
+            new DeveloperTestDebugTargetResolution(
+                null, null, null, null, null, "test_debug_not_supported",
+                "Owned Test Debug target resolution is unavailable."));
 }

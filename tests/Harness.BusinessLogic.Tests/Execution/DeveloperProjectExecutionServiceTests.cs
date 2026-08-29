@@ -77,6 +77,25 @@ public sealed class DeveloperProjectExecutionServiceTests
     }
 
     [Fact]
+    public async Task Test_debug_target_requires_exact_Roslyn_identity_and_source_location()
+    {
+        using DeveloperProjectExecutionService service = CreateService(new Runner(), new Store());
+        IDeveloperExecutionTargetResolver resolver = service;
+        DeveloperTestTarget test = new(
+            new(new string('a', 64)), new("Demo.Tests.Exact"));
+
+        DeveloperTestDebugTargetResolution result = await resolver.ResolveTestDebugTargetAsync(
+            new(new("workspace-a"), null),
+            new(new("App.csproj"), new("net10.0"), null),
+            test);
+
+        Assert.Equal("/workspace", result.RootPath);
+        Assert.Equal("Tests/Exact.cs", result.Source?.Value);
+        Assert.Equal(21, result.Line?.Value);
+        Assert.Null(result.Error);
+    }
+
+    [Fact]
     public async Task Validates_and_forwards_typed_nonpersistent_one_run_overrides()
     {
         Runner runner = new();
@@ -386,7 +405,8 @@ public sealed class DeveloperProjectExecutionServiceTests
 
     private static DeveloperProjectExecutionService CreateService(Runner runner, Store store) => new(
         new Context(), new Workspaces(), new DotNet(), new Files(), runner, store,
-        new FixedTimeProvider(), NullLogger<DeveloperProjectExecutionService>.Instance);
+        new FixedTimeProvider(), NullLogger<DeveloperProjectExecutionService>.Instance,
+        testIdentityVerifier: new TestIdentityVerifier());
 
     private static WorkbenchExecutionTarget Target() => new(
         WorkbenchExecutionTargetKind.ProjectEntryPoint,
@@ -467,6 +487,18 @@ public sealed class DeveloperProjectExecutionServiceTests
         public ValueTask<WorkspaceFileRead> ReadAsync(string workspaceRoot, string relativePath, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(new WorkspaceFileRead(
                 relativePath, Source, Hash(Source), Source.Length, false, null, null));
+    }
+
+    private sealed class TestIdentityVerifier : IDeveloperTestIdentityVerifier
+    {
+        public ValueTask<DeveloperTestIdentityVerification> VerifyExactAsync(
+            WorkbenchWorkspaceRequest workspace,
+            DeveloperProjectTarget project,
+            DeveloperTestTarget test,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<DeveloperTestIdentityVerification>(new(
+                true, new DeveloperTestSourcePath("Tests/Exact.cs"),
+                new DeveloperTestSourceLine(21), null, null));
     }
 
     private sealed class Runner : IDotNetProjectRunner

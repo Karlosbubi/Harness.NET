@@ -623,7 +623,7 @@ Acceptance criteria:
 
 ### 052 — .NET project, Run, Test, and Debug experience
 
-Status: `In progress — project Debug delivered; Test Debug remains`
+Status: `In progress — project and exact Linux Test Debug delivered`
 
 Dependencies: 018, 042, 047, 049, 051.
 
@@ -686,6 +686,13 @@ stacks, scopes, expandable variables, bounded output, source navigation, pause,
 continue, stepping, stop, and deterministic adapter/debuggee cleanup. Test Debug
 remains open; arbitrary attach, expression evaluation, and value mutation remain
 excluded by ADR 028.
+The sixteenth slice adds exact Linux Test Debug. A short-lived Roslyn session
+revalidates the selected test identity and source line, then Harness starts one exact
+no-Restore test operation with host debugging enabled. It discovers only that owned
+operation's waiting managed testhost descendant, rechecks ancestry and command
+identity immediately before attach, and never accepts a PID from presentation,
+configuration, or a model. Test Debug reuses the debugger workspace and deterministic
+process-tree cleanup.
 
 Acceptance criteria:
 

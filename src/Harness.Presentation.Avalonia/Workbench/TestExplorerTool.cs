@@ -7,6 +7,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Harness.BusinessLogic.CodeIntelligence;
 using Harness.BusinessLogic.Coverage;
+using Harness.BusinessLogic.Debugging;
 using Harness.BusinessLogic.Execution;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Workspaces;
@@ -22,6 +23,8 @@ internal sealed class TestExplorerTool
     private readonly Func<WorkbenchCodeTestCase, GoalId?, ValueTask> navigate;
     private readonly Action showRunOutput;
     private readonly Func<ValueTask> refreshRunOutput;
+    private readonly IDeveloperDebuggerService? debugger;
+    private readonly Func<DeveloperDebugSessionView, ValueTask> showDebugger;
     private readonly CoverageTool coverageTool;
     private readonly TreeView tree = new();
     private readonly TextBox filter = new() { PlaceholderText = "Search tests or traits" };
@@ -52,7 +55,9 @@ internal sealed class TestExplorerTool
         Action showRunOutput,
         Func<ValueTask> refreshRunOutput,
         IDeveloperCoverageService? coverageService = null,
-        Func<DeveloperCoverageLine, GoalId?, ValueTask>? navigateCoverage = null)
+        Func<DeveloperCoverageLine, GoalId?, ValueTask>? navigateCoverage = null,
+        IDeveloperDebuggerService? debugger = null,
+        Func<DeveloperDebugSessionView, ValueTask>? showDebugger = null)
     {
         this.context = context;
         this.codeIntelligence = codeIntelligence;
@@ -60,6 +65,8 @@ internal sealed class TestExplorerTool
         this.navigate = navigate;
         this.showRunOutput = showRunOutput;
         this.refreshRunOutput = refreshRunOutput;
+        this.debugger = debugger;
+        this.showDebugger = showDebugger ?? (_ => ValueTask.CompletedTask);
         coverageTool = new(context, coverageService,
             navigateCoverage ?? ((_, _) => ValueTask.CompletedTask));
         Content = BuildTabs();
@@ -313,6 +320,15 @@ internal sealed class TestExplorerTool
                 actions.Children.Add(run);
             }
         }
+        if (node.Test is not null && node.Project is not null && debugger is not null &&
+            execution?.Capabilities.CanDebugTest is true)
+        {
+            Button debug = new() { Content = "Debug" };
+            AutomationProperties.SetName(debug,
+                $"Debug test {node.Test.FullyQualifiedName.Value}");
+            debug.Click += async (_, _) => await StartTestDebugAsync(node.Project, node.Test);
+            actions.Children.Add(debug);
+        }
         if (node.Execution is not null)
         {
             TextBlock history = new()
@@ -330,6 +346,49 @@ internal sealed class TestExplorerTool
         new(new(test.ProjectPath.Value), TargetFramework: null, Configuration: null),
         new(new(test.Id.Value), new(test.FullyQualifiedName.Value)),
         test.DisplayName.Value);
+
+    internal async ValueTask StartTestDebugAsync(
+        DeveloperProjectTarget project,
+        WorkbenchCodeTestCase test)
+    {
+        WorkspaceView? workspace = context.ActiveWorkspace();
+        if (debugger is null || execution?.Capabilities.CanDebugTest is not true || busy ||
+            workspace is not { IsTrusted: true })
+        {
+            status.Message = "A trusted Linux workspace with the verified debugger is required.";
+            status.Severity = StatusSeverity.Warning;
+            return;
+        }
+        busy = true;
+        status.Message = $"Revalidating {test.DisplayName.Value} with Roslyn for Test Debug…";
+        status.Severity = StatusSeverity.Information;
+        try
+        {
+            DeveloperDebugStartResult result = await debugger.StartTestAsync(new(
+                context.Request(workspace),
+                project,
+                new(new(test.Id.Value), new(test.FullyQualifiedName.Value))),
+                context.CancellationToken);
+            if (result.Session is null)
+            {
+                status.Message = result.Error ?? "The exact Test Debug session could not start.";
+                status.Severity = StatusSeverity.Error;
+                return;
+            }
+            status.Message = $"Debugging {test.DisplayName.Value} in its owned testhost.";
+            status.Severity = StatusSeverity.Success;
+            await showDebugger(result.Session);
+        }
+        catch (OperationCanceledException)
+        {
+            status.Message = "Starting Test Debug was cancelled.";
+            status.Severity = StatusSeverity.Warning;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
 
     internal async ValueTask StartSelectedAsync()
     {

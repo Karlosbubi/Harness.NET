@@ -80,11 +80,60 @@ public sealed class DeveloperDebuggerServiceTests
         Assert.True(adapter.Disposed);
     }
 
+    [Fact]
+    public async Task Owns_exact_Roslyn_verified_test_debug_session_without_a_pid_boundary()
+    {
+        FakeSession adapter = new();
+        TestSessionFactory testFactory = new(adapter);
+        DeveloperDebuggerService service = new(
+            new TargetResolver(),
+            new SessionFactory(adapter),
+            testFactory,
+            new SettingsService(ready: true),
+            TimeProvider.System,
+            NullLogger<DeveloperDebuggerService>.Instance);
+        DeveloperTestTarget test = new(
+            new(new string('a', 64)), new("Demo.Tests.Exact"));
+
+        DeveloperDebugStartResult started = await service.StartTestAsync(new(
+            WorkspaceRequest(), new(new("App.Tests.csproj"), new("net10.0"), null), test));
+        DeveloperDebugSessionView stopped = await WaitForStateAsync(
+            service, started.Session!.Id, DeveloperDebugSessionState.Stopped);
+
+        Assert.Null(started.Error);
+        Assert.Null(stopped.Target);
+        Assert.Equal(test, stopped.Test);
+        Assert.Equal("Tests/ExactTests.cs", Assert.Single(stopped.Breakpoints).Location.Source.Value);
+        Assert.Equal("Demo.Tests.Exact", testFactory.Request?.Test.Value);
+    }
+
+    [Fact]
+    public async Task Applies_deferred_adapter_breakpoint_verification_after_modules_load()
+    {
+        FakeSession adapter = new() { BreakpointsInitiallyVerified = false };
+        DeveloperDebuggerService service = CreateService(adapter);
+        DeveloperDebugStartResult started = await service.StartAsync(new(
+            WorkspaceRequest(), Target(), [new(new("Program.cs"), new(12))]));
+        Assert.False(Assert.Single(started.Session!.Breakpoints).IsVerified);
+
+        adapter.VerifyBreakpoint("Program.cs", 12);
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+        DeveloperDebugSessionView current;
+        do
+        {
+            current = (await service.GetAsync(started.Session.Id, timeout.Token)).Session!;
+            if (!current.Breakpoints[0].IsVerified) await Task.Delay(10, timeout.Token);
+        } while (!current.Breakpoints[0].IsVerified);
+
+        Assert.Equal(12, current.Breakpoints[0].ActualLine?.Value);
+    }
+
     private static DeveloperDebuggerService CreateService(
         FakeSession session,
         bool ready = true) => new(
         new TargetResolver(),
         new SessionFactory(session),
+        new TestSessionFactory(session),
         new SettingsService(ready),
         TimeProvider.System,
         NullLogger<DeveloperDebuggerService>.Instance);
@@ -130,6 +179,21 @@ public sealed class DeveloperDebuggerServiceTests
             new("App.csproj", "Microsoft.NET.Sdk", ["net10.0"], null, "enable", []),
             null,
             null));
+
+        public ValueTask<DeveloperTestDebugTargetResolution> ResolveTestDebugTargetAsync(
+            WorkbenchWorkspaceRequest workspace,
+            DeveloperProjectTarget project,
+            DeveloperTestTarget test,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<DeveloperTestDebugTargetResolution>(new(
+                new WorkbenchWorkspaceContext(workspace.WorkspaceId, null, new("main"),
+                    WorkbenchWorkspaceScope.OriginalWorkspace, "Original workspace"),
+                "/workspace",
+                new("App.Tests.csproj", "Microsoft.NET.Sdk", ["net10.0"], null, "enable", []),
+                new DeveloperTestSourcePath("Tests/ExactTests.cs"),
+                new DeveloperTestSourceLine(18),
+                null,
+                null));
     }
 
     private sealed class SettingsService(bool ready) : IDeveloperDebuggerSettingsService
@@ -162,6 +226,20 @@ public sealed class DeveloperDebuggerServiceTests
         }
     }
 
+    private sealed class TestSessionFactory(FakeSession session) : IDotNetTestDebugSessionFactory
+    {
+        internal StoredDotNetTestDebugRequest? Request { get; private set; }
+
+        public ValueTask<IDebugAdapterSession> StartAsync(
+            string sourceRoot,
+            StoredDotNetTestDebugRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            Request = request;
+            return ValueTask.FromResult<IDebugAdapterSession>(session);
+        }
+    }
+
     private sealed class FakeSession : IDebugAdapterSession
     {
         private readonly Channel<StoredDebugEvent> events = Channel.CreateUnbounded<StoredDebugEvent>();
@@ -171,6 +249,7 @@ public sealed class DeveloperDebuggerServiceTests
         internal bool ConfigurationCompleted { get; private set; }
         internal bool Disconnected { get; private set; }
         internal bool Disposed { get; private set; }
+        internal bool BreakpointsInitiallyVerified { get; init; } = true;
 
         public async IAsyncEnumerable<StoredDebugEvent> ReadEventsAsync(
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
@@ -184,7 +263,8 @@ public sealed class DeveloperDebuggerServiceTests
             IReadOnlyList<StoredDebugBreakpointRequest> breakpoints,
             CancellationToken cancellationToken = default) => ValueTask.FromResult<
                 IReadOnlyList<StoredDebugBreakpoint>>(breakpoints.Select(item =>
-                new StoredDebugBreakpoint(1, true, source, item.Line, item.Line, null)).ToArray());
+                new StoredDebugBreakpoint(1, BreakpointsInitiallyVerified,
+                    source, item.Line, item.Line, null)).ToArray());
 
         public ValueTask CompleteConfigurationAsync(
             CancellationToken cancellationToken = default)
@@ -257,6 +337,11 @@ public sealed class DeveloperDebuggerServiceTests
                 StoredDebugEventKind.Terminated, StoredDebugStopReason.None,
                 null, null, null, false));
         }
+
+        internal void VerifyBreakpoint(string source, int line) => events.Writer.TryWrite(new(
+            StoredDebugEventKind.BreakpointChanged, StoredDebugStopReason.None,
+            null, "changed", null, false,
+            new(1, true, new(source), new(line), new(line), null)));
 
         private ValueTask RunningAsync()
         {

@@ -10,6 +10,7 @@ namespace Harness.BusinessLogic.Debugging;
 internal sealed class DeveloperDebuggerService(
     IDeveloperExecutionTargetResolver targetResolver,
     IDotNetDebugSessionFactory sessionFactory,
+    IDotNetTestDebugSessionFactory testSessionFactory,
     IDeveloperDebuggerSettingsService settings,
     TimeProvider timeProvider,
     ILogger<DeveloperDebuggerService> logger) : IDeveloperDebuggerService, IAsyncDisposable
@@ -116,6 +117,99 @@ internal sealed class DeveloperDebuggerService(
                 if (adapter is not null) await DisposeAdapterAsync(adapter);
                 throw;
             }
+        }
+        finally
+        {
+            if (!slotTransferred) sessionSlots.Release();
+        }
+    }
+
+    public async ValueTask<DeveloperDebugStartResult> StartTestAsync(
+        DeveloperTestDebugStartRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(disposed, this);
+        ArgumentNullException.ThrowIfNull(request);
+        if (settings.Current.Availability is not DebugAdapterAvailability.Ready)
+            return new(null, "debugger_unavailable",
+                "Install or repair the verified managed debugger in Settings first.");
+        if (!OperatingSystem.IsLinux())
+            return new(null, "test_debug_platform_unsupported",
+                "Owned Test Debug process discovery is currently supported on Linux.");
+        if (!await sessionSlots.WaitAsync(0, cancellationToken))
+            return new(null, "debug_session_limit_reached",
+                $"At most {MaximumConcurrentSessions} debug sessions may be active.");
+
+        bool slotTransferred = false;
+        IDebugAdapterSession? adapter = null;
+        try
+        {
+            DeveloperTestDebugTargetResolution resolution = await targetResolver
+                .ResolveTestDebugTargetAsync(request.Workspace, request.Project,
+                    request.Test, cancellationToken);
+            if (resolution.RootPath is null || resolution.Context is null ||
+                resolution.Source is null || resolution.Line is null)
+            {
+                return new(null, resolution.ErrorCode, resolution.Error);
+            }
+
+            DeveloperDebugSessionId id = new(Guid.NewGuid().ToString("N"));
+            adapter = await testSessionFactory.StartAsync(resolution.RootPath, new(
+                new(id.Value),
+                new(request.Project.ProjectPath.Value),
+                request.Project.TargetFramework is null
+                    ? null : new(request.Project.TargetFramework.Value),
+                request.Project.Configuration is null
+                    ? null : new(request.Project.Configuration.Value),
+                new(request.Test.FullyQualifiedName.Value),
+                JustMyCode: true), cancellationToken);
+            DeveloperDebugBreakpointLocation breakpoint = new(
+                new(resolution.Source.Value), new(resolution.Line.Value));
+            ImmutableArray<DeveloperDebugBreakpoint> configured =
+                await ConfigureBreakpointsAsync(adapter, [breakpoint], cancellationToken);
+            await adapter.CompleteConfigurationAsync(cancellationToken);
+            DeveloperDebugSessionView view = new(
+                id,
+                request.Workspace.WorkspaceId,
+                resolution.Context.GoalId,
+                resolution.Context.Description,
+                request.Project,
+                Target: null,
+                DeveloperDebugSessionState.Running,
+                DeveloperDebugStopReason.None,
+                null,
+                null,
+                timeProvider.GetUtcNow(),
+                null,
+                $"Debugging test {request.Test.FullyQualifiedName.Value}…",
+                configured,
+                [],
+                [],
+                new(string.Empty),
+                IsOutputTruncated: false,
+                Test: request.Test);
+            SessionState state = new(adapter, view);
+            if (!sessions.TryAdd(id.Value, state))
+            {
+                await DisposeAdapterAsync(adapter);
+                return new(null, "debug_session_identity_conflict",
+                    "The debug session identity already exists.");
+            }
+            slotTransferred = true;
+            state.Events = ObserveAsync(state);
+            TrimSessions();
+            return new(state.Snapshot(), null, null);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            if (adapter is not null) await DisposeAdapterAsync(adapter);
+            logger.LogWarning(exception, "Could not start an owned Test Debug session.");
+            return new(null, "test_debug_start_failed", SafeError(exception));
+        }
+        catch
+        {
+            if (adapter is not null) await DisposeAdapterAsync(adapter);
+            throw;
         }
         finally
         {
@@ -300,6 +394,9 @@ internal sealed class DeveloperDebuggerService(
                         await CloseSessionAsync(state, terminateDebuggee: true,
                             CancellationToken.None);
                         return;
+                    case StoredDebugEventKind.BreakpointChanged:
+                        ApplyBreakpointChanged(state, debugEvent.Breakpoint);
+                        break;
                 }
             }
         }
@@ -377,9 +474,33 @@ internal sealed class DeveloperDebuggerService(
                 new(new(item.Source.Value), new(item.RequestedLine.Value)),
                 item.IsVerified,
                 item.ActualLine is null ? null : new(item.ActualLine.Value),
-                item.Message)));
+                item.Message,
+                item.AdapterId)));
         }
         return configured.ToImmutable();
+    }
+
+    private static void ApplyBreakpointChanged(
+        SessionState state,
+        StoredDebugBreakpoint? changed)
+    {
+        if (changed is null) return;
+        state.Update(view => view with
+        {
+            Breakpoints = view.Breakpoints.Select(item =>
+                (item.AdapterId is not null && item.AdapterId == changed.AdapterId) ||
+                (item.Location.Source.Value.Equals(changed.Source.Value, StringComparison.Ordinal) &&
+                 item.Location.Line.Value == changed.RequestedLine.Value)
+                    ? item with
+                    {
+                        IsVerified = changed.IsVerified,
+                        ActualLine = changed.ActualLine is null
+                            ? null : new(changed.ActualLine.Value),
+                        Message = changed.Message,
+                        AdapterId = changed.AdapterId,
+                    }
+                    : item).ToImmutableArray(),
+        });
     }
 
     private static bool ValidateBreakpoints(

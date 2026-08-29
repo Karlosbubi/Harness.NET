@@ -38,6 +38,15 @@ internal sealed class NetCoreDbgAdapterSessionFactory : IDebugAdapterSessionFact
         string executable = await executableResolver.ResolveVerifiedExecutableAsync(
             cancellationToken) ?? throw new DebugAdapterRequestException(
                 "Install or repair the verified managed debugger in Settings first.");
+        if (request.Kind is StoredDebugAdapterStartKind.AttachOwnedProcess &&
+            (request.OwnedRootProcessId is not { Value: > 0 } root ||
+             request.OwnedProcessId is not { Value: > 0 } target ||
+             !LinuxProcessTree.IsDescendant(root.Value, target.Value) ||
+             !LinuxProcessTree.IsManagedTestHost(target.Value)))
+        {
+            throw new DebugAdapterRequestException(
+                "The owned testhost identity or ancestry changed before attach.");
+        }
         IDebugAdapterProcess process = processFactory.Start(
             executable, request.WorkingDirectory.Value);
         NetCoreDbgAdapterSession session = new(request.SessionId, request.SourceRoot, process);
@@ -98,7 +107,8 @@ internal sealed class NetCoreDbgAdapterSessionFactory : IDebugAdapterSessionFact
             }
         }
         else if (!request.Arguments.IsEmpty || !request.Environment.IsEmpty ||
-                 request.OwnedProcessId is not { Value: > 0 })
+                 request.OwnedProcessId is not { Value: > 0 } ||
+                 request.OwnedRootProcessId is not { Value: > 0 })
         {
             throw new DebugAdapterRequestException(
                 "An owned-process attach requires only a positive process identity.");
@@ -240,11 +250,13 @@ internal sealed class NetCoreDbgAdapterSession : IDebugAdapterSession
         {
             source = new { name = Path.GetFileName(confinedSource), path = absoluteSource },
             lines = breakpoints.Select(item => item.Line.Value).ToArray(),
-            breakpoints = breakpoints.Select(item => new
-            {
-                line = item.Line.Value,
-                condition = item.Condition,
-            }).ToArray(),
+            breakpoints = breakpoints.Select(item => item.Condition is null
+                ? new Dictionary<string, object> { ["line"] = item.Line.Value }
+                : new Dictionary<string, object>
+                {
+                    ["line"] = item.Line.Value,
+                    ["condition"] = item.Condition,
+                }).ToArray(),
             sourceModified = false,
         }, cancellationToken);
         JsonElement[] returned = Body(response).GetProperty("breakpoints")
@@ -529,7 +541,7 @@ internal sealed class NetCoreDbgAdapterSession : IDebugAdapterSession
         events.Writer.TryWrite(value);
     }
 
-    private static StoredDebugEvent? MapEvent(JsonElement root)
+    private StoredDebugEvent? MapEvent(JsonElement root)
     {
         string? name = TextOrNull(root, "event");
         JsonElement body = root.TryGetProperty("body", out JsonElement found) ? found : default;
@@ -555,9 +567,30 @@ internal sealed class NetCoreDbgAdapterSession : IDebugAdapterSession
                 IntegerOrNull(body, "threadId") is int changedThread ? new(changedThread) : null,
                 TextOrNull(body, "reason"), null, false),
             "breakpoint" => new(StoredDebugEventKind.BreakpointChanged,
-                StoredDebugStopReason.None, null, TextOrNull(body, "reason"), null, false),
+                StoredDebugStopReason.None, null, TextOrNull(body, "reason"), null, false,
+                MapBreakpointEvent(body)),
             _ => null,
         };
+    }
+
+    private StoredDebugBreakpoint? MapBreakpointEvent(JsonElement body)
+    {
+        if (!body.TryGetProperty("breakpoint", out JsonElement breakpoint) ||
+            breakpoint.ValueKind is not JsonValueKind.Object ||
+            !breakpoint.TryGetProperty("source", out JsonElement source) ||
+            source.ValueKind is not JsonValueKind.Object ||
+            ConfineAdapterSource(TextOrNull(source, "path")) is not { } path ||
+            IntegerOrNull(breakpoint, "line") is not { } line || line <= 0)
+        {
+            return null;
+        }
+        return new(
+            IntegerOrNull(breakpoint, "id"),
+            Boolean(breakpoint, "verified"),
+            new(path),
+            new(line),
+            new(line),
+            TextOrNull(breakpoint, "message"));
     }
 
     private static StoredDebugStopReason StopReason(string? reason) => reason switch

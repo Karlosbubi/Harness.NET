@@ -96,6 +96,10 @@ internal static class WorkspaceServiceRegistration
             provider.GetRequiredService<NetCoreDbgAdapterSessionFactory>());
         services.AddSingleton<IDotNetDebugSessionFactory,
             DotNetDebugSessionFactory>();
+        services.AddSingleton<IDotNetTestDebugSessionFactory,
+            DotNetTestDebugSessionFactory>();
+        services.AddSingleton<IDeveloperTestIdentityVerifier,
+            RoslynDeveloperTestIdentityVerifier>();
         services.AddSingleton<IDeveloperDebuggerSettingsService,
             DeveloperDebuggerSettingsService>();
         services.AddSingleton<IDeveloperDebuggerService,
