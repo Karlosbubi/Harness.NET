@@ -92,16 +92,10 @@ internal sealed class WorkbenchDockHost
         IsVisible = false,
     };
     private readonly FilesTool filesTool;
-    private readonly ListBox changes = new();
-    private readonly ListBox patchUnits = new();
-    private readonly TextBlock gitSummary = new() { TextWrapping = TextWrapping.Wrap };
-    private readonly TextBlock gitStatus = new() { TextWrapping = TextWrapping.Wrap };
-    private readonly Button stageGit = new() { Content = "Stage" };
-    private readonly Button unstageGit = new() { Content = "Unstage" };
-    private readonly Button clearGitSelection = new() { Content = "Whole file" };
-    private readonly Button discardGit = new() { Content = "Discard file" };
-    private readonly Button cleanGit = new() { Content = "Delete untracked" };
-    private readonly Button commitGit = new() { Content = "Commit…" };
+    private readonly GitChangesTool gitChangesTool;
+    private TextBlock GitStatus => gitChangesTool.Status;
+    private string GitFingerprint => gitChangesTool.Fingerprint;
+    private WorkbenchWorkspaceContext? CurrentGitContext => gitChangesTool.CurrentContext;
     private readonly ListBox gitBranches = new();
     private readonly TextBox gitBranchName = new() { PlaceholderText = "New branch name" };
     private readonly CheckBox forceBranchDelete = new() { Content = "Force unmerged deletion" };
@@ -152,9 +146,6 @@ internal sealed class WorkbenchDockHost
     private DeveloperGitConflictInspectionResult? currentConflictInspection;
     private DeveloperGitConflictDocumentResult? currentConflictDocument;
     private bool renderingConflict;
-    private string gitFingerprint = string.Empty;
-    private IReadOnlyList<DeveloperGitPatchUnitView> currentPatchUnits = [];
-    private WorkbenchWorkspaceContext? currentGitContext;
     private readonly ListBox runOutputs = new();
     private readonly TextBlock runOutputStatus = new() { TextWrapping = TextWrapping.Wrap };
     private readonly Button cancelDeveloperRun = new() { Content = "Stop", IsEnabled = false };
@@ -257,13 +248,25 @@ internal sealed class WorkbenchDockHost
         this.cancellationToken = cancellationToken;
         factory.HideToolsOnClose = true;
         layoutCodec = new(factory);
-        filesTool = new(new(
+        WorkbenchToolContext toolContext = new(
             inspectionService,
             state,
             () => busy,
             RunAsync,
             OpenFileAsync,
-            cancellationToken));
+            cancellationToken)
+        {
+            DeveloperGitService = developerGitService,
+            DocumentPrompt = documentPrompt,
+            OwnerWindow = OwnerWindow,
+            RefreshGitAsync = RefreshGitAsync,
+            OpenGitDiffAsync = OpenDiffAsync,
+            IsOriginalDocumentDirty = IsOriginalDocumentDirty,
+            HasDirtyOriginalDocuments = HasDirtyOriginalDocuments,
+            ReloadOriginalDocumentAsync = ReloadOriginalDocumentAsync,
+        };
+        filesTool = new(toolContext);
+        gitChangesTool = new(toolContext);
 
         Control files = filesTool.Content;
         Control sourceControl = BuildSourceControlTool();
@@ -634,13 +637,11 @@ internal sealed class WorkbenchDockHost
             Dispatcher.UIThread.Post(async () =>
                 await CloseAllSourceDocumentsAsync(WorkbenchDocumentTransition.Close));
             Dispatcher.UIThread.Post(async () => await InvalidateCodeIntelligenceAsync());
-            changes.ItemsSource = Array.Empty<ChangeChoice>();
+            gitChangesTool.Reset(active, sourceContextChanged: false);
             currentConflictInspection = null;
             currentConflictDocument = null;
             gitConflicts.ItemsSource = Array.Empty<ConflictChoice>();
             ClearGitConflictEditors();
-            gitStatus.Text = string.Empty;
-            gitSummary.Text = active is null ? "No workspace selected." : "Refresh Git state.";
         }
 
         GoalView? selectedGoal = snapshot.Goals.SelectedGoal;
@@ -652,11 +653,7 @@ internal sealed class WorkbenchDockHost
         {
             selectedGoalId = nextGoalId;
             Dispatcher.UIThread.Post(async () => await InvalidateCodeIntelligenceAsync());
-            changes.ItemsSource = Array.Empty<ChangeChoice>();
-            gitStatus.Text = string.Empty;
-            gitSummary.Text = active is null
-                ? "No workspace selected."
-                : "Refreshing Git state for the current source context…";
+            gitChangesTool.Reset(active, sourceContextChanged: true);
             if (active is { IsTrusted: true })
             {
                 Dispatcher.UIThread.Post(async () => await RefreshGitAsync());
@@ -786,7 +783,7 @@ internal sealed class WorkbenchDockHost
         WorkspaceView? active = ActiveWorkspace();
         if (busy || active is null || !active.IsTrusted)
         {
-            gitStatus.Text = active is null
+            GitStatus.Text = active is null
                 ? "Select a workspace first."
                 : "Trust the workspace before inspecting Git.";
             return;
@@ -800,7 +797,7 @@ internal sealed class WorkbenchDockHost
             WorkspaceGitStateView git = inspected.Git;
             if (git.Error is not null)
             {
-                gitStatus.Text = git.Error;
+                GitStatus.Text = git.Error;
                 return;
             }
 
@@ -837,162 +834,13 @@ internal sealed class WorkbenchDockHost
         });
     }
 
-    private void RenderGitState(WorkbenchWorkspaceContext context, WorkspaceGitStateView git)
-    {
-        int conflictCount = git.Changes.Count(change => change.IsConflicted ||
-            change.Status.Contains("Conflicted", StringComparison.OrdinalIgnoreCase));
-        gitFingerprint = git.Fingerprint;
-        currentGitContext = context;
-        gitSummary.Text = $"{context.Description}\nBranch {git.Branch}\n" +
-                          $"HEAD {git.HeadSha ?? "unborn"}\n" +
-                          $"{git.Changes.Count} change(s)" +
-                          (conflictCount > 0 ? $" · {conflictCount} conflict(s)" : string.Empty) +
-                          (git.IsTruncated ? " · truncated" : string.Empty);
-        changes.ItemsSource = git.Changes
-            .Select(change => new ChangeChoice(change, context.GoalId))
-            .ToArray();
-        currentPatchUnits = git.PatchUnits ?? [];
-        changes.SelectedIndex = git.Changes.Count > 0 ? 0 : -1;
-        UpdatePatchUnitChoices();
-        gitStatus.Text = conflictCount > 0
-            ? $"{conflictCount} unresolved Git conflict(s) block commit approval. " +
-              "Use the Conflicts tab to inspect base, ours, and theirs; save the result, then stage it explicitly."
-            : "Git state refreshed.";
-    }
+    private void RenderGitState(WorkbenchWorkspaceContext context, WorkspaceGitStateView git) =>
+        gitChangesTool.Render(context, git);
 
-    internal async ValueTask UpdateSelectedGitIndexAsync(DeveloperGitIndexAction action)
-    {
-        WorkspaceView? active = ActiveWorkspace();
-        if (busy || active is null || developerGitService is null ||
-            changes.SelectedItem is not ChangeChoice selected || string.IsNullOrEmpty(gitFingerprint))
-        {
-            gitStatus.Text = "Select a current Git change first.";
-            return;
-        }
-        if (action is DeveloperGitIndexAction.Stage && selected.Change.IsConflicted)
-        {
-            gitStatus.Text = "Use the Conflicts tab to inspect, save, and explicitly stage this merge result.";
-            return;
-        }
+    internal ValueTask UpdateSelectedGitIndexAsync(DeveloperGitIndexAction action) =>
+        gitChangesTool.UpdateSelectedIndexAsync(action);
 
-        await RunAsync(async () =>
-        {
-            DeveloperGitIndexCommandResult result;
-            if (patchUnits.SelectedItem is PatchChoice patch)
-            {
-                if (patch.Unit.Action != action)
-                {
-                    gitStatus.Text = $"That selection is for {patch.Unit.Action.ToString().ToLowerInvariant()}.";
-                    return;
-                }
-                result = await developerGitService.ApplyPatchAsync(new(
-                    WorkbenchRequest(active), new(gitFingerprint), patch.Unit.Id), cancellationToken);
-            }
-            else
-            {
-                result = await developerGitService.UpdateIndexAsync(new(
-                    WorkbenchRequest(active),
-                    new(gitFingerprint),
-                    action,
-                    [new(selected.Change.Path)]), cancellationToken);
-            }
-            if (result.State is not null) RenderGitState(result.Context, result.State);
-            gitStatus.Text = result.ErrorCode == "git_state_stale"
-                ? "Git changed outside Harness.NET. The view was refreshed; review it and retry."
-                : result.Error ?? $"{(action == DeveloperGitIndexAction.Stage ? "Staged" : "Unstaged")} {selected.Change.Path}.";
-        });
-    }
-
-    private void UpdatePatchUnitChoices()
-    {
-        if (changes.SelectedItem is not ChangeChoice selected)
-        {
-            patchUnits.ItemsSource = Array.Empty<PatchChoice>();
-            UpdateGitActionAvailability();
-            return;
-        }
-
-        patchUnits.ItemsSource = currentPatchUnits
-            .Where(unit => unit.Path.Value.Equals(selected.Change.Path, StringComparison.Ordinal))
-            .Select(unit => new PatchChoice(unit))
-            .ToArray();
-        patchUnits.SelectedIndex = -1;
-        UpdateGitActionAvailability();
-    }
-
-    private void UpdateGitActionAvailability()
-    {
-        ChangeChoice? file = changes.SelectedItem as ChangeChoice;
-        PatchChoice? patch = patchUnits.SelectedItem as PatchChoice;
-        stageGit.IsEnabled = file is not null && (patch is not null
-            ? patch.Unit.Action == DeveloperGitIndexAction.Stage
-            : file.Change.IsUnstaged || file.Change.IsConflicted);
-        unstageGit.IsEnabled = file is not null && (patch is not null
-            ? patch.Unit.Action == DeveloperGitIndexAction.Unstage
-            : file.Change.IsStaged);
-        clearGitSelection.IsEnabled = patch is not null;
-        bool original = currentGitContext?.Scope == WorkbenchWorkspaceScope.OriginalWorkspace;
-        discardGit.IsEnabled = original && patch is null && file is not null &&
-                               file.Change.IsUnstaged && !file.Change.IsConflicted &&
-                               !file.Change.WorktreeStatus.Contains("NewInWorkdir", StringComparison.Ordinal);
-        cleanGit.IsEnabled = original && patch is null && file is not null &&
-                             file.Change.IsUnstaged && !file.Change.IsStaged &&
-                             !file.Change.IsConflicted &&
-                             file.Change.WorktreeStatus.Contains("NewInWorkdir", StringComparison.Ordinal);
-        commitGit.IsEnabled = original && currentGitContext is not null &&
-                              changes.ItemsSource?.Cast<ChangeChoice>().Any(choice =>
-                                  choice.Change.IsStaged && !choice.Change.IsConflicted) == true;
-    }
-
-    internal async ValueTask ComposeAndCommitGitAsync()
-    {
-        WorkspaceView? active = ActiveWorkspace();
-        if (busy || active is null || developerGitService is null ||
-            currentGitContext?.Scope != WorkbenchWorkspaceScope.OriginalWorkspace ||
-            string.IsNullOrEmpty(gitFingerprint))
-        {
-            gitStatus.Text = "Refresh the original workspace Git state before committing.";
-            return;
-        }
-        foreach (SourceDocumentSession session in sourceDocuments.Values.Where(session =>
-                     session.View.GoalId is null))
-            session.SynchronizeDirtyState();
-        if (sourceDocuments.Values.Any(session => session.View.GoalId is null && session.IsDirty))
-        {
-            gitStatus.Text = "Save or discard every unsaved original-workspace editor buffer before committing.";
-            return;
-        }
-        DeveloperGitCommitDraft? draft = await documentPrompt.CollectGitCommitAsync(OwnerWindow());
-        if (draft is null)
-        {
-            gitStatus.Text = "Developer Git commit cancelled; no commit was created.";
-            return;
-        }
-        await RunAsync(async () =>
-        {
-            DeveloperGitCommitPreviewResult result = await developerGitService.PreviewCommitAsync(new(
-                WorkbenchRequest(active), new(gitFingerprint), draft.Action, draft.HookPolicy,
-                draft.Message), cancellationToken);
-            if (result.State is not null && currentGitContext is not null)
-                RenderGitState(currentGitContext, result.State);
-            if (result.Preview is null)
-            {
-                gitStatus.Text = result.Error ?? "The developer commit preview is unavailable.";
-                return;
-            }
-            if (!await documentPrompt.ConfirmGitCommitAsync(result.Preview, OwnerWindow()))
-            {
-                gitStatus.Text = "Developer Git commit cancelled after preview; no commit was created.";
-                return;
-            }
-            DeveloperGitCommitCommandResult committed = await developerGitService.CommitAsync(
-                result.Preview, cancellationToken);
-            if (committed.State is not null) RenderGitState(committed.Context, committed.State);
-            gitStatus.Text = committed.Error ??
-                $"{(draft.Action == DeveloperGitCommitAction.Amend ? "Amended" : "Created")} commit {committed.CommitSha}.";
-        });
-    }
-
+    internal ValueTask ComposeAndCommitGitAsync() => gitChangesTool.ComposeAndCommitAsync();
     internal async ValueTask RefreshGitBranchesAsync()
     {
         WorkspaceView? active = ActiveWorkspace();
@@ -1012,7 +860,7 @@ internal sealed class WorkbenchDockHost
         if (busy || active is null || developerGitService is null ||
             currentBranchInspection?.State is null)
         {
-            gitStatus.Text = "Refresh local branches first.";
+            GitStatus.Text = "Refresh local branches first.";
             return;
         }
         bool changesActiveContext = action == DeveloperGitBranchAction.Switch ||
@@ -1020,7 +868,7 @@ internal sealed class WorkbenchDockHost
         if (changesActiveContext && selected is not null &&
             !await PrepareForWorkspaceChangeAsync())
         {
-            gitStatus.Text = "Branch switch cancelled; unsaved documents remain open.";
+            GitStatus.Text = "Branch switch cancelled; unsaved documents remain open.";
             return;
         }
         string name = gitBranchName.Text?.Trim() ?? string.Empty;
@@ -1033,13 +881,13 @@ internal sealed class WorkbenchDockHost
             if (result.State is not null) RenderGitState(result.Context, result.State);
             if (result.Error is not null)
             {
-                gitStatus.Text = result.Error;
+                GitStatus.Text = result.Error;
                 return;
             }
             if (action == DeveloperGitBranchAction.Switch ||
                 action == DeveloperGitBranchAction.Rename && selected?.IsCurrent == true)
                 await refreshWorkspaceContext();
-            gitStatus.Text = $"Branch {action.ToString().ToLowerInvariant()} completed.";
+            GitStatus.Text = $"Branch {action.ToString().ToLowerInvariant()} completed.";
         });
     }
 
@@ -1050,7 +898,7 @@ internal sealed class WorkbenchDockHost
             currentBranchInspection?.State is null ||
             gitBranches.SelectedItem is not BranchChoice selected)
         {
-            gitStatus.Text = "Select a current local branch first.";
+            GitStatus.Text = "Select a current local branch first.";
             return;
         }
         await RunAsync(async () =>
@@ -1061,19 +909,19 @@ internal sealed class WorkbenchDockHost
             RenderGitBranches(result.Inspection);
             if (result.Preview is null)
             {
-                gitStatus.Text = result.Error ?? "The branch deletion preview is unavailable.";
+                GitStatus.Text = result.Error ?? "The branch deletion preview is unavailable.";
                 return;
             }
             if (!await documentPrompt.ConfirmGitBranchDeleteAsync(result.Preview, OwnerWindow()))
             {
-                gitStatus.Text = "Branch deletion cancelled; no reference was changed.";
+                GitStatus.Text = "Branch deletion cancelled; no reference was changed.";
                 return;
             }
             DeveloperGitBranchInspectionResult applied = await developerGitService.ApplyBranchDeleteAsync(
                 result.Preview, cancellationToken);
             RenderGitBranches(applied);
             if (applied.State is not null) RenderGitState(applied.Context, applied.State);
-            gitStatus.Text = applied.Error ?? $"Deleted local branch {selected.Branch.Name.Value}.";
+            GitStatus.Text = applied.Error ?? $"Deleted local branch {selected.Branch.Name.Value}.";
         });
     }
 
@@ -1082,7 +930,7 @@ internal sealed class WorkbenchDockHost
         currentBranchInspection = result;
         gitBranches.ItemsSource = result.Branches.Select(branch => new BranchChoice(branch)).ToArray();
         gitBranches.SelectedIndex = result.Branches.Count > 0 ? 0 : -1;
-        if (result.Error is not null) gitStatus.Text = result.Error;
+        if (result.Error is not null) GitStatus.Text = result.Error;
     }
 
     internal async ValueTask RefreshGitTagsAsync()
@@ -1098,7 +946,7 @@ internal sealed class WorkbenchDockHost
         WorkspaceView? active = ActiveWorkspace();
         if (busy || active is null || developerGitService is null || currentTagInspection?.State is null)
         {
-            gitStatus.Text = "Refresh local tags first.";
+            GitStatus.Text = "Refresh local tags first.";
             return;
         }
         string name = gitTagName.Text?.Trim() ?? string.Empty;
@@ -1111,7 +959,7 @@ internal sealed class WorkbenchDockHost
                 string.IsNullOrWhiteSpace(message) ? null : new(message)), cancellationToken);
             RenderGitTags(result);
             if (result.State is not null) RenderGitState(result.Context, result.State);
-            gitStatus.Text = result.Error ?? $"Created local tag {name}.";
+            GitStatus.Text = result.Error ?? $"Created local tag {name}.";
         });
     }
 
@@ -1121,7 +969,7 @@ internal sealed class WorkbenchDockHost
         if (busy || active is null || developerGitService is null || currentTagInspection?.State is null ||
             gitTags.SelectedItem is not TagChoice selected)
         {
-            gitStatus.Text = "Select a current local tag first.";
+            GitStatus.Text = "Select a current local tag first.";
             return;
         }
         await RunAsync(async () =>
@@ -1132,19 +980,19 @@ internal sealed class WorkbenchDockHost
             RenderGitTags(result.Inspection);
             if (result.Preview is null)
             {
-                gitStatus.Text = result.Error ?? "The tag deletion preview is unavailable.";
+                GitStatus.Text = result.Error ?? "The tag deletion preview is unavailable.";
                 return;
             }
             if (!await documentPrompt.ConfirmGitTagDeleteAsync(result.Preview, OwnerWindow()))
             {
-                gitStatus.Text = "Tag deletion cancelled; no reference was changed.";
+                GitStatus.Text = "Tag deletion cancelled; no reference was changed.";
                 return;
             }
             DeveloperGitTagInspectionResult applied = await developerGitService.ApplyTagDeleteAsync(
                 result.Preview, cancellationToken);
             RenderGitTags(applied);
             if (applied.State is not null) RenderGitState(applied.Context, applied.State);
-            gitStatus.Text = applied.Error ?? $"Deleted local tag {selected.Tag.Name.Value}.";
+            GitStatus.Text = applied.Error ?? $"Deleted local tag {selected.Tag.Name.Value}.";
         });
     }
 
@@ -1153,7 +1001,7 @@ internal sealed class WorkbenchDockHost
         currentTagInspection = result;
         gitTags.ItemsSource = result.Tags.Select(tag => new TagChoice(tag)).ToArray();
         gitTags.SelectedIndex = result.Tags.Count > 0 ? 0 : -1;
-        if (result.Error is not null) gitStatus.Text = result.Error;
+        if (result.Error is not null) GitStatus.Text = result.Error;
     }
 
     internal async ValueTask RefreshGitWorktreesAsync()
@@ -1171,7 +1019,7 @@ internal sealed class WorkbenchDockHost
             currentWorktreeInspection?.State is null ||
             currentWorktreeInspection.WorktreeFingerprint is null)
         {
-            gitStatus.Text = "Refresh linked worktrees first.";
+            GitStatus.Text = "Refresh linked worktrees first.";
             return;
         }
         string path = gitWorktreePath.Text?.Trim() ?? string.Empty;
@@ -1187,7 +1035,7 @@ internal sealed class WorkbenchDockHost
                 createWorktreeBranch.IsChecked == true ? new(branch) : null), cancellationToken);
             RenderGitWorktrees(result);
             if (result.State is not null) RenderGitState(result.Context, result.State);
-            gitStatus.Text = result.Error ?? $"Created linked worktree at {path}.";
+            GitStatus.Text = result.Error ?? $"Created linked worktree at {path}.";
         });
     }
 
@@ -1195,12 +1043,12 @@ internal sealed class WorkbenchDockHost
     {
         if (busy || gitWorktrees.SelectedItem is not WorktreeChoice selected)
         {
-            gitStatus.Text = "Select a linked worktree first.";
+            GitStatus.Text = "Select a linked worktree first.";
             return;
         }
         if (selected.Worktree.IsMain)
         {
-            gitStatus.Text = "The original worktree is already the active workspace.";
+            GitStatus.Text = "The original worktree is already the active workspace.";
             return;
         }
         await manageWorkspaceAt(selected.Worktree.Path.Value);
@@ -1214,7 +1062,7 @@ internal sealed class WorkbenchDockHost
             currentWorktreeInspection.WorktreeFingerprint is null ||
             gitWorktrees.SelectedItem is not WorktreeChoice selected)
         {
-            gitStatus.Text = "Select a current linked worktree first.";
+            GitStatus.Text = "Select a current linked worktree first.";
             return;
         }
         await RunAsync(async () =>
@@ -1229,19 +1077,19 @@ internal sealed class WorkbenchDockHost
             RenderGitWorktrees(result.Inspection);
             if (result.Preview is null)
             {
-                gitStatus.Text = result.Error ?? "The worktree removal preview is unavailable.";
+                GitStatus.Text = result.Error ?? "The worktree removal preview is unavailable.";
                 return;
             }
             if (!await documentPrompt.ConfirmGitWorktreeRemoveAsync(result.Preview, OwnerWindow()))
             {
-                gitStatus.Text = "Worktree removal cancelled; no directory was deleted.";
+                GitStatus.Text = "Worktree removal cancelled; no directory was deleted.";
                 return;
             }
             DeveloperGitWorktreeInspectionResult applied =
                 await developerGitService.ApplyWorktreeRemoveAsync(result.Preview, cancellationToken);
             RenderGitWorktrees(applied);
             if (applied.State is not null) RenderGitState(applied.Context, applied.State);
-            gitStatus.Text = applied.Error ?? $"Removed linked worktree {selected.Worktree.Path.Value}.";
+            GitStatus.Text = applied.Error ?? $"Removed linked worktree {selected.Worktree.Path.Value}.";
         });
     }
 
@@ -1250,7 +1098,7 @@ internal sealed class WorkbenchDockHost
         currentWorktreeInspection = result;
         gitWorktrees.ItemsSource = result.Worktrees.Select(worktree => new WorktreeChoice(worktree)).ToArray();
         gitWorktrees.SelectedIndex = result.Worktrees.Count > 0 ? 0 : -1;
-        if (result.Error is not null) gitStatus.Text = result.Error;
+        if (result.Error is not null) GitStatus.Text = result.Error;
     }
 
     internal async ValueTask RefreshGitStashesAsync()
@@ -1267,7 +1115,7 @@ internal sealed class WorkbenchDockHost
         if (busy || active is null || developerGitService is null ||
             currentStashInspection?.State is null)
         {
-            gitStatus.Text = "Refresh Git stashes first.";
+            GitStatus.Text = "Refresh Git stashes first.";
             return;
         }
         string message = gitStashMessage.Text?.Trim() ?? string.Empty;
@@ -1280,7 +1128,7 @@ internal sealed class WorkbenchDockHost
                 includeUntrackedInStash.IsChecked == true), cancellationToken);
             RenderGitStashes(result);
             if (result.State is not null) RenderGitState(result.Context, result.State);
-            gitStatus.Text = result.Error ?? "Created a new stash from the displayed working state.";
+            GitStatus.Text = result.Error ?? "Created a new stash from the displayed working state.";
         });
     }
 
@@ -1290,7 +1138,7 @@ internal sealed class WorkbenchDockHost
         if (busy || active is null || developerGitService is null ||
             currentStashInspection?.State is null || gitStashes.SelectedItem is not StashChoice selected)
         {
-            gitStatus.Text = "Select a current Git stash first.";
+            GitStatus.Text = "Select a current Git stash first.";
             return;
         }
         await RunAsync(async () =>
@@ -1300,7 +1148,7 @@ internal sealed class WorkbenchDockHost
                 selected.Stash.CommitSha), cancellationToken);
             RenderGitStashes(result);
             if (result.State is not null) RenderGitState(result.Context, result.State);
-            gitStatus.Text = result.Error ??
+            GitStatus.Text = result.Error ??
                 $"Applied {selected.Stash.Selector}; the stash remains available until explicitly deleted.";
         });
     }
@@ -1311,7 +1159,7 @@ internal sealed class WorkbenchDockHost
         if (busy || active is null || developerGitService is null ||
             currentStashInspection?.State is null || gitStashes.SelectedItem is not StashChoice selected)
         {
-            gitStatus.Text = "Select a current Git stash first.";
+            GitStatus.Text = "Select a current Git stash first.";
             return;
         }
         await RunAsync(async () =>
@@ -1322,19 +1170,19 @@ internal sealed class WorkbenchDockHost
             RenderGitStashes(result.Inspection);
             if (result.Preview is null)
             {
-                gitStatus.Text = result.Error ?? "The stash deletion preview is unavailable.";
+                GitStatus.Text = result.Error ?? "The stash deletion preview is unavailable.";
                 return;
             }
             if (!await documentPrompt.ConfirmGitStashDropAsync(result.Preview, OwnerWindow()))
             {
-                gitStatus.Text = "Stash deletion cancelled; the stash remains available.";
+                GitStatus.Text = "Stash deletion cancelled; the stash remains available.";
                 return;
             }
             DeveloperGitStashInspectionResult applied = await developerGitService.ApplyStashDropAsync(
                 result.Preview, cancellationToken);
             RenderGitStashes(applied);
             if (applied.State is not null) RenderGitState(applied.Context, applied.State);
-            gitStatus.Text = applied.Error ?? $"Deleted stash {selected.Stash.Selector}.";
+            GitStatus.Text = applied.Error ?? $"Deleted stash {selected.Stash.Selector}.";
         });
     }
 
@@ -1343,7 +1191,7 @@ internal sealed class WorkbenchDockHost
         currentStashInspection = result;
         gitStashes.ItemsSource = result.Stashes.Select(stash => new StashChoice(stash)).ToArray();
         gitStashes.SelectedIndex = result.Stashes.Count > 0 ? 0 : -1;
-        if (result.Error is not null) gitStatus.Text = result.Error;
+        if (result.Error is not null) GitStatus.Text = result.Error;
     }
 
     internal async ValueTask RefreshGitRemotesAsync()
@@ -1376,7 +1224,7 @@ internal sealed class WorkbenchDockHost
         if (busy || active is null || developerGitService is null ||
             currentRemoteInspection?.State is null || gitRemotes.SelectedItem is not RemoteChoice selected)
         {
-            gitStatus.Text = "Refresh and select a configured Git remote first.";
+            GitStatus.Text = "Refresh and select a configured Git remote first.";
             return;
         }
         string source = gitRemoteSource.Text?.Trim() ?? string.Empty;
@@ -1386,7 +1234,7 @@ internal sealed class WorkbenchDockHost
         if ((action is DeveloperGitRemoteAction.PullMerge or DeveloperGitRemoteAction.PullRebase) &&
             !await PrepareForWorkspaceChangeAsync())
         {
-            gitStatus.Text = "Remote integration cancelled; unsaved documents remain open.";
+            GitStatus.Text = "Remote integration cancelled; unsaved documents remain open.";
             return;
         }
         await RunAsync(async () =>
@@ -1397,19 +1245,19 @@ internal sealed class WorkbenchDockHost
             RenderGitRemotes(result.Inspection);
             if (result.Preview is null)
             {
-                gitStatus.Text = result.Error ?? "The Git remote operation preview is unavailable.";
+                GitStatus.Text = result.Error ?? "The Git remote operation preview is unavailable.";
                 return;
             }
             if (!await documentPrompt.ConfirmGitRemoteAsync(result.Preview, OwnerWindow()))
             {
-                gitStatus.Text = "Git remote operation cancelled; no network or integration action ran.";
+                GitStatus.Text = "Git remote operation cancelled; no network or integration action ran.";
                 return;
             }
             DeveloperGitRemoteInspectionResult applied = await developerGitService.ApplyRemoteAsync(
                 result.Preview, cancellationToken);
             RenderGitRemotes(applied);
             if (applied.State is not null) RenderGitState(applied.Context, applied.State);
-            gitStatus.Text = applied.Error ?? $"Git {action} completed for {selected.Remote.Name.Value}.";
+            GitStatus.Text = applied.Error ?? $"Git {action} completed for {selected.Remote.Name.Value}.";
             if (applied.Error is null &&
                 (action is DeveloperGitRemoteAction.PullMerge or DeveloperGitRemoteAction.PullRebase))
                 await refreshWorkspaceContext();
@@ -1437,7 +1285,7 @@ internal sealed class WorkbenchDockHost
         currentHistoryPage = page;
         gitHistory.ItemsSource = BuildHistoryChoices(page.Commits);
         if (!append) gitHistory.SelectedIndex = page.Commits.Count > 0 ? 0 : -1;
-        gitStatus.Text = page.Error ?? (page.Path is null
+        GitStatus.Text = page.Error ?? (page.Path is null
             ? $"Showing {page.Commits.Count} commits." :
             $"Showing {page.Commits.Count} commits for {page.Path.Value}.");
     }
@@ -1469,7 +1317,7 @@ internal sealed class WorkbenchDockHost
                 $"Author {detail.AuthorName} <{detail.AuthorEmail}> · {detail.AuthoredAt:u}\n" +
                 $"Committer {detail.CommitterName} <{detail.CommitterEmail}> · {detail.CommittedAt:u}\n\n" +
                 $"{detail.Message}{(detail.MessageIsTruncated ? "\n[message truncated]" : string.Empty)}\n\n{diffs}";
-            gitStatus.Text = $"Showing exact parent/child diff for {detail.Sha.Value}.";
+            GitStatus.Text = $"Showing exact parent/child diff for {detail.Sha.Value}.";
         });
     }
 
@@ -1479,7 +1327,7 @@ internal sealed class WorkbenchDockHost
         string path = gitHistoryPath.Text?.Trim() ?? string.Empty;
         if (busy || active is null || developerGitService is null || path.Length == 0)
         {
-            gitStatus.Text = "Enter a repository path before opening blame.";
+            GitStatus.Text = "Enter a repository path before opening blame.";
             return;
         }
         await RunAsync(async () =>
@@ -1491,7 +1339,7 @@ internal sealed class WorkbenchDockHost
                 $"{line.AuthorName} {line.OriginalPath.Value}:{line.OriginalLineNumber}  {line.Text}")) +
                 (page.NextStartLine is null ? string.Empty :
                     $"\n\nBlame is paged; next line is {page.NextStartLine.Value}.");
-            gitStatus.Text = page.Error ?? $"Showing blame for {path}.";
+            GitStatus.Text = page.Error ?? $"Showing blame for {path}.";
         });
     }
 
@@ -1788,64 +1636,31 @@ internal sealed class WorkbenchDockHost
         }
     }
 
-    internal async ValueTask PreviewAndApplyGitDestructiveAsync(DeveloperGitDestructiveAction action)
+    internal ValueTask PreviewAndApplyGitDestructiveAsync(DeveloperGitDestructiveAction action) =>
+        gitChangesTool.PreviewAndApplyDestructiveAsync(action);
+
+    private bool IsOriginalDocumentDirty(string path)
     {
-        WorkspaceView? active = ActiveWorkspace();
-        if (busy || active is null || developerGitService is null ||
-            changes.SelectedItem is not ChangeChoice selected || string.IsNullOrEmpty(gitFingerprint))
-        {
-            gitStatus.Text = "Select a current whole-file Git change first.";
-            return;
-        }
-        if (patchUnits.SelectedItem is not null)
-        {
-            gitStatus.Text = "Choose Whole file before a destructive Git action.";
-            return;
-        }
-        SourceDocumentSession? openSession = sourceDocuments.Values.FirstOrDefault(session =>
-            session.View.GoalId is null &&
-            session.View.Path.Value.Equals(selected.Change.Path, StringComparison.Ordinal));
-        openSession?.SynchronizeDirtyState();
-        if (openSession?.IsDirty == true)
-        {
-            gitStatus.Text = $"Save or discard the unsaved editor buffer for {selected.Change.Path} first.";
-            return;
-        }
+        SourceDocumentSession? session = sourceDocuments.Values.FirstOrDefault(item =>
+            item.View.GoalId is null && item.View.Path.Value.Equals(path, StringComparison.Ordinal));
+        session?.SynchronizeDirtyState();
+        return session?.IsDirty == true;
+    }
 
-        await RunAsync(async () =>
-        {
-            DeveloperGitDestructivePreviewResult result = await developerGitService.PreviewDestructiveAsync(new(
-                WorkbenchRequest(active),
-                new(gitFingerprint),
-                action,
-                [new(selected.Change.Path)]), cancellationToken);
-            if (result.State is not null && currentGitContext is not null)
-                RenderGitState(currentGitContext, result.State);
-            if (result.Preview is null)
-            {
-                gitStatus.Text = result.Error ?? "The destructive Git preview is unavailable.";
-                return;
-            }
-            if (!await documentPrompt.ConfirmGitDestructiveAsync(result.Preview, OwnerWindow()))
-            {
-                gitStatus.Text = "Destructive Git action cancelled; no files were changed.";
-                return;
-            }
+    private bool HasDirtyOriginalDocuments()
+    {
+        foreach (SourceDocumentSession session in sourceDocuments.Values.Where(item =>
+                     item.View.GoalId is null))
+            session.SynchronizeDirtyState();
+        return sourceDocuments.Values.Any(item => item.View.GoalId is null && item.IsDirty);
+    }
 
-            DeveloperGitIndexCommandResult applied = await developerGitService.ApplyDestructiveAsync(
-                result.Preview, cancellationToken);
-            if (applied.State is not null) RenderGitState(applied.Context, applied.State);
-            if (applied.Error is not null)
-            {
-                gitStatus.Text = applied.Error;
-                return;
-            }
-            if (openSession is not null)
-                await ReloadSourceDocumentAsync(openSession, confirmDiscard: false);
-            gitStatus.Text = action == DeveloperGitDestructiveAction.DiscardTrackedWorktree
-                ? $"Discarded working-tree changes in {selected.Change.Path}. Staged content was preserved."
-                : $"Deleted untracked path {selected.Change.Path}. Git recovery is not available.";
-        });
+    private async ValueTask ReloadOriginalDocumentAsync(string path)
+    {
+        SourceDocumentSession? session = sourceDocuments.Values.FirstOrDefault(item =>
+            item.View.GoalId is null && item.View.Path.Value.Equals(path, StringComparison.Ordinal));
+        if (session is not null)
+            await ReloadSourceDocumentAsync(session, confirmDiscard: false);
     }
 
     internal async ValueTask OpenDiffAsync()
@@ -1853,7 +1668,7 @@ internal sealed class WorkbenchDockHost
         WorkspaceView? active = ActiveWorkspace();
         if (busy || active is null || !active.IsTrusted)
         {
-            gitStatus.Text = active is null
+            GitStatus.Text = active is null
                 ? "Select a workspace first."
                 : "Trust the workspace before inspecting Git.";
             return;
@@ -1867,13 +1682,13 @@ internal sealed class WorkbenchDockHost
             WorkspaceGitStateView git = inspected.Git;
             if (git.Error is not null)
             {
-                gitStatus.Text = git.Error;
+                GitStatus.Text = git.Error;
                 return;
             }
 
             if (string.IsNullOrWhiteSpace(git.Diff))
             {
-                gitStatus.Text = "The working tree has no textual diff.";
+                GitStatus.Text = "The working tree has no textual diff.";
                 return;
             }
 
@@ -1881,7 +1696,7 @@ internal sealed class WorkbenchDockHost
                 DiffDocumentId(inspected.Context),
                 $"{git.Branch} working diff",
                 CreateDiffView(git.Diff));
-            gitStatus.Text = $"Opened the current bounded Git diff · {inspected.Context.Description}.";
+            GitStatus.Text = $"Opened the current bounded Git diff · {inspected.Context.Description}.";
         });
     }
 
@@ -2204,69 +2019,10 @@ internal sealed class WorkbenchDockHost
             Margin = new Thickness(10),
             RowSpacing = 8,
         };
-        grid.Children.Add(gitSummary);
-        WrapPanel actions = new()
-        {
-            Orientation = AvaloniaOrientation.Horizontal,
-        };
-        Button refresh = new() { Content = "Refresh" };
-        refresh.Margin = new Thickness(0, 0, 6, 6);
-        AutomationProperties.SetName(refresh, "Refresh Git working-tree state");
-        refresh.Click += async (_, _) => await RefreshGitAsync();
-        Button openDiff = new() { Content = "Open diff" };
-        openDiff.Margin = new Thickness(0, 0, 6, 6);
-        AutomationProperties.SetName(openDiff, "Open bounded Git working-tree diff");
-        openDiff.Click += async (_, _) => await OpenDiffAsync();
-        actions.Children.Add(refresh);
-        actions.Children.Add(openDiff);
-        stageGit.Margin = new Thickness(0, 0, 6, 6);
-        AutomationProperties.SetName(stageGit, "Stage selected Git change");
-        stageGit.Click += async (_, _) => await UpdateSelectedGitIndexAsync(DeveloperGitIndexAction.Stage);
-        unstageGit.Margin = new Thickness(0, 0, 6, 6);
-        AutomationProperties.SetName(unstageGit, "Unstage selected Git change");
-        unstageGit.Click += async (_, _) => await UpdateSelectedGitIndexAsync(DeveloperGitIndexAction.Unstage);
-        clearGitSelection.Margin = new Thickness(0, 0, 6, 6);
-        AutomationProperties.SetName(clearGitSelection, "Clear Git hunk or line selection");
-        clearGitSelection.Click += (_, _) => patchUnits.SelectedIndex = -1;
-        actions.Children.Add(stageGit);
-        actions.Children.Add(unstageGit);
-        actions.Children.Add(clearGitSelection);
-        discardGit.Margin = new Thickness(0, 0, 6, 6);
-        AutomationProperties.SetName(discardGit, "Preview discard of selected tracked Git file");
-        discardGit.Click += async (_, _) => await PreviewAndApplyGitDestructiveAsync(
-            DeveloperGitDestructiveAction.DiscardTrackedWorktree);
-        cleanGit.Margin = new Thickness(0, 0, 6, 6);
-        AutomationProperties.SetName(cleanGit, "Preview deletion of selected untracked Git file");
-        cleanGit.Click += async (_, _) => await PreviewAndApplyGitDestructiveAsync(
-            DeveloperGitDestructiveAction.DeleteUntracked);
-        actions.Children.Add(discardGit);
-        actions.Children.Add(cleanGit);
-        commitGit.Margin = new Thickness(0, 0, 6, 6);
-        AutomationProperties.SetName(commitGit, "Compose developer Git commit from staged changes");
-        commitGit.Click += async (_, _) => await ComposeAndCommitGitAsync();
-        actions.Children.Add(commitGit);
-        Grid.SetRow(actions, 1);
-        grid.Children.Add(actions);
-
-        Grid changePanel = new() { RowDefinitions = new("2*,*"), RowSpacing = 8 };
-        AutomationProperties.SetName(changes, "Git working-tree changes");
-        changes.DoubleTapped += async (_, _) =>
-        {
-            if (changes.SelectedItem is ChangeChoice choice)
-            {
-                await OpenFileAsync(choice.Change.Path, choice.GoalId);
-            }
-        };
-        changes.SelectionChanged += (_, _) => UpdatePatchUnitChoices();
-        changePanel.Children.Add(changes);
-        AutomationProperties.SetName(patchUnits, "Git hunks and changed lines");
-        patchUnits.SelectionMode = SelectionMode.Single;
-        patchUnits.SelectionChanged += (_, _) => UpdateGitActionAvailability();
-        ToolTip.SetTip(patchUnits,
-            "Select one exact hunk or changed line, then choose Stage or Unstage. Clear the selection to act on the whole file.");
-        Grid.SetRow(patchUnits, 1);
-        changePanel.Children.Add(patchUnits);
-
+        grid.Children.Add(gitChangesTool.Summary);
+        Grid.SetRow(gitChangesTool.Actions, 1);
+        grid.Children.Add(gitChangesTool.Actions);
+        Control changePanel = gitChangesTool.Content;
         WrapPanel branchActions = new() { Orientation = AvaloniaOrientation.Horizontal };
         Button refreshBranches = new() { Content = "Refresh branches" };
         Button createBranch = new() { Content = "Create" };
@@ -2603,8 +2359,8 @@ internal sealed class WorkbenchDockHost
         Grid.SetRow(tabs, 2);
         grid.Children.Add(tabs);
 
-        Grid.SetRow(gitStatus, 3);
-        grid.Children.Add(gitStatus);
+        Grid.SetRow(GitStatus, 3);
+        grid.Children.Add(GitStatus);
         return grid;
     }
 
@@ -5584,9 +5340,9 @@ internal sealed class WorkbenchDockHost
     /// <summary>Activates the Git panel, the same path as its keyboard shortcut.</summary>
     internal bool ShowGit() => ActivateTool(WorkbenchDockIds.GitTool);
 
-    internal string GitStatusText => gitStatus.Text ?? string.Empty;
+    internal string GitStatusText => GitStatus.Text ?? string.Empty;
 
-    internal string GitSummaryText => gitSummary.Text ?? string.Empty;
+    internal string GitSummaryText => gitChangesTool.Summary.Text ?? string.Empty;
 
     /// <summary>Activates the Run output panel, the same path as its keyboard shortcut.</summary>
     internal bool ShowRunOutput() => ActivateTool(WorkbenchDockIds.RunOutputTool);
@@ -5878,34 +5634,16 @@ internal sealed class WorkbenchDockHost
         catch (OperationCanceledException)
         {
             filesTool.ReportStatus("Workspace operation cancelled.");
-            gitStatus.Text = "Workspace operation cancelled.";
+            GitStatus.Text = "Workspace operation cancelled.";
         }
         catch (Exception exception)
         {
             filesTool.ReportStatus(exception.Message);
-            gitStatus.Text = exception.Message;
+            GitStatus.Text = exception.Message;
         }
         finally
         {
             busy = false;
-        }
-    }
-
-    private sealed record ChangeChoice(WorkspaceGitFileChangeView Change, GoalId? GoalId)
-    {
-        public override string ToString()
-        {
-            string flags = $"{(Change.IsStaged ? "S" : " ")}{(Change.IsUnstaged ? "M" : " ")}";
-            return $"[{flags}]  {Change.Path}" + (Change.IsConflicted ? "  CONFLICT" : string.Empty);
-        }
-    }
-
-    private sealed record PatchChoice(DeveloperGitPatchUnitView Unit)
-    {
-        public override string ToString()
-        {
-            string direction = Unit.Action == DeveloperGitIndexAction.Stage ? "STAGE" : "UNSTAGE";
-            return $"[{direction} {Unit.Kind.ToString().ToUpperInvariant()}] {Unit.Label} · {Unit.Preview}";
         }
     }
 

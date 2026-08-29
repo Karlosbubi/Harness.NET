@@ -882,8 +882,8 @@ Acceptance criteria:
 ### 060 — workbench composition refactor
 
 Status: `In progress` — PR #2 merged slice 060.0 and the shrink-only budget
-infrastructure. Slice 060.1 extracted the Files/Search units and their focused tests;
-extraction slices 060.2–060.8 remain.
+infrastructure. Slices 060.1 and 060.2 extracted the Files/Search and Git-changes
+units with focused tests; extraction slices 060.3–060.8 remain.
 
 Dependencies: 049, 050. Coordinates with in-progress 052.
 
