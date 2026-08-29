@@ -25,7 +25,6 @@ public sealed class SourceSizeBudgetTests
             ["tests/Harness.BusinessLogic.Tests/Workflows/GoalWorkflowServiceTests.cs"] = 832,
             ["tests/Harness.DataAccess.Tests/CodeIntelligence/RoslynCodeIntelligenceEngineTests.cs"] = 2_019,
             ["tests/Harness.DataAccess.Tests/Inspection/LibGitDeveloperGitRepositoryTests.cs"] = 1_185,
-            ["tests/Harness.Presentation.Avalonia.Tests/PresentationControlTests.cs"] = 4_052,
         };
 
     [Fact]
