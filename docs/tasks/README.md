@@ -888,8 +888,8 @@ remotes, history/blame, and the conflict editor with its Roslyn lifecycle. Slice
 extracted run output, Problems, document sessions, Roslyn lifecycle/interactions,
 rename, transformations, navigation, inspection, CodeLens, layout lifecycle,
 cross-tool focus/accessibility, and overview composition. The 795-line host has left
-the burn-down allowlist. Slice 060.6 has extracted bounded feature command partials
-and removed the production store from the allowlist; its test split and slices
+the burn-down allowlist. Slice 060.6 has extracted bounded feature command and test
+partials; both the production and test stores have left the allowlist. Slices
 060.7–060.8 remain.
 
 Dependencies: 049, 050. Coordinates with in-progress 052.

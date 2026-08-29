@@ -607,7 +607,8 @@ replacement and adaptive viewport behavior now live in `WorkbenchLayoutHost`, wh
 `WorkbenchNavigator` and `WorkbenchOverview` own cross-tool focus/accessibility and
 overview documents. The 795-line coordinator has left the source-size allowlist.
 Slice 060.6 now has a 523-line state/reducer coordinator and bounded feature command
-partials; its test split remains. Slices 060.7–060.8 follow.
+and test partials; both production and test store files have left the allowlist.
+Slices 060.7–060.8 follow.
 
 ### Complete: Task 061 — architecture enforcement and composition seams
 
