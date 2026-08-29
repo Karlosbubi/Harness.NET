@@ -45,6 +45,51 @@ public enum KeybindingCommand
     OrganizeImports,
     RemoveUnusedImports,
     ShowQuickFixes,
+    RefreshFiles,
+    SearchWorkspace,
+    RefreshGit,
+    StageGitChange,
+    UnstageGitChange,
+    SelectWholeGitFile,
+    DiscardGitChange,
+    DeleteUntrackedGitFile,
+    CommitGitChange,
+    RefreshGitBranches,
+    CreateGitBranch,
+    SwitchGitBranch,
+    RenameGitBranch,
+    DeleteGitBranch,
+    RefreshGitTags,
+    CreateGitTag,
+    DeleteGitTag,
+    RefreshGitWorktrees,
+    CreateGitWorktree,
+    OpenGitWorktree,
+    RemoveGitWorktree,
+    RefreshGitStashes,
+    CreateGitStash,
+    ApplyGitStash,
+    DeleteGitStash,
+    RefreshGitRemotes,
+    FetchGitRemote,
+    IntegrateGitRemote,
+    PushGitRemote,
+    RefreshGitHistory,
+    LoadMoreGitHistory,
+    ShowGitBlame,
+    RefreshGitConflicts,
+    SaveGitConflict,
+    StageGitConflict,
+    UseGitConflictBase,
+    UseGitConflictOurs,
+    UseGitConflictTheirs,
+    RefreshRunOutput,
+    StopSelectedRun,
+    ToggleProblemWarnings,
+    ToggleProblemInformation,
+    ToggleProblemHidden,
+    OpenGoalPlan,
+    OpenGoalEvidence,
 }
 
 [Flags]
@@ -194,10 +239,10 @@ internal sealed class KeybindingSettingsService(
                 "The editor input mode is not supported."));
         }
         Dictionary<KeybindingCommand, IReadOnlyList<KeybindingGesture>> parsed = [];
-        if (request.Entries.Count > 64)
+        if (request.Entries.Count > 96)
         {
             issues.Add(new(KeybindingIssueKind.InvalidDocument, null,
-                "A keybinding configuration may contain at most 64 command entries."));
+                "A keybinding configuration may contain at most 96 command entries."));
         }
         foreach (IGrouping<KeybindingCommand, KeybindingUpdateEntry> group in
                  request.Entries.GroupBy(entry => entry.Command))
@@ -363,9 +408,9 @@ internal sealed class KeybindingSettingsService(
             }
 
             JsonElement bindings = root.GetProperty("bindings");
-            if (bindings.ValueKind is not JsonValueKind.Array || bindings.GetArrayLength() > 64)
+            if (bindings.ValueKind is not JsonValueKind.Array || bindings.GetArrayLength() > 96)
             {
-                throw new InvalidDataException("Bindings must be an array with at most 64 entries.");
+                throw new InvalidDataException("Bindings must be an array with at most 96 entries.");
             }
 
             List<KeybindingUpdateEntry> entries = [];
@@ -502,110 +547,6 @@ internal sealed class KeybindingSettingsService(
 
     private sealed record ExportDocument(string Format, IReadOnlyList<ExportBinding> Bindings);
     private sealed record ExportBinding(string Command, IReadOnlyList<string> Gestures);
-}
-
-internal static class KeybindingCatalog
-{
-    internal static IReadOnlyList<KeybindingCommandDefinition> Definitions { get; } =
-    [
-        new(KeybindingCommand.ShowCommandPalette, "Application", "Show command palette"),
-        new(KeybindingCommand.QuickOpen, "Workspace", "Go to file"),
-        new(KeybindingCommand.OpenWorkspace, "Workspace", "Open workspace"),
-        new(KeybindingCommand.ManageWorkspaces, "Workspace", "Manage workspaces"),
-        new(KeybindingCommand.ManageProjectUserSecrets, "Workspace", "Manage project User Secrets"),
-        new(KeybindingCommand.OpenSettings, "Application", "Open Settings"),
-        new(KeybindingCommand.InspectSemanticContext, "Goal", "Inspect semantic context"),
-        new(KeybindingCommand.ManageFramework, "Framework", "Effective framework"),
-        new(KeybindingCommand.ManageOperations, "Application", "Operations and backup"),
-        new(KeybindingCommand.RefreshProviderHealth, "Providers", "Refresh provider health"),
-        new(KeybindingCommand.ReloadUserThemes, "Appearance", "Reload user themes"),
-        new(KeybindingCommand.ShowChat, "Panels", "Show Chat"),
-        new(KeybindingCommand.ShowFiles, "Panels", "Show Files"),
-        new(KeybindingCommand.ShowGit, "Panels", "Show Git"),
-        new(KeybindingCommand.OpenWorkingTreeDiff, "Git", "Open working-tree diff"),
-        new(KeybindingCommand.ShowRunOutput, "Panels", "Show Run output"),
-        new(KeybindingCommand.ShowProblems, "Panels", "Show Problems"),
-        new(KeybindingCommand.SaveWorkbenchLayout, "Layout", "Save workbench layout"),
-        new(KeybindingCommand.ResetWorkbenchLayout, "Layout", "Reset workbench layout"),
-        new(KeybindingCommand.FocusNextRegion, "Accessibility", "Focus next workbench region"),
-        new(KeybindingCommand.SaveDocument, "Editor", "Save document"),
-        new(KeybindingCommand.CloseDocument, "Editor", "Close document"),
-        new(KeybindingCommand.ShowCompletion, "Editor", "Show completion"),
-        new(KeybindingCommand.ShowQuickInfo, "Editor", "Show quick info"),
-        new(KeybindingCommand.GoToDefinition, "Editor", "Go to definition"),
-        new(KeybindingCommand.FindReferences, "Editor", "Find references"),
-        new(KeybindingCommand.FindImplementations, "Editor", "Find implementations"),
-        new(KeybindingCommand.RenameSymbol, "Editor", "Rename symbol"),
-        new(KeybindingCommand.FormatDocument, "Editor", "Format document"),
-        new(KeybindingCommand.FormatSelection, "Editor", "Format selection"),
-        new(KeybindingCommand.FormatChangedCode, "Editor", "Format changed code"),
-        new(KeybindingCommand.OrganizeImports, "Editor", "Organize imports"),
-        new(KeybindingCommand.RemoveUnusedImports, "Editor", "Remove unused imports"),
-        new(KeybindingCommand.ShowQuickFixes, "Editor", "Show quick fixes"),
-    ];
-
-    internal static IReadOnlyList<KeybindingCommandBindings> DefaultBindings { get; } =
-        CreateDefaults();
-
-    internal static KeybindingCommandDefinition Definition(KeybindingCommand command) =>
-        Definitions.Single(item => item.Command == command);
-
-    private static IReadOnlyList<KeybindingCommandBindings> CreateDefaults()
-    {
-        Dictionary<KeybindingCommand, string> defaults = new()
-        {
-            [KeybindingCommand.ShowCommandPalette] = "Ctrl+Shift+P",
-            [KeybindingCommand.QuickOpen] = "Ctrl+P",
-            [KeybindingCommand.OpenWorkspace] = "",
-            [KeybindingCommand.ManageWorkspaces] = "",
-            [KeybindingCommand.ManageProjectUserSecrets] = "",
-            [KeybindingCommand.OpenSettings] = "Ctrl+Comma",
-            [KeybindingCommand.InspectSemanticContext] = "",
-            [KeybindingCommand.ManageFramework] = "",
-            [KeybindingCommand.ManageOperations] = "",
-            [KeybindingCommand.RefreshProviderHealth] = "",
-            [KeybindingCommand.ReloadUserThemes] = "",
-            [KeybindingCommand.ShowChat] = "Ctrl+Shift+C",
-            [KeybindingCommand.ShowFiles] = "Ctrl+Shift+E",
-            [KeybindingCommand.ShowGit] = "Ctrl+Shift+G",
-            [KeybindingCommand.OpenWorkingTreeDiff] = "",
-            [KeybindingCommand.ShowRunOutput] = "Ctrl+J",
-            [KeybindingCommand.ShowProblems] = "Ctrl+Shift+M",
-            [KeybindingCommand.SaveWorkbenchLayout] = "",
-            [KeybindingCommand.ResetWorkbenchLayout] = "",
-            [KeybindingCommand.FocusNextRegion] = "F6",
-            [KeybindingCommand.SaveDocument] = "Ctrl+S",
-            [KeybindingCommand.CloseDocument] = "Ctrl+W",
-            [KeybindingCommand.ShowCompletion] = "Ctrl+Space",
-            [KeybindingCommand.ShowQuickInfo] = "Ctrl+K",
-            [KeybindingCommand.GoToDefinition] = "F12",
-            [KeybindingCommand.FindReferences] = "Shift+F12; Alt+F7",
-            [KeybindingCommand.FindImplementations] = "Ctrl+F12; Ctrl+Alt+B",
-            [KeybindingCommand.RenameSymbol] = "F2",
-            [KeybindingCommand.FormatDocument] = "Ctrl+Alt+L",
-            [KeybindingCommand.FormatSelection] = "Ctrl+Alt+F",
-            [KeybindingCommand.FormatChangedCode] = "",
-            [KeybindingCommand.OrganizeImports] = "Ctrl+Alt+O",
-            [KeybindingCommand.RemoveUnusedImports] = "",
-            [KeybindingCommand.ShowQuickFixes] = "Ctrl+Period",
-        };
-        KeybindingSettingsService parser = new(new UnusedStore());
-        KeybindingValidationResult result = parser.Validate(new(Definitions.Select(definition =>
-            new KeybindingUpdateEntry(definition.Command, defaults[definition.Command])).ToArray()));
-        return result.IsValid
-            ? result.Bindings
-            : throw new InvalidOperationException("Built-in keybindings are invalid.");
-    }
-
-    private sealed class UnusedStore : IKeybindingPreferenceStore
-    {
-        public ValueTask<StoredKeybindingPreferences> GetAsync(CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
-        public ValueTask<StoredKeybindingPreferences> SaveAsync(StoredKeybindingPreferences preferences,
-            CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public ValueTask<StoredKeybindingPreferences> ResetAsync(CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
-    }
 }
 
 internal static class KeybindingGestureParser

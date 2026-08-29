@@ -88,7 +88,7 @@ internal sealed class GitHistoryTool
         });
     }
 
-    private async ValueTask ShowBlameAsync()
+    internal async ValueTask ShowBlameAsync()
     {
         WorkspaceView? active = context.ActiveWorkspace();
         IDeveloperGitService? service = context.DeveloperGitService;

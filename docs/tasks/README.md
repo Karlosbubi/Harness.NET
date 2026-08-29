@@ -891,7 +891,10 @@ cross-tool focus/accessibility, and overview composition. The 795-line host has 
 the burn-down allowlist. Slice 060.6 has extracted bounded feature command and test
 partials; both the production and test stores have left the allowlist. Slice 060.7
 has extracted bounded settings sections and goal workflow dialogs with matching
-focused tests; both production windows have left the allowlist. Slice 060.8 remains.
+focused tests; both production windows have left the allowlist. Slice 060.8 has
+completed the Avalonia UX audit, with bounded shell/test units, a complete typed
+palette for 45 core tool actions, and shared live tool status. Nineteen non-Avalonia
+entries remain in the shared global size-budget allowlist, so the slice remains open.
 
 Dependencies: 049, 050. Coordinates with in-progress 052.
 

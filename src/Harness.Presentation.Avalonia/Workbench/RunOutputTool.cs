@@ -18,7 +18,7 @@ internal sealed class RunOutputTool
     private readonly IRunOutputService runOutputService;
     private readonly IDeveloperProjectExecutionService? developerExecutionService;
     private readonly ListBox outputs = new();
-    private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap };
+    private readonly StatusIndicator status = new() { TextWrapping = TextWrapping.Wrap };
     private readonly Button cancel = new() { Content = "Stop", IsEnabled = false };
     private readonly TextEditor details = CodeEditorView.Create(
         string.Empty,
@@ -61,14 +61,14 @@ internal sealed class RunOutputTool
         {
             outputs.ItemsSource = Array.Empty<RunOutputChoice>();
             details.Text = string.Empty;
-            status.Text = workspace is null
+            status.Message = workspace is null
                 ? "Open a workspace to inspect project and goal runs."
                 : "Trust the workspace before inspecting run output.";
             return;
         }
 
         busy = true;
-        status.Text = "Loading project and goal runs…";
+        status.Message = "Loading project and goal runs…";
         try
         {
             DeveloperExecutionListResult developer = developerExecutionService is null
@@ -82,7 +82,7 @@ internal sealed class RunOutputTool
             {
                 outputs.ItemsSource = Array.Empty<RunOutputChoice>();
                 details.Text = string.Empty;
-                status.Text = developer.Error ?? goalRuns?.Error;
+                status.Message = developer.Error ?? goalRuns?.Error ?? "Run output unavailable.";
                 return;
             }
 
@@ -92,7 +92,7 @@ internal sealed class RunOutputTool
                 .OrderByDescending(item => item.StartedAt)
                 .ToArray();
             outputs.ItemsSource = choices;
-            status.Text = choices.Length == 0
+            status.Message = choices.Length == 0
                 ? "No project, Build, Test, or Restore runs are recorded for this source context."
                 : $"{choices.Length} project and goal run(s)." +
                   (developer.IsTruncated || goalRuns?.IsTruncated is true
@@ -103,14 +103,14 @@ internal sealed class RunOutputTool
         }
         catch (OperationCanceledException)
         {
-            status.Text = "Run-output refresh cancelled.";
+            status.Message = "Run-output refresh cancelled.";
         }
         catch (Exception exception) when (
             exception is InvalidOperationException or IOException or ArgumentException)
         {
             outputs.ItemsSource = Array.Empty<RunOutputChoice>();
             details.Text = string.Empty;
-            status.Text = $"Run output unavailable: {exception.Message}";
+            status.Message = $"Run output unavailable: {exception.Message}";
         }
         finally
         {
@@ -128,7 +128,7 @@ internal sealed class RunOutputTool
         };
         Grid heading = new() { ColumnDefinitions = new("*,Auto,Auto"), ColumnSpacing = 8 };
         AutomationProperties.SetName(status, "Run output status");
-        status.Text = "Open a trusted workspace to inspect project and goal runs.";
+        status.Message = "Open a trusted workspace to inspect project and goal runs.";
         heading.Children.Add(status);
         Button refresh = new() { Content = "Refresh" };
         AutomationProperties.SetName(refresh, "Refresh run output");
@@ -164,14 +164,14 @@ internal sealed class RunOutputTool
         };
     }
 
-    private async ValueTask CancelSelectedAsync()
+    internal async ValueTask CancelSelectedAsync()
     {
         if (developerExecutionService is null ||
             outputs.SelectedItem is not DeveloperRunChoice choice ||
             choice.Output.State is not DeveloperExecutionState.Running) return;
         DeveloperExecutionCancelResult cancelled = await developerExecutionService.CancelAsync(
             choice.Output.Id, context.CancellationToken);
-        status.Text = cancelled.CancellationRequested
+        status.Message = cancelled.CancellationRequested
             ? "Stopping the selected project run…"
             : cancelled.Error ?? "The selected project run could not be stopped.";
     }

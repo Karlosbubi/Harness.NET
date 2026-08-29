@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Media;
 using Harness.BusinessLogic.CodeIntelligence;
 using Harness.BusinessLogic.Goals;
+using Harness.UI.Avalonia;
 
 namespace Harness.Presentation.Avalonia.Workbench;
 
@@ -11,7 +12,7 @@ internal sealed class ProblemsTool
     private readonly Func<WorkbenchCodeDiagnostic, GoalId?, ValueTask> navigate;
     private readonly Dictionary<string, DiagnosticEntry> diagnostics = new(StringComparer.Ordinal);
     private readonly ListBox problems = new();
-    private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap };
+    private readonly StatusIndicator status = new() { TextWrapping = TextWrapping.Wrap };
     private readonly CheckBox showWarnings = new() { Content = "Warnings", IsChecked = true };
     private readonly CheckBox showInformation = new() { Content = "Info", IsChecked = true };
     private readonly CheckBox showHidden = new() { Content = "Hidden", IsChecked = false };
@@ -41,8 +42,15 @@ internal sealed class ProblemsTool
     {
         diagnostics.Clear();
         problems.ItemsSource = Array.Empty<ProblemChoice>();
-        status.Text = "Open a .NET source file to load compiler diagnostics.";
+        status.Message = "Open a .NET source file to load compiler diagnostics.";
     }
+
+    internal void ToggleWarnings() => showWarnings.IsChecked = showWarnings.IsChecked is not true;
+
+    internal void ToggleInformation() =>
+        showInformation.IsChecked = showInformation.IsChecked is not true;
+
+    internal void ToggleHidden() => showHidden.IsChecked = showHidden.IsChecked is not true;
 
     private Control BuildContent()
     {
@@ -58,7 +66,7 @@ internal sealed class ProblemsTool
             ColumnSpacing = 10,
             Children = { status },
         };
-        status.Text = "Open a .NET source file to load compiler diagnostics.";
+        status.Message = "Open a .NET source file to load compiler diagnostics.";
         AutomationProperties.SetName(status, "Code intelligence status");
         AutomationProperties.SetName(showWarnings, "Show warning diagnostics");
         AutomationProperties.SetName(showInformation, "Show information diagnostics");
@@ -111,7 +119,7 @@ internal sealed class ProblemsTool
             .Select(entry => entry.View)
             .FirstOrDefault(result => result.State is WorkbenchCodeResultState.Degraded or
                 WorkbenchCodeResultState.Failed);
-        status.Text = unavailable?.Issues.FirstOrDefault() is { } issue
+        status.Message = unavailable?.Issues.FirstOrDefault() is { } issue
             ? $"Code intelligence {unavailable.State.ToString().ToLowerInvariant()} · " +
               issue.Message.Value
             : choices.Length == 0

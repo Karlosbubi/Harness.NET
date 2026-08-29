@@ -6,6 +6,7 @@ using Avalonia.Media;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Workspaces;
+using Harness.UI.Avalonia;
 
 namespace Harness.Presentation.Avalonia.Workbench;
 
@@ -15,7 +16,7 @@ internal sealed class GitChangesTool
     private readonly ListBox changes = new();
     private readonly ListBox patchUnits = new();
     private readonly TextBlock summary = new() { TextWrapping = TextWrapping.Wrap };
-    private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap };
+    private readonly StatusIndicator status = new() { TextWrapping = TextWrapping.Wrap };
     private readonly Button stage = new() { Content = "Stage" };
     private readonly Button unstage = new() { Content = "Unstage" };
     private readonly Button clearSelection = new() { Content = "Whole file" };
@@ -74,7 +75,13 @@ internal sealed class GitChangesTool
             : "Git state refreshed.");
     }
 
-    internal void ReportStatus(string message) => status.Text = message;
+    internal void ReportStatus(string message) => status.Message = message;
+
+    internal void SelectWholeFile()
+    {
+        patchUnits.SelectedItem = null;
+        ReportStatus("Whole-file Git action selected.");
+    }
 
     internal async ValueTask UpdateSelectedIndexAsync(DeveloperGitIndexAction action)
     {

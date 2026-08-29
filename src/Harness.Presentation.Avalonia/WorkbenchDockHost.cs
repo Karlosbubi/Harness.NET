@@ -34,7 +34,19 @@ using DockOrientation = Dock.Model.Core.Orientation;
 
 namespace Harness.Presentation.Avalonia;
 
-internal sealed class WorkbenchDockHost
+internal enum GitWorkbenchSection
+{
+    Changes,
+    Branches,
+    Tags,
+    Worktrees,
+    Stashes,
+    History,
+    Conflicts,
+    Remotes,
+}
+
+internal sealed partial class WorkbenchDockHost
 {
     private readonly IWorkbenchInspectionService inspectionService;
     private readonly IDeveloperGitService? developerGitService;
@@ -58,6 +70,7 @@ internal sealed class WorkbenchDockHost
     private readonly WorkbenchOverview overviewHost;
     private readonly WorkbenchLayoutHost layoutHost;
     private readonly WorkbenchNavigator navigator;
+    private readonly TabControl gitSections = new();
     private TextBlock GitStatus => gitChangesTool.Status;
     private string GitFingerprint => gitChangesTool.Fingerprint;
     private WorkbenchWorkspaceContext? CurrentGitContext => gitChangesTool.CurrentContext;
@@ -353,382 +366,6 @@ internal sealed class WorkbenchDockHost
     internal int ActiveCompletionItemCount => documentsHost.ActiveCompletionItemCount;
     internal CompletionWindow? ActiveCompletionWindow => documentsHost.ActiveCompletionWindow;
     internal bool ActiveQuickInfoIsOpen => documentsHost.ActiveQuickInfoIsOpen;
-    internal ValueTask<bool> SaveActiveSourceDocumentAsync() => documentsHost.SaveActiveAsync();
-    internal ValueTask CloseActiveSourceDocumentAsync() => documentsHost.CloseActiveAsync();
-
-    internal ValueTask RestoreLayoutAsync() => layoutHost.RestoreAsync();
-
-    internal ValueTask SaveLayoutAsync(CancellationToken saveCancellationToken = default) =>
-        layoutHost.SaveAsync(saveCancellationToken);
-
-    internal ValueTask ResetLayoutAsync() => layoutHost.ResetAsync();
-
-    internal async ValueTask RefreshAsync()
-    {
-        Update(state());
-        if (ActiveWorkspace() is { IsTrusted: true })
-        {
-            await filesTool.RefreshAsync();
-            await RefreshGitAsync();
-        }
-    }
-
-    internal async ValueTask<bool> PrepareForShutdownAsync()
-    {
-        if (!await gitConflictsTool.ResolveUnsavedAsync(WorkbenchDocumentTransition.Exit)) return false;
-        if (!await documentsHost.PrepareForShutdownAsync()) return false;
-        await gitConflictsTool.InvalidateCodeIntelligenceAsync();
-        return true;
-    }
-
-    internal async ValueTask<bool> PrepareForWorkspaceChangeAsync()
-    {
-        if (!await gitConflictsTool.ResolveUnsavedAsync(WorkbenchDocumentTransition.Switch)) return false;
-        return await documentsHost.PrepareForWorkspaceChangeAsync();
-    }
-
-    internal void Update(AvaloniaShellState snapshot)
-    {
-        filesTool.Update(snapshot);
-        documentsHost.Update(snapshot);
-        navigator.Update(snapshot.Settings.KeybindingSettings ?? KeybindingSettingsSnapshot.Default);
-
-        WorkspaceView? active = snapshot.Workspaces.Registered.FirstOrDefault(item => item.IsActive);
-        if (!string.Equals(workspaceId, active?.Id, StringComparison.Ordinal))
-        {
-            workspaceId = active?.Id;
-            Dispatcher.UIThread.Post(async () =>
-                await documentsHost.CloseAllAsync(WorkbenchDocumentTransition.Close));
-            Dispatcher.UIThread.Post(async () => await InvalidateCodeIntelligenceAsync());
-            gitChangesTool.Reset(active, sourceContextChanged: false);
-            gitConflictsTool.Clear();
-        }
-
-        GoalView? selectedGoal = snapshot.Goals.SelectedGoal;
-        string? nextGoalId = selectedGoal is not null && active is not null &&
-                             selectedGoal.WorkspaceId == active.Id
-            ? selectedGoal.Id.Value
-            : null;
-        if (!string.Equals(selectedGoalId, nextGoalId, StringComparison.Ordinal))
-        {
-            selectedGoalId = nextGoalId;
-            Dispatcher.UIThread.Post(async () => await InvalidateCodeIntelligenceAsync());
-            gitChangesTool.Reset(active, sourceContextChanged: true);
-            if (active is { IsTrusted: true })
-            {
-                Dispatcher.UIThread.Post(async () => await RefreshGitAsync());
-            }
-        }
-
-        runOutputToolUnit.Update(snapshot, selectedGoal?.Id);
-
-        overviewHost.Update(active);
-    }
-
-    internal ValueTask OpenFileAsync(string relativePath) =>
-        documentsHost.OpenAsync(relativePath);
-
-    private ValueTask OpenFileAsync(string relativePath, GoalId? goalId) =>
-        documentsHost.OpenAsync(relativePath, goalId);
-
-    internal ValueTask<InboundUiActionResult> OpenInboundDocumentAsync(
-        InboundUiDocumentRequest request) => documentsHost.OpenInboundAsync(request);
-
-    /// <summary>
-    /// Offers each Git-tracked file as a command that opens it. The catalog is loaded on
-    /// demand so quick open reflects the same bounded, context-resolved file list the
-    /// Files panel shows rather than a separate scan.
-    /// </summary>
-    internal async ValueTask<IReadOnlyList<PaletteCommand>> BuildFileCommandsAsync()
-        => await filesTool.BuildFileCommandsAsync();
-
-    internal async ValueTask RefreshGitAsync()
-    {
-        WorkspaceView? active = ActiveWorkspace();
-        if (busy || active is null || !active.IsTrusted)
-        {
-            GitStatus.Text = active is null
-                ? "Select a workspace first."
-                : "Trust the workspace before inspecting Git.";
-            return;
-        }
-
-        await RunAsync(async () =>
-        {
-            WorkbenchGitInspectionResult inspected = await inspectionService.InspectGitAsync(
-                WorkbenchRequest(active),
-                cancellationToken);
-            WorkspaceGitStateView git = inspected.Git;
-            if (git.Error is not null)
-            {
-                GitStatus.Text = git.Error;
-                return;
-            }
-
-            RenderGitState(inspected.Context, git);
-            if (developerGitService is not null &&
-                inspected.Context.Scope == WorkbenchWorkspaceScope.OriginalWorkspace)
-            {
-                DeveloperGitBranchInspectionResult branches = await developerGitService.InspectBranchesAsync(
-                    WorkbenchRequest(active), cancellationToken);
-                gitBranchesTool.RenderBranches(branches);
-                if (branches.State is not null &&
-                    !branches.State.Fingerprint.Equals(git.Fingerprint, StringComparison.Ordinal))
-                    RenderGitState(branches.Context, branches.State);
-                DeveloperGitTagInspectionResult tags = await developerGitService.InspectTagsAsync(
-                    WorkbenchRequest(active), cancellationToken);
-                gitBranchesTool.RenderTags(tags);
-                DeveloperGitWorktreeInspectionResult worktrees =
-                    await developerGitService.InspectWorktreesAsync(
-                        WorkbenchRequest(active), cancellationToken);
-                gitWorktreesTool.RenderWorktrees(worktrees);
-                DeveloperGitStashInspectionResult stashes = await developerGitService.InspectStashesAsync(
-                    WorkbenchRequest(active), cancellationToken);
-                gitWorktreesTool.RenderStashes(stashes);
-                gitRemotesTool.Render(await developerGitService.InspectRemotesAsync(
-                    WorkbenchRequest(active), cancellationToken));
-            }
-            if (developerGitService is not null)
-            {
-                await gitHistoryTool.RefreshCoreAsync(active, append: false);
-                if (!gitConflictsTool.IsDirty) await gitConflictsTool.RefreshCoreAsync(active);
-                else gitConflictsTool.Status.Text =
-                    "Merge result has unsaved edits; automatic Git refresh preserved this buffer.";
-            }
-        });
-    }
-
-    private void RenderGitState(WorkbenchWorkspaceContext context, WorkspaceGitStateView git) =>
-        gitChangesTool.Render(context, git);
-
-    internal ValueTask UpdateSelectedGitIndexAsync(DeveloperGitIndexAction action) =>
-        gitChangesTool.UpdateSelectedIndexAsync(action);
-
-    internal ValueTask ComposeAndCommitGitAsync() => gitChangesTool.ComposeAndCommitAsync();
-    internal ValueTask RefreshGitBranchesAsync() => gitBranchesTool.RefreshBranchesAsync();
-
-    internal ValueTask ApplyGitBranchAsync(DeveloperGitBranchAction action) =>
-        gitBranchesTool.ApplyBranchAsync(action);
-
-    internal ValueTask DeleteSelectedGitBranchAsync() =>
-        gitBranchesTool.DeleteSelectedBranchAsync();
-
-    internal ValueTask RefreshGitTagsAsync() => gitBranchesTool.RefreshTagsAsync();
-
-    internal ValueTask CreateGitTagAsync() => gitBranchesTool.CreateTagAsync();
-
-    internal ValueTask DeleteSelectedGitTagAsync() => gitBranchesTool.DeleteSelectedTagAsync();
-
-    internal ValueTask RefreshGitWorktreesAsync() => gitWorktreesTool.RefreshWorktreesAsync();
-
-    internal ValueTask CreateGitWorktreeAsync() => gitWorktreesTool.CreateWorktreeAsync();
-
-    internal ValueTask OpenSelectedGitWorktreeAsync() => gitWorktreesTool.OpenSelectedWorktreeAsync();
-
-    internal ValueTask RemoveSelectedGitWorktreeAsync() =>
-        gitWorktreesTool.RemoveSelectedWorktreeAsync();
-
-    internal ValueTask RefreshGitStashesAsync() => gitWorktreesTool.RefreshStashesAsync();
-
-    internal ValueTask CreateGitStashAsync() => gitWorktreesTool.CreateStashAsync();
-
-    internal ValueTask ApplySelectedGitStashAsync() => gitWorktreesTool.ApplySelectedStashAsync();
-
-    internal ValueTask DropSelectedGitStashAsync() => gitWorktreesTool.DropSelectedStashAsync();
-
-    internal ValueTask RefreshGitRemotesAsync() => gitRemotesTool.RefreshAsync();
-
-    internal ValueTask SynchronizeGitRemoteAsync(DeveloperGitRemoteAction action) =>
-        gitRemotesTool.SynchronizeAsync(action);
-
-    internal ValueTask RefreshGitHistoryAsync(bool append = false) =>
-        gitHistoryTool.RefreshAsync(append);
-
-    internal ValueTask RefreshGitConflictsAsync() => gitConflictsTool.RefreshAsync();
-
-    private bool IsActiveConflictDocument(string path, GoalId? goalId) =>
-        gitConflictsTool.HasActiveDocument(path, goalId);
-
-    internal ValueTask SaveGitConflictResultAsync() => gitConflictsTool.SaveAsync();
-
-    internal ValueTask StageSavedGitConflictResultAsync() => gitConflictsTool.StageAsync();
-
-    internal ValueTask PreviewAndApplyGitDestructiveAsync(DeveloperGitDestructiveAction action) =>
-        gitChangesTool.PreviewAndApplyDestructiveAsync(action);
-
-    private bool IsOriginalDocumentDirty(string path) => documentsHost.IsOriginalDirty(path);
-
-    private bool HasDirtyOriginalDocuments() => documentsHost.HasDirtyOriginals();
-
-    private ValueTask ReloadOriginalDocumentAsync(string path) =>
-        documentsHost.ReloadOriginalAsync(path);
-
-    internal async ValueTask OpenDiffAsync()
-    {
-        WorkspaceView? active = ActiveWorkspace();
-        if (busy || active is null || !active.IsTrusted)
-        {
-            GitStatus.Text = active is null
-                ? "Select a workspace first."
-                : "Trust the workspace before inspecting Git.";
-            return;
-        }
-
-        await RunAsync(async () =>
-        {
-            WorkbenchGitInspectionResult inspected = await inspectionService.InspectGitAsync(
-                WorkbenchRequest(active),
-                cancellationToken);
-            WorkspaceGitStateView git = inspected.Git;
-            if (git.Error is not null)
-            {
-                GitStatus.Text = git.Error;
-                return;
-            }
-
-            if (string.IsNullOrWhiteSpace(git.Diff))
-            {
-                GitStatus.Text = "The working tree has no textual diff.";
-                return;
-            }
-
-            documentsHost.OpenOrReplace(
-                DiffDocumentId(inspected.Context),
-                $"{git.Branch} working diff",
-                CreateDiffView(git.Diff));
-            GitStatus.Text = $"Opened the current bounded Git diff · {inspected.Context.Description}.";
-        });
-    }
-
-    internal void OpenPlan() => overviewHost.OpenPlan();
-
-    internal void OpenEvidence() => overviewHost.OpenEvidence();
-
-    internal void ApplyViewport(double width, double height) =>
-        layoutHost.ApplyViewport(width, height);
-
-    internal ValueTask RefreshFilesAsync() => filesTool.RefreshAsync();
-    private Control BuildSourceControlTool()
-    {
-        Grid grid = new()
-        {
-            RowDefinitions = new("Auto,Auto,*,Auto"),
-            Margin = new Thickness(10),
-            RowSpacing = 8,
-        };
-        grid.Children.Add(gitChangesTool.Summary);
-        Grid.SetRow(gitChangesTool.Actions, 1);
-        grid.Children.Add(gitChangesTool.Actions);
-        Control changePanel = gitChangesTool.Content;
-        Control branchPanel = gitBranchesTool.BranchesContent;
-        Control tagPanel = gitBranchesTool.TagsContent;
-        Control worktreePanel = gitWorktreesTool.WorktreesContent;
-        Control stashPanel = gitWorktreesTool.StashesContent;
-        Control remotePanel = gitRemotesTool.Content;
-        Control historyPanel = gitHistoryTool.Content;
-        Control conflictPanel = gitConflictsTool.Content;
-
-        TabItem changesTab = new() { Header = "Changes", Content = changePanel };
-        TabItem branchesTab = new() { Header = "Branches", Content = branchPanel };
-        TabItem tagsTab = new() { Header = "Tags", Content = tagPanel };
-        TabItem worktreesTab = new() { Header = "Worktrees", Content = worktreePanel };
-        TabItem stashesTab = new() { Header = "Stashes", Content = stashPanel };
-        TabItem historyTab = new() { Header = "History", Content = historyPanel };
-        TabItem conflictsTab = new() { Header = "Conflicts", Content = conflictPanel };
-        TabItem remotesTab = new() { Header = "Remotes", Content = remotePanel };
-        AutomationProperties.SetName(changesTab, "Git changes tab");
-        AutomationProperties.SetName(branchesTab, "Git branches tab");
-        AutomationProperties.SetName(tagsTab, "Git tags tab");
-        AutomationProperties.SetName(worktreesTab, "Git worktrees tab");
-        AutomationProperties.SetName(stashesTab, "Git stashes tab");
-        AutomationProperties.SetName(historyTab, "Git history, file timeline, and blame tab");
-        AutomationProperties.SetName(conflictsTab, "Git three-way conflict editor tab");
-        AutomationProperties.SetName(remotesTab, "Git explicit remote synchronization tab");
-        TabControl tabs = new();
-        tabs.Items.Add(changesTab);
-        tabs.Items.Add(branchesTab);
-        tabs.Items.Add(tagsTab);
-        tabs.Items.Add(worktreesTab);
-        tabs.Items.Add(stashesTab);
-        tabs.Items.Add(historyTab);
-        tabs.Items.Add(conflictsTab);
-        tabs.Items.Add(remotesTab);
-        tabs.SelectedIndex = 0;
-        AutomationProperties.SetName(tabs, "Git workbench sections");
-        Grid.SetRow(tabs, 2);
-        grid.Children.Add(tabs);
-
-        Grid.SetRow(GitStatus, 3);
-        grid.Children.Add(GitStatus);
-        return grid;
-    }
-
-    private Control BuildContextTool(Control context)
-    {
-        Grid grid = new() { RowDefinitions = new("*,Auto"), RowSpacing = 8 };
-        grid.Children.Add(context);
-        StackPanel actions = new()
-        {
-            Orientation = AvaloniaOrientation.Horizontal,
-            Margin = new Thickness(10),
-            Spacing = 6,
-        };
-        Button plan = new() { Content = "Open plan" };
-        AutomationProperties.SetName(plan, "Open selected goal plan document");
-        plan.Click += (_, _) => OpenPlan();
-        Button evidence = new() { Content = "Open evidence" };
-        AutomationProperties.SetName(evidence, "Open selected goal workflow evidence document");
-        evidence.Click += (_, _) => OpenEvidence();
-        actions.Children.Add(plan);
-        actions.Children.Add(evidence);
-        Grid.SetRow(actions, 1);
-        grid.Children.Add(actions);
-        return grid;
-    }
-
-    private async ValueTask InvalidateCodeIntelligenceAsync()
-    {
-        await gitConflictsTool.InvalidateCodeIntelligenceAsync();
-        await documentsHost.InvalidateAsync();
-    }
-
-    internal ValueTask RefreshRunOutputAsync() => runOutputToolUnit.RefreshAsync();
-
-    internal ValueTask TransformActiveDocumentAsync(
-        WorkbenchCodeDocumentTransformationKind kind) => documentsHost.TransformActiveAsync(kind);
-
-    internal ValueTask InspectActiveDocumentAsync(WorkbenchCodeInspectionKind kind) =>
-        documentsHost.InspectActiveAsync(kind);
-
-    internal ValueTask ShowActiveQuickFixesAsync() => documentsHost.ShowActiveQuickFixesAsync();
-
-    internal ValueTask ApplyActiveCodeActionAsync(WorkbenchCodeActionCandidate candidate) =>
-        documentsHost.ApplyActiveCodeActionAsync(candidate);
-
-    internal ValueTask HandleActiveTextEnteredAsync(string? text) =>
-        documentsHost.HandleTextEnteredAsync(text);
-
-    internal ValueTask HandleActivePasteAsync(WorkbenchCodeRange range) =>
-        documentsHost.HandlePasteAsync(range);
-
-    internal bool CanTransformActiveDocument(WorkbenchCodeDocumentTransformationKind kind) =>
-        documentsHost.CanTransform(kind);
-
-    internal bool CanInvokeActiveEditorCommand(KeybindingCommand command) =>
-        documentsHost.CanInvoke(command);
-
-    internal ValueTask InvokeActiveEditorCommandAsync(KeybindingCommand command) =>
-        documentsHost.InvokeActiveAsync(command);
-
-    internal ValueTask<PendingWorkbenchRename?> PreviewActiveRenameAsync(string newName) =>
-        documentsHost.PreviewRenameAsync(newName);
-
-    internal ValueTask<RenameSymbolApplyView?> ApplyActiveRenameAsync(
-        PendingWorkbenchRename pending) => documentsHost.ApplyRenameAsync(pending);
-
-    internal void ReactivateDocumentForTest(IDockable document) =>
-        documentsHost.ReactivateForTest(document);
-
     private Window? OwnerWindow() => TopLevel.GetTopLevel(Control) as Window;
 
     private static Control CreateDiffView(string diff)
@@ -758,6 +395,13 @@ internal sealed class WorkbenchDockHost
     internal bool ShowConversation() => navigator.ShowConversation();
 
     internal bool ShowGit() => navigator.ShowGit();
+
+    internal bool ShowGit(GitWorkbenchSection section)
+    {
+        bool shown = navigator.ShowGit();
+        gitSections.SelectedIndex = (int)section;
+        return shown;
+    }
 
     internal string GitStatusText => GitStatus.Text ?? string.Empty;
 

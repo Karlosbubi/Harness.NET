@@ -25,7 +25,11 @@ test fixture have both left the source-size allowlist. Slice 060.7 is implemente
 the 397-line settings coordinator, 460-line goal coordinator, and their bounded
 section/dialog units have left the production allowlist, with matching presentation
 tests split from the shared fixture. Slice 060.8 remains and continues to follow the
-sequencing and evidence rules below.
+sequencing and evidence rules below. Its presentation UX portion is implemented:
+the shell and shared test fixture are decomposed, all Avalonia production/test files
+have left the allowlist, 45 workbench tool actions join the complete typed palette
+catalog, and core tool status uses one live indicator. The 19 remaining global
+source-budget entries keep the slice and Task 060 open.
 
 ## Measured baseline (2026-08-24)
 

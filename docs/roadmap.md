@@ -610,7 +610,11 @@ Slice 060.6 now has a 523-line state/reducer coordinator and bounded feature com
 and test partials; both production and test store files have left the allowlist.
 Slice 060.7 has a 397-line settings coordinator, a 460-line goal coordinator, and
 bounded section/dialog units with matching focused tests; both production windows
-have left the allowlist. Slice 060.8 follows.
+have left the allowlist. Slice 060.8 has completed its presentation UX audit: all
+Avalonia source/test files are bounded, every fixed palette and core workbench tool
+action has one typed keybinding identity, and core tool status is consistently live.
+The shared global size-budget allowlist still has 19 non-Avalonia entries to burn
+down before the slice and Task 060 close.
 
 ### Complete: Task 061 — architecture enforcement and composition seams
 

@@ -1,0 +1,199 @@
+using System.Text.Json;
+using Harness.DataAccess.Editor;
+
+namespace Harness.BusinessLogic.Editor;
+
+internal static class KeybindingCatalog
+{
+    internal static IReadOnlyList<KeybindingCommandDefinition> Definitions { get; } =
+    [
+        new(KeybindingCommand.ShowCommandPalette, "Application", "Show command palette"),
+        new(KeybindingCommand.QuickOpen, "Workspace", "Go to file"),
+        new(KeybindingCommand.OpenWorkspace, "Workspace", "Open workspace"),
+        new(KeybindingCommand.ManageWorkspaces, "Workspace", "Manage workspaces"),
+        new(KeybindingCommand.ManageProjectUserSecrets, "Workspace", "Manage project User Secrets"),
+        new(KeybindingCommand.OpenSettings, "Application", "Open Settings"),
+        new(KeybindingCommand.InspectSemanticContext, "Goal", "Inspect semantic context"),
+        new(KeybindingCommand.ManageFramework, "Framework", "Effective framework"),
+        new(KeybindingCommand.ManageOperations, "Application", "Operations and backup"),
+        new(KeybindingCommand.RefreshProviderHealth, "Providers", "Refresh provider health"),
+        new(KeybindingCommand.ReloadUserThemes, "Appearance", "Reload user themes"),
+        new(KeybindingCommand.ShowChat, "Panels", "Show Chat"),
+        new(KeybindingCommand.ShowFiles, "Panels", "Show Files"),
+        new(KeybindingCommand.ShowGit, "Panels", "Show Git"),
+        new(KeybindingCommand.OpenWorkingTreeDiff, "Git", "Open working-tree diff"),
+        new(KeybindingCommand.ShowRunOutput, "Panels", "Show Run output"),
+        new(KeybindingCommand.ShowProblems, "Panels", "Show Problems"),
+        new(KeybindingCommand.SaveWorkbenchLayout, "Layout", "Save workbench layout"),
+        new(KeybindingCommand.ResetWorkbenchLayout, "Layout", "Reset workbench layout"),
+        new(KeybindingCommand.FocusNextRegion, "Accessibility", "Focus next workbench region"),
+        new(KeybindingCommand.SaveDocument, "Editor", "Save document"),
+        new(KeybindingCommand.CloseDocument, "Editor", "Close document"),
+        new(KeybindingCommand.ShowCompletion, "Editor", "Show completion"),
+        new(KeybindingCommand.ShowQuickInfo, "Editor", "Show quick info"),
+        new(KeybindingCommand.GoToDefinition, "Editor", "Go to definition"),
+        new(KeybindingCommand.FindReferences, "Editor", "Find references"),
+        new(KeybindingCommand.FindImplementations, "Editor", "Find implementations"),
+        new(KeybindingCommand.RenameSymbol, "Editor", "Rename symbol"),
+        new(KeybindingCommand.FormatDocument, "Editor", "Format document"),
+        new(KeybindingCommand.FormatSelection, "Editor", "Format selection"),
+        new(KeybindingCommand.FormatChangedCode, "Editor", "Format changed code"),
+        new(KeybindingCommand.OrganizeImports, "Editor", "Organize imports"),
+        new(KeybindingCommand.RemoveUnusedImports, "Editor", "Remove unused imports"),
+        new(KeybindingCommand.ShowQuickFixes, "Editor", "Show quick fixes"),
+        new(KeybindingCommand.RefreshFiles, "Files", "Refresh repository files"),
+        new(KeybindingCommand.SearchWorkspace, "Files", "Search workspace text"),
+        new(KeybindingCommand.RefreshGit, "Git", "Refresh Git state"),
+        new(KeybindingCommand.StageGitChange, "Git changes", "Stage selected change"),
+        new(KeybindingCommand.UnstageGitChange, "Git changes", "Unstage selected change"),
+        new(KeybindingCommand.SelectWholeGitFile, "Git changes", "Select whole file"),
+        new(KeybindingCommand.DiscardGitChange, "Git changes", "Discard selected file"),
+        new(KeybindingCommand.DeleteUntrackedGitFile, "Git changes", "Delete selected untracked file"),
+        new(KeybindingCommand.CommitGitChange, "Git changes", "Commit staged changes"),
+        new(KeybindingCommand.RefreshGitBranches, "Git branches", "Refresh branches"),
+        new(KeybindingCommand.CreateGitBranch, "Git branches", "Create branch"),
+        new(KeybindingCommand.SwitchGitBranch, "Git branches", "Switch branch"),
+        new(KeybindingCommand.RenameGitBranch, "Git branches", "Rename branch"),
+        new(KeybindingCommand.DeleteGitBranch, "Git branches", "Delete branch"),
+        new(KeybindingCommand.RefreshGitTags, "Git tags", "Refresh tags"),
+        new(KeybindingCommand.CreateGitTag, "Git tags", "Create tag"),
+        new(KeybindingCommand.DeleteGitTag, "Git tags", "Delete tag"),
+        new(KeybindingCommand.RefreshGitWorktrees, "Git worktrees", "Refresh worktrees"),
+        new(KeybindingCommand.CreateGitWorktree, "Git worktrees", "Create worktree"),
+        new(KeybindingCommand.OpenGitWorktree, "Git worktrees", "Open selected worktree"),
+        new(KeybindingCommand.RemoveGitWorktree, "Git worktrees", "Remove selected worktree"),
+        new(KeybindingCommand.RefreshGitStashes, "Git stashes", "Refresh stashes"),
+        new(KeybindingCommand.CreateGitStash, "Git stashes", "Create stash"),
+        new(KeybindingCommand.ApplyGitStash, "Git stashes", "Apply selected stash"),
+        new(KeybindingCommand.DeleteGitStash, "Git stashes", "Delete selected stash"),
+        new(KeybindingCommand.RefreshGitRemotes, "Git remotes", "Refresh remotes"),
+        new(KeybindingCommand.FetchGitRemote, "Git remotes", "Fetch remote"),
+        new(KeybindingCommand.IntegrateGitRemote, "Git remotes", "Integrate fetched commits"),
+        new(KeybindingCommand.PushGitRemote, "Git remotes", "Push remote"),
+        new(KeybindingCommand.RefreshGitHistory, "Git history", "Refresh history"),
+        new(KeybindingCommand.LoadMoreGitHistory, "Git history", "Load more history"),
+        new(KeybindingCommand.ShowGitBlame, "Git history", "Show blame for path"),
+        new(KeybindingCommand.RefreshGitConflicts, "Git conflicts", "Refresh conflicts"),
+        new(KeybindingCommand.SaveGitConflict, "Git conflicts", "Save conflict result"),
+        new(KeybindingCommand.StageGitConflict, "Git conflicts", "Stage saved conflict result"),
+        new(KeybindingCommand.UseGitConflictBase, "Git conflicts", "Use conflict base"),
+        new(KeybindingCommand.UseGitConflictOurs, "Git conflicts", "Use conflict ours"),
+        new(KeybindingCommand.UseGitConflictTheirs, "Git conflicts", "Use conflict theirs"),
+        new(KeybindingCommand.RefreshRunOutput, "Run output", "Refresh run output"),
+        new(KeybindingCommand.StopSelectedRun, "Run output", "Stop selected run"),
+        new(KeybindingCommand.ToggleProblemWarnings, "Problems", "Toggle warning diagnostics"),
+        new(KeybindingCommand.ToggleProblemInformation, "Problems", "Toggle information diagnostics"),
+        new(KeybindingCommand.ToggleProblemHidden, "Problems", "Toggle hidden diagnostics"),
+        new(KeybindingCommand.OpenGoalPlan, "Goal context", "Open goal plan"),
+        new(KeybindingCommand.OpenGoalEvidence, "Goal context", "Open goal evidence"),
+    ];
+
+    internal static IReadOnlyList<KeybindingCommandBindings> DefaultBindings { get; } =
+        CreateDefaults();
+
+    internal static KeybindingCommandDefinition Definition(KeybindingCommand command) =>
+        Definitions.Single(item => item.Command == command);
+
+    private static IReadOnlyList<KeybindingCommandBindings> CreateDefaults()
+    {
+        Dictionary<KeybindingCommand, string> defaults = new()
+        {
+            [KeybindingCommand.ShowCommandPalette] = "Ctrl+Shift+P",
+            [KeybindingCommand.QuickOpen] = "Ctrl+P",
+            [KeybindingCommand.OpenWorkspace] = "",
+            [KeybindingCommand.ManageWorkspaces] = "",
+            [KeybindingCommand.ManageProjectUserSecrets] = "",
+            [KeybindingCommand.OpenSettings] = "Ctrl+Comma",
+            [KeybindingCommand.InspectSemanticContext] = "",
+            [KeybindingCommand.ManageFramework] = "",
+            [KeybindingCommand.ManageOperations] = "",
+            [KeybindingCommand.RefreshProviderHealth] = "",
+            [KeybindingCommand.ReloadUserThemes] = "",
+            [KeybindingCommand.ShowChat] = "Ctrl+Shift+C",
+            [KeybindingCommand.ShowFiles] = "Ctrl+Shift+E",
+            [KeybindingCommand.ShowGit] = "Ctrl+Shift+G",
+            [KeybindingCommand.OpenWorkingTreeDiff] = "",
+            [KeybindingCommand.ShowRunOutput] = "Ctrl+J",
+            [KeybindingCommand.ShowProblems] = "Ctrl+Shift+M",
+            [KeybindingCommand.SaveWorkbenchLayout] = "",
+            [KeybindingCommand.ResetWorkbenchLayout] = "",
+            [KeybindingCommand.FocusNextRegion] = "F6",
+            [KeybindingCommand.SaveDocument] = "Ctrl+S",
+            [KeybindingCommand.CloseDocument] = "Ctrl+W",
+            [KeybindingCommand.ShowCompletion] = "Ctrl+Space",
+            [KeybindingCommand.ShowQuickInfo] = "Ctrl+K",
+            [KeybindingCommand.GoToDefinition] = "F12",
+            [KeybindingCommand.FindReferences] = "Shift+F12; Alt+F7",
+            [KeybindingCommand.FindImplementations] = "Ctrl+F12; Ctrl+Alt+B",
+            [KeybindingCommand.RenameSymbol] = "F2",
+            [KeybindingCommand.FormatDocument] = "Ctrl+Alt+L",
+            [KeybindingCommand.FormatSelection] = "Ctrl+Alt+F",
+            [KeybindingCommand.FormatChangedCode] = "",
+            [KeybindingCommand.OrganizeImports] = "Ctrl+Alt+O",
+            [KeybindingCommand.RemoveUnusedImports] = "",
+            [KeybindingCommand.ShowQuickFixes] = "Ctrl+Period",
+            [KeybindingCommand.RefreshFiles] = "",
+            [KeybindingCommand.SearchWorkspace] = "",
+            [KeybindingCommand.RefreshGit] = "",
+            [KeybindingCommand.StageGitChange] = "",
+            [KeybindingCommand.UnstageGitChange] = "",
+            [KeybindingCommand.SelectWholeGitFile] = "",
+            [KeybindingCommand.DiscardGitChange] = "",
+            [KeybindingCommand.DeleteUntrackedGitFile] = "",
+            [KeybindingCommand.CommitGitChange] = "",
+            [KeybindingCommand.RefreshGitBranches] = "",
+            [KeybindingCommand.CreateGitBranch] = "",
+            [KeybindingCommand.SwitchGitBranch] = "",
+            [KeybindingCommand.RenameGitBranch] = "",
+            [KeybindingCommand.DeleteGitBranch] = "",
+            [KeybindingCommand.RefreshGitTags] = "",
+            [KeybindingCommand.CreateGitTag] = "",
+            [KeybindingCommand.DeleteGitTag] = "",
+            [KeybindingCommand.RefreshGitWorktrees] = "",
+            [KeybindingCommand.CreateGitWorktree] = "",
+            [KeybindingCommand.OpenGitWorktree] = "",
+            [KeybindingCommand.RemoveGitWorktree] = "",
+            [KeybindingCommand.RefreshGitStashes] = "",
+            [KeybindingCommand.CreateGitStash] = "",
+            [KeybindingCommand.ApplyGitStash] = "",
+            [KeybindingCommand.DeleteGitStash] = "",
+            [KeybindingCommand.RefreshGitRemotes] = "",
+            [KeybindingCommand.FetchGitRemote] = "",
+            [KeybindingCommand.IntegrateGitRemote] = "",
+            [KeybindingCommand.PushGitRemote] = "",
+            [KeybindingCommand.RefreshGitHistory] = "",
+            [KeybindingCommand.LoadMoreGitHistory] = "",
+            [KeybindingCommand.ShowGitBlame] = "",
+            [KeybindingCommand.RefreshGitConflicts] = "",
+            [KeybindingCommand.SaveGitConflict] = "",
+            [KeybindingCommand.StageGitConflict] = "",
+            [KeybindingCommand.UseGitConflictBase] = "",
+            [KeybindingCommand.UseGitConflictOurs] = "",
+            [KeybindingCommand.UseGitConflictTheirs] = "",
+            [KeybindingCommand.RefreshRunOutput] = "",
+            [KeybindingCommand.StopSelectedRun] = "",
+            [KeybindingCommand.ToggleProblemWarnings] = "",
+            [KeybindingCommand.ToggleProblemInformation] = "",
+            [KeybindingCommand.ToggleProblemHidden] = "",
+            [KeybindingCommand.OpenGoalPlan] = "",
+            [KeybindingCommand.OpenGoalEvidence] = "",
+        };
+        KeybindingSettingsService parser = new(new UnusedStore());
+        KeybindingValidationResult result = parser.Validate(new(Definitions.Select(definition =>
+            new KeybindingUpdateEntry(definition.Command, defaults[definition.Command])).ToArray()));
+        return result.IsValid
+            ? result.Bindings
+            : throw new InvalidOperationException("Built-in keybindings are invalid.");
+    }
+
+    private sealed class UnusedStore : IKeybindingPreferenceStore
+    {
+        public ValueTask<StoredKeybindingPreferences> GetAsync(CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+        public ValueTask<StoredKeybindingPreferences> SaveAsync(StoredKeybindingPreferences preferences,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<StoredKeybindingPreferences> ResetAsync(CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+}
+

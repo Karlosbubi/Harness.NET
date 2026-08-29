@@ -26,6 +26,7 @@ using Harness.BusinessLogic.Mutations;
 using Harness.BusinessLogic.ProjectSecrets;
 using Harness.BusinessLogic.Workflows;
 using Harness.BusinessLogic.Workspaces;
+using Harness.Presentation.Avalonia.Workbench;
 using Harness.UI.Avalonia;
 
 namespace Harness.Presentation.Avalonia;
@@ -52,6 +53,9 @@ internal sealed partial class MainWindow : Window
         string? needsTrust = active is null
             ? "Open a workspace first"
             : active.IsTrusted ? null : "Trust the workspace first";
+        string? needsGoal = state.Goals.SelectedGoal is null
+            ? "Create or continue a goal first"
+            : needsTrust;
 
         List<PaletteCommand> commands =
         [
@@ -204,8 +208,13 @@ internal sealed partial class MainWindow : Window
                 new("accessibility.focus.next", "Accessibility", "Focus next workbench region",
                     () => { host.FocusNextRegion(); return ValueTask.CompletedTask; },
                     bindings.DisplayFor(KeybindingCommand.FocusNextRegion),
-                    Binding: KeybindingCommand.FocusNextRegion),
+                Binding: KeybindingCommand.FocusNextRegion),
             ]);
+            commands.AddRange(WorkbenchPaletteCatalog.Build(
+                host,
+                bindings,
+                needsTrust,
+                needsGoal));
 
             PaletteCommand EditorCommand(
                 string id,

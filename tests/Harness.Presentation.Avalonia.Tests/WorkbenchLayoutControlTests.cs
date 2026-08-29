@@ -194,6 +194,8 @@ public sealed partial class PresentationControlTests
                     Find<IDockable>(workbench.Root, WorkbenchDockIds.ContextTool).Context),
                 Assert.IsAssignableFrom<Control>(
                     Find<IDockable>(workbench.Root, WorkbenchDockIds.RunOutputTool).Context),
+                Assert.IsAssignableFrom<Control>(
+                    Find<IDockable>(workbench.Root, WorkbenchDockIds.ProblemsTool).Context),
                 workbench.LayoutActions,
                 Assert.IsAssignableFrom<Control>(workbench.Documents.ActiveDockable?.Context),
             ];
@@ -231,6 +233,16 @@ public sealed partial class PresentationControlTests
                 " panel controls",
                 AutomationProperties.GetName(item),
                 StringComparison.Ordinal));
+
+            StatusIndicator[] toolStatuses = contexts
+                .SelectMany(context => context.GetLogicalDescendants())
+                .OfType<StatusIndicator>()
+                .ToArray();
+            Assert.True(toolStatuses.Length >= 6,
+                $"Expected shared status indicators for core tools; found {toolStatuses.Length}.");
+            Assert.All(toolStatuses, item => Assert.Equal(
+                AutomationLiveSetting.Polite,
+                AutomationProperties.GetLiveSetting(item)));
 
             Control[] splitters = window.GetVisualDescendants()
                 .OfType<Control>()

@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Harness.BusinessLogic.Inspection;
+using Harness.UI.Avalonia;
 using Harness.BusinessLogic.Workspaces;
 
 namespace Harness.Presentation.Avalonia.Workbench;
@@ -20,7 +21,7 @@ internal sealed class GitRemotesTool
     private readonly TextBox destination = new() { PlaceholderText = "Destination branch" };
     private readonly CheckBox rebasePull = new() { Content = "Rebase integration" };
     private readonly CheckBox forceWithLeasePush = new() { Content = "Force with lease" };
-    private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap };
+    private readonly StatusIndicator status = new() { TextWrapping = TextWrapping.Wrap };
     private DeveloperGitRemoteInspectionResult? currentInspection;
 
     internal GitRemotesTool(
@@ -60,7 +61,7 @@ internal sealed class GitRemotesTool
             source.Text = result.LocalBranch?.Value ?? string.Empty;
         if (string.IsNullOrWhiteSpace(destination.Text))
             destination.Text = result.UpstreamBranch?.Value ?? result.LocalBranch?.Value ?? string.Empty;
-        status.Text = result.Error ??
+        status.Message = result.Error ??
             $"Local {result.LocalSha ?? "unborn"} · remote tracking {result.RemoteTrackingSha ?? "unknown"} · " +
             $"ahead {result.Ahead?.ToString() ?? "?"} · behind {result.Behind?.ToString() ?? "?"}";
     }
@@ -114,6 +115,10 @@ internal sealed class GitRemotesTool
         });
     }
 
+    internal ValueTask IntegrateAsync() => SynchronizeAsync(rebasePull.IsChecked == true
+        ? DeveloperGitRemoteAction.PullRebase
+        : DeveloperGitRemoteAction.PullMerge);
+
     private Control BuildContent()
     {
         WrapPanel actions = new() { Orientation = Orientation.Horizontal };
@@ -135,8 +140,7 @@ internal sealed class GitRemotesTool
         AutomationProperties.SetName(forceWithLeasePush, "Use force with exact lease for Git push");
         refresh.Click += async (_, _) => await RefreshAsync();
         fetch.Click += async (_, _) => await SynchronizeAsync(DeveloperGitRemoteAction.Fetch);
-        pull.Click += async (_, _) => await SynchronizeAsync(rebasePull.IsChecked == true
-            ? DeveloperGitRemoteAction.PullRebase : DeveloperGitRemoteAction.PullMerge);
+        pull.Click += async (_, _) => await IntegrateAsync();
         push.Click += async (_, _) => await SynchronizeAsync(DeveloperGitRemoteAction.Push);
         actions.Children.Add(refresh);
         actions.Children.Add(fetch);

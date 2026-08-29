@@ -24,7 +24,7 @@ internal sealed class GitConflictsTool
     private readonly TextEditor ours = Editor("conflict-ours.cs", true);
     private readonly TextEditor theirs = Editor("conflict-theirs.cs", true);
     private readonly TextEditor result = Editor("conflict-result.cs", false);
-    private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap };
+    private readonly StatusIndicator status = new() { TextWrapping = TextWrapping.Wrap };
     private readonly TextBlock diagnostics = new() { TextWrapping = TextWrapping.Wrap };
     private DeveloperGitConflictInspectionResult? currentInspection;
     private DeveloperGitConflictDocumentResult? currentDocument;
@@ -72,7 +72,7 @@ internal sealed class GitConflictsTool
         currentInspection = inspected;
         conflicts.ItemsSource = inspected.Conflicts.Select(item => new ConflictChoice(item)).ToArray();
         conflicts.SelectedIndex = inspected.Conflicts.Count > 0 ? 0 : -1;
-        status.Text = inspected.Error ?? (inspected.Conflicts.Count == 0
+        status.Message = inspected.Error ?? (inspected.Conflicts.Count == 0
             ? "No unresolved Git conflicts in this source context."
             : $"{inspected.Conflicts.Count} unresolved path(s)" +
               (inspected.IsTruncated ? " · list truncated" : string.Empty));
@@ -85,7 +85,7 @@ internal sealed class GitConflictsTool
         DeveloperGitConflictDocumentResult document = await service.InspectConflictAsync(
             context.Request(active), first.Path, context.CancellationToken);
         if (hasOpenSourceDocument(document.Context, first.Path))
-            status.Text = $"Close the source editor for {first.Path.Value} before opening its merge result; " +
+            status.Message = $"Close the source editor for {first.Path.Value} before opening its merge result; " +
                           "Harness keeps one semantic buffer per path.";
         else
             Render(document);
@@ -97,7 +97,7 @@ internal sealed class GitConflictsTool
         if (rendering || context.IsBusy() || service is null || currentDocument?.Document is not { } document ||
             currentDocument.State is null || result.IsReadOnly)
         {
-            status.Text = "Select an editable text conflict first.";
+            status.Message = "Select an editable text conflict first.";
             return;
         }
         WorkspaceView? active = context.ActiveWorkspace();
@@ -113,12 +113,12 @@ internal sealed class GitConflictsTool
         if (context.IsBusy() || service is null || currentDocument?.Document is not { } document ||
             currentDocument.State is null || result.Text != document.Result)
         {
-            status.Text = "Save the exact current merge result before staging it.";
+            status.Message = "Save the exact current merge result before staging it.";
             return;
         }
         if (document.UnresolvedRegions.Count > 0)
         {
-            status.Text = "Remove every displayed conflict-marker region and save again before staging.";
+            status.Message = "Remove every displayed conflict-marker region and save again before staging.";
             return;
         }
         WorkspaceView? active = context.ActiveWorkspace();
@@ -131,13 +131,13 @@ internal sealed class GitConflictsTool
             if (staged.State is not null) renderGitState(staged.Context, staged.State);
             if (staged.Error is not null)
             {
-                status.Text = staged.Error;
+                status.Message = staged.Error;
                 return;
             }
             currentDocument = null;
             Clear();
             await RefreshCoreAsync(active);
-            status.Text = $"Staged exact saved result for {document.Path.Value}. " +
+            status.Message = $"Staged exact saved result for {document.Path.Value}. " +
                           $"{currentInspection?.Conflicts.Count ?? 0} unresolved path(s) remain.";
         });
     }
@@ -189,7 +189,7 @@ internal sealed class GitConflictsTool
             if (inspected.Document is not { } document)
             {
                 Clear();
-                status.Text = inspected.Error ?? "The selected conflict is unavailable.";
+                status.Message = inspected.Error ?? "The selected conflict is unavailable.";
                 return;
             }
             conflictBase.Text = SideText(document.Base, "base");
@@ -198,7 +198,7 @@ internal sealed class GitConflictsTool
             result.Text = document.Result;
             result.IsReadOnly = document.ResultIsTruncated ||
                 document.Base.IsBinary || document.Ours.IsBinary || document.Theirs.IsBinary;
-            status.Text = StateText(document, false);
+            status.Message = StateText(document, false);
             diagnostics.Text = document.Path.Value.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)
                 ? "Checking the current merge result with Roslyn…"
                 : "Compiler diagnostics do not apply to this file type.";
@@ -223,7 +223,7 @@ internal sealed class GitConflictsTool
             DeveloperGitConflictDocumentResult inspected = await service.InspectConflictAsync(
                 context.Request(active), selected.Conflict.Path, context.CancellationToken);
             if (hasOpenSourceDocument(inspected.Context, selected.Conflict.Path))
-                status.Text = $"Close the source editor for {selected.Conflict.Path.Value} before opening its " +
+                status.Message = $"Close the source editor for {selected.Conflict.Path.Value} before opening its " +
                               "merge result; Harness keeps one semantic buffer per path.";
             else Render(inspected);
         });
@@ -233,11 +233,25 @@ internal sealed class GitConflictsTool
     {
         if (side.IsMissing || side.IsBinary || side.IsTruncated || side.Text is null || result.IsReadOnly)
         {
-            status.Text = $"The {label} side is not editable text and cannot replace the result here.";
+            status.Message = $"The {label} side is not editable text and cannot replace the result here.";
             return;
         }
         result.Text = side.Text;
         result.Focus();
+    }
+
+    internal void UseBase() => UseSelectedSide(document => document.Base, "base");
+
+    internal void UseOurs() => UseSelectedSide(document => document.Ours, "ours");
+
+    internal void UseTheirs() => UseSelectedSide(document => document.Theirs, "theirs");
+
+    private void UseSelectedSide(
+        Func<DeveloperGitConflictDocumentView, DeveloperGitConflictSideView> select,
+        string label)
+    {
+        if (currentDocument?.Document is { } document) UseSide(select(document), label);
+        else status.Message = "Select a current Git conflict first.";
     }
 
     private Control BuildContent()
@@ -254,18 +268,9 @@ internal sealed class GitConflictsTool
         refresh.Click += async (_, _) => await RefreshAsync();
         save.Click += async (_, _) => await SaveAsync();
         stage.Click += async (_, _) => await StageAsync();
-        useBase.Click += (_, _) =>
-        {
-            if (currentDocument?.Document is { } item) UseSide(item.Base, "base");
-        };
-        useOurs.Click += (_, _) =>
-        {
-            if (currentDocument?.Document is { } item) UseSide(item.Ours, "ours");
-        };
-        useTheirs.Click += (_, _) =>
-        {
-            if (currentDocument?.Document is { } item) UseSide(item.Theirs, "theirs");
-        };
+        useBase.Click += (_, _) => UseBase();
+        useOurs.Click += (_, _) => UseOurs();
+        useTheirs.Click += (_, _) => UseTheirs();
         foreach (Button item in new[] { refresh, save, stage, useBase, useOurs, useTheirs })
             actions.Children.Add(item);
         AutomationProperties.SetName(conflicts, "Unresolved Git conflict paths");
@@ -280,7 +285,7 @@ internal sealed class GitConflictsTool
         {
             if (!rendering && currentDocument?.Document is { } document)
             {
-                status.Text = StateText(document, result.Text != document.Result);
+                status.Message = StateText(document, result.Text != document.Result);
                 ScheduleDiagnostics(document);
             }
         };

@@ -103,29 +103,25 @@ internal sealed partial class MainWindow : Window
     private bool suppressSelection;
     private bool loaded;
     private bool closingAfterLayoutSave;
-    private static readonly KeybindingCommand[] ShellKeyCommands =
+    private static readonly KeybindingCommand[] DocumentKeyCommands =
     [
-        KeybindingCommand.ShowCommandPalette,
-        KeybindingCommand.QuickOpen,
-        KeybindingCommand.OpenWorkspace,
-        KeybindingCommand.ManageWorkspaces,
-        KeybindingCommand.ManageProjectUserSecrets,
-        KeybindingCommand.OpenSettings,
-        KeybindingCommand.InspectSemanticContext,
-        KeybindingCommand.ManageFramework,
-        KeybindingCommand.ManageOperations,
-        KeybindingCommand.RefreshProviderHealth,
-        KeybindingCommand.ReloadUserThemes,
-        KeybindingCommand.ShowChat,
-        KeybindingCommand.ShowFiles,
-        KeybindingCommand.ShowGit,
-        KeybindingCommand.OpenWorkingTreeDiff,
-        KeybindingCommand.ShowRunOutput,
-        KeybindingCommand.ShowProblems,
-        KeybindingCommand.SaveWorkbenchLayout,
-        KeybindingCommand.ResetWorkbenchLayout,
-        KeybindingCommand.FocusNextRegion,
+        KeybindingCommand.SaveDocument,
+        KeybindingCommand.CloseDocument,
+        KeybindingCommand.ShowCompletion,
+        KeybindingCommand.ShowQuickInfo,
+        KeybindingCommand.GoToDefinition,
+        KeybindingCommand.FindReferences,
+        KeybindingCommand.FindImplementations,
+        KeybindingCommand.RenameSymbol,
+        KeybindingCommand.FormatDocument,
+        KeybindingCommand.FormatSelection,
+        KeybindingCommand.FormatChangedCode,
+        KeybindingCommand.OrganizeImports,
+        KeybindingCommand.RemoveUnusedImports,
+        KeybindingCommand.ShowQuickFixes,
     ];
+    private static readonly KeybindingCommand[] ShellKeyCommands =
+        Enum.GetValues<KeybindingCommand>().Except(DocumentKeyCommands).ToArray();
 
     internal MainWindow(
         AvaloniaPresentationStore store,

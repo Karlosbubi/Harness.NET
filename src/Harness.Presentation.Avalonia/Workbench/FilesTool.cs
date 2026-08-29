@@ -17,7 +17,7 @@ internal sealed class FilesTool
     private readonly WorkbenchToolContext context;
     private readonly TextBox filter = new();
     private readonly TreeView tree = new();
-    private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap };
+    private readonly StatusIndicator status = new() { TextWrapping = TextWrapping.Wrap };
     private readonly SearchTool search;
     private bool busy;
     private int contextVersion;
@@ -38,7 +38,7 @@ internal sealed class FilesTool
     internal Control Content { get; }
     internal TreeView Tree => tree;
     internal TextBox Filter => filter;
-    internal string StatusText => status.Text ?? string.Empty;
+    internal string StatusText => status.Message ?? string.Empty;
 
     internal void Update(AvaloniaShellState snapshot)
     {
@@ -145,6 +145,8 @@ internal sealed class FilesTool
         }
     }
 
+    internal ValueTask SearchAsync() => search.SearchAsync();
+
     internal async ValueTask<IReadOnlyList<PaletteCommand>> BuildFileCommandsAsync()
     {
         WorkspaceView? active = context.ActiveWorkspace();
@@ -169,7 +171,7 @@ internal sealed class FilesTool
         ];
     }
 
-    internal void ReportStatus(string message) => status.Text = message;
+    internal void ReportStatus(string message) => status.Message = message;
 
     private Control BuildContent()
     {
@@ -243,7 +245,7 @@ internal sealed class FilesTool
                 .Where(file => file.Value.Contains(filterText, StringComparison.OrdinalIgnoreCase))
                 .ToArray();
         tree.ItemsSource = BuildFileTree(visible);
-        status.Text = error ?? (trackedFiles.Count == 0
+        status.Message = error ?? (trackedFiles.Count == 0
             ? "No tracked files are available in the current source context."
             : filterText.Length == 0
                 ? $"{trackedFiles.Count:N0} tracked files" +
