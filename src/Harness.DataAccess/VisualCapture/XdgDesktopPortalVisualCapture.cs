@@ -8,6 +8,7 @@ internal sealed class XdgDesktopPortalVisualCapture : IVisualCapturePortal
 {
     private const string Destination = "org.freedesktop.portal.Desktop";
     private const string DesktopPath = "/org/freedesktop/portal/desktop";
+    private static readonly TimeSpan AvailabilityTimeout = TimeSpan.FromSeconds(5);
 
     public async ValueTask<PortalCaptureAvailability> GetAvailabilityAsync(
         CancellationToken cancellationToken = default)
@@ -20,18 +21,26 @@ internal sealed class XdgDesktopPortalVisualCapture : IVisualCapturePortal
 
         try
         {
+            using CancellationTokenSource timeout =
+                CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(AvailabilityTimeout);
             using DBusConnection connection = new(DBusAddress.Session);
-            await connection.ConnectAsync().AsTask().WaitAsync(cancellationToken);
+            await connection.ConnectAsync().AsTask().WaitAsync(timeout.Token);
             Screenshot screenshot = new(connection, Destination, DesktopPath);
-            uint version = await screenshot.GetVersionAsync().WaitAsync(cancellationToken);
+            uint version = await screenshot.GetVersionAsync().WaitAsync(timeout.Token);
             uint targets = version >= 3
-                ? await screenshot.GetAvailableTargetsAsync().WaitAsync(cancellationToken)
+                ? await screenshot.GetAvailableTargetsAsync().WaitAsync(timeout.Token)
                 : 0;
             return new(true, version, targets, null, null);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
+        }
+        catch (OperationCanceledException)
+        {
+            return new(false, 0, 0, "portal_timeout",
+                "The XDG desktop portal did not report screenshot availability within five seconds.");
         }
         catch (Exception exception) when (IsPortalException(exception))
         {

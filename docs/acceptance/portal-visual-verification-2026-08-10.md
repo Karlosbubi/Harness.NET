@@ -5,6 +5,10 @@
 - The Linux adapter uses `org.freedesktop.portal.Screenshot` for one interactive
   frame. It subscribes to the request response before invoking capture and closes an
   outstanding request on cancellation.
+- The non-interactive availability probe is bounded to five seconds and returns the
+  typed `portal_timeout` outcome when a desktop portal accepts the D-Bus connection
+  but does not answer. Portal discovery therefore cannot indefinitely block desktop
+  startup or layout restoration.
 - Business Logic returns distinct success, cancellation, denial, portal absence,
   stale request, invalid image, size rejection, storage failure, and policy outcomes.
 - PNG and JPEG dimensions are read without image decoding. Encoded frames are capped
@@ -34,6 +38,8 @@ revocation, age/count retention, and interrupted-write cleanup. Migration tests 
 restart persistence and upgrade. Scale metadata is tested at 1× and 2×. The
 production AT-SPI verifier opens the searchable Settings page and validates the
 accessible names for consent, limits, remote disclosure, capture, list, and deletion.
+It also passed a production restart with a non-responsive screenshot portal, proving
+the bounded availability fallback and saved-layout restoration.
 
 Run:
 
