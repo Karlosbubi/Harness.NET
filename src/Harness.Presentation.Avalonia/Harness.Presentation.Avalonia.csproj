@@ -8,6 +8,7 @@
     <PackageReference Include="Markdig" />
     <PackageReference Include="Microsoft.Extensions.Logging" />
     <PackageReference Include="System.Reactive" />
+    <PackageReference Include="SvcSystems.UI.Terminal" />
   </ItemGroup>
 
   <ItemGroup>

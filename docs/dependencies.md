@@ -42,6 +42,26 @@ one pull request.
 
 ## Review record
 
+2026-08-29, NuGet.org, developer terminal slice:
+
+- accepted `Porta.Pty` `2.2.0` for the Data Access PTY boundary and
+  `SvcSystems.UI.Terminal` `1.1.3` for the Avalonia renderer under ADR 029;
+- package repository commits, MIT declarations, managed/native archive contents, and
+  direct/transitive graphs were inspected from the restored signed NuGet packages;
+- normalized the Avalonia runtime, desktop, headless, and Fluent theme family from
+  `12.1.0` to `12.1.1`, which the renderer requires, instead of publishing a mixed
+  Avalonia patch graph;
+- NuGet reported no known vulnerable package in any solution project after restore;
+- Linux adapter, architecture, deterministic-suite, accessibility, and published
+  native-asset evidence remain required before Task 051 can leave progress status.
+
+Rollback: remove the two adapters and their central pins, revert the Avalonia patch
+normalization, and retain ADR 029's developer/agent authority separation. No persisted
+state depends on either package at this checkpoint.
+
+Next review: with the Task 051 acceptance record, or earlier for a security advisory
+or upstream compatibility requirement.
+
 2026-08-25, NuGet.org, `--include-transitive --no-restore`:
 
 - no known vulnerable package was reported in any of the 15 solution projects;
