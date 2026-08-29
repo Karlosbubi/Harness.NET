@@ -623,7 +623,7 @@ Acceptance criteria:
 
 ### 052 — .NET project, Run, Test, and Debug experience
 
-Status: `In progress — typed project-entry-point Run delivered`
+Status: `In progress — typed Run and static Solution metadata delivered`
 
 Dependencies: 018, 042, 047, 049, 051.
 
@@ -632,8 +632,12 @@ execution controls, Test Explorer, and debugger needed for ordinary .NET work.
 
 Progress: the first developer execution slice provides typed project-entry-point Run,
 process-tree cancellation, transient bounded output, and durable lifecycle metadata.
-It does not yet provide the Solution view, Build/Rebuild UI, Test Explorer, launch
-profiles, Hot Reload, or Debug.
+The second slice adds a source-context-aware static Solution tree for the entry point,
+SDK policy, projects, target frameworks, declared references/packages, language and
+nullable metadata, with typed project-file navigation and no Restore, MSBuild
+evaluation, or repository execution. Configuration/startup discovery, installed
+SDK/workload health, Build/Rebuild UI, Test Explorer, launch profiles, Hot Reload,
+and Debug remain open.
 
 Acceptance criteria:
 
@@ -893,7 +897,7 @@ partials; both the production and test stores have left the allowlist. Slice 060
 has extracted bounded settings sections and goal workflow dialogs with matching
 focused tests; both production windows have left the allowlist. Slice 060.8 has
 completed the Avalonia UX audit, with bounded shell/test units, a complete typed
-palette for 45 core tool actions, and shared live tool status. The remaining
+palette for 46 core tool actions, and shared live tool status. The remaining
 production services and test fixtures are split into bounded partials, leaving the
 shared global size-budget allowlist empty and completing the task.
 

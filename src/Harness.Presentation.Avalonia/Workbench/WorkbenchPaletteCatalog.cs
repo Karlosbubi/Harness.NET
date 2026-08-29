@@ -22,6 +22,9 @@ internal static class WorkbenchPaletteCatalog
             Command("files.search", "Files", "Search workspace text",
                 KeybindingCommand.SearchWorkspace,
                 () => InFiles(host.SearchWorkspaceAsync), needsTrust),
+            Command("solution.refresh", "Solution", "Refresh .NET solution metadata",
+                KeybindingCommand.RefreshSolution,
+                () => InSolution(host.RefreshSolutionAsync), needsTrust),
             Command("git.refresh", "Git", "Refresh Git state",
                 KeybindingCommand.RefreshGit,
                 () => InGit(GitWorkbenchSection.Changes, host.RefreshGitAsync), needsTrust),
@@ -184,6 +187,12 @@ internal static class WorkbenchPaletteCatalog
         async ValueTask InFiles(Func<ValueTask> action)
         {
             host.ShowFiles();
+            await action();
+        }
+
+        async ValueTask InSolution(Func<ValueTask> action)
+        {
+            host.ShowSolution();
             await action();
         }
 

@@ -486,6 +486,14 @@ without a shell, Restore, or launch profile, supports process-tree cancellation,
 persists bounded lifecycle metadata, and keeps stdout/stderr process-local. Solution,
 Build/Rebuild, Test Explorer, launch profiles, Hot Reload, and Debug remain planned.
 
+Delivered second slice: the Workspace tool now includes a static Solution view bound
+to the exact original workspace or approved goal worktree. It shows the registered
+entry point, SDK policy, projects, target frameworks, language/nullable metadata,
+and declared project/package references, opens project files through the existing
+typed document boundary, and never restores, evaluates MSBuild, or executes project
+code. Configuration/startup discovery, installed SDK/workload health, launch
+profiles, Build/Rebuild, Test Explorer, Hot Reload, and Debug remain planned.
+
 Use the existing trust and Restore boundaries. Selecting a launch profile does not
 authorize execution; debug attach, expression evaluation, mutation, dumps, network
 listeners, and external processes remain separately classified. ASP.NET endpoint

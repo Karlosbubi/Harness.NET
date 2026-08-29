@@ -15,25 +15,32 @@ public sealed class WorkbenchInspectionServiceTests
         TextSearcher searcher = new();
         FileCatalogReader files = new();
         GitInspector git = new();
+        DotNetInspector dotNet = new();
         WorkbenchInspectionService service = CreateService(
             CreateGoal("Approved"),
             CreateWorktree(),
             CreateWorkspace(isTrusted: true),
             files,
             searcher,
-            git);
+            git,
+            dotNet);
         WorkbenchWorkspaceRequest request = new(new("workspace-id"), new("goal-id"));
 
         WorkbenchFileCatalogResult catalog = await service.ListFilesAsync(request);
         WorkbenchTextSearchResult search = await service.SearchTextAsync(request, "needle");
         WorkbenchGitInspectionResult inspection = await service.InspectGitAsync(request);
+        WorkbenchDotNetInspectionResult solution = await service.InspectDotNetAsync(request);
 
         Assert.Equal("/state/worktrees/goal-id", files.Root);
         Assert.Equal("/state/worktrees/goal-id", searcher.Root);
         Assert.Equal(searcher.Root, git.Root);
+        Assert.Equal(searcher.Root, dotNet.Root);
+        Assert.Equal("Harness.slnx", dotNet.EntryPoint);
         Assert.Equal(WorkbenchWorkspaceScope.ApprovedGoalWorktree, search.Context.Scope);
         Assert.Equal(search.Context, inspection.Context);
         Assert.Equal(search.Context, catalog.Context);
+        Assert.Equal(search.Context, solution.Context);
+        Assert.Equal("src/App/App.csproj", Assert.Single(solution.DotNet.Projects).Path);
         Assert.Equal("harness/goal-test", inspection.Context.Branch?.Value);
         Assert.Equal("src/App.cs", Assert.Single(search.Search.Matches).Path);
         Assert.Equal("src/App.cs", Assert.Single(inspection.Git.Changes).Path);
@@ -45,13 +52,15 @@ public sealed class WorkbenchInspectionServiceTests
         TextSearcher searcher = new();
         FileCatalogReader files = new();
         GitInspector git = new();
+        DotNetInspector dotNet = new();
         WorkbenchInspectionService service = CreateService(
             CreateGoal("AwaitingPlanApproval"),
             worktree: null,
             CreateWorkspace(isTrusted: true),
             files,
             searcher,
-            git);
+            git,
+            dotNet);
 
         WorkbenchGitInspectionResult result = await service.InspectGitAsync(
             new(new("workspace-id"), new("goal-id")));
@@ -68,13 +77,15 @@ public sealed class WorkbenchInspectionServiceTests
         TextSearcher searcher = new();
         FileCatalogReader files = new();
         GitInspector git = new();
+        DotNetInspector dotNet = new();
         WorkbenchInspectionService service = CreateService(
             CreateGoal("Approved"),
             CreateWorktree(),
             CreateWorkspace(isTrusted: false),
             files,
             searcher,
-            git);
+            git,
+            dotNet);
 
         WorkbenchFileCatalogResult catalog = await service.ListFilesAsync(
             new(new("workspace-id"), new("goal-id")));
@@ -83,13 +94,17 @@ public sealed class WorkbenchInspectionServiceTests
             "needle");
         WorkbenchGitInspectionResult inspection = await service.InspectGitAsync(
             new(new("workspace-id"), new("goal-id")));
+        WorkbenchDotNetInspectionResult solution = await service.InspectDotNetAsync(
+            new(new("workspace-id"), new("goal-id")));
 
         Assert.Equal("workspace_not_trusted", catalog.Catalog.ErrorCode);
         Assert.Equal("workspace_not_trusted", search.Search.ErrorCode);
         Assert.Equal("workspace_not_trusted", inspection.Git.ErrorCode);
+        Assert.Equal("workspace_not_trusted", solution.DotNet.ErrorCode);
         Assert.Null(files.Root);
         Assert.Null(searcher.Root);
         Assert.Null(git.Root);
+        Assert.Null(dotNet.Root);
     }
 
     private static WorkbenchInspectionService CreateService(
@@ -98,13 +113,15 @@ public sealed class WorkbenchInspectionServiceTests
         RegisteredWorkspace workspace,
         FileCatalogReader files,
         TextSearcher searcher,
-        GitInspector git) => new(
+        GitInspector git,
+        DotNetInspector dotNet) => new(
         new WorkbenchWorkspaceContextResolver(
             new GoalStore(goal, worktree),
             new WorkspaceStore(workspace)),
         files,
         searcher,
-        git);
+        git,
+        dotNet);
 
     private sealed class FileCatalogReader : IWorkspaceFileCatalogReader
     {
@@ -163,6 +180,30 @@ public sealed class WorkbenchInspectionServiceTests
             return ValueTask.FromResult(new WorkspaceGitState(
                 "harness/goal-test", "abc123", [new("src/App.cs", "modified")],
                 "diff --git a/src/App.cs b/src/App.cs", false, null, null));
+        }
+    }
+
+    private sealed class DotNetInspector : IWorkspaceDotNetInspector
+    {
+        internal string? Root { get; private set; }
+        internal string? EntryPoint { get; private set; }
+
+        public ValueTask<WorkspaceDotNetInfo> InspectAsync(
+            string workspaceRoot,
+            string entryPoint,
+            CancellationToken cancellationToken = default)
+        {
+            Root = workspaceRoot;
+            EntryPoint = entryPoint;
+            return ValueTask.FromResult(new WorkspaceDotNetInfo(
+                entryPoint,
+                "slnx",
+                new("10.0.100", "latestFeature", false),
+                [new("src/App/App.csproj", "Microsoft.NET.Sdk", ["net10.0"],
+                    "latest", "enable", [new("package", "Example", "1.0.0")])],
+                IsTruncated: false,
+                ErrorCode: null,
+                Error: null));
         }
     }
 

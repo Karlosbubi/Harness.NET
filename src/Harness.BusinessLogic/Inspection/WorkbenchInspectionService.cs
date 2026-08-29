@@ -8,7 +8,8 @@ internal sealed class WorkbenchInspectionService(
     IWorkbenchWorkspaceContextResolver contextResolver,
     IWorkspaceFileCatalogReader fileCatalogReader,
     IWorkspaceTextSearcher textSearcher,
-    IWorkspaceGitInspector gitInspector) : IWorkbenchInspectionService
+    IWorkspaceGitInspector gitInspector,
+    IWorkspaceDotNetInspector dotNetInspector) : IWorkbenchInspectionService
 {
     public async ValueTask<WorkbenchFileCatalogResult> ListFilesAsync(
         WorkbenchWorkspaceRequest request,
@@ -122,5 +123,57 @@ internal sealed class WorkbenchInspectionService(
                 git.StagedDiff,
                 git.UnstagedDiff,
                 DeveloperGitService.MapPatchUnits(git.PatchUnits)));
+    }
+
+    public async ValueTask<WorkbenchDotNetInspectionResult> InspectDotNetAsync(
+        WorkbenchWorkspaceRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        WorkbenchWorkspaceResolution resolution = await contextResolver.ResolveAsync(
+            request,
+            cancellationToken);
+        if (resolution.Error is not null || resolution.RootPath is null ||
+            resolution.EntryPoint is null)
+        {
+            return new(
+                resolution.Context,
+                new(
+                    string.Empty,
+                    string.Empty,
+                    null,
+                    [],
+                    IsTruncated: false,
+                    resolution.ErrorCode ?? "workspace_unavailable",
+                    resolution.Error ?? "The workspace project context is unavailable."));
+        }
+
+        WorkspaceDotNetInfo result = await dotNetInspector.InspectAsync(
+            resolution.RootPath,
+            resolution.EntryPoint.Value,
+            cancellationToken);
+        return new(
+            resolution.Context,
+            new(
+                result.EntryPoint,
+                result.EntryPointKind,
+                result.SdkPolicy is null
+                    ? null
+                    : new(
+                        result.SdkPolicy.Version,
+                        result.SdkPolicy.RollForward,
+                        result.SdkPolicy.AllowPrerelease),
+                result.Projects.Select(project => new DotNetProjectView(
+                    project.Path,
+                    project.Sdk,
+                    project.TargetFrameworks,
+                    project.LanguageVersion,
+                    project.Nullable,
+                    project.References.Select(reference => new DotNetReferenceView(
+                        reference.Kind,
+                        reference.Identity,
+                        reference.Version)).ToArray())).ToArray(),
+                result.IsTruncated,
+                result.ErrorCode,
+                result.Error));
     }
 }

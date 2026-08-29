@@ -27,7 +27,7 @@ section/dialog units have left the production allowlist, with matching presentat
 tests split from the shared fixture. Slice 060.8 is implemented under the sequencing
 and evidence rules below:
 the shell and shared test fixture are decomposed, all Avalonia production/test files
-have left the allowlist, 45 workbench tool actions join the complete typed palette
+have left the allowlist, 46 workbench tool actions join the complete typed palette
 catalog, and core tool status uses one live indicator. The remaining production
 services and test fixtures are decomposed into bounded partials, leaving the shared
 global source-budget allowlist empty and completing Task 060.

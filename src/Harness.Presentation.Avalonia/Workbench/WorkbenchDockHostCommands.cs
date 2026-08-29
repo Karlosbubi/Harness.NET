@@ -52,6 +52,7 @@ internal sealed partial class WorkbenchDockHost
         if (ActiveWorkspace() is { IsTrusted: true })
         {
             await filesTool.RefreshAsync();
+            await solutionTool.RefreshAsync();
             await RefreshGitAsync();
         }
     }
@@ -73,6 +74,7 @@ internal sealed partial class WorkbenchDockHost
     internal void Update(AvaloniaShellState snapshot)
     {
         filesTool.Update(snapshot);
+        solutionTool.Update(snapshot);
         documentsHost.Update(snapshot);
         navigator.Update(snapshot.Settings.KeybindingSettings ?? KeybindingSettingsSnapshot.Default);
 
@@ -305,6 +307,21 @@ internal sealed partial class WorkbenchDockHost
     internal ValueTask RefreshFilesAsync() => filesTool.RefreshAsync();
 
     internal ValueTask SearchWorkspaceAsync() => filesTool.SearchAsync();
+
+    internal ValueTask RefreshSolutionAsync() => solutionTool.RefreshAsync();
+
+    private Control BuildWorkspaceNavigation(Control navigation)
+    {
+        TabItem workspaceTab = new() { Header = "Workspace", Content = navigation };
+        TabItem solutionTab = new() { Header = "Solution", Content = solutionTool.Content };
+        AutomationProperties.SetName(workspaceTab, "Workspace navigation tab");
+        AutomationProperties.SetName(solutionTab, ".NET solution navigation tab");
+        workspaceSections.Items.Add(workspaceTab);
+        workspaceSections.Items.Add(solutionTab);
+        workspaceSections.SelectedIndex = 0;
+        AutomationProperties.SetName(workspaceSections, "Workspace and solution navigation");
+        return workspaceSections;
+    }
     private Control BuildSourceControlTool()
     {
         Grid grid = new()

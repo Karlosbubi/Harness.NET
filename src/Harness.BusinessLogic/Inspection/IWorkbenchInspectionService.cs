@@ -16,4 +16,8 @@ public interface IWorkbenchInspectionService
     ValueTask<WorkbenchGitInspectionResult> InspectGitAsync(
         WorkbenchWorkspaceRequest request,
         CancellationToken cancellationToken = default);
+
+    ValueTask<WorkbenchDotNetInspectionResult> InspectDotNetAsync(
+        WorkbenchWorkspaceRequest request,
+        CancellationToken cancellationToken = default);
 }

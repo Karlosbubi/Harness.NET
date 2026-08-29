@@ -105,6 +105,32 @@ public sealed partial class PresentationControlTests
                         : [])));
         }
 
+        public ValueTask<WorkbenchDotNetInspectionResult> InspectDotNetAsync(
+            WorkbenchWorkspaceRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            Requests.Add(request);
+            return ValueTask.FromResult(new WorkbenchDotNetInspectionResult(
+                Context(request),
+                new(
+                    "Harness.slnx",
+                    "slnx",
+                    new("10.0.100", "latestFeature", false),
+                    [new(
+                        "src/Harness.App/Harness.App.csproj",
+                        "Microsoft.NET.Sdk",
+                        ["net10.0"],
+                        "latest",
+                        "enable",
+                        [
+                            new("project", "../Harness.Core/Harness.Core.csproj", null),
+                            new("package", "Avalonia", "11.3.8"),
+                        ])],
+                    IsTruncated: false,
+                    ErrorCode: null,
+                    Error: null)));
+        }
+
         private static WorkbenchWorkspaceContext Context(WorkbenchWorkspaceRequest request) =>
             request.GoalId is null
                 ? new(

@@ -58,6 +58,7 @@ internal sealed partial class WorkbenchDockHost
     private readonly Factory factory = new();
     private readonly Dictionary<string, Control> durableContexts = new(StringComparer.Ordinal);
     private readonly FilesTool filesTool;
+    private readonly SolutionTool solutionTool;
     private readonly GitChangesTool gitChangesTool;
     private readonly GitBranchesTool gitBranchesTool;
     private readonly GitWorktreesTool gitWorktreesTool;
@@ -71,6 +72,7 @@ internal sealed partial class WorkbenchDockHost
     private readonly WorkbenchLayoutHost layoutHost;
     private readonly WorkbenchNavigator navigator;
     private readonly TabControl gitSections = new();
+    private readonly TabControl workspaceSections = new();
     private TextBlock GitStatus => gitChangesTool.Status;
     private string GitFingerprint => gitChangesTool.Fingerprint;
     private WorkbenchWorkspaceContext? CurrentGitContext => gitChangesTool.CurrentContext;
@@ -124,6 +126,7 @@ internal sealed partial class WorkbenchDockHost
             ReloadOriginalDocumentAsync = ReloadOriginalDocumentAsync,
         };
         filesTool = new(toolContext);
+        solutionTool = new(toolContext);
         gitChangesTool = new(toolContext);
         gitBranchesTool = new(
             toolContext,
@@ -174,13 +177,14 @@ internal sealed partial class WorkbenchDockHost
             manageWorkspace ?? (_ => Task.CompletedTask),
             manageProjectSecrets ?? (() => Task.CompletedTask));
 
+        Control workspaceNavigation = BuildWorkspaceNavigation(navigation);
         Control files = filesTool.Content;
         Control sourceControl = BuildSourceControlTool();
         Control runOutput = runOutputToolUnit.Content;
         Control problemsContent = problemsToolUnit.Content;
         Control context = BuildContextTool(goalContext);
         Control overviewContent = overviewHost.Content;
-        durableContexts.Add(WorkbenchDockIds.NavigationTool, navigation);
+        durableContexts.Add(WorkbenchDockIds.NavigationTool, workspaceNavigation);
         durableContexts.Add(WorkbenchDockIds.FilesTool, files);
         durableContexts.Add(WorkbenchDockIds.ContextTool, context);
         durableContexts.Add(WorkbenchDockIds.GitTool, sourceControl);
@@ -194,7 +198,7 @@ internal sealed partial class WorkbenchDockHost
                 .WithId(WorkbenchDockIds.NavigationTool)
                 .WithTitle("Workspace")
                 .WithCanClose(true)
-                .WithContext(navigation))
+                .WithContext(workspaceNavigation))
             .Tool(out ITool? filesDockTool, item => item
                 .WithId(WorkbenchDockIds.FilesTool)
                 .WithTitle("Files")
@@ -288,7 +292,7 @@ internal sealed partial class WorkbenchDockHost
         documents.VisibleDockables = factory.CreateList<IDockable>(overviewDocument);
         documents.ActiveDockable = overviewDocument;
         documentsHost.Attach(documents, overviewDocument);
-        WorkbenchDockContent.Attach(navigationTool!, navigation);
+        WorkbenchDockContent.Attach(navigationTool!, workspaceNavigation);
         WorkbenchDockContent.Attach(filesDockTool!, files);
         WorkbenchDockContent.Attach(contextTool!, context);
         WorkbenchDockContent.Attach(gitTool!, sourceControl);
@@ -391,6 +395,13 @@ internal sealed partial class WorkbenchDockHost
         (context.GoalId?.Value ?? "original");
 
     internal bool ShowFiles() => navigator.ShowFiles();
+
+    internal bool ShowSolution()
+    {
+        bool shown = navigator.ShowWorkspace();
+        workspaceSections.SelectedIndex = 1;
+        return shown;
+    }
 
     internal bool ShowConversation() => navigator.ShowConversation();
 

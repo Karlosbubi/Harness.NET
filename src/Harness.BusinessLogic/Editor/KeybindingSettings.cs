@@ -47,6 +47,7 @@ public enum KeybindingCommand
     ShowQuickFixes,
     RefreshFiles,
     SearchWorkspace,
+    RefreshSolution,
     RefreshGit,
     StageGitChange,
     UnstageGitChange,

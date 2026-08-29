@@ -107,6 +107,11 @@ public sealed class FilesToolTests
             CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
+        public ValueTask<WorkbenchDotNetInspectionResult> InspectDotNetAsync(
+            WorkbenchWorkspaceRequest request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
         private static WorkbenchWorkspaceContext Context(WorkbenchWorkspaceRequest request) =>
             new(
                 request.WorkspaceId,

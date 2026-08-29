@@ -42,6 +42,7 @@ internal sealed class WorkbenchNavigator
     internal void Update(KeybindingSettingsSnapshot next) => keybindings = next;
 
     internal bool ShowFiles() => ActivateTool(WorkbenchDockIds.FilesTool);
+    internal bool ShowWorkspace() => ActivateTool(WorkbenchDockIds.NavigationTool);
     internal bool ShowConversation() => ActivateTool(WorkbenchDockIds.ConversationTool);
     internal bool ShowGit() => ActivateTool(WorkbenchDockIds.GitTool);
     internal bool ShowRunOutput() => ActivateTool(WorkbenchDockIds.RunOutputTool);

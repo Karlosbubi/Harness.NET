@@ -67,7 +67,7 @@ shortcuts before Save is enabled. Empty text deliberately unbinds a command. Cha
 apply to open editors and the shell without restart, and the command palette and
 header show the same active snapshot used for dispatch. Every fixed command-palette
 action has exactly one typed catalog entry, including workspace, framework,
-operations, provider refresh, layout, editor transformation, and 45 core workbench
+operations, provider refresh, layout, editor transformation, and 46 core workbench
 tool actions spanning Files, Git, Run output, Problems, and goal context. Commands
 without a safe universal shortcut ship deliberately unbound and can be assigned here.
 

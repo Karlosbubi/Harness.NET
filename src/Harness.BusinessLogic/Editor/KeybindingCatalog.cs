@@ -43,6 +43,7 @@ internal static class KeybindingCatalog
         new(KeybindingCommand.ShowQuickFixes, "Editor", "Show quick fixes"),
         new(KeybindingCommand.RefreshFiles, "Files", "Refresh repository files"),
         new(KeybindingCommand.SearchWorkspace, "Files", "Search workspace text"),
+        new(KeybindingCommand.RefreshSolution, "Solution", "Refresh .NET solution metadata"),
         new(KeybindingCommand.RefreshGit, "Git", "Refresh Git state"),
         new(KeybindingCommand.StageGitChange, "Git changes", "Stage selected change"),
         new(KeybindingCommand.UnstageGitChange, "Git changes", "Unstage selected change"),
@@ -134,6 +135,7 @@ internal static class KeybindingCatalog
             [KeybindingCommand.ShowQuickFixes] = "Ctrl+Period",
             [KeybindingCommand.RefreshFiles] = "",
             [KeybindingCommand.SearchWorkspace] = "",
+            [KeybindingCommand.RefreshSolution] = "",
             [KeybindingCommand.RefreshGit] = "",
             [KeybindingCommand.StageGitChange] = "",
             [KeybindingCommand.UnstageGitChange] = "",
@@ -196,4 +198,3 @@ internal static class KeybindingCatalog
             throw new NotSupportedException();
     }
 }
-

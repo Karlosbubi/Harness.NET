@@ -55,7 +55,8 @@ internal sealed class WorkbenchWorkspaceContextResolver(
                         $"Approved goal worktree · {worktree.Branch} · {goal.Title}"),
                     worktree.Path,
                     ErrorCode: null,
-                    Error: null);
+                    Error: null,
+                    EntryPoint(workspace));
             }
 
             return new(
@@ -67,7 +68,8 @@ internal sealed class WorkbenchWorkspaceContextResolver(
                     "Original workspace · selected goal has no active approved worktree"),
                 workspace.RootPath,
                 ErrorCode: null,
-                Error: null);
+                Error: null,
+                EntryPoint(workspace));
         }
 
         return new(
@@ -79,8 +81,13 @@ internal sealed class WorkbenchWorkspaceContextResolver(
                 "Original workspace · user-editable source context"),
             workspace.RootPath,
             ErrorCode: null,
-            Error: null);
+            Error: null,
+            EntryPoint(workspace));
     }
+
+    private static WorkbenchEntryPointPath EntryPoint(RegisteredWorkspace workspace) => new(
+        Path.GetRelativePath(workspace.RootPath, workspace.EntryPoint)
+            .Replace(Path.DirectorySeparatorChar, '/'));
 
     private static WorkbenchWorkspaceResolution Failure(
         WorkbenchWorkspaceRequest request,

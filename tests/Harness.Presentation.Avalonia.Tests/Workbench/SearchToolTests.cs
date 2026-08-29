@@ -97,5 +97,10 @@ public sealed class SearchToolTests
             WorkbenchWorkspaceRequest request,
             CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
+
+        public ValueTask<WorkbenchDotNetInspectionResult> InspectDotNetAsync(
+            WorkbenchWorkspaceRequest request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
     }
 }
