@@ -17,7 +17,6 @@ public sealed class SourceSizeBudgetTests
             ["src/Harness.DataAccess/Inspection/LibGitDeveloperGitRepository.cs"] = 1_962,
             ["src/Harness.DataAccess/Models/OpenRouter/OpenRouterModelProvider.cs"] = 861,
             ["src/Harness.DataAccess/Persistence/SqliteApplicationRestore.cs"] = 891,
-            ["src/Harness.Presentation.Avalonia/MainWindow.cs"] = 1_599,
             ["src/Harness.Presentation.Terminal/GoalDialog.cs"] = 1_262,
             ["src/Harness.Presentation.Terminal/HarnessWindow.cs"] = 834,
             ["tests/Harness.BusinessLogic.Tests/Agents/AgentRoleRunnerTests.cs"] = 838,
