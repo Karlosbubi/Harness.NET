@@ -18,11 +18,11 @@ internal sealed class SqliteDeveloperDotNetExecutionStore(
         await connection.ExecuteAsync(new CommandDefinition("""
             INSERT INTO developer_dotnet_executions (
                 id, workspace_id, goal_id, source_description, project_path,
-                operation, target_framework, configuration, declaration_id,
+                operation, run_mode, target_framework, configuration, declaration_id,
                 test_id, test_name, test_scope, test_selection_json, state, started_at)
             VALUES (
                 @id, @workspaceId, @goalId, @sourceDescription, @projectPath,
-                @operation, @targetFramework, @configuration, @declarationId,
+                @operation, @runMode, @targetFramework, @configuration, @declarationId,
                 @testId, @testName, @testScope, @testSelectionJson, 'Running', @startedAt);
             """, new
         {
@@ -31,7 +31,12 @@ internal sealed class SqliteDeveloperDotNetExecutionStore(
             goalId = execution.GoalId?.Value,
             sourceDescription = execution.SourceDescription.Value,
             projectPath = execution.ProjectPath.Value,
-            operation = execution.Operation.ToString(),
+            operation = execution.Operation is StoredDeveloperExecutionOperation.HotReload
+                ? StoredDeveloperExecutionOperation.Run.ToString()
+                : execution.Operation.ToString(),
+            runMode = execution.Operation is StoredDeveloperExecutionOperation.HotReload
+                ? "HotReload"
+                : "Standard",
             targetFramework = execution.TargetFramework?.Value,
             configuration = execution.Configuration?.Value,
             declarationId = execution.DeclarationId?.Value ?? string.Empty,
@@ -124,6 +129,7 @@ internal sealed class SqliteDeveloperDotNetExecutionStore(
                    goal_id AS GoalId,
                    source_description AS SourceDescription,
                    operation AS Operation,
+                   run_mode AS RunMode,
                    project_path AS ProjectPath,
                    target_framework AS TargetFramework,
                    configuration AS Configuration,
@@ -204,6 +210,7 @@ internal sealed class SqliteDeveloperDotNetExecutionStore(
         public string? GoalId { get; init; }
         public string SourceDescription { get; init; } = string.Empty;
         public string Operation { get; init; } = string.Empty;
+        public string RunMode { get; init; } = string.Empty;
         public string ProjectPath { get; init; } = string.Empty;
         public string? TargetFramework { get; init; }
         public string? Configuration { get; init; }
@@ -224,7 +231,9 @@ internal sealed class SqliteDeveloperDotNetExecutionStore(
         internal StoredDeveloperExecution ToRecord(
             ImmutableArray<StoredDeveloperTestCaseResult> testCases) => new(
             new(Id), new(WorkspaceId), GoalId is null ? null : new(GoalId),
-            new(SourceDescription), Enum.Parse<StoredDeveloperExecutionOperation>(Operation),
+            new(SourceDescription), RunMode.Equals("HotReload", StringComparison.Ordinal)
+                ? StoredDeveloperExecutionOperation.HotReload
+                : Enum.Parse<StoredDeveloperExecutionOperation>(Operation),
             new(ProjectPath), TargetFramework is null ? null : new(TargetFramework),
             Configuration is null ? null : new(Configuration),
             string.IsNullOrEmpty(DeclarationId) ? null : new(DeclarationId),

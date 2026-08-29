@@ -25,6 +25,7 @@ public sealed record StoredDeveloperTestCaseResult(
 public enum StoredDeveloperExecutionOperation
 {
     Run,
+    HotReload,
     Build,
     Rebuild,
     Test,

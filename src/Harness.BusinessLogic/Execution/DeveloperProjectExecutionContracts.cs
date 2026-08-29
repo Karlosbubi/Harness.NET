@@ -36,6 +36,12 @@ public sealed record DeveloperRunOverrides(
                              !Environment.IsDefaultOrEmpty || WorkingDirectory is not null;
 }
 
+public enum DeveloperRunMode
+{
+    Standard,
+    HotReload,
+}
+
 public enum DeveloperTestOutcome
 {
     Passed,
@@ -53,6 +59,7 @@ public sealed record DeveloperTestCaseResult(
 public enum DeveloperExecutionOperation
 {
     Run,
+    HotReload,
     Build,
     Rebuild,
     Test,
@@ -129,7 +136,8 @@ public sealed record DeveloperExecutionCapabilities(
     bool CanRebuildProject,
     bool CanDebugProjectEntryPoint,
     string DebugStatus,
-    bool CanTest = false);
+    bool CanTest = false,
+    bool CanHotReload = false);
 
 public sealed record DeveloperExecutionView(
     DeveloperExecutionId Id,
@@ -159,7 +167,8 @@ public sealed record DeveloperExecutionView(
 public sealed record DeveloperExecutionStartRequest(
     WorkbenchWorkspaceRequest Workspace,
     WorkbenchExecutionTarget Target,
-    DeveloperRunOverrides? Overrides = null);
+    DeveloperRunOverrides? Overrides = null,
+    DeveloperRunMode Mode = DeveloperRunMode.Standard);
 
 public sealed record DeveloperExecutionStartResult(
     DeveloperExecutionView? Execution,

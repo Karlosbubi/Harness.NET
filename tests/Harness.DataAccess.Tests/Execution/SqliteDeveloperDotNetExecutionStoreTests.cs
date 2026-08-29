@@ -61,6 +61,25 @@ public sealed class SqliteDeveloperDotNetExecutionStoreTests : IDisposable
         Assert.Null(execution.DeclarationId);
     }
 
+    [Fact]
+    public async Task Persists_hot_reload_as_a_distinct_run_mode()
+    {
+        StubPaths paths = new(Paths());
+        await new SqliteDatabaseInitializer(paths).InitializeAsync();
+        SqliteDeveloperDotNetExecutionStore store = new(paths);
+
+        await store.StartAsync(new(
+            new("hot-a"), new("workspace-a"), null, new("Original workspace"),
+            StoredDeveloperExecutionOperation.HotReload,
+            new("App.csproj"), new("net10.0"), null,
+            new("M:Program.Main"), DateTimeOffset.Parse("2026-08-29T14:00:00Z")));
+
+        StoredDeveloperExecution execution = Assert.Single(await store.ListAsync(
+            new("workspace-a"), null, 10));
+        Assert.Equal(StoredDeveloperExecutionOperation.HotReload, execution.Operation);
+        Assert.Equal("M:Program.Main", execution.DeclarationId?.Value);
+    }
+
     [Theory]
     [InlineData(StoredDeveloperTestScope.Exact, "Demo.CalculatorTests.Adds")]
     [InlineData(StoredDeveloperTestScope.Type, "Demo.CalculatorTests")]
@@ -86,7 +105,7 @@ public sealed class SqliteDeveloperDotNetExecutionStoreTests : IDisposable
 
         StoredDeveloperExecution execution = Assert.Single(await store.ListAsync(
             new("workspace-a"), null, 10));
-        Assert.Equal(37, initialized.SchemaVersion.Value);
+        Assert.Equal(38, initialized.SchemaVersion.Value);
         Assert.Equal(StoredDeveloperExecutionOperation.Test, execution.Operation);
         Assert.Equal(new string('a', 64), execution.TestId?.Value);
         Assert.Equal(selector, execution.TestName?.Value);
@@ -188,7 +207,8 @@ public sealed class SqliteDeveloperDotNetExecutionStoreTests : IDisposable
                 WHERE ScriptName LIKE '%034_DeveloperDotNetTestScopes.sql'
                    OR ScriptName LIKE '%035_DeveloperDotNetTestSelections.sql'
                    OR ScriptName LIKE '%036_DeveloperDotNetTestCaseResults.sql'
-                   OR ScriptName LIKE '%037_DeveloperCoverage.sql';
+                   OR ScriptName LIKE '%037_DeveloperCoverage.sql'
+                   OR ScriptName LIKE '%038_DeveloperHotReload.sql';
                 UPDATE application_metadata SET value = '33' WHERE key = 'schema_version';
                 """;
             await command.ExecuteNonQueryAsync();
@@ -200,7 +220,7 @@ public sealed class SqliteDeveloperDotNetExecutionStoreTests : IDisposable
             await new SqliteDeveloperDotNetExecutionStore(paths).ListAsync(
                 new("workspace-a"), null, 10));
 
-        Assert.Equal(37, migrated.SchemaVersion.Value);
+        Assert.Equal(38, migrated.SchemaVersion.Value);
         Assert.Equal(StoredDeveloperTestScope.Exact, execution.TestScope);
     }
 
@@ -226,9 +246,11 @@ public sealed class SqliteDeveloperDotNetExecutionStoreTests : IDisposable
                 DROP TABLE developer_coverage_imports;
                 DROP TABLE developer_dotnet_test_case_results;
                 ALTER TABLE developer_dotnet_executions DROP COLUMN test_cases_truncated;
+                ALTER TABLE developer_dotnet_executions DROP COLUMN run_mode;
                 DELETE FROM SchemaVersions
                 WHERE ScriptName LIKE '%036_DeveloperDotNetTestCaseResults.sql'
-                   OR ScriptName LIKE '%037_DeveloperCoverage.sql';
+                   OR ScriptName LIKE '%037_DeveloperCoverage.sql'
+                   OR ScriptName LIKE '%038_DeveloperHotReload.sql';
                 UPDATE application_metadata SET value = '35' WHERE key = 'schema_version';
                 """);
         }
@@ -238,7 +260,7 @@ public sealed class SqliteDeveloperDotNetExecutionStoreTests : IDisposable
         StoredDeveloperExecution execution = Assert.Single(await store.ListAsync(
             new("workspace-a"), null, 10));
 
-        Assert.Equal(37, migrated.SchemaVersion.Value);
+        Assert.Equal(38, migrated.SchemaVersion.Value);
         Assert.Equal(StoredDeveloperTestScope.Selection, execution.TestScope);
         Assert.Equal(2, execution.SelectedTests.Length);
         Assert.Empty(execution.TestCases);
@@ -288,7 +310,8 @@ public sealed class SqliteDeveloperDotNetExecutionStoreTests : IDisposable
                    OR ScriptName LIKE '%034_DeveloperDotNetTestScopes.sql'
                    OR ScriptName LIKE '%035_DeveloperDotNetTestSelections.sql'
                    OR ScriptName LIKE '%036_DeveloperDotNetTestCaseResults.sql'
-                   OR ScriptName LIKE '%037_DeveloperCoverage.sql';
+                   OR ScriptName LIKE '%037_DeveloperCoverage.sql'
+                   OR ScriptName LIKE '%038_DeveloperHotReload.sql';
                 UPDATE application_metadata SET value = '31' WHERE key = 'schema_version';
                 """;
             await command.ExecuteNonQueryAsync();
@@ -300,7 +323,7 @@ public sealed class SqliteDeveloperDotNetExecutionStoreTests : IDisposable
             await new SqliteDeveloperDotNetExecutionStore(paths).ListAsync(
                 new("workspace-a"), null, 10));
 
-        Assert.Equal(37, migrated.SchemaVersion.Value);
+        Assert.Equal(38, migrated.SchemaVersion.Value);
         Assert.Equal(StoredDeveloperExecutionOperation.Run, execution.Operation);
         Assert.Null(execution.Configuration);
         Assert.Equal("M:Program.Main", execution.DeclarationId?.Value);

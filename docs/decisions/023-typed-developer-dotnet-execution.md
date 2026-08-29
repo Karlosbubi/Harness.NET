@@ -92,6 +92,12 @@ shell or command string exists. Runner-owned telemetry/no-logo variables remain 
 Overrides and environment values are process-local and
 are absent from durable lifecycle metadata, restart reconstruction, logs, and status.
 
+Hot Reload is a separate closed execution operation over `dotnet watch
+--non-interactive`, not Debug or an ordinary Run label. It reuses the validated target
+and one-run overrides, suppresses browser launch/refresh, locks telemetry/no-logo/watch
+policy variables, forwards `--no-restore`, bounds output, kills the full process tree
+on Stop, and persists/reconciles its distinct lifecycle identity through schema 38.
+
 Agent execution remains outside this slice. Adding a model-callable Run or Debug
 operation requires the role, phase, trust, target, and authority policy in Task 052;
 the developer UI does not imply agent authority.
@@ -102,6 +108,8 @@ the developer UI does not imply agent authority.
   UI text or accepting a shell command.
 - A visible confirmation can specialize one Run without creating a persistent launch
   configuration or exposing environment values in lifecycle history.
+- Hot Reload remains visibly cancellable and restart-safe without becoming a terminal
+  or debugger.
 - Unsaved code is never presented as the code being executed.
 - Output and cancellation remain inspectable in the Run output tool.
 - Solution Build/Rebuild actions and command-palette entries share the same typed

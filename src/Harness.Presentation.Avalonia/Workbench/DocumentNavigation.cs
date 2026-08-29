@@ -192,7 +192,8 @@ internal sealed class DocumentNavigation
         try
         {
             DeveloperExecutionStartResult started = await execution.StartRunAsync(new(
-                request(workspace), lens.ExecutionTarget, selected.Overrides), cancellationToken);
+                request(workspace), lens.ExecutionTarget, selected.Overrides, selected.Mode),
+                cancellationToken);
             if (started.Execution is null)
             {
                 document.SetStatus(started.Error ?? "The project run could not start.");

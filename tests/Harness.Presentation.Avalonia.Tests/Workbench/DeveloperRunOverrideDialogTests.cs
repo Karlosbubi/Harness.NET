@@ -19,6 +19,7 @@ public sealed class DeveloperRunOverrideDialogTests
             dialog.WorkingDirectory.Text = "src/App";
             dialog.Arguments.Text = "--message\nhello world";
             dialog.Environment.Text = "HARNESS_MODE=one-run\nTOKEN=private-value";
+            dialog.HotReload.IsChecked = true;
 
             Assert.True(dialog.TryCreate(out var overrides, out string? error), error);
             Assert.Equal("Development", overrides?.LaunchProfile?.Value);
@@ -28,12 +29,15 @@ public sealed class DeveloperRunOverrideDialogTests
                 overrides?.Environment.Select(variable => variable.Name.Value));
             Assert.Equal("src/App", overrides?.WorkingDirectory?.Value);
             Assert.Contains("arguments: 2", dialog.Summary, StringComparison.Ordinal);
+            Assert.Contains("Mode: Hot Reload", dialog.Summary, StringComparison.Ordinal);
             Assert.Contains("HARNESS_MODE, TOKEN", dialog.Summary, StringComparison.Ordinal);
             Assert.DoesNotContain("one-run", dialog.Summary, StringComparison.Ordinal);
             Assert.DoesNotContain("private-value", dialog.Summary, StringComparison.Ordinal);
             Assert.Equal("One-run launch profile", AutomationProperties.GetName(dialog.Profile));
             Assert.Equal("One-run arguments", AutomationProperties.GetName(dialog.Arguments));
             Assert.Equal("One-run environment", AutomationProperties.GetName(dialog.Environment));
+            Assert.Equal("Use Hot Reload for this run",
+                AutomationProperties.GetName(dialog.HotReload));
             dialog.Close();
         }, CancellationToken.None);
     }

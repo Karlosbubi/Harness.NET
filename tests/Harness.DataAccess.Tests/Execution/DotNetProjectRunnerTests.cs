@@ -93,6 +93,32 @@ public sealed class DotNetProjectRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task Starts_hot_reload_as_noninteractive_dotnet_watch_without_browser_launch()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        Directory.CreateDirectory(root);
+        await File.WriteAllTextAsync(Path.Combine(root, "App.csproj"), "<Project />");
+        string executable = await CreateExecutableAsync(
+            "printf 'browser=%s\\nrefresh=%s\\nrestart=%s\\n' " +
+            "\"$DOTNET_WATCH_SUPPRESS_LAUNCH_BROWSER\" " +
+            "\"$DOTNET_WATCH_SUPPRESS_BROWSER_REFRESH\" " +
+            "\"$DOTNET_WATCH_RESTART_ON_RUDE_EDIT\"; printf '%s\\n' \"$@\"");
+
+        DotNetProjectExecutionResult result = await new DotNetProjectRunner(executable)
+            .RunAsync(root, new(
+                new("App.csproj"), new("net10.0"), DotNetProjectOperation.HotReload,
+                RunOverrides: new(null, [new("app-value")], [], null)));
+
+        Assert.Null(result.Error);
+        Assert.Contains("browser=1\nrefresh=1\nrestart=1", result.StandardOutput.Value,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            $"watch\n--non-interactive\n--project\n{Path.Combine(root, "App.csproj")}\n" +
+            "run\n--no-restore\n--framework\nnet10.0\n--no-launch-profile\n--\napp-value",
+            result.StandardOutput.Value, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Rejects_a_project_outside_the_source_context_before_process_start()
     {
         Directory.CreateDirectory(root);

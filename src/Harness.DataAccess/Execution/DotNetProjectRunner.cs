@@ -135,22 +135,34 @@ internal sealed class DotNetProjectRunner : IDotNetProjectRunner
             };
             foreach (string argument in Arguments(
                          request.Operation, projectPath, request.Test, request.TestScope,
-                         request.SelectedTests, resultDirectory, request.RunOverrides))
+                         request.SelectedTests, resultDirectory, request.RunOverrides,
+                         request.TargetFramework, request.Configuration))
             {
                 startInfo.ArgumentList.Add(argument);
             }
-            if (request.TargetFramework is { Value: { } target } && target != "unknown")
+            if (request.Operation is not DotNetProjectOperation.Run and
+                not DotNetProjectOperation.HotReload &&
+                request.TargetFramework is { Value: { } target } && target != "unknown")
             {
                 startInfo.ArgumentList.Add("--framework");
                 startInfo.ArgumentList.Add(target);
             }
-            if (request.Configuration is { Value: { } selectedConfiguration })
+            if (request.Operation is not DotNetProjectOperation.Run and
+                not DotNetProjectOperation.HotReload &&
+                request.Configuration is { Value: { } selectedConfiguration })
             {
                 startInfo.ArgumentList.Add("--configuration");
                 startInfo.ArgumentList.Add(selectedConfiguration);
             }
             startInfo.Environment["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1";
             startInfo.Environment["DOTNET_NOLOGO"] = "1";
+            if (request.Operation is DotNetProjectOperation.HotReload)
+            {
+                startInfo.Environment["DOTNET_WATCH_SUPPRESS_LAUNCH_BROWSER"] = "1";
+                startInfo.Environment["DOTNET_WATCH_SUPPRESS_BROWSER_REFRESH"] = "1";
+                startInfo.Environment["DOTNET_WATCH_SUPPRESS_EMOJIS"] = "1";
+                startInfo.Environment["DOTNET_WATCH_RESTART_ON_RUDE_EDIT"] = "1";
+            }
             if (request.RunOverrides is { Environment.IsDefaultOrEmpty: false } overrides)
             {
                 foreach (DotNetLaunchEnvironmentVariable variable in overrides.Environment)
@@ -243,7 +255,9 @@ internal sealed class DotNetProjectRunner : IDotNetProjectRunner
         DotNetTestScope testScope,
         ImmutableArray<DotNetTestFullyQualifiedName> selectedTests,
         string? resultDirectory,
-        DotNetRunOverrides? runOverrides) =>
+        DotNetRunOverrides? runOverrides,
+        DotNetTargetFramework? targetFramework,
+        DotNetConfigurationName? configuration) =>
         operation switch
         {
             DotNetProjectOperation.Build => ["build", projectPath, "--no-restore"],
@@ -264,14 +278,58 @@ internal sealed class DotNetProjectRunner : IDotNetProjectRunner
                 "--results-directory", resultDirectory!],
             DotNetProjectOperation.Test => ["test", projectPath, "--no-restore",
             "--logger", "trx", "--results-directory", resultDirectory!],
-            _ => RunArguments(projectPath, runOverrides),
+            DotNetProjectOperation.HotReload => WatchArguments(
+                projectPath, runOverrides, targetFramework, configuration),
+            _ => RunArguments(projectPath, runOverrides, targetFramework, configuration),
         };
+
+    private static IReadOnlyList<string> WatchArguments(
+        string projectPath,
+        DotNetRunOverrides? overrides,
+        DotNetTargetFramework? targetFramework,
+        DotNetConfigurationName? configuration)
+    {
+        List<string> arguments = [
+            "watch", "--non-interactive", "--project", projectPath, "run", "--no-restore",
+        ];
+        AppendTarget(arguments, targetFramework, configuration);
+        AppendLaunchArguments(arguments, overrides);
+        return arguments;
+    }
 
     private static IReadOnlyList<string> RunArguments(
         string projectPath,
-        DotNetRunOverrides? overrides)
+        DotNetRunOverrides? overrides,
+        DotNetTargetFramework? targetFramework,
+        DotNetConfigurationName? configuration)
     {
         List<string> arguments = ["run", "--project", projectPath, "--no-restore"];
+        AppendTarget(arguments, targetFramework, configuration);
+        AppendLaunchArguments(arguments, overrides);
+        return arguments;
+    }
+
+    private static void AppendTarget(
+        List<string> arguments,
+        DotNetTargetFramework? targetFramework,
+        DotNetConfigurationName? configuration)
+    {
+        if (targetFramework is { Value: { } target } && target != "unknown")
+        {
+            arguments.Add("--framework");
+            arguments.Add(target);
+        }
+        if (configuration is { Value: { } selected })
+        {
+            arguments.Add("--configuration");
+            arguments.Add(selected);
+        }
+    }
+
+    private static void AppendLaunchArguments(
+        List<string> arguments,
+        DotNetRunOverrides? overrides)
+    {
         if (overrides?.LaunchProfile is { } profile)
         {
             arguments.Add("--launch-profile");
@@ -286,7 +344,6 @@ internal sealed class DotNetProjectRunner : IDotNetProjectRunner
             arguments.Add("--");
             arguments.AddRange(overrides.Arguments.Select(argument => argument.Value));
         }
-        return arguments;
     }
 
     private static bool TryValidateRunOverrides(
@@ -299,7 +356,7 @@ internal sealed class DotNetProjectRunner : IDotNetProjectRunner
         workingDirectory = null;
         error = null;
         if (overrides is null) return true;
-        if (operation is not DotNetProjectOperation.Run)
+        if (operation is not DotNetProjectOperation.Run and not DotNetProjectOperation.HotReload)
         {
             error = "One-run overrides are valid only for Run.";
             return false;

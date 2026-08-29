@@ -39,7 +39,8 @@ internal sealed class DeveloperProjectExecutionService(
         CanRebuildProject: true,
         CanDebugProjectEntryPoint: false,
         "Debug requires a pinned debugger adapter; ordinary Run is not labeled Debug.",
-        CanTest: true);
+        CanTest: true,
+        CanHotReload: true);
 
     public async ValueTask<DeveloperExecutionStartResult> StartRunAsync(
         DeveloperExecutionStartRequest request,
@@ -47,6 +48,8 @@ internal sealed class DeveloperProjectExecutionService(
     {
         ObjectDisposedException.ThrowIf(disposed, this);
         ArgumentNullException.ThrowIfNull(request);
+        if (!Enum.IsDefined(request.Mode))
+            return new(null, "run_mode_invalid", "Select Run or Hot Reload.");
         await EnsureReconciledAsync(cancellationToken);
         Resolution resolution = await ResolveAsync(request.Workspace, request.Target,
             cancellationToken);
@@ -66,7 +69,9 @@ internal sealed class DeveloperProjectExecutionService(
         return await StartExecutionAsync(
             request.Workspace,
             resolution,
-            DeveloperExecutionOperation.Run,
+            request.Mode is DeveloperRunMode.HotReload
+                ? DeveloperExecutionOperation.HotReload
+                : DeveloperExecutionOperation.Run,
             project,
             request.Target,
             test: null,
@@ -525,7 +530,8 @@ internal sealed class DeveloperProjectExecutionService(
     }
 
     private static WorkbenchExecutionTarget? EntryPoint(StoredDeveloperExecution execution) =>
-        execution.Operation is StoredDeveloperExecutionOperation.Run &&
+        (execution.Operation is StoredDeveloperExecutionOperation.Run or
+            StoredDeveloperExecutionOperation.HotReload) &&
         execution.DeclarationId is not null
             ? new(
                 WorkbenchExecutionTargetKind.ProjectEntryPoint,
@@ -721,6 +727,7 @@ internal sealed class DeveloperProjectExecutionService(
             DeveloperExecutionOperation.Build => StoredDeveloperExecutionOperation.Build,
             DeveloperExecutionOperation.Rebuild => StoredDeveloperExecutionOperation.Rebuild,
             DeveloperExecutionOperation.Test => StoredDeveloperExecutionOperation.Test,
+            DeveloperExecutionOperation.HotReload => StoredDeveloperExecutionOperation.HotReload,
             _ => StoredDeveloperExecutionOperation.Run,
         };
 
@@ -731,6 +738,7 @@ internal sealed class DeveloperProjectExecutionService(
             DeveloperExecutionOperation.Build => DotNetProjectOperation.Build,
             DeveloperExecutionOperation.Rebuild => DotNetProjectOperation.Rebuild,
             DeveloperExecutionOperation.Test => DotNetProjectOperation.Test,
+            DeveloperExecutionOperation.HotReload => DotNetProjectOperation.HotReload,
             _ => DotNetProjectOperation.Run,
         };
 
@@ -740,6 +748,7 @@ internal sealed class DeveloperProjectExecutionService(
             StoredDeveloperExecutionOperation.Build => DeveloperExecutionOperation.Build,
             StoredDeveloperExecutionOperation.Rebuild => DeveloperExecutionOperation.Rebuild,
             StoredDeveloperExecutionOperation.Test => DeveloperExecutionOperation.Test,
+            StoredDeveloperExecutionOperation.HotReload => DeveloperExecutionOperation.HotReload,
             _ => DeveloperExecutionOperation.Run,
         };
 

@@ -9,7 +9,8 @@ using Harness.UI.Avalonia;
 namespace Harness.Presentation.Avalonia.Workbench;
 
 internal sealed record DeveloperRunOverrideDialogResult(
-    DeveloperRunOverrides Overrides);
+    DeveloperRunOverrides Overrides,
+    DeveloperRunMode Mode);
 
 internal sealed class DeveloperRunOverrideDialog : Window
 {
@@ -32,6 +33,7 @@ internal sealed class DeveloperRunOverrideDialog : Window
     };
     private readonly TextBlock summary = new() { TextWrapping = TextWrapping.Wrap };
     private readonly StatusIndicator status = new();
+    private readonly CheckBox hotReload = new() { Content = "Keep running with Hot Reload" };
 
     internal DeveloperRunOverrideDialog(string projectPath)
     {
@@ -45,6 +47,7 @@ internal sealed class DeveloperRunOverrideDialog : Window
         Content = BuildContent(projectPath);
         foreach (TextBox input in new[] { profile, workingDirectory, arguments, environment })
             input.TextChanged += (_, _) => UpdateSummary();
+        hotReload.IsCheckedChanged += (_, _) => UpdateSummary();
         UpdateSummary();
     }
 
@@ -53,6 +56,7 @@ internal sealed class DeveloperRunOverrideDialog : Window
     internal TextBox Arguments => arguments;
     internal TextBox Environment => environment;
     internal string Summary => summary.Text ?? string.Empty;
+    internal CheckBox HotReload => hotReload;
 
     private Control BuildContent(string projectPath)
     {
@@ -75,6 +79,8 @@ internal sealed class DeveloperRunOverrideDialog : Window
             "One-run working directory");
         AddField(content, "Application arguments", arguments, "One-run arguments");
         AddField(content, "Environment overrides", environment, "One-run environment");
+        AutomationProperties.SetName(hotReload, "Use Hot Reload for this run");
+        content.Children.Add(hotReload);
         AutomationProperties.SetName(summary, "One-run override summary");
         content.Children.Add(summary);
         AutomationProperties.SetName(status, "One-run override validation");
@@ -116,7 +122,10 @@ internal sealed class DeveloperRunOverrideDialog : Window
             status.Severity = StatusSeverity.Error;
             return;
         }
-        Close(new DeveloperRunOverrideDialogResult(overrides!));
+        Close(new DeveloperRunOverrideDialogResult(
+            overrides!, hotReload.IsChecked is true
+                ? DeveloperRunMode.HotReload
+                : DeveloperRunMode.Standard));
     }
 
     internal bool TryCreate(out DeveloperRunOverrides? overrides, out string? error)
@@ -157,7 +166,8 @@ internal sealed class DeveloperRunOverrideDialog : Window
             int separator = value.IndexOf('=');
             return separator <= 0 ? "invalid entry" : value[..separator];
         }));
-        summary.Text = $"Profile: {(profile.Text?.Trim() is { Length: > 0 } selected ? selected : "none")} · " +
+        summary.Text = $"Mode: {(hotReload.IsChecked is true ? "Hot Reload" : "Run")} · " +
+                       $"profile: {(profile.Text?.Trim() is { Length: > 0 } selected ? selected : "none")} · " +
                        $"arguments: {argumentValues.Length} · environment names: " +
                        $"{(names.Length == 0 ? "none" : names)} · working directory: " +
                        $"{(workingDirectory.Text?.Trim() is { Length: > 0 } directory ? directory : "workspace root")}.";

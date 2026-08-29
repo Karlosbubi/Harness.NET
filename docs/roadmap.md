@@ -592,7 +592,15 @@ and environment counts, item sizes, totals, names, and duplicates are bounded at
 Business Logic and Data Access. `dotnet run` receives a direct argument list with no
 shell, Restore, or implicit unselected profile. The dialog and start status expose safe
 profile/count/name/path summaries, while all override values are process-local and no
-override is persisted. Test Debug, Hot Reload, and the debugger remain planned.
+override is persisted.
+
+Delivered thirteenth slice: the same Run confirmation can select Hot Reload as a closed
+operation. Harness starts `dotnet watch --non-interactive` for the exact validated
+entry-point project, cascades `--no-restore`, suppresses browser launch/refresh and
+emoji output, restarts on rude edits, and reuses bounded one-run overrides without a
+shell. Hot Reload has its own durable schema-38 identity, Run output state, Stop/process-
+tree cancellation, and restart interruption rather than masquerading as Run or Debug.
+Test Debug and the debugger remain planned.
 
 Use the existing trust and Restore boundaries. Selecting a launch profile does not
 authorize execution; debug attach, expression evaluation, mutation, dumps, network

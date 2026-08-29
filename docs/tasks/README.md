@@ -671,7 +671,10 @@ uncovered lines and clearly labels them as evidence rather than defects. The twe
 slice adds an accessible one-run confirmation with an exact inspected profile, confined relative
 working directory, and bounded argument/environment lists. Values flow directly to
 `dotnet` without a shell and remain process-local; safe names and counts are visible,
-but no override is persisted. Test Debug, Hot Reload, and Debug remain open.
+but no override is persisted.
+The thirteenth slice adds a distinct cancellable Hot Reload lifecycle through confined,
+non-interactive `dotnet watch`; schema 38 preserves its identity and restart
+reconciliation. Test Debug and the debugger remain open.
 
 Acceptance criteria:
 

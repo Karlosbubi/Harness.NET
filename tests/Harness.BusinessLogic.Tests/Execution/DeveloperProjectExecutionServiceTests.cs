@@ -94,6 +94,29 @@ public sealed class DeveloperProjectExecutionServiceTests
     }
 
     [Fact]
+    public async Task Starts_hot_reload_as_a_distinct_durable_cancellable_lifecycle()
+    {
+        Runner runner = new();
+        Store store = new();
+        using DeveloperProjectExecutionService service = CreateService(runner, store);
+
+        DeveloperExecutionStartResult started = await service.StartRunAsync(new(
+            new(new("workspace-a"), null), Target(), DeveloperRunOverrides.None,
+            DeveloperRunMode.HotReload));
+
+        Assert.Equal(DeveloperExecutionOperation.HotReload, started.Execution?.Operation);
+        Assert.Equal(DotNetProjectOperation.HotReload, runner.LastRequest?.Operation);
+        Assert.Equal(StoredDeveloperExecutionOperation.HotReload,
+            Assert.Single(store.Items).Operation);
+        DeveloperExecutionCancelResult cancellation = await service.CancelAsync(
+            started.Execution!.Id);
+        DeveloperExecutionView completed = await WaitForCompletionAsync(service);
+        Assert.True(cancellation.CancellationRequested);
+        Assert.Equal(DeveloperExecutionState.Cancelled, completed.State);
+        Assert.Equal(DeveloperExecutionOperation.HotReload, completed.Operation);
+    }
+
+    [Fact]
     public async Task Cancellation_reaches_the_owned_project_process()
     {
         Runner runner = new();

@@ -41,6 +41,7 @@ public sealed record DotNetTestCaseResult(
 public enum DotNetProjectOperation
 {
     Run,
+    HotReload,
     Build,
     Rebuild,
     Test,
