@@ -5,6 +5,7 @@ using Avalonia.Threading;
 using Harness.BusinessLogic.Agents;
 using Harness.BusinessLogic.CodeIntelligence;
 using Harness.BusinessLogic.Coverage;
+using Harness.BusinessLogic.Debugging;
 using Harness.BusinessLogic.Documents;
 using Harness.BusinessLogic.Evidence;
 using Harness.BusinessLogic.Execution;
@@ -31,6 +32,7 @@ internal sealed class AvaloniaShell(
     IProjectUserSecretsService projectUserSecretsService,
     IDeveloperProjectExecutionService developerExecutionService,
     IDeveloperCoverageService coverageService,
+    IDeveloperDebuggerService developerDebuggerService,
     AvaloniaInboundMcpUiBridge inboundMcpUiBridge) : IAvaloniaShell
 {
     public ValueTask RunAsync(CancellationToken cancellationToken = default)
@@ -51,6 +53,7 @@ internal sealed class AvaloniaShell(
                 projectUserSecretsService,
                 developerExecutionService,
                 coverageService,
+                developerDebuggerService,
                 inboundMcpUiBridge,
                 cancellationToken))
             .UsePlatformDetect()

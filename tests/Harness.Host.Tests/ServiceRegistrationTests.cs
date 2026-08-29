@@ -24,8 +24,23 @@ public sealed class ServiceRegistrationTests
             "Harness.BusinessLogic.Coverage.IDeveloperCoverageService",
         ],
         StringComparer.Ordinal);
+    private static readonly IReadOnlySet<string> Task052DebuggerRegistrations = new HashSet<string>(
+        [
+            "Harness.BusinessLogic.Debugging.IDeveloperDebuggerService",
+            "Harness.BusinessLogic.Debugging.IDeveloperDebuggerSettingsService",
+            "Harness.BusinessLogic.Execution.IDeveloperExecutionTargetResolver",
+            "Harness.BusinessLogic.Execution.DeveloperProjectExecutionService",
+            "Harness.DataAccess.Debugging.IDebugAdapterExecutableResolver",
+            "Harness.DataAccess.Debugging.IDebugAdapterPackageStore",
+            "Harness.DataAccess.Debugging.IDebugAdapterSessionFactory",
+            "Harness.DataAccess.Debugging.IDotNetDebugSessionFactory",
+            "Harness.DataAccess.Debugging.ManagedDebugAdapterPackageStore",
+            "Harness.DataAccess.Debugging.NetCoreDbgAdapterSessionFactory",
+        ],
+        StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> ReviewedFeatureRegistrations = new HashSet<string>(
-        Task071GoalRegistrations.Concat(Task052CoverageRegistrations), StringComparer.Ordinal);
+        Task071GoalRegistrations.Concat(Task052CoverageRegistrations)
+            .Concat(Task052DebuggerRegistrations), StringComparer.Ordinal);
 
     [Fact]
     public void Feature_modules_preserve_the_baseline_plus_reviewed_feature_registrations()
@@ -61,7 +76,7 @@ public sealed class ServiceRegistrationTests
                 {
                     ("Infrastructure", 14),
                     ("Integrations", 31),
-                    ("Workspace", 73),
+                    ("Workspace", 83),
                     ("Goals", 16),
                     ("Presentation", 9),
                 }),

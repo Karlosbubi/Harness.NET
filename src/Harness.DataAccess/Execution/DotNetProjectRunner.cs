@@ -248,7 +248,7 @@ internal sealed class DotNetProjectRunner : IDotNetProjectRunner
         }
     }
 
-    private static IReadOnlyList<string> Arguments(
+    internal static IReadOnlyList<string> Arguments(
         DotNetProjectOperation operation,
         string projectPath,
         DotNetTestFullyQualifiedName? test,
@@ -346,7 +346,7 @@ internal sealed class DotNetProjectRunner : IDotNetProjectRunner
         }
     }
 
-    private static bool TryValidateRunOverrides(
+    internal static bool TryValidateRunOverrides(
         DotNetProjectOperation operation,
         DotNetRunOverrides? overrides,
         string root,

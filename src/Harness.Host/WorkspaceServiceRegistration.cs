@@ -78,7 +78,11 @@ internal static class WorkspaceServiceRegistration
         services.AddSingleton<IRunOutputService, RunOutputService>();
         services.AddSingleton<IDotNetProjectRunner, DotNetProjectRunner>();
         services.AddSingleton<IDeveloperDotNetExecutionStore, SqliteDeveloperDotNetExecutionStore>();
-        services.AddSingleton<IDeveloperProjectExecutionService, DeveloperProjectExecutionService>();
+        services.AddSingleton<DeveloperProjectExecutionService>();
+        services.AddSingleton<IDeveloperProjectExecutionService>(provider =>
+            provider.GetRequiredService<DeveloperProjectExecutionService>());
+        services.AddSingleton<IDeveloperExecutionTargetResolver>(provider =>
+            provider.GetRequiredService<DeveloperProjectExecutionService>());
         services.AddSingleton<IWorkspaceCoverageReader, CoberturaWorkspaceCoverageReader>();
         services.AddSingleton<IDeveloperCoverageStore, SqliteDeveloperCoverageStore>();
         services.AddSingleton<IDeveloperCoverageService, DeveloperCoverageService>();
@@ -87,8 +91,15 @@ internal static class WorkspaceServiceRegistration
             provider.GetRequiredService<ManagedDebugAdapterPackageStore>());
         services.AddSingleton<IDebugAdapterExecutableResolver>(provider =>
             provider.GetRequiredService<ManagedDebugAdapterPackageStore>());
+        services.AddSingleton<NetCoreDbgAdapterSessionFactory>();
+        services.AddSingleton<IDebugAdapterSessionFactory>(provider =>
+            provider.GetRequiredService<NetCoreDbgAdapterSessionFactory>());
+        services.AddSingleton<IDotNetDebugSessionFactory,
+            DotNetDebugSessionFactory>();
         services.AddSingleton<IDeveloperDebuggerSettingsService,
             DeveloperDebuggerSettingsService>();
+        services.AddSingleton<IDeveloperDebuggerService,
+            DeveloperDebuggerService>();
         services.AddSingleton<IGoalService, GoalService>();
         services.AddSingleton<IGoalWorktreeManager, GitGoalWorktreeManager>();
         services.AddSingleton<IWorkspaceFileEditor, AtomicWorkspaceFileEditor>();

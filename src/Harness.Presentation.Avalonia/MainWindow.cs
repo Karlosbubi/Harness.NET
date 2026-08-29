@@ -14,6 +14,7 @@ using Harness.BusinessLogic.Appearance;
 using Harness.BusinessLogic.Approvals;
 using Harness.BusinessLogic.CodeIntelligence;
 using Harness.BusinessLogic.Coverage;
+using Harness.BusinessLogic.Debugging;
 using Harness.BusinessLogic.Dashboard;
 using Harness.BusinessLogic.Documents;
 using Harness.BusinessLogic.Editor;
@@ -45,6 +46,7 @@ internal sealed partial class MainWindow : Window
     private readonly IProjectUserSecretsService projectUserSecretsService;
     private readonly IDeveloperProjectExecutionService developerExecutionService;
     private readonly IDeveloperCoverageService coverageService;
+    private readonly IDeveloperDebuggerService developerDebuggerService;
     private readonly CancellationToken cancellationToken;
     private readonly CompositeDisposable subscriptions = new();
     private readonly WorkbenchEventSurface workbenchEvents;
@@ -140,6 +142,7 @@ internal sealed partial class MainWindow : Window
         IProjectUserSecretsService projectUserSecretsService,
         IDeveloperProjectExecutionService developerExecutionService,
         IDeveloperCoverageService coverageService,
+        IDeveloperDebuggerService developerDebuggerService,
         CancellationToken cancellationToken)
     {
         this.store = store;
@@ -154,6 +157,7 @@ internal sealed partial class MainWindow : Window
         this.projectUserSecretsService = projectUserSecretsService;
         this.developerExecutionService = developerExecutionService;
         this.coverageService = coverageService;
+        this.developerDebuggerService = developerDebuggerService;
         this.cancellationToken = cancellationToken;
         agentActivityStatus = new(toolEvidenceService, agentActivityReader);
         workbenchEvents = new(NavigateToWorkbenchEvent);
@@ -214,7 +218,8 @@ internal sealed partial class MainWindow : Window
             developerGitService,
             () => store.RefreshActiveWorkspaceContextAsync(cancellationToken).AsTask(),
             ShowWorkspaceDialogAtAsync,
-            coverageService);
+            coverageService,
+            developerDebuggerService);
         Border documentActions = new()
         {
             Child = workbench.DocumentActions,

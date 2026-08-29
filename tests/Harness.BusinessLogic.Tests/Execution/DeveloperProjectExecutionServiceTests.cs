@@ -54,6 +54,29 @@ public sealed class DeveloperProjectExecutionServiceTests
     }
 
     [Fact]
+    public async Task Debug_target_reuses_the_exact_Roslyn_entry_point_revalidation_lifecycle()
+    {
+        Runner runner = new();
+        using DeveloperProjectExecutionService service = CreateService(runner, new Store());
+        IDeveloperExecutionTargetResolver resolver = service;
+
+        DeveloperExecutionTargetResolution resolved = await resolver.ResolveDebugTargetAsync(
+            new(new("workspace-a"), null), Target(), DeveloperRunOverrides.None);
+        DeveloperExecutionTargetResolution stale = await resolver.ResolveDebugTargetAsync(
+            new(new("workspace-a"), null), Target() with
+            {
+                SourceBaseline = new(new string('0', 64)),
+            }, DeveloperRunOverrides.None);
+
+        Assert.Equal("/workspace", resolved.RootPath);
+        Assert.Equal("App.csproj", resolved.Project?.Path);
+        Assert.Null(resolved.Error);
+        Assert.Equal("execution_source_changed", stale.ErrorCode);
+        Assert.Null(stale.RootPath);
+        Assert.Equal(0, runner.Calls);
+    }
+
+    [Fact]
     public async Task Validates_and_forwards_typed_nonpersistent_one_run_overrides()
     {
         Runner runner = new();

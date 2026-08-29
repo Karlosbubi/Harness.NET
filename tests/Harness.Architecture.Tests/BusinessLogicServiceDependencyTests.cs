@@ -25,6 +25,7 @@ public sealed class BusinessLogicServiceDependencyTests
         "Harness.BusinessLogic.CodeIntelligence.GoalCodeIntelligenceService -> Harness.BusinessLogic.Inspection.IGoalWorkspaceInspectionService",
         "Harness.BusinessLogic.Dashboard.ConversationDashboardService -> Harness.BusinessLogic.Workspaces.IWorkspaceService",
         "Harness.BusinessLogic.Documents.WorkbenchDocumentService -> Harness.BusinessLogic.Mutations.IWorkspaceMutationService",
+        "Harness.BusinessLogic.Execution.DeveloperProjectExecutionService -> Harness.BusinessLogic.Debugging.IDeveloperDebuggerSettingsService",
         "Harness.BusinessLogic.Inspection.DeveloperGitService -> Harness.BusinessLogic.Workspaces.IWorkspaceService",
         "Harness.BusinessLogic.Mcp.InboundMcpApplicationService -> Harness.BusinessLogic.Acceptance.IGoalAcceptanceService",
         "Harness.BusinessLogic.Mcp.InboundMcpApplicationService -> Harness.BusinessLogic.Agents.IAgentDefaultsService",

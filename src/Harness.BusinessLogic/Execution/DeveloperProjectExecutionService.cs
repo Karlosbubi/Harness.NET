@@ -3,6 +3,7 @@ using System.Collections.Immutable;
 using System.Security.Cryptography;
 using System.Text;
 using Harness.BusinessLogic.CodeIntelligence;
+using Harness.BusinessLogic.Debugging;
 using Harness.BusinessLogic.Workspaces;
 using Harness.DataAccess.Execution;
 using Harness.DataAccess.Inspection;
@@ -11,7 +12,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Harness.BusinessLogic.Execution;
 
-internal sealed class DeveloperProjectExecutionService(
+internal sealed partial class DeveloperProjectExecutionService(
     IWorkbenchWorkspaceContextResolver contextResolver,
     IWorkspaceStore workspaceStore,
     IWorkspaceDotNetInspector dotNetInspector,
@@ -19,8 +20,9 @@ internal sealed class DeveloperProjectExecutionService(
     IDotNetProjectRunner runner,
     IDeveloperDotNetExecutionStore store,
     TimeProvider timeProvider,
-    ILogger<DeveloperProjectExecutionService> logger) :
-    IDeveloperProjectExecutionService, IDisposable
+    ILogger<DeveloperProjectExecutionService> logger,
+    IDeveloperDebuggerSettingsService? debuggerSettingsService = null) :
+    IDeveloperProjectExecutionService, IDeveloperExecutionTargetResolver, IDisposable
 {
     private const int MaximumExecutions = 200;
     private const int MaximumConcurrentExecutions = 4;
@@ -33,14 +35,24 @@ internal sealed class DeveloperProjectExecutionService(
     private int reconciled;
     private bool disposed;
 
-    public DeveloperExecutionCapabilities Capabilities { get; } = new(
-        CanRunProjectEntryPoint: true,
-        CanBuildProject: true,
-        CanRebuildProject: true,
-        CanDebugProjectEntryPoint: false,
-        "Debug requires a pinned debugger adapter; ordinary Run is not labeled Debug.",
-        CanTest: true,
-        CanHotReload: true);
+    public DeveloperExecutionCapabilities Capabilities
+    {
+        get
+        {
+            bool debuggerReady = debuggerSettingsService?.Current.Availability is
+                DebugAdapterAvailability.Ready;
+            return new(
+                CanRunProjectEntryPoint: true,
+                CanBuildProject: true,
+                CanRebuildProject: true,
+                CanDebugProjectEntryPoint: debuggerReady,
+                debuggerReady
+                    ? "Verified managed debugger ready."
+                    : "Install or repair the verified managed debugger in Settings.",
+                CanTest: true,
+                CanHotReload: true);
+        }
+    }
 
     public async ValueTask<DeveloperExecutionStartResult> StartRunAsync(
         DeveloperExecutionStartRequest request,
@@ -637,7 +649,7 @@ internal sealed class DeveloperProjectExecutionService(
         !value.Equals("DOTNET_CLI_TELEMETRY_OPTOUT", StringComparison.Ordinal) &&
         !value.Equals("DOTNET_NOLOGO", StringComparison.Ordinal);
 
-    private static DotNetRunOverrides? Map(DeveloperRunOverrides? overrides) =>
+    internal static DotNetRunOverrides? Map(DeveloperRunOverrides? overrides) =>
         overrides is null ? null : new(
             overrides.LaunchProfile is null ? null : new(overrides.LaunchProfile.Value),
             overrides.Arguments.Select(argument =>

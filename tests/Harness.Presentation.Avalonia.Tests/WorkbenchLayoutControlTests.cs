@@ -563,7 +563,7 @@ public sealed partial class PresentationControlTests
             IToolDock restoredLeft = Find<IToolDock>(restored.Root, WorkbenchDockIds.Left);
             Assert.Contains(restoredRight.VisibleDockables!, item =>
                 item.Id == WorkbenchDockIds.NavigationTool && item.Context is TabControl tabs &&
-                tabs.Items.Count == 3);
+                tabs.Items.Count == 4);
             Assert.Contains(restored.Root.HiddenDockables!, item =>
                 item.Id == WorkbenchDockIds.FilesTool && item.Context is not null);
             Assert.Contains(restored.Root.HiddenDockables!, item =>

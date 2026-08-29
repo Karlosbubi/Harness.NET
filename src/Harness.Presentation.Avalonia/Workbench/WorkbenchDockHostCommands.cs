@@ -324,18 +324,23 @@ internal sealed partial class WorkbenchDockHost
         TabItem workspaceTab = new() { Header = "Workspace", Content = navigation };
         TabItem solutionTab = new() { Header = "Solution", Content = solutionTool.Content };
         TabItem testsTab = new() { Header = "Tests", Content = testExplorerTool.Content };
+        TabItem debuggerTab = new() { Header = "Debug", Content = debuggerToolUnit.Content };
         AutomationProperties.SetName(workspaceTab, "Workspace navigation tab");
         AutomationProperties.SetName(solutionTab, ".NET solution navigation tab");
         AutomationProperties.SetName(testsTab, "Test Explorer navigation tab");
+        AutomationProperties.SetName(debuggerTab, "Managed debugger navigation tab");
         workspaceSections.Items.Add(workspaceTab);
         workspaceSections.Items.Add(solutionTab);
         workspaceSections.Items.Add(testsTab);
+        workspaceSections.Items.Add(debuggerTab);
         workspaceSections.SelectionChanged += async (_, _) =>
         {
             if (workspaceSections.SelectedIndex == 2) await testExplorerTool.RefreshAsync();
+            if (workspaceSections.SelectedIndex == 3) await debuggerToolUnit.RefreshAsync();
         };
         workspaceSections.SelectedIndex = 0;
-        AutomationProperties.SetName(workspaceSections, "Workspace, solution, and test navigation");
+        AutomationProperties.SetName(workspaceSections,
+            "Workspace, solution, test, and managed debugger navigation");
         return workspaceSections;
     }
     private Control BuildSourceControlTool()

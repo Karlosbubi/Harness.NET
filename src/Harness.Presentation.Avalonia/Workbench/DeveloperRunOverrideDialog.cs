@@ -12,6 +12,12 @@ internal sealed record DeveloperRunOverrideDialogResult(
     DeveloperRunOverrides Overrides,
     DeveloperRunMode Mode);
 
+internal enum DeveloperRunOverridePurpose
+{
+    Run,
+    Debug,
+}
+
 internal sealed class DeveloperRunOverrideDialog : Window
 {
     private readonly TextBox profile = new() { PlaceholderText = "Optional inspected profile" };
@@ -34,16 +40,24 @@ internal sealed class DeveloperRunOverrideDialog : Window
     private readonly TextBlock summary = new() { TextWrapping = TextWrapping.Wrap };
     private readonly StatusIndicator status = new();
     private readonly CheckBox hotReload = new() { Content = "Keep running with Hot Reload" };
+    private readonly DeveloperRunOverridePurpose purpose;
 
-    internal DeveloperRunOverrideDialog(string projectPath)
+    internal DeveloperRunOverrideDialog(
+        string projectPath,
+        DeveloperRunOverridePurpose purpose = DeveloperRunOverridePurpose.Run)
     {
-        Title = "One-run overrides";
+        this.purpose = purpose;
+        Title = purpose is DeveloperRunOverridePurpose.Debug
+            ? "Debug launch overrides"
+            : "One-run overrides";
         Width = 560;
         Height = 620;
         MinWidth = 440;
         MinHeight = 520;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
-        AutomationProperties.SetName(this, $"One-run overrides for {projectPath}");
+        AutomationProperties.SetName(this, purpose is DeveloperRunOverridePurpose.Debug
+            ? $"Debug launch overrides for {projectPath}"
+            : $"One-run overrides for {projectPath}");
         Content = BuildContent(projectPath);
         foreach (TextBox input in new[] { profile, workingDirectory, arguments, environment })
             input.TextChanged += (_, _) => UpdateSummary();
@@ -63,7 +77,9 @@ internal sealed class DeveloperRunOverrideDialog : Window
         StackPanel content = new() { Spacing = 8, Margin = new(18) };
         content.Children.Add(new TextBlock
         {
-            Text = $"Run {projectPath} once with explicit overrides",
+            Text = purpose is DeveloperRunOverridePurpose.Debug
+                ? $"Debug {projectPath} with explicit launch overrides"
+                : $"Run {projectPath} once with explicit overrides",
             FontWeight = FontWeight.SemiBold,
             FontSize = 16,
             TextWrapping = TextWrapping.Wrap,
@@ -79,8 +95,11 @@ internal sealed class DeveloperRunOverrideDialog : Window
             "One-run working directory");
         AddField(content, "Application arguments", arguments, "One-run arguments");
         AddField(content, "Environment overrides", environment, "One-run environment");
-        AutomationProperties.SetName(hotReload, "Use Hot Reload for this run");
-        content.Children.Add(hotReload);
+        if (purpose is DeveloperRunOverridePurpose.Run)
+        {
+            AutomationProperties.SetName(hotReload, "Use Hot Reload for this run");
+            content.Children.Add(hotReload);
+        }
         AutomationProperties.SetName(summary, "One-run override summary");
         content.Children.Add(summary);
         AutomationProperties.SetName(status, "One-run override validation");
@@ -93,9 +112,14 @@ internal sealed class DeveloperRunOverrideDialog : Window
         };
         Button cancel = new() { Content = "Cancel" };
         cancel.Click += (_, _) => Close(null);
-        Button run = new() { Content = "Run once" };
+        Button run = new()
+        {
+            Content = purpose is DeveloperRunOverridePurpose.Debug ? "Start debugging" : "Run once",
+        };
         run.Classes.Add("primary");
-        AutomationProperties.SetName(run, "Run with one-run overrides");
+        AutomationProperties.SetName(run, purpose is DeveloperRunOverridePurpose.Debug
+            ? "Start managed debugging with launch overrides"
+            : "Run with one-run overrides");
         run.Click += (_, _) => Submit();
         actions.Children.Add(cancel);
         actions.Children.Add(run);
@@ -123,7 +147,7 @@ internal sealed class DeveloperRunOverrideDialog : Window
             return;
         }
         Close(new DeveloperRunOverrideDialogResult(
-            overrides!, hotReload.IsChecked is true
+            overrides!, purpose is DeveloperRunOverridePurpose.Run && hotReload.IsChecked is true
                 ? DeveloperRunMode.HotReload
                 : DeveloperRunMode.Standard));
     }
@@ -166,7 +190,10 @@ internal sealed class DeveloperRunOverrideDialog : Window
             int separator = value.IndexOf('=');
             return separator <= 0 ? "invalid entry" : value[..separator];
         }));
-        summary.Text = $"Mode: {(hotReload.IsChecked is true ? "Hot Reload" : "Run")} · " +
+        string mode = purpose is DeveloperRunOverridePurpose.Debug
+            ? "Debug"
+            : hotReload.IsChecked is true ? "Hot Reload" : "Run";
+        summary.Text = $"Mode: {mode} · " +
                        $"profile: {(profile.Text?.Trim() is { Length: > 0 } selected ? selected : "none")} · " +
                        $"arguments: {argumentValues.Length} · environment names: " +
                        $"{(names.Length == 0 ? "none" : names)} · working directory: " +

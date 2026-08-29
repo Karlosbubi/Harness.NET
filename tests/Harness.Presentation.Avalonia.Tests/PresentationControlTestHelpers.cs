@@ -22,6 +22,7 @@ using Dock.Model.Core;
 using Harness.BusinessLogic.Agents;
 using Harness.BusinessLogic.CodeIntelligence;
 using Harness.BusinessLogic.Documents;
+using Harness.BusinessLogic.Debugging;
 using Harness.BusinessLogic.Editor;
 using Harness.BusinessLogic.Evidence;
 using Harness.BusinessLogic.Execution;
@@ -54,7 +55,8 @@ public sealed partial class PresentationControlTests
         IDeveloperGitService? developerGit = null,
         Func<Task>? refreshWorkspaceContext = null,
         Func<string, Task>? manageWorkspaceAt = null,
-        IDeveloperProjectExecutionService? developerExecution = null) => new(
+        IDeveloperProjectExecutionService? developerExecution = null,
+        IDeveloperDebuggerService? developerDebugger = null) => new(
         runOutput ?? new RunOutputService(),
         inspection ?? new InspectionService(),
         documents ?? new DocumentService(),
@@ -72,7 +74,9 @@ public sealed partial class PresentationControlTests
         developerExecution,
         developerGit,
         refreshWorkspaceContext,
-        manageWorkspaceAt);
+        manageWorkspaceAt,
+        null,
+        developerDebugger);
 
     private static Control ConversationSurface(string text) => new Border
     {

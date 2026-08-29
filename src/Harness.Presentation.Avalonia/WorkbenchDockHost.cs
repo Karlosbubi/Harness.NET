@@ -16,6 +16,7 @@ using Dock.Model.Controls;
 using Dock.Model.Core;
 using Harness.BusinessLogic.CodeIntelligence;
 using Harness.BusinessLogic.Coverage;
+using Harness.BusinessLogic.Debugging;
 using Harness.BusinessLogic.Documents;
 using Harness.BusinessLogic.Editor;
 using Harness.BusinessLogic.Evidence;
@@ -61,6 +62,7 @@ internal sealed partial class WorkbenchDockHost
     private readonly FilesTool filesTool;
     private readonly SolutionTool solutionTool;
     private readonly TestExplorerTool testExplorerTool;
+    private readonly DebuggerTool debuggerToolUnit;
     private readonly GitChangesTool gitChangesTool;
     private readonly GitBranchesTool gitBranchesTool;
     private readonly GitWorktreesTool gitWorktreesTool;
@@ -101,7 +103,8 @@ internal sealed partial class WorkbenchDockHost
         IDeveloperGitService? developerGitService = null,
         Func<Task>? refreshWorkspaceContext = null,
         Func<string, Task>? manageWorkspaceAt = null,
-        IDeveloperCoverageService? coverageService = null)
+        IDeveloperCoverageService? coverageService = null,
+        IDeveloperDebuggerService? debuggerService = null)
     {
         this.inspectionService = inspectionService;
         this.state = state;
@@ -154,6 +157,7 @@ internal sealed partial class WorkbenchDockHost
             async () => await this.refreshWorkspaceContext());
         gitHistoryTool = new(toolContext, gitChangesTool.ReportStatus);
         runOutputToolUnit = new(toolContext, runOutputService, developerExecutionService);
+        DebuggerTool? debuggerTool = null;
         documentsHost = new(
             documentService,
             codeIntelligenceService,
@@ -170,7 +174,17 @@ internal sealed partial class WorkbenchDockHost
             InvalidateCodeIntelligenceAsync,
             ShowRunOutput,
             RefreshRunOutputAsync,
+            debuggerService,
+            session =>
+            {
+                ShowDebugger();
+                return debuggerTool!.TrackAsync(session);
+            },
             factory,
+            cancellationToken);
+        debuggerToolUnit = debuggerTool = new(
+            debuggerService,
+            documentsHost.NavigateToDebugAsync,
             cancellationToken);
         testExplorerTool = new(
             toolContext,
@@ -423,6 +437,13 @@ internal sealed partial class WorkbenchDockHost
     {
         bool shown = navigator.ShowWorkspace();
         workspaceSections.SelectedIndex = 2;
+        return shown;
+    }
+
+    internal bool ShowDebugger()
+    {
+        bool shown = navigator.ShowWorkspace();
+        workspaceSections.SelectedIndex = 3;
         return shown;
     }
 

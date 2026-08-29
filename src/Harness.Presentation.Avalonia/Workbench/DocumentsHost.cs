@@ -11,6 +11,7 @@ using Dock.Model.Controls;
 using Dock.Model.Core;
 using Harness.BusinessLogic.CodeIntelligence;
 using Harness.BusinessLogic.Coverage;
+using Harness.BusinessLogic.Debugging;
 using Harness.BusinessLogic.Documents;
 using Harness.BusinessLogic.Editor;
 using Harness.BusinessLogic.Execution;
@@ -24,7 +25,7 @@ using Harness.UI.Avalonia;
 
 namespace Harness.Presentation.Avalonia.Workbench;
 
-internal sealed class DocumentsHost
+internal sealed partial class DocumentsHost
 {
     private readonly IWorkbenchDocumentService documentService;
     private readonly IWorkbenchDocumentPrompt prompt;
@@ -76,6 +77,8 @@ internal sealed class DocumentsHost
         Func<ValueTask> invalidateAll,
         Func<bool> showRunOutput,
         Func<ValueTask> refreshRunOutput,
+        IDeveloperDebuggerService? debuggerService,
+        Func<DeveloperDebugSessionView, ValueTask> showDebugger,
         Factory factory,
         CancellationToken cancellationToken)
     {
@@ -95,10 +98,10 @@ internal sealed class DocumentsHost
         intelligence = new(codeService, executionService, ActiveWorkspace, () => sources,
             Problems, cancellationToken);
         navigation = new(
-            codeService, intelligence, executionService, ActiveWorkspace, Request,
+            codeService, intelligence, executionService, debuggerService, ActiveWorkspace, Request,
             () => sources, virtuals, OpenAsync, SetActive, PrepareActiveTransitionAsync,
             OpenOrReplace, () => documents, factory, showRunOutput, refreshRunOutput,
-            cancellationToken);
+            showDebugger, cancellationToken);
         interactions = new(codeService, intelligence, ownerWindow,
             navigation.NavigateToSymbolAsync, cancellationToken);
         rename = new(mutationService, ActiveSource, () => sources, ownerWindow,

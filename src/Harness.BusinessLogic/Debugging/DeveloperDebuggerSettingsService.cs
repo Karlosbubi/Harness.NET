@@ -8,9 +8,22 @@ internal sealed class DeveloperDebuggerSettingsService(
     ILogger<DeveloperDebuggerSettingsService> logger) : IDeveloperDebuggerSettingsService
 {
     private readonly SemaphoreSlim gate = new(1, 1);
+    private DebugAdapterStatus current = new(
+        DebugAdapterAvailability.NotInstalled,
+        new("3.2.0-1092"),
+        new("unknown"),
+        "Debugger status has not been verified in this process.",
+        CanInstall: true,
+        CanRemove: false);
 
-    public async ValueTask<DebugAdapterStatus> GetAsync(CancellationToken cancellationToken = default) =>
-        Map(await packageStore.GetStatusAsync(cancellationToken));
+    public DebugAdapterStatus Current => Volatile.Read(ref current);
+
+    public async ValueTask<DebugAdapterStatus> GetAsync(CancellationToken cancellationToken = default)
+    {
+        DebugAdapterStatus status = Map(await packageStore.GetStatusAsync(cancellationToken));
+        Volatile.Write(ref current, status);
+        return status;
+    }
 
     public async ValueTask<DebugAdapterStatus> InstallAsync(
         CancellationToken cancellationToken = default)
@@ -19,6 +32,7 @@ internal sealed class DeveloperDebuggerSettingsService(
         try
         {
             DebugAdapterStatus result = Map(await packageStore.InstallAsync(cancellationToken));
+            Volatile.Write(ref current, result);
             logger.LogInformation(
                 "Managed debug adapter {Version} is {Availability} for {Platform}",
                 result.Version.Value,
@@ -39,6 +53,7 @@ internal sealed class DeveloperDebuggerSettingsService(
         try
         {
             DebugAdapterStatus result = Map(await packageStore.RemoveAsync(cancellationToken));
+            Volatile.Write(ref current, result);
             logger.LogInformation(
                 "Managed debug adapter {Version} was removed for {Platform}",
                 result.Version.Value,

@@ -7,6 +7,7 @@ using Dock.Model.Avalonia;
 using Dock.Model.Controls;
 using Dock.Model.Core;
 using Harness.BusinessLogic.CodeIntelligence;
+using Harness.BusinessLogic.Debugging;
 using Harness.BusinessLogic.Documents;
 using Harness.BusinessLogic.Execution;
 using Harness.BusinessLogic.Goals;
@@ -27,6 +28,7 @@ internal sealed class DocumentNavigation
     private readonly IWorkbenchCodeIntelligenceService code;
     private readonly DocumentIntelligence intelligence;
     private readonly IDeveloperProjectExecutionService? execution;
+    private readonly IDeveloperDebuggerService? debugger;
     private readonly Func<WorkspaceView?> activeWorkspace;
     private readonly Func<WorkspaceView, WorkbenchWorkspaceRequest> request;
     private readonly Func<IReadOnlyDictionary<string, SourceDocumentSession>> sourceDocuments;
@@ -39,12 +41,14 @@ internal sealed class DocumentNavigation
     private readonly IFactory factory;
     private readonly Func<bool> showRunOutput;
     private readonly Func<ValueTask> refreshRunOutput;
+    private readonly Func<DeveloperDebugSessionView, ValueTask> showDebugger;
     private readonly CancellationToken cancellationToken;
 
     internal DocumentNavigation(
         IWorkbenchCodeIntelligenceService code,
         DocumentIntelligence intelligence,
         IDeveloperProjectExecutionService? execution,
+        IDeveloperDebuggerService? debugger,
         Func<WorkspaceView?> activeWorkspace,
         Func<WorkspaceView, WorkbenchWorkspaceRequest> request,
         Func<IReadOnlyDictionary<string, SourceDocumentSession>> sourceDocuments,
@@ -57,11 +61,13 @@ internal sealed class DocumentNavigation
         IFactory factory,
         Func<bool> showRunOutput,
         Func<ValueTask> refreshRunOutput,
+        Func<DeveloperDebugSessionView, ValueTask> showDebugger,
         CancellationToken cancellationToken)
     {
         this.code = code;
         this.intelligence = intelligence;
         this.execution = execution;
+        this.debugger = debugger;
         this.activeWorkspace = activeWorkspace;
         this.request = request;
         this.sourceDocuments = sourceDocuments;
@@ -74,6 +80,7 @@ internal sealed class DocumentNavigation
         this.factory = factory;
         this.showRunOutput = showRunOutput;
         this.refreshRunOutput = refreshRunOutput;
+        this.showDebugger = showDebugger;
         this.cancellationToken = cancellationToken;
     }
 
@@ -152,11 +159,67 @@ internal sealed class DocumentNavigation
                 await RunAsync(document, lens);
                 break;
             case WorkbenchCodeLensKind.Debug:
-                document.SetStatus(execution?.Capabilities.DebugStatus ??
-                    "No typed debugger capability is available.");
+                await DebugAsync(document, lens);
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(lens));
+        }
+    }
+
+    private async ValueTask DebugAsync(SourceDocumentSession document, WorkbenchCodeLens lens)
+    {
+        WorkspaceView? workspace = activeWorkspace();
+        if (debugger is null || execution is null || workspace is null || !workspace.IsTrusted ||
+            lens.ExecutionTarget is null)
+        {
+            document.SetStatus(execution?.Capabilities.DebugStatus ??
+                "No validated managed debugger target is available.");
+            return;
+        }
+        if (document.IsDirty)
+        {
+            document.SetStatus("Save this document before debugging its Roslyn entry point.");
+            return;
+        }
+        Window? owner = TopLevel.GetTopLevel(document.NativeEditor) as Window;
+        if (owner is null)
+        {
+            document.SetStatus("The debug launch dialog requires an active editor window.");
+            return;
+        }
+        DeveloperRunOverrideDialogResult? selected = await new DeveloperRunOverrideDialog(
+            lens.ExecutionTarget.ProjectPath.Value,
+            DeveloperRunOverridePurpose.Debug).ShowDialog<DeveloperRunOverrideDialogResult?>(owner);
+        if (selected is null)
+        {
+            document.SetStatus("Debug cancelled before start; no overrides were retained.");
+            return;
+        }
+
+        document.SetBusy(true, $"Starting debugger for {lens.ExecutionTarget.ProjectPath.Value}…");
+        try
+        {
+            DeveloperDebugBreakpointLocation breakpoint = new(
+                new(document.View.Path.Value),
+                new(lens.Target.Line + 1));
+            DeveloperDebugStartResult started = await debugger.StartAsync(new(
+                request(workspace),
+                lens.ExecutionTarget,
+                [breakpoint],
+                selected.Overrides,
+                StopAtEntry: false), cancellationToken);
+            if (started.Session is null)
+            {
+                document.SetStatus(started.Error ?? "The managed debugger could not start.");
+                return;
+            }
+            document.SetStatus($"Debug {started.Session.Id.Value[..8]} started from the exact " +
+                               $"Roslyn target · {OverrideSummary(selected.Overrides)}.");
+            await showDebugger(started.Session);
+        }
+        finally
+        {
+            document.SetBusy(false);
         }
     }
 

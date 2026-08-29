@@ -43,9 +43,9 @@ Status meanings:
 | `execute_terminal_command` | Closed structured command/run modules for justified gaps | Excluded as shell | Never accept an unrestricted shell command string |
 | `get_repositories`, `git_status` | VCS roots, status, branch, HEAD and bounded diff | Partial | Repository-local Git adapters |
 | Git integration mutations | Stage/commit through existing exact-diff fingerprint; future typed branch/remote actions | Partial | Separate explicit integration/network authority |
-| debugger status/start/attach | Typed debug configurations, process attach and session lifecycle | Planned | Trust plus explicit launch/attach approval |
-| breakpoints/logpoints and control | List/set/remove scoped breakpoints; pause/resume/step/run-to-line/stop | Planned | Session identities, stale-state checks, bounded waits |
-| threads/stacks/frame/value inspection | Paged runtime inspection with depth/size limits | Planned | Suspended exact session/frame identity |
+| debugger status/start/attach | Typed debug configurations, process attach and session lifecycle | Developer UI partial | Exact Roslyn project-entry launch is delivered through the verified managed adapter; owned Test Debug attach remains planned and arbitrary attach remains excluded |
+| breakpoints/logpoints and control | List/set/remove scoped breakpoints; pause/resume/step/run-to-line/stop | Developer UI partial | Exact source breakpoint, pause/resume/step/stop and session identities are delivered; logpoints and run-to-line remain planned |
+| threads/stacks/frame/value inspection | Paged runtime inspection with depth/size limits | Developer UI delivered | Suspended exact session/frame identity, bounded adapter results, and confined source mapping |
 | debugger expression/variable mutation | Explicitly risk-classified evaluate/set operations | Planned | Consequential confirmation; evaluation may execute code |
 | database connection/schema/object inspection | Named secret-backed connections and bounded metadata inspection | Planned | Settings + Secret Service; source/credential status |
 | SQL execute/fetch/cancel and table preview | Bounded query sessions, pagination and cancellation | Planned | Server-enforced read-only principal or explicit mutation approval |

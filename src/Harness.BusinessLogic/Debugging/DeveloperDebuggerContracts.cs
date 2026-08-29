@@ -29,6 +29,8 @@ public sealed record DebugAdapterStatus(
 
 public interface IDeveloperDebuggerSettingsService
 {
+    DebugAdapterStatus Current { get; }
+
     ValueTask<DebugAdapterStatus> GetAsync(CancellationToken cancellationToken = default);
 
     ValueTask<DebugAdapterStatus> InstallAsync(CancellationToken cancellationToken = default);

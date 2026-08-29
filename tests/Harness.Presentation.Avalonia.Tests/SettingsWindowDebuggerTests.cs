@@ -50,6 +50,8 @@ public sealed partial class PresentationControlTests
             CanInstall: true,
             CanRemove: false);
 
+        public DebugAdapterStatus Current => Status;
+
         public ValueTask<DebugAdapterStatus> GetAsync(
             CancellationToken cancellationToken = default) => ValueTask.FromResult(Status);
 

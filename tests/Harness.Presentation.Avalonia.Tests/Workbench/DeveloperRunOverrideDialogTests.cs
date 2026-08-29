@@ -57,4 +57,25 @@ public sealed class DeveloperRunOverrideDialogTests
             dialog.Close();
         }, CancellationToken.None);
     }
+
+    [Fact]
+    public async Task Debug_purpose_reuses_typed_launch_overrides_without_offering_hot_reload()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            DeveloperRunOverrideDialog dialog = new(
+                "App.csproj", DeveloperRunOverridePurpose.Debug);
+            dialog.Arguments.Text = "--inspect";
+            dialog.HotReload.IsChecked = true;
+
+            Assert.True(dialog.TryCreate(out var overrides, out string? error), error);
+            Assert.Equal("--inspect", Assert.Single(overrides!.Arguments).Value);
+            Assert.Contains("Mode: Debug", dialog.Summary, StringComparison.Ordinal);
+            Assert.DoesNotContain("Hot Reload", dialog.Summary, StringComparison.Ordinal);
+            Assert.Null(dialog.HotReload.Parent);
+            dialog.Close();
+        }, CancellationToken.None);
+    }
 }

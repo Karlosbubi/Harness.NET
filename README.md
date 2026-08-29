@@ -53,8 +53,11 @@ Delivered:
 - explicit Settings management for the pinned MIT-licensed NetCoreDbg adapter, with
   bounded download, archive and per-file SHA-256 verification, retained license,
   application-private installation, tamper detection, repair, removal, and clear
-  unsupported/not-installed/ready/corrupt status; Debug remains hidden until the
-  typed DAP session lifecycle is present;
+  unsupported/not-installed/ready/corrupt status; when Ready, a Roslyn-proven project
+  entry point exposes Debug with the same exact saved-source and launch-override
+  revalidation as Run, a private bounded DAP-over-stdio lifecycle, verified source
+  breakpoints, threads, stacks, scopes, expandable variables, continue/pause/step/stop,
+  confined source navigation, transient bounded output, and deterministic cleanup;
 - a source-context-aware static .NET Solution view for entry points, SDK policy and
   selected-SDK/workload-manifest health, projects, target frameworks,
   declared/conventional configurations, startup candidates, project/package

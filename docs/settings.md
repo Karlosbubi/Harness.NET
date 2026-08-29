@@ -46,9 +46,10 @@ session, path, baseline, and buffer version and are discarded when stale. CodeLe
 discovery is document-wide and bounded. Reference, implementation, and test
 queries run only when the developer selects the corresponding lens. Run and Debug
 lenses remain absent unless a typed execution service reports a valid target and
-capability; Settings cannot create execution authority. Run is available for a
-Roslyn-proven project entry point. Debug remains unavailable until a real debugger
-adapter is delivered.
+capability; Settings cannot create execution authority. Both use a Roslyn-proven
+project entry point. Debug appears only while the application-private pinned adapter
+verifies Ready, then revalidates the exact saved source, inspected project/framework,
+profile, working directory, arguments, and environment before launch.
 
 Use the Transform menu or command palette to format the document, a selection, or only
 syntax changed since the persisted baseline. `Ctrl+Alt+L` formats the document,

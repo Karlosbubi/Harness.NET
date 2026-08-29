@@ -609,6 +609,18 @@ unsupported, absent, ready, or corrupt status. It never resolves an adapter from
 accepts a custom executable, or enables a TCP listener. The typed DAP session lifecycle
 and Test Debug remain planned, so Debug remains correctly hidden.
 
+Delivered fifteenth slice: verified NetCoreDbg now runs through a private bounded
+DAP-over-stdio transport and exposes Debug for an exact Roslyn-discovered project
+entry point. Business Logic reuses Run's trusted source-context, inspected
+project/framework, saved-source hash, and bounded process-local launch overrides.
+The accessible Debug workspace shows adapter/session status, a verified entry-point
+source breakpoint, threads, call stack, scopes, expandable variables, bounded output,
+confined source navigation, Continue, Pause, Step Over/Into/Out, and Stop. Natural
+exit, failure, cancellation, and application shutdown close the adapter and owned
+debuggee deterministically. No PATH adapter, custom executable, TCP listener,
+expression evaluation, value mutation, or arbitrary attach is introduced. Test Debug
+remains planned.
+
 Use the existing trust and Restore boundaries. Selecting a launch profile does not
 authorize execution; debug attach, expression evaluation, mutation, dumps, network
 listeners, and external processes remain separately classified. ASP.NET endpoint

@@ -623,7 +623,7 @@ Acceptance criteria:
 
 ### 052 — .NET project, Run, Test, and Debug experience
 
-Status: `In progress — execution, Test Explorer, coverage, Hot Reload, and managed debugger package delivered`
+Status: `In progress — project Debug delivered; Test Debug remains`
 
 Dependencies: 018, 042, 047, 049, 051.
 
@@ -679,7 +679,13 @@ boundary: Settings explicitly installs, verifies, repairs, or removes pinned
 NetCoreDbg 3.2.0-1092 in application-private storage. The release archive, retained MIT
 license, exact payload names and sizes, and every SHA-256 digest are fixed in code;
 Harness never searches PATH, accepts a custom executable, or starts a TCP adapter.
-The DAP session lifecycle and Test Debug remain open, so Debug is still hidden.
+The fifteenth slice completes exact project-entry Debug. It reuses the Roslyn-proven
+target and Run revalidation lifecycle, then starts the verified adapter over bounded
+private stdio. The Debug workspace exposes verified source breakpoints, threads,
+stacks, scopes, expandable variables, bounded output, source navigation, pause,
+continue, stepping, stop, and deterministic adapter/debuggee cleanup. Test Debug
+remains open; arbitrary attach, expression evaluation, and value mutation remain
+excluded by ADR 028.
 
 Acceptance criteria:
 
@@ -695,8 +701,8 @@ Acceptance criteria:
    selection, duration, failure history, source navigation, rerun, and cancellation.
 5. Coverage import or collection records tool/version/provenance and maps exact
    results to editor and project views without implying uncovered code is defective.
-6. The .NET debugger supports typed launch/attach, breakpoints, threads, stacks,
-   scopes, variables, watches, stepping, stop, and source mapping behind an adapter.
+6. The .NET debugger supports typed launch and owned-test attach, breakpoints, threads,
+   stacks, scopes, variables, stepping, stop, and source mapping behind an adapter.
 7. Expression evaluation, value mutation, attach, dumps, external processes, and
    network listeners have separate risk classes and explicit developer decisions.
 8. ASP.NET endpoint preview and Avalonia launch/capture bind to the exact run and may
