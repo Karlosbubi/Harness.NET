@@ -492,9 +492,10 @@ entry point, SDK policy, projects, target frameworks, language/nullable metadata
 declared/conventional configurations, typed project kind and startup candidates,
 declared project/package references, selected SDK resolution, and workload-manifest
 availability. It opens project files through the existing typed document boundary
-and never restores, evaluates MSBuild, or executes project code. Loading-failure
-nodes, launch profiles, Build/Rebuild, Test Explorer, Hot Reload, and Debug remain
-planned.
+and reports missing, outside-root, oversized, or malformed project declarations
+without hiding healthy projects or leaking machine paths. It never restores,
+evaluates MSBuild, or executes project code. Launch profiles, Build/Rebuild, Test
+Explorer, Hot Reload, and Debug remain planned.
 
 Use the existing trust and Restore boundaries. Selecting a launch profile does not
 authorize execution; debug attach, expression evaluation, mutation, dumps, network

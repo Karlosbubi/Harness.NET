@@ -41,6 +41,7 @@ public sealed class SolutionToolTests
             Assert.Contains(root.Children, node => node.Label.Contains(
                 "workload manifests available",
                 StringComparison.Ordinal));
+            Assert.Contains(root.Children, node => node.Label == "Loading issues · 1");
             SolutionTool.SolutionTreeNode project = Assert.Single(
                 root.Children,
                 node => node.Path is not null);
@@ -114,7 +115,11 @@ public sealed class SolutionToolTests
                         new("10.0.400"),
                         WorkloadManifestsAvailable: true,
                         ErrorCode: null,
-                        Error: null))));
+                        Error: null),
+                    [new(
+                        new("src/Missing/Missing.csproj"),
+                        DotNetProjectIssueKindView.Missing,
+                        "The project file declared by the solution does not exist.")])));
         }
 
         public ValueTask<WorkbenchFileCatalogResult> ListFilesAsync(

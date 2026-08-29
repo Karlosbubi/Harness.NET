@@ -45,6 +45,8 @@ public sealed class WorkbenchInspectionServiceTests
         Assert.Equal(DotNetProjectKindView.Executable, project.Details!.Kind);
         Assert.True(project.Details.IsStartupCandidate);
         Assert.Equal(DotNetSdkHealthStateView.Ready, solution.DotNet.SdkHealth!.State);
+        Assert.Equal(DotNetProjectIssueKindView.Missing,
+            Assert.Single(solution.DotNet.ProjectIssues!).Kind);
         Assert.Equal("harness/goal-test", inspection.Context.Branch?.Value);
         Assert.Equal("src/App.cs", Assert.Single(search.Search.Matches).Path);
         Assert.Equal("src/App.cs", Assert.Single(inspection.Git.Changes).Path);
@@ -217,7 +219,9 @@ public sealed class WorkbenchInspectionServiceTests
                     new("10.0.400"),
                     WorkloadManifestsAvailable: true,
                     ErrorCode: null,
-                    Error: null)));
+                    Error: null),
+                [new(new("src/Missing/Missing.csproj"), DotNetProjectIssueKind.Missing,
+                    "The project file declared by the solution does not exist.")]));
         }
     }
 

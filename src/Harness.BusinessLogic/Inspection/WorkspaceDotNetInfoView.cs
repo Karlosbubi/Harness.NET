@@ -8,4 +8,5 @@ public sealed record WorkspaceDotNetInfoView(
     bool IsTruncated,
     string? ErrorCode,
     string? Error,
-    DotNetSdkHealthView? SdkHealth = null);
+    DotNetSdkHealthView? SdkHealth = null,
+    IReadOnlyList<DotNetProjectIssueView>? ProjectIssues = null);

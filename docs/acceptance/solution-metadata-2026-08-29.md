@@ -20,6 +20,9 @@ foundation, not MSBuild evaluation, execution, or a claim that Task 052 is compl
 - The adapter reads bounded `.sln`, `.slnx`, project XML, and `global.json` metadata.
   It does not Restore, evaluate MSBuild targets, load analyzers/generators, or execute
   repository code.
+- Missing, outside-workspace, oversized, and malformed project declarations appear as
+  typed loading-issue nodes while healthy projects remain usable. Messages disclose
+  no absolute machine path.
 - Refresh is a typed `KeybindingCommand` and command-palette action. Busy, success,
   bounded-result, cancellation, trust, and error states use the shared live status
   indicator.
@@ -41,7 +44,6 @@ foundation, not MSBuild evaluation, execution, or a claim that Task 052 is compl
 
 ## Remaining Task 052 work
 
-Loading-failure nodes, launch profiles and typed overrides, Build/Rebuild, Test
-Explorer, coverage, Hot Reload, and a real debugger adapter remain open. None is
-inferred from display text or represented as available before its typed adapter
-exists.
+Launch profiles and typed overrides, Build/Rebuild, Test Explorer, coverage, Hot
+Reload, and a real debugger adapter remain open. None is inferred from display text
+or represented as available before its typed adapter exists.

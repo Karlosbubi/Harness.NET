@@ -81,6 +81,7 @@ internal sealed class WorkspaceDotNetInspector(DotNetSdkSelector sdkSelector)
 
             bool isTruncated = projectPaths.Count > MaximumProjects;
             List<DotNetProjectInfo> projects = [];
+            List<DotNetProjectIssue> projectIssues = [];
             foreach (string projectPath in projectPaths.Take(MaximumProjects))
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -97,17 +98,25 @@ internal sealed class WorkspaceDotNetInspector(DotNetSdkSelector sdkSelector)
                         out _,
                         out _))
                 {
+                    projectIssues.Add(new(
+                        new(relativeProject.Replace(Path.DirectorySeparatorChar, '/')),
+                        DotNetProjectIssueKind.OutsideWorkspace,
+                        "The solution project path resolves outside the trusted workspace."));
                     continue;
                 }
 
-                DotNetProjectInfo? project = await ReadProjectAsync(
+                DotNetProjectReadResult read = await ReadProjectAsync(
                     fullProjectPath,
                     confinedProject,
                     cancellationToken);
-                if (project is not null)
+                if (read.Project is not null)
                 {
-                    projects.Add(project);
-                    isTruncated |= project.References.Count >= MaximumReferencesPerProject;
+                    projects.Add(read.Project);
+                    isTruncated |= read.Project.References.Count >= MaximumReferencesPerProject;
+                }
+                else if (read.Issue is not null)
+                {
+                    projectIssues.Add(read.Issue);
                 }
             }
 
@@ -121,7 +130,8 @@ internal sealed class WorkspaceDotNetInspector(DotNetSdkSelector sdkSelector)
                 isTruncated,
                 ErrorCode: null,
                 Error: null,
-                sdkHealth);
+                sdkHealth,
+                projectIssues);
         }
         catch (Exception exception) when (
             exception is IOException or UnauthorizedAccessException or XmlException or
@@ -158,22 +168,48 @@ internal sealed class WorkspaceDotNetInspector(DotNetSdkSelector sdkSelector)
             .ToArray();
     }
 
-    private static async ValueTask<DotNetProjectInfo?> ReadProjectAsync(
+    private static async ValueTask<DotNetProjectReadResult> ReadProjectAsync(
         string projectPath,
         string relativePath,
         CancellationToken cancellationToken)
     {
         FileInfo file = new(projectPath);
-        if (!file.Exists || file.Length > MaximumMetadataBytes)
+        if (!file.Exists)
         {
-            return null;
+            return Failure(
+                relativePath,
+                DotNetProjectIssueKind.Missing,
+                "The project file declared by the solution does not exist.");
         }
 
-        XDocument document = await LoadXmlAsync(projectPath, cancellationToken);
+        if (file.Length > MaximumMetadataBytes)
+        {
+            return Failure(
+                relativePath,
+                DotNetProjectIssueKind.TooLarge,
+                "The project file exceeds the 1 MiB static metadata limit.");
+        }
+
+        XDocument document;
+        try
+        {
+            document = await LoadXmlAsync(projectPath, cancellationToken);
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException or XmlException)
+        {
+            return Failure(
+                relativePath,
+                DotNetProjectIssueKind.InvalidMetadata,
+                "The project file could not be read as bounded XML metadata.");
+        }
         XElement? root = document.Root;
         if (root is null)
         {
-            return null;
+            return Failure(
+                relativePath,
+                DotNetProjectIssueKind.InvalidMetadata,
+                "The project file has no XML root element.");
         }
 
         string? sdk = root.Attribute("Sdk")?.Value ?? root.Elements()
@@ -209,20 +245,29 @@ internal sealed class WorkspaceDotNetInspector(DotNetSdkSelector sdkSelector)
             ? ["Debug", "Release"]
             : declaredConfigurations;
         return new(
-            relativePath,
-            sdk,
-            targetFrameworks,
-            Values(document, "LangVersion").LastOrDefault(),
-            Values(document, "Nullable").LastOrDefault(),
-            references,
             new(
-                kind,
-                configurations.Select(value => new DotNetProjectConfiguration(
-                    new(value),
-                    configurationSource)).ToArray(),
-                kind is DotNetProjectKind.Executable or DotNetProjectKind.Web or
-                    DotNetProjectKind.Worker));
+                relativePath,
+                sdk,
+                targetFrameworks,
+                Values(document, "LangVersion").LastOrDefault(),
+                Values(document, "Nullable").LastOrDefault(),
+                references,
+                new(
+                    kind,
+                    configurations.Select(value => new DotNetProjectConfiguration(
+                        new(value),
+                        configurationSource)).ToArray(),
+                    kind is DotNetProjectKind.Executable or DotNetProjectKind.Web or
+                        DotNetProjectKind.Worker)),
+            null);
     }
+
+    private static DotNetProjectReadResult Failure(
+        string path,
+        DotNetProjectIssueKind kind,
+        string message) => new(
+        null,
+        new(new(path), kind, message));
 
     private static DotNetProjectKind ProjectKind(
         string? sdk,
@@ -363,4 +408,8 @@ internal sealed class WorkspaceDotNetInspector(DotNetSdkSelector sdkSelector)
 
     private static WorkspaceDotNetInfo Failure(string entryPoint, string code, string error) =>
         new(entryPoint, string.Empty, null, [], IsTruncated: false, code, error);
+
+    private sealed record DotNetProjectReadResult(
+        DotNetProjectInfo? Project,
+        DotNetProjectIssue? Issue);
 }

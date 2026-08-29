@@ -637,8 +637,8 @@ SDK policy, selected-SDK/workload-manifest health, projects, target frameworks,
 declared/conventional configurations, typed project kind and startup candidates,
 declared references/packages, language and nullable metadata, with typed project-file
 navigation and no Restore, MSBuild evaluation, or repository execution.
-Loading-failure nodes, Build/Rebuild UI, Test Explorer, launch profiles, Hot Reload,
-and Debug remain open.
+Per-project loading failures remain visible without hiding healthy projects.
+Build/Rebuild UI, Test Explorer, launch profiles, Hot Reload, and Debug remain open.
 
 Acceptance criteria:
 

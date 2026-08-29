@@ -48,7 +48,11 @@ internal static class DotNetInspectionMapper
                     : new(result.SdkHealth.SelectedVersion.Value),
                 result.SdkHealth.WorkloadManifestsAvailable,
                 result.SdkHealth.ErrorCode,
-                result.SdkHealth.Error));
+                result.SdkHealth.Error),
+        result.ProjectIssues?.Select(issue => new DotNetProjectIssueView(
+            new(issue.Path.Value),
+            Map(issue.Kind),
+            issue.Message)).ToArray());
 
     private static DotNetProjectKindView Map(DotNetProjectKind kind) => kind switch
     {
@@ -58,5 +62,13 @@ internal static class DotNetInspectionMapper
         DotNetProjectKind.Worker => DotNetProjectKindView.Worker,
         DotNetProjectKind.Test => DotNetProjectKindView.Test,
         _ => DotNetProjectKindView.Unknown,
+    };
+
+    private static DotNetProjectIssueKindView Map(DotNetProjectIssueKind kind) => kind switch
+    {
+        DotNetProjectIssueKind.Missing => DotNetProjectIssueKindView.Missing,
+        DotNetProjectIssueKind.OutsideWorkspace => DotNetProjectIssueKindView.OutsideWorkspace,
+        DotNetProjectIssueKind.TooLarge => DotNetProjectIssueKindView.TooLarge,
+        _ => DotNetProjectIssueKindView.InvalidMetadata,
     };
 }

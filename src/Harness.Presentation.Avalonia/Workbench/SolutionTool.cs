@@ -204,6 +204,17 @@ internal sealed class SolutionTool
                 []));
         }
 
+        if (result.DotNet.ProjectIssues is { Count: > 0 } issues)
+        {
+            children.Add(new(
+                $"Loading issues · {issues.Count}",
+                null,
+                issues.Select(issue => new SolutionTreeNode(
+                    $"{issue.Kind} · {issue.Path.Value} · {issue.Message}",
+                    null,
+                    [])).ToArray()));
+        }
+
         children.AddRange(result.DotNet.Projects.Select(ProjectNode));
         tree.ItemsSource = new[]
         {
@@ -214,7 +225,7 @@ internal sealed class SolutionTool
         };
         status.Message = $"{result.DotNet.Projects.Count} project(s) · {result.Context.Description}" +
                          (result.DotNet.IsTruncated ? " · bounded result" : string.Empty);
-        status.Severity = result.DotNet.IsTruncated
+        status.Severity = result.DotNet.IsTruncated || result.DotNet.ProjectIssues is { Count: > 0 }
             ? StatusSeverity.Warning
             : StatusSeverity.Success;
     }

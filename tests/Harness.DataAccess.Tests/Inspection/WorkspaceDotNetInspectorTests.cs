@@ -114,6 +114,42 @@ public sealed class WorkspaceDotNetInspectorTests : IDisposable
         File.Delete(outside);
     }
 
+    [Fact]
+    public async Task Preserves_valid_projects_while_reporting_each_static_loading_failure()
+    {
+        Directory.CreateDirectory(root);
+        await File.WriteAllTextAsync(Path.Combine(root, "Repository.slnx"), """
+            <Solution>
+              <Project Path="Valid.csproj" />
+              <Project Path="Missing.csproj" />
+              <Project Path="Invalid.csproj" />
+              <Project Path="Large.csproj" />
+              <Project Path="../Outside.csproj" />
+            </Solution>
+            """);
+        await File.WriteAllTextAsync(
+            Path.Combine(root, "Valid.csproj"),
+            "<Project Sdk=\"Microsoft.NET.Sdk\" />");
+        await File.WriteAllTextAsync(Path.Combine(root, "Invalid.csproj"), "<Project");
+        await File.WriteAllTextAsync(
+            Path.Combine(root, "Large.csproj"),
+            new string('x', 1024 * 1024 + 1));
+
+        WorkspaceDotNetInfo result = await CreateInspector().InspectAsync(
+            root,
+            "Repository.slnx");
+
+        Assert.Equal("Valid.csproj", Assert.Single(result.Projects).Path);
+        DotNetProjectIssue[] issues = Assert.IsAssignableFrom<IEnumerable<DotNetProjectIssue>>(
+            result.ProjectIssues).ToArray();
+        Assert.Equal(4, issues.Length);
+        Assert.Contains(issues, issue => issue.Kind is DotNetProjectIssueKind.Missing);
+        Assert.Contains(issues, issue => issue.Kind is DotNetProjectIssueKind.InvalidMetadata);
+        Assert.Contains(issues, issue => issue.Kind is DotNetProjectIssueKind.TooLarge);
+        Assert.Contains(issues, issue => issue.Kind is DotNetProjectIssueKind.OutsideWorkspace);
+        Assert.All(issues, issue => Assert.DoesNotContain(root, issue.Message, StringComparison.Ordinal));
+    }
+
     private WorkspaceDotNetInspector CreateInspector()
     {
         string sdkBase = Path.Combine(root, ".dotnet", "sdk");
