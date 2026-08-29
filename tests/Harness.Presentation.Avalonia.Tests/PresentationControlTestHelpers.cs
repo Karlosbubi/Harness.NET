@@ -24,6 +24,7 @@ using Harness.BusinessLogic.CodeIntelligence;
 using Harness.BusinessLogic.Documents;
 using Harness.BusinessLogic.Editor;
 using Harness.BusinessLogic.Evidence;
+using Harness.BusinessLogic.Execution;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Inspection;
 using Harness.BusinessLogic.Layouts;
@@ -52,7 +53,8 @@ public sealed partial class PresentationControlTests
         Control? conversation = null,
         IDeveloperGitService? developerGit = null,
         Func<Task>? refreshWorkspaceContext = null,
-        Func<string, Task>? manageWorkspaceAt = null) => new(
+        Func<string, Task>? manageWorkspaceAt = null,
+        IDeveloperProjectExecutionService? developerExecution = null) => new(
         runOutput ?? new RunOutputService(),
         inspection ?? new InspectionService(),
         documents ?? new DocumentService(),
@@ -67,7 +69,7 @@ public sealed partial class PresentationControlTests
         manageWorkspace,
         mutationService,
         null,
-        null,
+        developerExecution,
         developerGit,
         refreshWorkspaceContext,
         manageWorkspaceAt);

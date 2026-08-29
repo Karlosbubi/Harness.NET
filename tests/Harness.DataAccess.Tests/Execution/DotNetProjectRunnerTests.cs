@@ -46,6 +46,49 @@ public sealed class DotNetProjectRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task Rejects_an_unknown_operation_before_process_start()
+    {
+        Directory.CreateDirectory(root);
+        await File.WriteAllTextAsync(Path.Combine(root, "App.csproj"), "<Project />");
+        DotNetProjectRunner runner = new(Path.Combine(root, "missing-dotnet"));
+
+        DotNetProjectExecutionResult result = await runner.RunAsync(root,
+            new(new("App.csproj"), null, (DotNetProjectOperation)999));
+
+        Assert.Equal("operation_invalid", result.ErrorCode);
+        Assert.Null(result.ExitCode);
+    }
+
+    [Theory]
+    [InlineData(DotNetProjectOperation.Build, false)]
+    [InlineData(DotNetProjectOperation.Rebuild, true)]
+    public async Task Builds_with_a_closed_operation_configuration_and_no_restore(
+        DotNetProjectOperation operation,
+        bool expectsNoIncremental)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        Directory.CreateDirectory(root);
+        await File.WriteAllTextAsync(Path.Combine(root, "App.csproj"), "<Project />");
+        string executable = await CreateExecutableAsync("printf '%s\\n' \"$@\"");
+        DotNetProjectRunner runner = new(executable);
+
+        DotNetProjectExecutionResult result = await runner.RunAsync(root, new(
+            new("App.csproj"),
+            new("net10.0"),
+            operation,
+            new("Any CPU")));
+
+        Assert.Null(result.Error);
+        string[] arguments = result.StandardOutput.Value.Split('\n');
+        string[] expected = expectsNoIncremental
+            ? ["build", Path.Combine(root, "App.csproj"), "--no-restore", "--no-incremental",
+                "--framework", "net10.0", "--configuration", "Any CPU"]
+            : ["build", Path.Combine(root, "App.csproj"), "--no-restore",
+                "--framework", "net10.0", "--configuration", "Any CPU"];
+        Assert.Equal(expected, arguments);
+    }
+
+    [Fact]
     public async Task Cancellation_kills_the_project_process_tree()
     {
         if (!OperatingSystem.IsLinux())

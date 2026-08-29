@@ -6,6 +6,21 @@ namespace Harness.BusinessLogic.Execution;
 
 public sealed record DeveloperExecutionId(string Value);
 public sealed record DeveloperExecutionOutput(string Value);
+public sealed record DeveloperProjectPath(string Value);
+public sealed record DeveloperTargetFramework(string Value);
+public sealed record DeveloperConfigurationName(string Value);
+
+public enum DeveloperExecutionOperation
+{
+    Run,
+    Build,
+    Rebuild,
+}
+
+public sealed record DeveloperProjectTarget(
+    DeveloperProjectPath ProjectPath,
+    DeveloperTargetFramework? TargetFramework,
+    DeveloperConfigurationName? Configuration);
 
 public enum DeveloperExecutionState
 {
@@ -18,6 +33,8 @@ public enum DeveloperExecutionState
 
 public sealed record DeveloperExecutionCapabilities(
     bool CanRunProjectEntryPoint,
+    bool CanBuildProject,
+    bool CanRebuildProject,
     bool CanDebugProjectEntryPoint,
     string DebugStatus);
 
@@ -26,7 +43,9 @@ public sealed record DeveloperExecutionView(
     WorkspaceId WorkspaceId,
     GoalId? GoalId,
     string SourceDescription,
-    WorkbenchExecutionTarget Target,
+    DeveloperExecutionOperation Operation,
+    DeveloperProjectTarget Project,
+    WorkbenchExecutionTarget? EntryPoint,
     DeveloperExecutionState State,
     DateTimeOffset StartedAt,
     DateTimeOffset? CompletedAt,
@@ -49,6 +68,11 @@ public sealed record DeveloperExecutionStartResult(
     string? ErrorCode,
     string? Error);
 
+public sealed record DeveloperBuildStartRequest(
+    WorkbenchWorkspaceRequest Workspace,
+    DeveloperExecutionOperation Operation,
+    DeveloperProjectTarget Project);
+
 public sealed record DeveloperExecutionListResult(
     IReadOnlyList<DeveloperExecutionView> Executions,
     bool IsTruncated,
@@ -66,6 +90,10 @@ public interface IDeveloperProjectExecutionService
 
     ValueTask<DeveloperExecutionStartResult> StartRunAsync(
         DeveloperExecutionStartRequest request,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<DeveloperExecutionStartResult> StartBuildAsync(
+        DeveloperBuildStartRequest request,
         CancellationToken cancellationToken = default);
 
     ValueTask<DeveloperExecutionListResult> ListAsync(

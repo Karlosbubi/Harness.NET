@@ -180,16 +180,17 @@ internal sealed class RunOutputTool
     {
         List<string> lines =
         [
-            $"Run · {output.State}",
-            $"Project: {output.Target.ProjectPath.Value}",
-            $"Framework: {output.Target.TargetFramework.Value}",
+            $"{output.Operation} · {output.State}",
+            $"Project: {output.Project.ProjectPath.Value}",
+            $"Framework: {output.Project.TargetFramework?.Value ?? "project default"}",
+            $"Configuration: {output.Project.Configuration?.Value ?? "project default"}",
             $"Source: {output.SourceDescription}",
             $"Started: {output.StartedAt:O}",
             $"Completed: {(output.CompletedAt is null ? "not completed" : output.CompletedAt.Value.ToString("O"))}",
             $"Exit code: {(output.ExitCode?.ToString() ?? "not reported")}",
             $"Duration: {output.DurationMilliseconds:N0} ms",
         ];
-        if (output.Error is not null) lines.Add($"Run error: {output.Error}");
+        if (output.Error is not null) lines.Add($"Operation error: {output.Error}");
         lines.Add(string.Empty);
         if (!output.IsOutputAvailable)
         {
@@ -258,7 +259,7 @@ internal sealed class RunOutputTool
         public override string ToString()
         {
             string exit = Output.ExitCode is { } code ? $" · exit {code}" : string.Empty;
-            return $"Run {Output.Target.ProjectPath.Value} · {Output.State}{exit} · " +
+            return $"{Output.Operation} {Output.Project.ProjectPath.Value} · {Output.State}{exit} · " +
                    $"{Output.StartedAt.LocalDateTime:g}";
         }
     }

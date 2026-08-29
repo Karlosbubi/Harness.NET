@@ -185,7 +185,7 @@ internal sealed class DocumentNavigation
                 return;
             }
             document.SetStatus($"Run {started.Execution.Id.Value[..8]} started for " +
-                               $"{started.Execution.Target.ProjectPath.Value}.");
+                               $"{started.Execution.Project.ProjectPath.Value}.");
             showRunOutput();
             await refreshRunOutput();
             _ = PollRunAsync(started.Execution.Id);

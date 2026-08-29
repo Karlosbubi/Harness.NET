@@ -48,6 +48,8 @@ public enum KeybindingCommand
     RefreshFiles,
     SearchWorkspace,
     RefreshSolution,
+    BuildStartupProject,
+    RebuildStartupProject,
     RefreshGit,
     StageGitChange,
     UnstageGitChange,

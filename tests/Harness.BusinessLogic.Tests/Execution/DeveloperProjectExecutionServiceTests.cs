@@ -69,6 +69,57 @@ public sealed class DeveloperProjectExecutionServiceTests
         Assert.Equal(DeveloperExecutionState.Cancelled, completed.State);
     }
 
+    [Theory]
+    [InlineData(DeveloperExecutionOperation.Build)]
+    [InlineData(DeveloperExecutionOperation.Rebuild)]
+    public async Task Starts_a_typed_project_build_with_the_inspected_configuration(
+        DeveloperExecutionOperation operation)
+    {
+        Runner runner = new();
+        Store store = new();
+        using DeveloperProjectExecutionService service = CreateService(runner, store);
+
+        DeveloperExecutionStartResult started = await service.StartBuildAsync(new(
+            new(new("workspace-a"), null),
+            operation,
+            new(new("App.csproj"), null, new("Release"))));
+
+        Assert.NotNull(started.Execution);
+        Assert.Equal(operation, started.Execution.Operation);
+        Assert.Null(started.Execution.EntryPoint);
+        Assert.Equal("Release", started.Execution.Project.Configuration?.Value);
+        Assert.Equal(
+            operation is DeveloperExecutionOperation.Build
+                ? DotNetProjectOperation.Build
+                : DotNetProjectOperation.Rebuild,
+            runner.LastRequest?.Operation);
+        Assert.Equal("Release", runner.LastRequest?.Configuration?.Value);
+        runner.Complete();
+        DeveloperExecutionView completed = await WaitForCompletionAsync(service);
+        Assert.Equal(DeveloperExecutionState.Succeeded, completed.State);
+        Assert.Equal(operation, store.Items.Single().Operation switch
+        {
+            StoredDeveloperExecutionOperation.Build => DeveloperExecutionOperation.Build,
+            StoredDeveloperExecutionOperation.Rebuild => DeveloperExecutionOperation.Rebuild,
+            _ => DeveloperExecutionOperation.Run,
+        });
+    }
+
+    [Fact]
+    public async Task Rejects_an_uninspected_build_configuration_before_starting_dotnet()
+    {
+        Runner runner = new();
+        using DeveloperProjectExecutionService service = CreateService(runner, new Store());
+
+        DeveloperExecutionStartResult result = await service.StartBuildAsync(new(
+            new(new("workspace-a"), null),
+            DeveloperExecutionOperation.Build,
+            new(new("App.csproj"), null, new("Production"))));
+
+        Assert.Equal("execution_configuration_unavailable", result.ErrorCode);
+        Assert.Equal(0, runner.Calls);
+    }
+
     private static DeveloperProjectExecutionService CreateService(Runner runner, Store store) => new(
         new Context(), new Workspaces(), new DotNet(), new Files(), runner, store,
         new FixedTimeProvider(), NullLogger<DeveloperProjectExecutionService>.Instance);
@@ -127,7 +178,15 @@ public sealed class DeveloperProjectExecutionServiceTests
         public ValueTask<WorkspaceDotNetInfo> InspectAsync(string workspaceRoot, string entryPoint, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(new WorkspaceDotNetInfo(
                 "Harness.slnx", "slnx", null,
-                [new("App.csproj", "Microsoft.NET.Sdk", ["net10.0"], null, null, [])],
+                [new(
+                    "App.csproj", "Microsoft.NET.Sdk", ["net10.0"], null, null, [],
+                    new(
+                        DotNetProjectKind.Executable,
+                        [
+                            new(new("Debug"), DotNetConfigurationSource.Convention),
+                            new(new("Release"), DotNetConfigurationSource.Convention),
+                        ],
+                        IsStartupCandidate: true))],
                 false, null, null));
     }
 
@@ -143,6 +202,7 @@ public sealed class DeveloperProjectExecutionServiceTests
         private readonly TaskCompletionSource completion = new(
             TaskCreationOptions.RunContinuationsAsynchronously);
         public int Calls { get; private set; }
+        public DotNetProjectExecutionRequest? LastRequest { get; private set; }
         public void Complete() => completion.TrySetResult();
 
         public async ValueTask<DotNetProjectExecutionResult> RunAsync(
@@ -151,6 +211,7 @@ public sealed class DeveloperProjectExecutionServiceTests
             CancellationToken cancellationToken = default)
         {
             Calls++;
+            LastRequest = request;
             try
             {
                 await completion.Task.WaitAsync(cancellationToken);
@@ -176,8 +237,9 @@ public sealed class DeveloperProjectExecutionServiceTests
         {
             StoredDeveloperExecution stored = new(
                 execution.Id, execution.WorkspaceId, execution.GoalId,
-                execution.SourceDescription, execution.ProjectPath, execution.TargetFramework,
-                execution.DeclarationId, StoredDeveloperExecutionState.Running,
+                execution.SourceDescription, execution.Operation, execution.ProjectPath,
+                execution.TargetFramework, execution.Configuration, execution.DeclarationId,
+                StoredDeveloperExecutionState.Running,
                 execution.StartedAt, null, null, 0, null, null);
             lock (gate) Items.Add(stored);
             return ValueTask.FromResult(stored);

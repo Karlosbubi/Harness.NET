@@ -388,6 +388,17 @@ def verify_project_user_secrets_accessibility(application: AtSpiApplication) -> 
     time.sleep(1)
 
 
+def verify_solution_build_accessibility(application: AtSpiApplication) -> None:
+    application.invoke("Open the command palette")
+    application.wait_for_name("Command palette filter", "entry")
+    application.set_text("Command palette filter", "build startup project")
+    application.wait_for_name("Build startup project", "push button")
+    application.invoke("Build startup project")
+    application.wait_for_name_containing(
+        "Build Representative.csproj", "list item", timeout=30
+    )
+
+
 def verify_orca_speech(debug_log: Path) -> None:
     speech_lines = [
         line for line in debug_log.read_text(encoding="utf-8").splitlines()
@@ -803,6 +814,7 @@ def main() -> int:
                 exercise_orca_speech(application)
             register_workspace(application, repository)
             verify_project_user_secrets_accessibility(application)
+            verify_solution_build_accessibility(application)
             create_and_approve_goal(application)
             verify_documents_and_search(application, repository)
             application.invoke("Open the command palette")

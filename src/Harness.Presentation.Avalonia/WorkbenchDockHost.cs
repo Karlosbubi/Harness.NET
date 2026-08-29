@@ -126,7 +126,11 @@ internal sealed partial class WorkbenchDockHost
             ReloadOriginalDocumentAsync = ReloadOriginalDocumentAsync,
         };
         filesTool = new(toolContext);
-        solutionTool = new(toolContext);
+        solutionTool = new(
+            toolContext,
+            developerExecutionService,
+            () => { ShowRunOutput(); },
+            RefreshRunOutputAsync);
         gitChangesTool = new(toolContext);
         gitBranchesTool = new(
             toolContext,

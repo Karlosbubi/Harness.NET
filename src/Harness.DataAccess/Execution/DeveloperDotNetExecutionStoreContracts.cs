@@ -6,6 +6,13 @@ public sealed record StoredDeveloperGoalId(string Value);
 public sealed record StoredDeveloperSourceDescription(string Value);
 public sealed record StoredDeveloperDeclarationId(string Value);
 
+public enum StoredDeveloperExecutionOperation
+{
+    Run,
+    Build,
+    Rebuild,
+}
+
 public enum StoredDeveloperExecutionState
 {
     Running,
@@ -20,9 +27,11 @@ public sealed record StoredDeveloperExecution(
     StoredDeveloperWorkspaceId WorkspaceId,
     StoredDeveloperGoalId? GoalId,
     StoredDeveloperSourceDescription SourceDescription,
+    StoredDeveloperExecutionOperation Operation,
     DotNetProjectPath ProjectPath,
     DotNetTargetFramework? TargetFramework,
-    StoredDeveloperDeclarationId DeclarationId,
+    DotNetConfigurationName? Configuration,
+    StoredDeveloperDeclarationId? DeclarationId,
     StoredDeveloperExecutionState State,
     DateTimeOffset StartedAt,
     DateTimeOffset? CompletedAt,
@@ -36,9 +45,11 @@ public sealed record StoredDeveloperExecutionStart(
     StoredDeveloperWorkspaceId WorkspaceId,
     StoredDeveloperGoalId? GoalId,
     StoredDeveloperSourceDescription SourceDescription,
+    StoredDeveloperExecutionOperation Operation,
     DotNetProjectPath ProjectPath,
     DotNetTargetFramework? TargetFramework,
-    StoredDeveloperDeclarationId DeclarationId,
+    DotNetConfigurationName? Configuration,
+    StoredDeveloperDeclarationId? DeclarationId,
     DateTimeOffset StartedAt);
 
 public sealed record StoredDeveloperExecutionCompletion(

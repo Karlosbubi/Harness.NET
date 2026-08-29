@@ -5,12 +5,41 @@ using Avalonia.VisualTree;
 using AvaloniaEdit;
 using Dock.Model.Controls;
 using Harness.BusinessLogic.Evidence;
+using Harness.BusinessLogic.Execution;
 using Harness.BusinessLogic.Mutations;
+using Harness.BusinessLogic.Workspaces;
 
 namespace Harness.Presentation.Avalonia.Tests;
 
 public sealed partial class PresentationControlTests
 {
+    [Fact]
+    public async Task Run_output_tool_renders_typed_developer_build_metadata_and_streams()
+    {
+        using HeadlessUnitTestSession session =
+            HeadlessUnitTestSession.StartNew(typeof(RenderingTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            DeveloperExecutionService output = new();
+            WorkbenchDockHost workbench = CreateWorkbench(
+                TrustedShell(), new(), developerExecution: output);
+            Window window = new() { Content = workbench.Control };
+            window.Show();
+
+            workbench.RefreshRunOutputAsync().AsTask().GetAwaiter().GetResult();
+
+            ITool tool = Find<ITool>(workbench.Root, WorkbenchDockIds.RunOutputTool);
+            Control content = Assert.IsAssignableFrom<Control>(tool.Context);
+            TextEditor details = Assert.Single(content.GetVisualDescendants().OfType<TextEditor>());
+            Assert.Contains("Rebuild · Succeeded", details.Text, StringComparison.Ordinal);
+            Assert.Contains("Project: src/App/App.csproj", details.Text, StringComparison.Ordinal);
+            Assert.Contains("Configuration: Release", details.Text, StringComparison.Ordinal);
+            Assert.Contains("build output", details.Text, StringComparison.Ordinal);
+            Assert.Equal("workspace-1", Assert.Single(output.Requests).WorkspaceId.Value);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
     [Fact]
     public async Task Run_output_tool_renders_typed_goal_execution_evidence()
     {
@@ -79,5 +108,57 @@ public sealed partial class PresentationControlTests
             Assert.Equal(string.Empty, details.Text);
             window.Close();
         }, CancellationToken.None);
+    }
+
+    private sealed class DeveloperExecutionService : IDeveloperProjectExecutionService
+    {
+        internal List<WorkbenchWorkspaceRequest> Requests { get; } = [];
+        public DeveloperExecutionCapabilities Capabilities { get; } = new(
+            true, true, true, false, "Debug unavailable.");
+
+        public ValueTask<DeveloperExecutionStartResult> StartRunAsync(
+            DeveloperExecutionStartRequest request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public ValueTask<DeveloperExecutionStartResult> StartBuildAsync(
+            DeveloperBuildStartRequest request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public ValueTask<DeveloperExecutionListResult> ListAsync(
+            WorkbenchWorkspaceRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            Requests.Add(request);
+            DateTimeOffset started = DateTimeOffset.Parse("2026-08-29T12:00:00Z");
+            return ValueTask.FromResult(new DeveloperExecutionListResult(
+                [new(
+                    new("build-1"),
+                    request.WorkspaceId,
+                    request.GoalId,
+                    "Original workspace",
+                    DeveloperExecutionOperation.Rebuild,
+                    new(new("src/App/App.csproj"), null, new("Release")),
+                    EntryPoint: null,
+                    DeveloperExecutionState.Succeeded,
+                    started,
+                    started.AddSeconds(2),
+                    ExitCode: 0,
+                    DurationMilliseconds: 2000,
+                    new("build output"),
+                    new(string.Empty),
+                    IsOutputTruncated: false,
+                    IsErrorTruncated: false,
+                    IsOutputAvailable: true,
+                    ErrorCode: null,
+                    Error: null)],
+                IsTruncated: false,
+                ErrorCode: null,
+                Error: null));
+        }
+
+        public ValueTask<DeveloperExecutionCancelResult> CancelAsync(
+            DeveloperExecutionId executionId,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new DeveloperExecutionCancelResult(false, null, null));
     }
 }

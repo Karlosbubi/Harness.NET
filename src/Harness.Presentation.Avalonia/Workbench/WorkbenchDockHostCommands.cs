@@ -310,6 +310,12 @@ internal sealed partial class WorkbenchDockHost
 
     internal ValueTask RefreshSolutionAsync() => solutionTool.RefreshAsync();
 
+    internal ValueTask BuildStartupProjectAsync() =>
+        solutionTool.StartDefaultBuildAsync(DeveloperExecutionOperation.Build);
+
+    internal ValueTask RebuildStartupProjectAsync() =>
+        solutionTool.StartDefaultBuildAsync(DeveloperExecutionOperation.Rebuild);
+
     private Control BuildWorkspaceNavigation(Control navigation)
     {
         TabItem workspaceTab = new() { Header = "Workspace", Content = navigation };

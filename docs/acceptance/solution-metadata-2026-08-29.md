@@ -40,14 +40,15 @@ foundation, not MSBuild evaluation, execution, or a claim that Task 052 is compl
   project and package references, bounds, missing entry points, and malformed metadata.
 - Headless Avalonia coverage verifies the semantic tree, source-context request,
   project metadata, shared status, and explicit automation name.
-- The complete typed workbench catalog remains identical to the keybinding enum tail,
-  now with 46 actions.
+- The complete typed workbench catalog remained identical to the keybinding enum tail
+  at this checkpoint; the later Build/Rebuild slice raises it to 48 actions.
 - Final verification passed the warning-free solution build, all 873 deterministic
   .NET release-gate tests, repository metadata checks, Linux x64 publish, and the
   production Avalonia AT-SPI workflow.
 
 ## Remaining Task 052 work
 
-Typed one-run launch overrides, Build/Rebuild, Test Explorer, coverage, Hot Reload,
-and a real debugger adapter remain open. None is inferred from display text or
-represented as available before its typed adapter exists.
+Typed one-run launch overrides, Test Explorer, coverage, Hot Reload, and a real
+debugger adapter remain open. None is inferred from display text or represented as
+available before its typed adapter exists. Build/Rebuild acceptance is recorded in
+`developer-build-rebuild-2026-08-29.md`.

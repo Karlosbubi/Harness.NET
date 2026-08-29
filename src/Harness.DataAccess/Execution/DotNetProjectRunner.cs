@@ -30,6 +30,11 @@ internal sealed class DotNetProjectRunner : IDotNetProjectRunner
             return Failure(request, "invalid_project_path",
                 "A confined project path is required.");
         }
+        if (!Enum.IsDefined(request.Operation))
+        {
+            return Failure(request, "operation_invalid",
+                "The selected project operation is invalid.");
+        }
         if (!WorkspacePathPolicy.TryResolve(
                 sourceRoot,
                 request.ProjectPath.Value,
@@ -58,6 +63,12 @@ internal sealed class DotNetProjectRunner : IDotNetProjectRunner
             return Failure(confined, "target_framework_invalid",
                 "The selected target framework is invalid.");
         }
+        if (request.Configuration is { Value: { } configuration } &&
+            !IsValidConfiguration(configuration))
+        {
+            return Failure(confined, "configuration_invalid",
+                "The selected build configuration is invalid.");
+        }
 
         ProcessStartInfo startInfo = new(executable)
         {
@@ -67,10 +78,7 @@ internal sealed class DotNetProjectRunner : IDotNetProjectRunner
             UseShellExecute = false,
             CreateNoWindow = true,
         };
-        foreach (string argument in new[]
-                 {
-                     "run", "--project", projectPath, "--no-restore", "--no-launch-profile",
-                 })
+        foreach (string argument in Arguments(request.Operation, projectPath))
         {
             startInfo.ArgumentList.Add(argument);
         }
@@ -78,6 +86,11 @@ internal sealed class DotNetProjectRunner : IDotNetProjectRunner
         {
             startInfo.ArgumentList.Add("--framework");
             startInfo.ArgumentList.Add(target);
+        }
+        if (request.Configuration is { Value: { } selectedConfiguration })
+        {
+            startInfo.ArgumentList.Add("--configuration");
+            startInfo.ArgumentList.Add(selectedConfiguration);
         }
         startInfo.Environment["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1";
         startInfo.Environment["DOTNET_NOLOGO"] = "1";
@@ -128,13 +141,28 @@ internal sealed class DotNetProjectRunner : IDotNetProjectRunner
             cancelled,
             duration.ElapsedMilliseconds,
             cancelled ? "cancelled" : null,
-            cancelled ? "The project run was cancelled." : null);
+            cancelled ? $"The project {request.Operation.ToString().ToLowerInvariant()} was cancelled." : null);
     }
+
+    private static IReadOnlyList<string> Arguments(
+        DotNetProjectOperation operation,
+        string projectPath) => operation switch
+    {
+        DotNetProjectOperation.Build => ["build", projectPath, "--no-restore"],
+        DotNetProjectOperation.Rebuild =>
+            ["build", projectPath, "--no-restore", "--no-incremental"],
+        _ => ["run", "--project", projectPath, "--no-restore", "--no-launch-profile"],
+    };
 
     private static bool IsValidFramework(string value) =>
         !string.IsNullOrWhiteSpace(value) && value.Length <= 128 &&
         value.Equals(value.Trim(), StringComparison.Ordinal) &&
         value.All(character => char.IsLetterOrDigit(character) || character is '.' or '-');
+
+    private static bool IsValidConfiguration(string value) =>
+        !string.IsNullOrWhiteSpace(value) && value.Length <= 128 &&
+        value.Equals(value.Trim(), StringComparison.Ordinal) &&
+        value.All(character => !char.IsControl(character));
 
     private static async Task<BoundedText> ReadBoundedAsync(StreamReader reader)
     {

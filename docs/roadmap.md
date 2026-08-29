@@ -497,8 +497,16 @@ without hiding healthy projects or leaking machine paths. It never restores,
 evaluates MSBuild, or executes project code. Bounded `launchSettings.json` discovery
 shows project/executable/unsupported profile kinds, browser/argument presence, and
 environment-variable names while withholding argument text, values, and executable
-paths. Typed one-run overrides, Build/Rebuild, Test Explorer, Hot Reload, and Debug
-remain planned.
+paths.
+
+Delivered third slice: Solution project rows expose typed Build and Rebuild actions,
+and the command palette can build or rebuild the inspected startup project. Business
+Logic re-resolves the exact trusted source context and validates the project, optional
+framework, and configuration before Data Access invokes `dotnet` directly with an
+argument list, no shell, and no implicit Restore. Build/Rebuild share asynchronous
+identities, bounded process-local output, cancellation, duration, and durable lifecycle
+metadata with Run; restart reconciliation marks abandoned operations interrupted.
+Typed one-run overrides, Test Explorer, coverage, Hot Reload, and Debug remain planned.
 
 Use the existing trust and Restore boundaries. Selecting a launch profile does not
 authorize execution; debug attach, expression evaluation, mutation, dumps, network

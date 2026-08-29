@@ -7,6 +7,7 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using Harness.BusinessLogic.Documents;
 using Harness.BusinessLogic.Inspection;
+using Harness.BusinessLogic.Execution;
 using Harness.BusinessLogic.Workspaces;
 using Harness.UI.Avalonia;
 
@@ -15,16 +16,27 @@ namespace Harness.Presentation.Avalonia.Workbench;
 internal sealed class SolutionTool
 {
     private readonly WorkbenchToolContext context;
+    private readonly IDeveloperProjectExecutionService? executionService;
+    private readonly Action showRunOutput;
+    private readonly Func<ValueTask> refreshRunOutput;
     private readonly TreeView tree = new();
     private readonly StatusIndicator status = new() { TextWrapping = TextWrapping.Wrap };
     private bool busy;
     private int contextVersion;
     private string? workspaceId;
     private string? selectedGoalId;
+    private IReadOnlyList<DotNetProjectView> projects = [];
 
-    internal SolutionTool(WorkbenchToolContext context)
+    internal SolutionTool(
+        WorkbenchToolContext context,
+        IDeveloperProjectExecutionService? executionService = null,
+        Action? showRunOutput = null,
+        Func<ValueTask>? refreshRunOutput = null)
     {
         this.context = context;
+        this.executionService = executionService;
+        this.showRunOutput = showRunOutput ?? (() => { });
+        this.refreshRunOutput = refreshRunOutput ?? (() => ValueTask.CompletedTask);
         Content = BuildContent();
         RenderUnavailable("Select a workspace to inspect its .NET solution.");
     }
@@ -146,7 +158,9 @@ internal sealed class SolutionTool
         grid.Children.Add(header);
 
         tree.ItemTemplate = new FuncTreeDataTemplate<SolutionTreeNode>(
-            (node, _) => node.Path is null
+            (node, _) => node.Project is not null
+                ? ProjectControl(node)
+                : node.Path is null
                 ? new TextBlock { Text = node.Label, TextWrapping = TextWrapping.Wrap }
                 : FileButton(node),
             node => node.Children);
@@ -174,6 +188,134 @@ internal sealed class SolutionTool
         return button;
     }
 
+    private Control ProjectControl(SolutionTreeNode node)
+    {
+        Grid row = new() { ColumnDefinitions = new("*,Auto,Auto"), ColumnSpacing = 4 };
+        row.Children.Add(FileButton(node));
+        Button build = new() { Content = "Build", IsEnabled = executionService is not null };
+        Button rebuild = new() { Content = "Rebuild", IsEnabled = executionService is not null };
+        AutomationProperties.SetName(build, $"Build {node.Path!.Value}");
+        AutomationProperties.SetName(rebuild, $"Rebuild {node.Path.Value}");
+        build.Click += async (_, _) => await StartBuildAsync(
+            node.Project!, DeveloperExecutionOperation.Build);
+        rebuild.Click += async (_, _) => await StartBuildAsync(
+            node.Project!, DeveloperExecutionOperation.Rebuild);
+        Grid.SetColumn(build, 1);
+        Grid.SetColumn(rebuild, 2);
+        row.Children.Add(build);
+        row.Children.Add(rebuild);
+        return row;
+    }
+
+    private async ValueTask StartBuildAsync(
+        DotNetProjectView project,
+        DeveloperExecutionOperation operation)
+    {
+        WorkspaceView? workspace = context.ActiveWorkspace();
+        if (executionService is null || workspace is not { IsTrusted: true } || busy) return;
+        busy = true;
+        status.Message = $"Starting {operation.ToString().ToLowerInvariant()} · {project.Path}…";
+        status.Severity = StatusSeverity.Information;
+        try
+        {
+            DeveloperConfigurationName? configuration = project.Details?.Configurations
+                .FirstOrDefault(item => item.Name.Value.Equals(
+                    "Debug",
+                    StringComparison.Ordinal))?.Name is { } name
+                ? new(name.Value)
+                : null;
+            DeveloperExecutionStartResult result = await executionService.StartBuildAsync(new(
+                context.Request(workspace),
+                operation,
+                new(
+                    new(project.Path),
+                    TargetFramework: null,
+                    configuration)),
+                context.CancellationToken);
+            status.Message = result.Execution is null
+                ? result.Error ?? $"{operation} could not start."
+                : $"{operation} started · {project.Path} · {result.Execution.Id.Value}";
+            status.Severity = result.Execution is null
+                ? StatusSeverity.Error
+                : StatusSeverity.Information;
+            if (result.Execution is not null)
+            {
+                showRunOutput();
+                await refreshRunOutput();
+                _ = PollOperationAsync(result.Execution.Id, operation, project.Path);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            status.Message = $"{operation} start was cancelled.";
+            status.Severity = StatusSeverity.Warning;
+        }
+        catch (Exception exception)
+        {
+            status.Message = exception.Message;
+            status.Severity = StatusSeverity.Error;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task PollOperationAsync(
+        DeveloperExecutionId id,
+        DeveloperExecutionOperation operation,
+        string projectPath)
+    {
+        if (executionService is null) return;
+        try
+        {
+            for (int attempt = 0; attempt < 1200; attempt++)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(250), context.CancellationToken);
+                WorkspaceView? workspace = context.ActiveWorkspace();
+                if (workspace is null) return;
+                DeveloperExecutionListResult listed = await executionService.ListAsync(
+                    context.Request(workspace), context.CancellationToken);
+                DeveloperExecutionView? item = listed.Executions.FirstOrDefault(value =>
+                    value.Id == id);
+                if (item is null) return;
+                if (item.State is DeveloperExecutionState.Running) continue;
+                status.Message = $"{operation} {item.State.ToString().ToLowerInvariant()} · " +
+                                 projectPath +
+                                 (item.ExitCode is null ? string.Empty : $" · exit {item.ExitCode}");
+                status.Severity = item.State is DeveloperExecutionState.Succeeded
+                    ? StatusSeverity.Success
+                    : StatusSeverity.Error;
+                await refreshRunOutput();
+                return;
+            }
+        }
+        catch (OperationCanceledException) when (context.CancellationToken.IsCancellationRequested)
+        {
+        }
+    }
+
+    internal async ValueTask StartDefaultBuildAsync(DeveloperExecutionOperation operation)
+    {
+        for (int attempt = 0; projects.Count == 0 && busy && attempt < 200; attempt++)
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(50), context.CancellationToken);
+        }
+        if (projects.Count == 0)
+        {
+            await RefreshAsync();
+        }
+        DotNetProjectView? project = projects.FirstOrDefault(item =>
+            item.Details?.IsStartupCandidate is true) ?? projects.FirstOrDefault();
+        if (project is null)
+        {
+            status.Message = "No project is available to build.";
+            status.Severity = StatusSeverity.Warning;
+            return;
+        }
+        await StartBuildAsync(project, operation);
+    }
+
     private void Render(WorkbenchDotNetInspectionResult result)
     {
         if (result.DotNet.Error is not null)
@@ -182,6 +324,7 @@ internal sealed class SolutionTool
             return;
         }
 
+        projects = result.DotNet.Projects;
         List<SolutionTreeNode> children = [];
         if (result.DotNet.SdkPolicy is { } sdk)
         {
@@ -294,7 +437,8 @@ internal sealed class SolutionTool
                 ? " · startup candidate"
                 : string.Empty),
             new WorkbenchDocumentPath(project.Path),
-            children);
+            children,
+            project);
     }
 
     private void RenderUnavailable(
@@ -302,6 +446,7 @@ internal sealed class SolutionTool
         StatusSeverity severity = StatusSeverity.Information)
     {
         tree.ItemsSource = Array.Empty<SolutionTreeNode>();
+        projects = [];
         status.Message = message;
         status.Severity = severity;
     }
@@ -309,5 +454,6 @@ internal sealed class SolutionTool
     internal sealed record SolutionTreeNode(
         string Label,
         WorkbenchDocumentPath? Path,
-        IReadOnlyList<SolutionTreeNode> Children);
+        IReadOnlyList<SolutionTreeNode> Children,
+        DotNetProjectView? Project = null);
 }

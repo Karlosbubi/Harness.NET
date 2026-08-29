@@ -16,10 +16,10 @@ internal sealed class SqliteDeveloperDotNetExecutionStore(
         await connection.ExecuteAsync(new CommandDefinition("""
             INSERT INTO developer_dotnet_executions (
                 id, workspace_id, goal_id, source_description, project_path,
-                target_framework, declaration_id, state, started_at)
+                operation, target_framework, configuration, declaration_id, state, started_at)
             VALUES (
                 @id, @workspaceId, @goalId, @sourceDescription, @projectPath,
-                @targetFramework, @declarationId, 'Running', @startedAt);
+                @operation, @targetFramework, @configuration, @declarationId, 'Running', @startedAt);
             """, new
         {
             id = execution.Id.Value,
@@ -27,13 +27,16 @@ internal sealed class SqliteDeveloperDotNetExecutionStore(
             goalId = execution.GoalId?.Value,
             sourceDescription = execution.SourceDescription.Value,
             projectPath = execution.ProjectPath.Value,
+            operation = execution.Operation.ToString(),
             targetFramework = execution.TargetFramework?.Value,
-            declarationId = execution.DeclarationId.Value,
+            configuration = execution.Configuration?.Value,
+            declarationId = execution.DeclarationId?.Value ?? string.Empty,
             startedAt = execution.StartedAt.ToString("O"),
         }, cancellationToken: cancellationToken));
         return new(
             execution.Id, execution.WorkspaceId, execution.GoalId,
-            execution.SourceDescription, execution.ProjectPath, execution.TargetFramework,
+            execution.SourceDescription, execution.Operation, execution.ProjectPath,
+            execution.TargetFramework, execution.Configuration,
             execution.DeclarationId, StoredDeveloperExecutionState.Running,
             execution.StartedAt, null, null, 0, null, null);
     }
@@ -85,8 +88,10 @@ internal sealed class SqliteDeveloperDotNetExecutionStore(
                    workspace_id AS WorkspaceId,
                    goal_id AS GoalId,
                    source_description AS SourceDescription,
+                   operation AS Operation,
                    project_path AS ProjectPath,
                    target_framework AS TargetFramework,
+                   configuration AS Configuration,
                    declaration_id AS DeclarationId,
                    state AS State,
                    started_at AS StartedAt,
@@ -140,8 +145,10 @@ internal sealed class SqliteDeveloperDotNetExecutionStore(
         public string WorkspaceId { get; init; } = string.Empty;
         public string? GoalId { get; init; }
         public string SourceDescription { get; init; } = string.Empty;
+        public string Operation { get; init; } = string.Empty;
         public string ProjectPath { get; init; } = string.Empty;
         public string? TargetFramework { get; init; }
+        public string? Configuration { get; init; }
         public string DeclarationId { get; init; } = string.Empty;
         public string State { get; init; } = string.Empty;
         public string StartedAt { get; init; } = string.Empty;
@@ -153,8 +160,10 @@ internal sealed class SqliteDeveloperDotNetExecutionStore(
 
         internal StoredDeveloperExecution ToRecord() => new(
             new(Id), new(WorkspaceId), GoalId is null ? null : new(GoalId),
-            new(SourceDescription), new(ProjectPath),
-            TargetFramework is null ? null : new(TargetFramework), new(DeclarationId),
+            new(SourceDescription), Enum.Parse<StoredDeveloperExecutionOperation>(Operation),
+            new(ProjectPath), TargetFramework is null ? null : new(TargetFramework),
+            Configuration is null ? null : new(Configuration),
+            string.IsNullOrEmpty(DeclarationId) ? null : new(DeclarationId),
             Enum.Parse<StoredDeveloperExecutionState>(State),
             DateTimeOffset.Parse(StartedAt),
             CompletedAt is null ? null : DateTimeOffset.Parse(CompletedAt),

@@ -623,7 +623,7 @@ Acceptance criteria:
 
 ### 052 — .NET project, Run, Test, and Debug experience
 
-Status: `In progress — typed Run and static Solution metadata delivered`
+Status: `In progress — typed Run, Solution metadata, and Build/Rebuild delivered`
 
 Dependencies: 018, 042, 047, 049, 051.
 
@@ -639,8 +639,11 @@ declared references/packages, language and nullable metadata, with typed project
 navigation and no Restore, MSBuild evaluation, or repository execution.
 Per-project loading failures remain visible without hiding healthy projects.
 Bounded launch-profile discovery exposes profile kinds and safe metadata while
-withholding argument text, environment values, and executable paths. Typed one-run
-overrides, Build/Rebuild UI, Test Explorer, Hot Reload, and Debug remain open.
+withholding argument text, environment values, and executable paths. The third slice
+adds per-project Build/Rebuild, startup-project command-palette actions, inspected
+configuration validation, confined no-Restore process execution, cancellation,
+transient bounded streams, and durable/restart-safe operation metadata. Typed one-run
+overrides, Test Explorer, coverage, Hot Reload, and Debug remain open.
 
 Acceptance criteria:
 

@@ -34,6 +34,8 @@ internal sealed class DeveloperProjectExecutionService(
 
     public DeveloperExecutionCapabilities Capabilities { get; } = new(
         CanRunProjectEntryPoint: true,
+        CanBuildProject: true,
+        CanRebuildProject: true,
         CanDebugProjectEntryPoint: false,
         "Debug requires a pinned debugger adapter; ordinary Run is not labeled Debug.");
 
@@ -50,10 +52,68 @@ internal sealed class DeveloperProjectExecutionService(
         {
             return new(null, resolution.ErrorCode, resolution.Error);
         }
+        DeveloperProjectTarget project = new(
+            new(request.Target.ProjectPath.Value),
+            request.Target.TargetFramework.Value == "unknown"
+                ? null
+                : new(request.Target.TargetFramework.Value),
+            Configuration: null);
+        return await StartExecutionAsync(
+            request.Workspace,
+            resolution,
+            DeveloperExecutionOperation.Run,
+            project,
+            request.Target,
+            cancellationToken);
+    }
+
+    public async ValueTask<DeveloperExecutionStartResult> StartBuildAsync(
+        DeveloperBuildStartRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(disposed, this);
+        ArgumentNullException.ThrowIfNull(request);
+        await EnsureReconciledAsync(cancellationToken);
+        if (request.Operation is not DeveloperExecutionOperation.Build and
+            not DeveloperExecutionOperation.Rebuild)
+        {
+            return new(null, "invalid_build_operation", "Select Build or Rebuild.");
+        }
+        Resolution resolution = await ResolveProjectAsync(
+            request.Workspace,
+            request.Project,
+            cancellationToken);
+        if (resolution.RootPath is null || resolution.Context is null)
+        {
+            return new(null, resolution.ErrorCode, resolution.Error);
+        }
+        return await StartExecutionAsync(
+            request.Workspace,
+            resolution,
+            request.Operation,
+            request.Project,
+            entryPoint: null,
+            cancellationToken);
+    }
+
+    private async ValueTask<DeveloperExecutionStartResult> StartExecutionAsync(
+        WorkbenchWorkspaceRequest workspace,
+        Resolution resolution,
+        DeveloperExecutionOperation operation,
+        DeveloperProjectTarget project,
+        WorkbenchExecutionTarget? entryPoint,
+        CancellationToken cancellationToken)
+    {
+        WorkbenchWorkspaceContext context = resolution.Context
+            ?? throw new ArgumentException("A resolved source context is required.",
+                nameof(resolution));
+        string rootPath = resolution.RootPath
+            ?? throw new ArgumentException("A resolved workspace root is required.",
+                nameof(resolution));
         if (!await executionSlots.WaitAsync(0, cancellationToken))
         {
             return new(null, "execution_limit_reached",
-                $"At most {MaximumConcurrentExecutions} project runs may be active.");
+                $"At most {MaximumConcurrentExecutions} project operations may be active.");
         }
 
         DeveloperExecutionId id = new(Guid.NewGuid().ToString("N"));
@@ -63,14 +123,14 @@ internal sealed class DeveloperProjectExecutionService(
         {
             stored = await store.StartAsync(new(
                 new(id.Value),
-                new(request.Workspace.WorkspaceId.Value),
-                resolution.Context.GoalId is null ? null : new(resolution.Context.GoalId.Value),
-                new(resolution.Context.Description),
-                new(request.Target.ProjectPath.Value),
-                request.Target.TargetFramework.Value == "unknown"
-                    ? null
-                    : new(request.Target.TargetFramework.Value),
-                new(request.Target.DeclarationId.Value),
+                new(workspace.WorkspaceId.Value),
+                context.GoalId is null ? null : new(context.GoalId.Value),
+                new(context.Description),
+                Map(operation),
+                new(project.ProjectPath.Value),
+                project.TargetFramework is null ? null : new(project.TargetFramework.Value),
+                project.Configuration is null ? null : new(project.Configuration.Value),
+                entryPoint is null ? null : new(entryPoint.DeclarationId.Value),
                 startedAt), cancellationToken);
         }
         catch (Exception exception)
@@ -79,7 +139,7 @@ internal sealed class DeveloperProjectExecutionService(
             logger.LogWarning(exception,
                 "Could not persist developer project execution {ExecutionId}.", id.Value);
             return new(null, "execution_state_unavailable",
-                "The project run could not be recorded safely.");
+                "The project operation could not be recorded safely.");
         }
         CancellationTokenSource executionCancellation = new();
         if (!active.TryAdd(id.Value, executionCancellation))
@@ -87,15 +147,16 @@ internal sealed class DeveloperProjectExecutionService(
             executionCancellation.Dispose();
             executionSlots.Release();
             return new(null, "execution_identity_conflict",
-                "The project run identity already exists.");
+                "The project operation identity already exists.");
         }
 
         _ = ExecuteAsync(
             stored,
-            request.Target,
-            resolution.RootPath,
+            operation,
+            project,
+            rootPath,
             executionCancellation);
-        return new(Map(stored, request.Target), null, null);
+        return new(Map(stored, entryPoint), null, null);
     }
 
     public async ValueTask<DeveloperExecutionListResult> ListAsync(
@@ -116,7 +177,7 @@ internal sealed class DeveloperProjectExecutionService(
             MaximumExecutions,
             cancellationToken)).ToArray();
         return new(
-            executions.Select(item => Map(item, Target(item))).ToArray(),
+            executions.Select(item => Map(item, EntryPoint(item))).ToArray(),
             executions.Length >= MaximumExecutions,
             null,
             null);
@@ -131,12 +192,12 @@ internal sealed class DeveloperProjectExecutionService(
         if (executionId is null || string.IsNullOrWhiteSpace(executionId.Value))
         {
             return ValueTask.FromResult(new DeveloperExecutionCancelResult(
-                false, "invalid_execution", "A project run is required."));
+                false, "invalid_execution", "A project operation is required."));
         }
         if (!active.TryGetValue(executionId.Value, out CancellationTokenSource? source))
         {
             return ValueTask.FromResult(new DeveloperExecutionCancelResult(
-                false, "execution_not_running", "The selected project run is not active."));
+                false, "execution_not_running", "The selected project operation is not active."));
         }
         source.Cancel();
         return ValueTask.FromResult(new DeveloperExecutionCancelResult(true, null, null));
@@ -144,7 +205,8 @@ internal sealed class DeveloperProjectExecutionService(
 
     private async Task ExecuteAsync(
         StoredDeveloperExecution execution,
-        WorkbenchExecutionTarget target,
+        DeveloperExecutionOperation operation,
+        DeveloperProjectTarget project,
         string rootPath,
         CancellationTokenSource cancellation)
     {
@@ -152,20 +214,19 @@ internal sealed class DeveloperProjectExecutionService(
         try
         {
             result = await runner.RunAsync(rootPath, new(
-                new(target.ProjectPath.Value),
-                target.TargetFramework.Value == "unknown"
-                    ? null
-                    : new(target.TargetFramework.Value)), cancellation.Token);
+                new(project.ProjectPath.Value),
+                project.TargetFramework is null ? null : new(project.TargetFramework.Value),
+                MapRunnerOperation(operation),
+                project.Configuration is null ? null : new(project.Configuration.Value)),
+                cancellation.Token);
         }
         catch (Exception exception)
         {
             result = new(
-                new(target.ProjectPath.Value),
-                target.TargetFramework.Value == "unknown"
-                    ? null
-                    : new(target.TargetFramework.Value),
+                new(project.ProjectPath.Value),
+                project.TargetFramework is null ? null : new(project.TargetFramework.Value),
                 null, new(string.Empty), new(string.Empty), false, false, false, 0,
-                "project_run_failed", exception.Message);
+                "project_operation_failed", exception.Message);
         }
 
         StoredDeveloperExecutionState state = result.WasCancelled
@@ -269,6 +330,61 @@ internal sealed class DeveloperProjectExecutionService(
         return new(resolution.Context, resolution.RootPath, null, null);
     }
 
+    private async ValueTask<Resolution> ResolveProjectAsync(
+        WorkbenchWorkspaceRequest request,
+        DeveloperProjectTarget target,
+        CancellationToken cancellationToken)
+    {
+        if (target is null || string.IsNullOrWhiteSpace(target.ProjectPath.Value))
+        {
+            return Failure("invalid_project_target", "A project is required.");
+        }
+        WorkbenchWorkspaceResolution resolution = await contextResolver.ResolveAsync(
+            request,
+            cancellationToken);
+        if (resolution.Error is not null || resolution.RootPath is null)
+        {
+            return Failure(
+                resolution.ErrorCode ?? "workspace_unavailable",
+                resolution.Error ?? "The source context is unavailable.");
+        }
+        RegisteredWorkspace? workspace = await workspaceStore.GetActiveAsync(cancellationToken);
+        if (workspace is null || workspace.Id != request.WorkspaceId.Value)
+        {
+            return Failure("workspace_not_active", "The requested workspace is not active.");
+        }
+        string entryPoint = Path.IsPathRooted(workspace.EntryPoint)
+            ? Path.GetRelativePath(workspace.RootPath, workspace.EntryPoint)
+            : workspace.EntryPoint;
+        WorkspaceDotNetInfo info = await dotNetInspector.InspectAsync(
+            resolution.RootPath,
+            entryPoint,
+            cancellationToken);
+        DotNetProjectInfo? project = info.Projects.FirstOrDefault(item =>
+            item.Path.Equals(target.ProjectPath.Value, StringComparison.Ordinal));
+        if (project is null)
+        {
+            return Failure("execution_project_unavailable",
+                "The project is not in the active inspected source context.");
+        }
+        if (target.TargetFramework is not null &&
+            !project.TargetFrameworks.Contains(target.TargetFramework.Value, StringComparer.Ordinal))
+        {
+            return Failure("execution_framework_unavailable",
+                "The target framework is not declared by the selected project.");
+        }
+        if (target.Configuration is not null &&
+            project.Details?.Configurations.Any(configuration =>
+                configuration.Name.Value.Equals(
+                    target.Configuration.Value,
+                    StringComparison.Ordinal)) is not true)
+        {
+            return Failure("execution_configuration_unavailable",
+                "The build configuration is not available for the selected project.");
+        }
+        return new(resolution.Context, resolution.RootPath, null, null);
+    }
+
     private async ValueTask EnsureReconciledAsync(CancellationToken cancellationToken)
     {
         if (Volatile.Read(ref reconciled) != 0)
@@ -292,13 +408,20 @@ internal sealed class DeveloperProjectExecutionService(
 
     private DeveloperExecutionView Map(
         StoredDeveloperExecution execution,
-        WorkbenchExecutionTarget target)
+        WorkbenchExecutionTarget? entryPoint)
     {
         bool available = output.TryGetValue(execution.Id.Value, out TransientOutput? streams);
         return new(
             new(execution.Id.Value), new(execution.WorkspaceId.Value),
             execution.GoalId is null ? null : new(execution.GoalId.Value),
-            execution.SourceDescription.Value, target, Map(execution.State),
+            execution.SourceDescription.Value,
+            Map(execution.Operation),
+            new(
+                new(execution.ProjectPath.Value),
+                execution.TargetFramework is null ? null : new(execution.TargetFramework.Value),
+                execution.Configuration is null ? null : new(execution.Configuration.Value)),
+            entryPoint,
+            Map(execution.State),
             execution.StartedAt, execution.CompletedAt, execution.ExitCode,
             execution.DurationMilliseconds,
             streams?.StandardOutput, streams?.StandardError,
@@ -309,14 +432,18 @@ internal sealed class DeveloperProjectExecutionService(
             execution.Error);
     }
 
-    private static WorkbenchExecutionTarget Target(StoredDeveloperExecution execution) => new(
-        WorkbenchExecutionTargetKind.ProjectEntryPoint,
-        new(execution.ProjectPath.Value),
-        new(execution.TargetFramework?.Value ?? "unknown"),
-        new(execution.DeclarationId.Value),
-        new(string.Empty),
-        new(string.Empty),
-        new(0));
+    private static WorkbenchExecutionTarget? EntryPoint(StoredDeveloperExecution execution) =>
+        execution.Operation is StoredDeveloperExecutionOperation.Run &&
+        execution.DeclarationId is not null
+            ? new(
+                WorkbenchExecutionTargetKind.ProjectEntryPoint,
+                new(execution.ProjectPath.Value),
+                new(execution.TargetFramework?.Value ?? "unknown"),
+                new(execution.DeclarationId.Value),
+                new(string.Empty),
+                new(string.Empty),
+                new(0))
+            : null;
 
     private void TrimOutput()
     {
@@ -341,6 +468,31 @@ internal sealed class DeveloperProjectExecutionService(
         StoredDeveloperExecutionState.Interrupted => DeveloperExecutionState.Interrupted,
         _ => throw new ArgumentOutOfRangeException(nameof(state)),
     };
+
+    private static StoredDeveloperExecutionOperation Map(DeveloperExecutionOperation operation) =>
+        operation switch
+        {
+            DeveloperExecutionOperation.Build => StoredDeveloperExecutionOperation.Build,
+            DeveloperExecutionOperation.Rebuild => StoredDeveloperExecutionOperation.Rebuild,
+            _ => StoredDeveloperExecutionOperation.Run,
+        };
+
+    private static DotNetProjectOperation MapRunnerOperation(
+        DeveloperExecutionOperation operation) =>
+        operation switch
+        {
+            DeveloperExecutionOperation.Build => DotNetProjectOperation.Build,
+            DeveloperExecutionOperation.Rebuild => DotNetProjectOperation.Rebuild,
+            _ => DotNetProjectOperation.Run,
+        };
+
+    private static DeveloperExecutionOperation Map(StoredDeveloperExecutionOperation operation) =>
+        operation switch
+        {
+            StoredDeveloperExecutionOperation.Build => DeveloperExecutionOperation.Build,
+            StoredDeveloperExecutionOperation.Rebuild => DeveloperExecutionOperation.Rebuild,
+            _ => DeveloperExecutionOperation.Run,
+        };
 
     private static Resolution Failure(string code, string error) => new(null, null, code, error);
 
