@@ -623,7 +623,7 @@ Acceptance criteria:
 
 ### 052 — .NET project, Run, Test, and Debug experience
 
-Status: `In progress — typed Run, Solution, Build/Rebuild, discovery, scoped Test, and coverage delivered`
+Status: `In progress — execution, Test Explorer, coverage, Hot Reload, and managed debugger package delivered`
 
 Dependencies: 018, 042, 047, 049, 051.
 
@@ -674,7 +674,12 @@ working directory, and bounded argument/environment lists. Values flow directly 
 but no override is persisted.
 The thirteenth slice adds a distinct cancellable Hot Reload lifecycle through confined,
 non-interactive `dotnet watch`; schema 38 preserves its identity and restart
-reconciliation. Test Debug and the debugger remain open.
+reconciliation. The fourteenth slice accepts and implements the debugger supply-chain
+boundary: Settings explicitly installs, verifies, repairs, or removes pinned
+NetCoreDbg 3.2.0-1092 in application-private storage. The release archive, retained MIT
+license, exact payload names and sizes, and every SHA-256 digest are fixed in code;
+Harness never searches PATH, accepts a custom executable, or starts a TCP adapter.
+The DAP session lifecycle and Test Debug remain open, so Debug is still hidden.
 
 Acceptance criteria:
 

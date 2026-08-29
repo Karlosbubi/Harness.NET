@@ -50,6 +50,11 @@ Delivered:
   an inspected launch profile, confined working directory, bounded application
   arguments, and bounded environment overrides whose values remain process-local;
   the same confirmation can start a cancellable, restart-reconciled Hot Reload watch;
+- explicit Settings management for the pinned MIT-licensed NetCoreDbg adapter, with
+  bounded download, archive and per-file SHA-256 verification, retained license,
+  application-private installation, tamper detection, repair, removal, and clear
+  unsupported/not-installed/ready/corrupt status; Debug remains hidden until the
+  typed DAP session lifecycle is present;
 - a source-context-aware static .NET Solution view for entry points, SDK policy and
   selected-SDK/workload-manifest health, projects, target frameworks,
   declared/conventional configurations, startup candidates, project/package

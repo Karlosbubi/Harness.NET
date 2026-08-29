@@ -44,3 +44,4 @@ records in both directions.
 | [025](025-workbench-composition-and-refactor-guardrails.md) | Accepted | Workbench composition and refactoring guardrails |
 | [026](026-translation-boundary-and-architecture-enforcement.md) | Accepted | Translation boundary and architecture enforcement |
 | [027](027-contributor-verification-and-dependency-governance.md) | Accepted | Contributor verification and dependency governance |
+| [028](028-managed-dotnet-debug-adapter.md) | Accepted | Managed .NET debug adapter |

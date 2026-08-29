@@ -5,6 +5,7 @@ using Harness.BusinessLogic.Appearance;
 using Harness.BusinessLogic.Approvals;
 using Harness.BusinessLogic.Costs;
 using Harness.BusinessLogic.Dashboard;
+using Harness.BusinessLogic.Debugging;
 using Harness.BusinessLogic.Editor;
 using Harness.BusinessLogic.Events;
 using Harness.BusinessLogic.Framework;
@@ -46,7 +47,8 @@ internal sealed partial class AvaloniaPresentationStore(
     IInboundMcpSettingsService? inboundMcpSettingsService = null,
     IAgentToolExposureSettingsService? agentToolExposureSettingsService = null,
     IEditorIntelligenceSettingsService? editorIntelligenceSettingsService = null,
-    IKeybindingSettingsService? keybindingSettingsService = null) : IDisposable
+    IKeybindingSettingsService? keybindingSettingsService = null,
+    IDeveloperDebuggerSettingsService? developerDebuggerSettingsService = null) : IDisposable
 {
     private readonly BehaviorSubject<AvaloniaShellState> states = new(AvaloniaShellState.Initial);
     private readonly SemaphoreSlim commandGate = new(1, 1);
@@ -107,6 +109,9 @@ internal sealed partial class AvaloniaPresentationStore(
             KeybindingSettingsSnapshot? keybindingSettings = keybindingSettingsService is null
                 ? null
                 : await keybindingSettingsService.GetAsync(cancellationToken);
+            DebugAdapterStatus? debugAdapter = developerDebuggerSettingsService is null
+                ? null
+                : await developerDebuggerSettingsService.GetAsync(cancellationToken);
             IReadOnlyList<WorkspaceView> workspaces = await workspaceService.ListAsync(cancellationToken);
             IReadOnlyList<GoalView> goals = await LoadGoalsAsync(workspaces, cancellationToken);
             Publish(Current with
@@ -124,6 +129,7 @@ internal sealed partial class AvaloniaPresentationStore(
                     VisualCaptureSettings = visualCaptureSettings,
                     EditorIntelligenceSettings = editorIntelligenceSettings,
                     KeybindingSettings = keybindingSettings,
+                    DebugAdapter = debugAdapter,
                     RemoteSpendPreference = remoteSpendPreference,
                 },
                 Workspaces = Current.Workspaces with { Registered = workspaces },

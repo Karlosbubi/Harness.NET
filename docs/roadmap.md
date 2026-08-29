@@ -600,7 +600,14 @@ entry-point project, cascades `--no-restore`, suppresses browser launch/refresh 
 emoji output, restarts on rude edits, and reuses bounded one-run overrides without a
 shell. Hot Reload has its own durable schema-38 identity, Run output state, Stop/process-
 tree cancellation, and restart interruption rather than masquerading as Run or Debug.
-Test Debug and the debugger remain planned.
+
+Delivered fourteenth slice: the Debugger Settings page explicitly manages pinned
+NetCoreDbg 3.2.0-1092 as an application-private dependency. Harness bounds downloads,
+verifies the release archive and every exact payload, retains and verifies the MIT
+license, installs atomically, detects tampering, supports repair/removal, and reports
+unsupported, absent, ready, or corrupt status. It never resolves an adapter from PATH,
+accepts a custom executable, or enables a TCP listener. The typed DAP session lifecycle
+and Test Debug remain planned, so Debug remains correctly hidden.
 
 Use the existing trust and Restore boundaries. Selecting a launch profile does not
 authorize execution; debug attach, expression evaluation, mutation, dumps, network

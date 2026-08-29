@@ -42,7 +42,7 @@ public sealed partial class PresentationControlTests
     [Fact]
     public void Settings_search_matches_stable_categories_and_related_terms()
     {
-        Assert.Equal(14, SettingsCatalog.All.Count);
+        Assert.Equal(15, SettingsCatalog.All.Count);
         Assert.Equal(
             SettingsCategoryId.InboundMcp,
             Assert.Single(SettingsCatalog.Filter("dogfood")).Id);
@@ -76,8 +76,11 @@ public sealed partial class PresentationControlTests
         Assert.Equal(
             SettingsCategoryId.Keybindings,
             Assert.Single(SettingsCatalog.Filter("shortcut")).Id);
+        Assert.Equal(
+            SettingsCategoryId.Debugger,
+            Assert.Single(SettingsCatalog.Filter("netcoredbg")).Id);
         Assert.Empty(SettingsCatalog.Filter("not-a-real-setting"));
-        Assert.Equal(11, SettingsCatalog.All.Count(category => category.IsAvailable));
+        Assert.Equal(12, SettingsCatalog.All.Count(category => category.IsAvailable));
     }
 
 }

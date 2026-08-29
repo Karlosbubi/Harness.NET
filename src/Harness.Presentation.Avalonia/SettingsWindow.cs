@@ -12,6 +12,7 @@ using Avalonia.Threading;
 using Harness.BusinessLogic.Agents;
 using Harness.BusinessLogic.Appearance;
 using Harness.BusinessLogic.Costs;
+using Harness.BusinessLogic.Debugging;
 using Harness.BusinessLogic.Editor;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Mcp;
@@ -24,6 +25,7 @@ internal enum SettingsCategoryId
 {
     General,
     Editor,
+    Debugger,
     Keybindings,
     Appearance,
     ModelProviders,
@@ -56,6 +58,8 @@ internal static class SettingsCatalog
             ["workspace", "startup", "application"], IsAvailable: false),
         new(SettingsCategoryId.Editor, "Editor", "Editing and code intelligence",
             ["font", "code", "roslyn", "completion", "diagnostics", "inlay", "codelens", "references", "tests"], IsAvailable: true),
+        new(SettingsCategoryId.Debugger, "Debugger", "Managed .NET debug adapter and integrity",
+            ["debug", "debugger", "netcoredbg", "adapter", "dap", "breakpoint", "integrity", "license"], IsAvailable: true),
         new(SettingsCategoryId.Keybindings, "Keybindings", "Keyboard shortcuts and command discovery",
             ["keyboard", "shortcut", "keys", "bindings", "conflict", "reset", "import", "export", "command palette", "vim", "modal", "normal", "insert", "visual"], IsAvailable: true),
         new(SettingsCategoryId.Appearance, "Appearance & accessibility", "Theme and visual preferences",
@@ -267,6 +271,7 @@ internal sealed partial class SettingsWindow : Window
         if ((categories.SelectedItem as SettingsCategory)?.Id is
             SettingsCategoryId.Appearance or SettingsCategoryId.ModelProviders or
             SettingsCategoryId.Editor or
+            SettingsCategoryId.Debugger or
             SettingsCategoryId.McpConnections or SettingsCategoryId.ModelsAndRoles or
             SettingsCategoryId.InboundMcp or
         SettingsCategoryId.DocumentationAndDependencies or
@@ -292,6 +297,7 @@ internal sealed partial class SettingsWindow : Window
         {
             SettingsCategoryId.Appearance => AppearancePage(),
             SettingsCategoryId.Editor => EditorPage(),
+            SettingsCategoryId.Debugger => DebuggerPage(),
             SettingsCategoryId.Keybindings => KeybindingsPage(),
             SettingsCategoryId.ModelProviders => ModelProvidersPage(),
             SettingsCategoryId.McpConnections => McpConnectionsPage(),

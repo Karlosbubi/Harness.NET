@@ -7,6 +7,7 @@ using Harness.BusinessLogic.Appearance;
 using Harness.BusinessLogic.Approvals;
 using Harness.BusinessLogic.Costs;
 using Harness.BusinessLogic.Dashboard;
+using Harness.BusinessLogic.Debugging;
 using Harness.BusinessLogic.Editor;
 using Harness.BusinessLogic.Framework;
 using Harness.BusinessLogic.Goals;
@@ -34,7 +35,8 @@ public sealed partial class AvaloniaPresentationStoreTests
         IDocumentationResearchService? documentationResearchService = null,
         IDependencyResearchService? dependencyResearchService = null,
         IEditorIntelligenceSettingsService? editorIntelligenceSettingsService = null,
-        IKeybindingSettingsService? keybindingSettingsService = null) => new(
+        IKeybindingSettingsService? keybindingSettingsService = null,
+        IDeveloperDebuggerSettingsService? developerDebuggerSettingsService = null) => new(
         new DashboardService(),
         new AppearanceService(),
         new WorkspaceService(),
@@ -57,7 +59,8 @@ public sealed partial class AvaloniaPresentationStoreTests
       documentationResearchService,
       dependencyResearchService,
       editorIntelligenceSettingsService: editorIntelligenceSettingsService,
-      keybindingSettingsService: keybindingSettingsService);
+      keybindingSettingsService: keybindingSettingsService,
+      developerDebuggerSettingsService: developerDebuggerSettingsService);
 
     private sealed class DashboardService : IDashboardService
     {

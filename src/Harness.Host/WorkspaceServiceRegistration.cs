@@ -3,6 +3,7 @@ using Harness.BusinessLogic.Approvals;
 using Harness.BusinessLogic.CodeIntelligence;
 using Harness.BusinessLogic.Costs;
 using Harness.BusinessLogic.Coverage;
+using Harness.BusinessLogic.Debugging;
 using Harness.BusinessLogic.Documents;
 using Harness.BusinessLogic.Editor;
 using Harness.BusinessLogic.Evidence;
@@ -22,6 +23,7 @@ using Harness.DataAccess.CodeIntelligence;
 using Harness.DataAccess.Commits;
 using Harness.DataAccess.Conversations;
 using Harness.DataAccess.Coverage;
+using Harness.DataAccess.Debugging;
 using Harness.DataAccess.Evidence;
 using Harness.DataAccess.Execution;
 using Harness.DataAccess.Framework;
@@ -33,9 +35,9 @@ using Harness.DataAccess.Mutations;
 using Harness.DataAccess.ProjectSecrets;
 using Harness.DataAccess.SemanticIndex;
 using Harness.DataAccess.VisualCapture;
+using Harness.DataAccess.Workflows;
 using Harness.DataAccess.Workspaces;
 using Harness.DataAccess.Worktrees;
-using Harness.DataAccess.Workflows;
 using Harness.Host.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -80,6 +82,13 @@ internal static class WorkspaceServiceRegistration
         services.AddSingleton<IWorkspaceCoverageReader, CoberturaWorkspaceCoverageReader>();
         services.AddSingleton<IDeveloperCoverageStore, SqliteDeveloperCoverageStore>();
         services.AddSingleton<IDeveloperCoverageService, DeveloperCoverageService>();
+        services.AddSingleton<ManagedDebugAdapterPackageStore>();
+        services.AddSingleton<Harness.DataAccess.Debugging.IDebugAdapterPackageStore>(provider =>
+            provider.GetRequiredService<ManagedDebugAdapterPackageStore>());
+        services.AddSingleton<IDebugAdapterExecutableResolver>(provider =>
+            provider.GetRequiredService<ManagedDebugAdapterPackageStore>());
+        services.AddSingleton<IDeveloperDebuggerSettingsService,
+            DeveloperDebuggerSettingsService>();
         services.AddSingleton<IGoalService, GoalService>();
         services.AddSingleton<IGoalWorktreeManager, GitGoalWorktreeManager>();
         services.AddSingleton<IWorkspaceFileEditor, AtomicWorkspaceFileEditor>();
