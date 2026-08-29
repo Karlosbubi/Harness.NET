@@ -112,6 +112,38 @@ public sealed class DotNetProjectRunnerTests : IDisposable
         ], result.StandardOutput.Value.Split('\n'));
     }
 
+    [Theory]
+    [InlineData(DotNetTestScope.Type, "Demo.CalculatorTests", "--filter", "FullyQualifiedName~Demo.CalculatorTests.")]
+    [InlineData(DotNetTestScope.Project, "Tests.csproj", null, null)]
+    public async Task Runs_a_closed_test_group_in_one_process(
+        DotNetTestScope scope,
+        string selector,
+        string? filterArgument,
+        string? filterValue)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        Directory.CreateDirectory(root);
+        await File.WriteAllTextAsync(Path.Combine(root, "Tests.csproj"), "<Project />");
+        string executable = await CreateExecutableAsync("printf '%s\\n' \"$@\"");
+        DotNetProjectRunner runner = new(executable);
+
+        DotNetProjectExecutionResult result = await runner.RunAsync(root, new(
+            new("Tests.csproj"),
+            null,
+            DotNetProjectOperation.Test,
+            Test: new(selector),
+            TestScope: scope));
+
+        Assert.Null(result.Error);
+        List<string> expected = ["test", Path.Combine(root, "Tests.csproj"), "--no-restore"];
+        if (filterArgument is not null && filterValue is not null)
+        {
+            expected.Add(filterArgument);
+            expected.Add(filterValue);
+        }
+        Assert.Equal(expected, result.StandardOutput.Value.Split('\n'));
+    }
+
     [Fact]
     public async Task Rejects_an_unbounded_test_filter_before_process_start()
     {

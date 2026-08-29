@@ -35,6 +35,11 @@ internal sealed class DotNetProjectRunner : IDotNetProjectRunner
             return Failure(request, "operation_invalid",
                 "The selected project operation is invalid.");
         }
+        if (!Enum.IsDefined(request.TestScope))
+        {
+            return Failure(request, "test_scope_invalid",
+                "The selected test scope is invalid.");
+        }
         if (!WorkspacePathPolicy.TryResolve(
                 sourceRoot,
                 request.ProjectPath.Value,
@@ -71,13 +76,21 @@ internal sealed class DotNetProjectRunner : IDotNetProjectRunner
         }
         if (request.Operation is DotNetProjectOperation.Test)
         {
-            if (request.Test is null || !IsValidTestName(request.Test.Value))
+            bool valid = request.Test is not null && request.TestScope switch
+            {
+                DotNetTestScope.Exact or DotNetTestScope.Type =>
+                    IsValidTestName(request.Test.Value),
+                DotNetTestScope.Project => request.Test.Value.Equals(
+                    confined.ProjectPath.Value, StringComparison.Ordinal),
+                _ => false,
+            };
+            if (!valid)
             {
                 return Failure(confined, "test_name_invalid",
                     "A bounded fully qualified test name is required.");
             }
         }
-        else if (request.Test is not null)
+        else if (request.Test is not null || request.TestScope is not DotNetTestScope.Exact)
         {
             return Failure(confined, "test_target_invalid",
                 "A test selector is valid only for the Test operation.");
@@ -91,7 +104,8 @@ internal sealed class DotNetProjectRunner : IDotNetProjectRunner
             UseShellExecute = false,
             CreateNoWindow = true,
         };
-        foreach (string argument in Arguments(request.Operation, projectPath, request.Test))
+        foreach (string argument in Arguments(
+                     request.Operation, projectPath, request.Test, request.TestScope))
         {
             startInfo.ArgumentList.Add(argument);
         }
@@ -160,14 +174,19 @@ internal sealed class DotNetProjectRunner : IDotNetProjectRunner
     private static IReadOnlyList<string> Arguments(
         DotNetProjectOperation operation,
         string projectPath,
-        DotNetTestFullyQualifiedName? test) => operation switch
+        DotNetTestFullyQualifiedName? test,
+        DotNetTestScope testScope) => operation switch
     {
         DotNetProjectOperation.Build => ["build", projectPath, "--no-restore"],
         DotNetProjectOperation.Rebuild =>
             ["build", projectPath, "--no-restore", "--no-incremental"],
-        DotNetProjectOperation.Test =>
+        DotNetProjectOperation.Test when testScope is DotNetTestScope.Exact =>
             ["test", projectPath, "--no-restore", "--filter",
                 $"FullyQualifiedName={test!.Value}"],
+        DotNetProjectOperation.Test when testScope is DotNetTestScope.Type =>
+            ["test", projectPath, "--no-restore", "--filter",
+                $"FullyQualifiedName~{test!.Value}."],
+        DotNetProjectOperation.Test => ["test", projectPath, "--no-restore"],
         _ => ["run", "--project", projectPath, "--no-restore", "--no-launch-profile"],
     };
 

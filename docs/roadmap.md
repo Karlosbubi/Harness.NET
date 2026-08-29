@@ -546,6 +546,15 @@ The live status reports discovered and shown counts. Multi-selection, project/ty
 runs, adapter-level case results, Test Debug, coverage, typed one-run overrides, Hot
 Reload, and the debugger remain planned.
 
+Delivered eighth slice: project and containing-type nodes now expose the same typed
+Run/Rerun/Stop lifecycle as exact tests. Exact, Type, and Project are a closed scope;
+group identities are deterministically derived and revalidated by Business Logic.
+Data Access starts exactly one confined `dotnet test --no-restore` process: exact uses
+an equality filter, type uses a bounded fully-qualified-name prefix, and project uses
+no filter. Schema 34 preserves the selected scope and upgrades schema-33 Test history
+to Exact. Multi-selection, adapter-level case results, Test Debug, coverage, typed
+one-run overrides, Hot Reload, and the debugger remain planned.
+
 Use the existing trust and Restore boundaries. Selecting a launch profile does not
 authorize execution; debug attach, expression evaluation, mutation, dumps, network
 listeners, and external processes remain separately classified. ASP.NET endpoint

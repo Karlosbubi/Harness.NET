@@ -193,11 +193,9 @@ internal sealed class TestExplorerTool
         grid.Children.Add(filters);
 
         tree.ItemTemplate = new FuncTreeDataTemplate<TestTreeNode>(
-            (node, _) => node.Test is null ? new TextBlock
-            {
-                Text = node.Label,
-                TextWrapping = TextWrapping.Wrap,
-            } : TestControl(node),
+            (node, _) => node.Selection is null
+                ? new TextBlock { Text = node.Label, TextWrapping = TextWrapping.Wrap }
+                : node.Test is null ? GroupControl(node) : TestControl(node),
             node => node.Children);
         AutomationProperties.SetName(tree, "Roslyn test hierarchy");
         Grid.SetRow(tree, 4);
@@ -231,12 +229,35 @@ internal sealed class TestExplorerTool
         AutomationProperties.SetName(open, $"Open test {test.FullyQualifiedName.Value}");
         open.Click += async (_, _) => await NavigateAsync(test);
         actions.Children.Add(open);
+        AddExecutionControls(actions, node, test.DisplayName.Value);
+        return actions;
+    }
+
+    private Control GroupControl(TestTreeNode node)
+    {
+        StackPanel actions = new() { Orientation = Orientation.Horizontal, Spacing = 6 };
+        actions.Children.Add(new TextBlock
+        {
+            Text = node.Label,
+            TextWrapping = TextWrapping.Wrap,
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        AddExecutionControls(actions, node, node.Label);
+        return actions;
+    }
+
+    private void AddExecutionControls(
+        StackPanel actions,
+        TestTreeNode node,
+        string displayName)
+    {
         if (execution?.Capabilities.CanTest is true)
         {
+            string selectionDescription = SelectionDescription(node.Selection!);
             if (node.Execution is { State: DeveloperExecutionState.Running } running)
             {
                 Button stop = new() { Content = "Stop" };
-                AutomationProperties.SetName(stop, $"Stop test {test.FullyQualifiedName.Value}");
+                AutomationProperties.SetName(stop, $"Stop {selectionDescription}");
                 stop.Click += async (_, _) => await CancelTestAsync(running);
                 actions.Children.Add(stop);
             }
@@ -244,9 +265,10 @@ internal sealed class TestExplorerTool
             {
                 Button run = new() { Content = node.Execution is null ? "Run" : "Rerun" };
                 AutomationProperties.SetName(run,
-                    $"{(node.Execution is null ? "Run" : "Rerun")} test " +
-                    test.FullyQualifiedName.Value);
-                run.Click += async (_, _) => await StartTestAsync(test);
+                    $"{(node.Execution is null ? "Run" : "Rerun")} " +
+                    selectionDescription);
+                run.Click += async (_, _) => await StartSelectionAsync(
+                    node.Project!, node.Selection!, displayName);
                 actions.Children.Add(run);
             }
         }
@@ -258,13 +280,20 @@ internal sealed class TestExplorerTool
                 VerticalAlignment = VerticalAlignment.Center,
             };
             AutomationProperties.SetName(history,
-                $"Test history {test.FullyQualifiedName.Value}: {history.Text}");
+                $"Test history {node.Selection!.FullyQualifiedName.Value}: {history.Text}");
             actions.Children.Add(history);
         }
-        return actions;
     }
 
-    internal async ValueTask StartTestAsync(WorkbenchCodeTestCase test)
+    internal ValueTask StartTestAsync(WorkbenchCodeTestCase test) => StartSelectionAsync(
+        new(new(test.ProjectPath.Value), TargetFramework: null, Configuration: null),
+        new(new(test.Id.Value), new(test.FullyQualifiedName.Value)),
+        test.DisplayName.Value);
+
+    internal async ValueTask StartSelectionAsync(
+        DeveloperProjectTarget project,
+        DeveloperTestTarget selection,
+        string displayName)
     {
         WorkspaceView? workspace = context.ActiveWorkspace();
         if (execution is null || !execution.Capabilities.CanTest || busy ||
@@ -276,14 +305,14 @@ internal sealed class TestExplorerTool
         }
 
         busy = true;
-        status.Message = $"Starting {test.DisplayName.Value} without Restore…";
+        status.Message = $"Starting {displayName} without Restore…";
         status.Severity = StatusSeverity.Information;
         try
         {
             DeveloperExecutionStartResult result = await execution.StartTestAsync(new(
                 context.Request(workspace),
-                new(new(test.ProjectPath.Value), TargetFramework: null, Configuration: null),
-                new(new(test.Id.Value), new(test.FullyQualifiedName.Value))),
+                project,
+                selection),
                 context.CancellationToken);
             if (result.Execution is null)
             {
@@ -293,7 +322,7 @@ internal sealed class TestExplorerTool
             }
             showRunOutput();
             await refreshRunOutput();
-            status.Message = $"Started {test.DisplayName.Value}. Follow it in Run output.";
+            status.Message = $"Started {displayName}. Follow it in Run output.";
             status.Severity = StatusSeverity.Success;
         }
         catch (OperationCanceledException)
@@ -344,20 +373,42 @@ internal sealed class TestExplorerTool
         TestTreeNode[] projects = visibleTests
             .GroupBy(item => item.ProjectPath.Value, StringComparer.Ordinal)
             .OrderBy(group => group.Key, StringComparer.Ordinal)
-            .Select(project => new TestTreeNode(
-                project.Key,
-                project.GroupBy(item => ContainingType(item.FullyQualifiedName.Value),
+            .Select(project =>
+            {
+                DeveloperProjectTarget projectTarget = new(
+                    new(project.Key), TargetFramework: null, Configuration: null);
+                DeveloperTestTarget projectSelection =
+                    DeveloperTestTarget.ForProject(projectTarget.ProjectPath);
+                return new TestTreeNode(
+                    project.Key,
+                    project.GroupBy(item => ContainingType(item.FullyQualifiedName.Value),
                         StringComparer.Ordinal)
                     .OrderBy(group => group.Key, StringComparer.Ordinal)
-                    .Select(type => new TestTreeNode(
-                        type.Key,
-                        type.OrderBy(item => item.FullyQualifiedName.Value, StringComparer.Ordinal)
+                    .Select(type =>
+                    {
+                        DeveloperTestTarget typeSelection = DeveloperTestTarget.ForType(
+                            projectTarget.ProjectPath, new(type.Key));
+                        return new TestTreeNode(
+                            type.Key,
+                            type.OrderBy(
+                                    item => item.FullyQualifiedName.Value,
+                                    StringComparer.Ordinal)
                             .Select(item => new TestTreeNode(
                                 item.DisplayName.Value,
                                 [],
                                 item,
-                                latest.GetValueOrDefault(item.Id.Value))).ToArray()))
-                    .ToArray()))
+                                latest.GetValueOrDefault(item.Id.Value),
+                                new(new(item.Id.Value), new(item.FullyQualifiedName.Value)),
+                                projectTarget)).ToArray(),
+                            Execution: latest.GetValueOrDefault(typeSelection.Id.Value),
+                            Selection: typeSelection,
+                            Project: projectTarget);
+                    })
+                    .ToArray(),
+                    Execution: latest.GetValueOrDefault(projectSelection.Id.Value),
+                    Selection: projectSelection,
+                    Project: projectTarget);
+            })
             .ToArray();
         tree.ItemsSource = projects;
         status.Message = $"{result.Tests.Count:N0} test(s) discovered with Roslyn · " +
@@ -414,11 +465,23 @@ internal sealed class TestExplorerTool
         return separator <= 0 ? "Tests" : fullyQualifiedName[..separator];
     }
 
+    private static string SelectionDescription(DeveloperTestTarget selection) =>
+        selection.Scope switch
+        {
+            DeveloperTestScope.Exact => $"test {selection.FullyQualifiedName.Value}",
+            DeveloperTestScope.Type => $"tests in type {selection.FullyQualifiedName.Value}",
+            DeveloperTestScope.Project =>
+                $"tests in project {selection.FullyQualifiedName.Value}",
+            _ => "selected tests",
+        };
+
     internal sealed record TestTreeNode(
         string Label,
         IReadOnlyList<TestTreeNode> Children,
         WorkbenchCodeTestCase? Test = null,
-        DeveloperExecutionView? Execution = null);
+        DeveloperExecutionView? Execution = null,
+        DeveloperTestTarget? Selection = null,
+        DeveloperProjectTarget? Project = null);
 
     private sealed record FrameworkFilterChoice(
         string Label,

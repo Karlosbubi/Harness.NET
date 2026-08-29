@@ -16,6 +16,13 @@ public enum StoredDeveloperExecutionOperation
     Test,
 }
 
+public enum StoredDeveloperTestScope
+{
+    Exact,
+    Type,
+    Project,
+}
+
 public enum StoredDeveloperExecutionState
 {
     Running,
@@ -43,7 +50,8 @@ public sealed record StoredDeveloperExecution(
     string? ErrorCode,
     string? Error,
     StoredDeveloperTestId? TestId = null,
-    StoredDeveloperTestName? TestName = null);
+    StoredDeveloperTestName? TestName = null,
+    StoredDeveloperTestScope? TestScope = null);
 
 public sealed record StoredDeveloperExecutionStart(
     StoredDeveloperExecutionId Id,
@@ -57,7 +65,8 @@ public sealed record StoredDeveloperExecutionStart(
     StoredDeveloperDeclarationId? DeclarationId,
     DateTimeOffset StartedAt,
     StoredDeveloperTestId? TestId = null,
-    StoredDeveloperTestName? TestName = null);
+    StoredDeveloperTestName? TestName = null,
+    StoredDeveloperTestScope? TestScope = null);
 
 public sealed record StoredDeveloperExecutionCompletion(
     StoredDeveloperExecutionId Id,

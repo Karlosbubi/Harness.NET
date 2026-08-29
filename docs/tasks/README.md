@@ -623,7 +623,7 @@ Acceptance criteria:
 
 ### 052 — .NET project, Run, Test, and Debug experience
 
-Status: `In progress — typed Run, Solution, Build/Rebuild, discovery, and selected Test delivered`
+Status: `In progress — typed Run, Solution, Build/Rebuild, discovery, and scoped Test delivered`
 
 Dependencies: 018, 042, 047, 049, 051.
 
@@ -654,7 +654,12 @@ Reload, and Debug remain open. The sixth slice projects the newest exact-test hi
 back into Test Explorer with state, duration, exit code, Rerun, and in-place Stop.
 The seventh adds typed xUnit/NUnit/MSTest filtering before Roslyn paging and exact
 not-run/running/succeeded/failed/cancelled/interrupted lifecycle filtering after the
-history join. Name and trait search remains bounded and compiler-session scoped.
+history join. Name and trait search remains bounded and compiler-session scoped. The
+eighth adds deterministic project and containing-type selections with the same
+Run/Rerun/Stop/history lifecycle; a closed Exact/Type/Project selector starts one
+confined no-Restore process per action and schema 34 persists its scope. Multi-test
+selection, per-case adapter results, test Debug, coverage, typed one-run overrides,
+Hot Reload, and Debug remain open.
 
 Acceptance criteria:
 

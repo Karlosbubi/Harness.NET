@@ -106,7 +106,7 @@ internal sealed class DeveloperProjectExecutionService(
         ObjectDisposedException.ThrowIf(disposed, this);
         ArgumentNullException.ThrowIfNull(request);
         await EnsureReconciledAsync(cancellationToken);
-        if (!IsValidTest(request.Test))
+        if (!IsValidTest(request.Test, request.Project))
         {
             return new(null, "invalid_test_target",
                 "A compiler-discovered bounded test identity is required.");
@@ -167,7 +167,8 @@ internal sealed class DeveloperProjectExecutionService(
                 entryPoint is null ? null : new(entryPoint.DeclarationId.Value),
                 startedAt,
                 test is null ? null : new(test.Id.Value),
-                test is null ? null : new(test.FullyQualifiedName.Value)), cancellationToken);
+                test is null ? null : new(test.FullyQualifiedName.Value),
+                test is null ? null : Map(test.Scope)), cancellationToken);
         }
         catch (Exception exception)
         {
@@ -256,7 +257,14 @@ internal sealed class DeveloperProjectExecutionService(
                 project.TargetFramework is null ? null : new(project.TargetFramework.Value),
                 MapRunnerOperation(operation),
                 project.Configuration is null ? null : new(project.Configuration.Value),
-                test is null ? null : new(test.FullyQualifiedName.Value)),
+                test is null ? null : new(test.FullyQualifiedName.Value),
+                test?.Scope switch
+                {
+                    DeveloperTestScope.Exact or null => DotNetTestScope.Exact,
+                    DeveloperTestScope.Type => DotNetTestScope.Type,
+                    DeveloperTestScope.Project => DotNetTestScope.Project,
+                    _ => throw new ArgumentOutOfRangeException(nameof(test)),
+                }),
                 cancellation.Token);
         }
         catch (Exception exception)
@@ -488,19 +496,58 @@ internal sealed class DeveloperProjectExecutionService(
 
     private static DeveloperTestTarget? Test(StoredDeveloperExecution execution) =>
         execution.Operation is StoredDeveloperExecutionOperation.Test &&
-        execution.TestId is not null && execution.TestName is not null
-            ? new(new(execution.TestId.Value), new(execution.TestName.Value))
+        execution.TestId is not null && execution.TestName is not null &&
+        execution.TestScope is not null
+            ? new(
+                new(execution.TestId.Value),
+                new(execution.TestName.Value),
+                execution.TestScope switch
+                {
+                    StoredDeveloperTestScope.Exact => DeveloperTestScope.Exact,
+                    StoredDeveloperTestScope.Type => DeveloperTestScope.Type,
+                    StoredDeveloperTestScope.Project => DeveloperTestScope.Project,
+                    _ => throw new ArgumentOutOfRangeException(nameof(execution)),
+                })
             : null;
 
-    private static bool IsValidTest(DeveloperTestTarget? test) =>
-        test is not null && test.Id.Value.Length == 64 &&
-        test.Id.Value.All(character => character is >= '0' and <= '9' or >= 'a' and <= 'f') &&
-        !string.IsNullOrWhiteSpace(test.FullyQualifiedName.Value) &&
-        test.FullyQualifiedName.Value.Length <= 512 &&
-        test.FullyQualifiedName.Value.Equals(
-            test.FullyQualifiedName.Value.Trim(), StringComparison.Ordinal) &&
-        test.FullyQualifiedName.Value.All(character => char.IsLetterOrDigit(character) ||
+    private static bool IsValidTest(
+        DeveloperTestTarget? test,
+        DeveloperProjectTarget project)
+    {
+        if (test is null || test.Id.Value.Length != 64 ||
+            !test.Id.Value.All(character =>
+                character is >= '0' and <= '9' or >= 'a' and <= 'f') ||
+            string.IsNullOrWhiteSpace(test.FullyQualifiedName.Value) ||
+            test.FullyQualifiedName.Value.Length > 512 ||
+            !test.FullyQualifiedName.Value.Equals(
+                test.FullyQualifiedName.Value.Trim(), StringComparison.Ordinal))
+            return false;
+        return test.Scope switch
+        {
+            DeveloperTestScope.Exact => IsValidTestName(test.FullyQualifiedName.Value),
+            DeveloperTestScope.Type =>
+                IsValidTestName(test.FullyQualifiedName.Value) &&
+                test == DeveloperTestTarget.ForType(
+                    project.ProjectPath, test.FullyQualifiedName),
+            DeveloperTestScope.Project =>
+                test == DeveloperTestTarget.ForProject(project.ProjectPath),
+            _ => false,
+        };
+    }
+
+    private static bool IsValidTestName(string value) =>
+        !string.IsNullOrWhiteSpace(value) && value.Length <= 512 &&
+        value.Equals(value.Trim(), StringComparison.Ordinal) &&
+        value.All(character => char.IsLetterOrDigit(character) ||
             character is '.' or '_' or '+' or '`');
+
+    private static StoredDeveloperTestScope Map(DeveloperTestScope scope) => scope switch
+    {
+        DeveloperTestScope.Exact => StoredDeveloperTestScope.Exact,
+        DeveloperTestScope.Type => StoredDeveloperTestScope.Type,
+        DeveloperTestScope.Project => StoredDeveloperTestScope.Project,
+        _ => throw new ArgumentOutOfRangeException(nameof(scope)),
+    };
 
     private void TrimOutput()
     {

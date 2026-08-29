@@ -147,6 +147,53 @@ public sealed class DeveloperProjectExecutionServiceTests
         Assert.Equal(test.Id.Value, Assert.Single(store.Items).TestId?.Value);
     }
 
+    [Theory]
+    [InlineData(DeveloperTestScope.Type)]
+    [InlineData(DeveloperTestScope.Project)]
+    public async Task Starts_one_typed_group_process_with_durable_scope(
+        DeveloperTestScope scope)
+    {
+        Runner runner = new();
+        Store store = new();
+        using DeveloperProjectExecutionService service = CreateService(runner, store);
+        DeveloperProjectPath projectPath = new("App.csproj");
+        DeveloperTestTarget test = scope is DeveloperTestScope.Type
+            ? DeveloperTestTarget.ForType(projectPath, new("Demo.CalculatorTests"))
+            : DeveloperTestTarget.ForProject(projectPath);
+
+        DeveloperExecutionStartResult started = await service.StartTestAsync(new(
+            new(new("workspace-a"), null),
+            new(projectPath, new("net10.0"), new("Release")),
+            test));
+
+        Assert.Equal(test, started.Execution?.Test);
+        Assert.Equal(scope is DeveloperTestScope.Type
+            ? DotNetTestScope.Type
+            : DotNetTestScope.Project, runner.LastRequest?.TestScope);
+        runner.Complete();
+        DeveloperExecutionView completed = await WaitForCompletionAsync(service);
+        Assert.Equal(test, completed.Test);
+        Assert.Equal(scope is DeveloperTestScope.Type
+            ? StoredDeveloperTestScope.Type
+            : StoredDeveloperTestScope.Project, Assert.Single(store.Items).TestScope);
+    }
+
+    [Fact]
+    public async Task Rejects_a_forged_group_identity_before_starting_dotnet()
+    {
+        Runner runner = new();
+        using DeveloperProjectExecutionService service = CreateService(runner, new Store());
+
+        DeveloperExecutionStartResult result = await service.StartTestAsync(new(
+            new(new("workspace-a"), null),
+            new(new("App.csproj"), null, null),
+            new(new(new string('a', 64)), new("Demo.CalculatorTests"),
+                DeveloperTestScope.Type)));
+
+        Assert.Equal("invalid_test_target", result.ErrorCode);
+        Assert.Equal(0, runner.Calls);
+    }
+
     [Fact]
     public async Task Rejects_a_non_discovery_test_identity_before_starting_dotnet()
     {
@@ -321,7 +368,7 @@ public sealed class DeveloperProjectExecutionServiceTests
                 execution.TargetFramework, execution.Configuration, execution.DeclarationId,
                 StoredDeveloperExecutionState.Running,
                 execution.StartedAt, null, null, 0, null, null,
-                execution.TestId, execution.TestName);
+                execution.TestId, execution.TestName, execution.TestScope);
             lock (gate) Items.Add(stored);
             return ValueTask.FromResult(stored);
         }

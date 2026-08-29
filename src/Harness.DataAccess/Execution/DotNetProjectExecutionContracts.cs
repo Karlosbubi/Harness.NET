@@ -14,12 +14,20 @@ public enum DotNetProjectOperation
     Test,
 }
 
+public enum DotNetTestScope
+{
+    Exact,
+    Type,
+    Project,
+}
+
 public sealed record DotNetProjectExecutionRequest(
     DotNetProjectPath ProjectPath,
     DotNetTargetFramework? TargetFramework,
     DotNetProjectOperation Operation = DotNetProjectOperation.Run,
     DotNetConfigurationName? Configuration = null,
-    DotNetTestFullyQualifiedName? Test = null);
+    DotNetTestFullyQualifiedName? Test = null,
+    DotNetTestScope TestScope = DotNetTestScope.Exact);
 
 public sealed record DotNetProjectExecutionResult(
     DotNetProjectPath ProjectPath,

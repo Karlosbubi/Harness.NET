@@ -41,7 +41,15 @@ public sealed class TestExplorerToolTests
                 first, "execution-failed", DeveloperExecutionState.Failed, 1, 725);
             DeveloperExecutionView running = Execution(
                 second, "execution-running", DeveloperExecutionState.Running, null, 0);
-            execution.History.AddRange([failed, running]);
+            DeveloperProjectPath projectPath = new(first.ProjectPath.Value);
+            DeveloperExecutionView typeHistory = Execution(
+                DeveloperTestTarget.ForType(
+                    projectPath, new("Example.Tests.CalculatorTests")),
+                projectPath.Value, "execution-type", DeveloperExecutionState.Succeeded, 0, 420);
+            DeveloperExecutionView projectHistory = Execution(
+                DeveloperTestTarget.ForProject(projectPath),
+                projectPath.Value, "execution-project", DeveloperExecutionState.Failed, 1, 930);
+            execution.History.AddRange([failed, running, typeHistory, projectHistory]);
             int shown = 0;
             int refreshed = 0;
             WorkbenchCodeTestCase? navigated = null;
@@ -86,8 +94,14 @@ public sealed class TestExplorerToolTests
                 Assert.IsAssignableFrom<IEnumerable<TestExplorerTool.TestTreeNode>>(
                     tool.Tree.ItemsSource));
             Assert.Equal("tests/App.Tests/App.Tests.csproj", project.Label);
+            Assert.Equal(DeveloperTestScope.Project, project.Selection?.Scope);
+            Assert.Equal(project.Label, project.Selection?.FullyQualifiedName.Value);
+            Assert.Same(projectHistory, project.Execution);
             TestExplorerTool.TestTreeNode type = Assert.Single(project.Children);
             Assert.Equal("Example.Tests.CalculatorTests", type.Label);
+            Assert.Equal(DeveloperTestScope.Type, type.Selection?.Scope);
+            Assert.Equal(type.Label, type.Selection?.FullyQualifiedName.Value);
+            Assert.Same(typeHistory, type.Execution);
             Assert.Equal(["Adds values", "Subtracts values"],
                 type.Children.Select(node => node.Label));
             Assert.Same(first, type.Children[0].Test);
@@ -113,9 +127,17 @@ public sealed class TestExplorerToolTests
             Assert.Equal(1, shown);
             Assert.Equal(1, refreshed);
             Assert.Contains("Follow it in Run output", tool.StatusText, StringComparison.Ordinal);
+            tool.StartSelectionAsync(project.Project!, project.Selection!, project.Label)
+                .AsTask().GetAwaiter().GetResult();
+            Assert.Equal(DeveloperTestScope.Project, execution.Tests[^1].Test.Scope);
+            tool.StartSelectionAsync(type.Project!, type.Selection!, type.Label)
+                .AsTask().GetAwaiter().GetResult();
+            Assert.Equal(DeveloperTestScope.Type, execution.Tests[^1].Test.Scope);
+            Assert.Equal(3, shown);
+            Assert.Equal(3, refreshed);
             tool.CancelTestAsync(running).AsTask().GetAwaiter().GetResult();
             Assert.Equal("execution-running", Assert.Single(execution.Cancelled).Value);
-            Assert.Equal(2, refreshed);
+            Assert.Equal(4, refreshed);
             Assert.Contains("Stopping", tool.StatusText, StringComparison.Ordinal);
 
             tool.StateFilter.SelectedIndex = 4;
@@ -151,13 +173,27 @@ public sealed class TestExplorerToolTests
         string id,
         DeveloperExecutionState state,
         int? exitCode,
+        long duration) => Execution(
+            new(new(test.Id.Value), new(test.FullyQualifiedName.Value)),
+            test.ProjectPath.Value,
+            id,
+            state,
+            exitCode,
+            duration);
+
+    private static DeveloperExecutionView Execution(
+        DeveloperTestTarget test,
+        string projectPath,
+        string id,
+        DeveloperExecutionState state,
+        int? exitCode,
         long duration) => new(
             new(id),
             new("workspace-1"),
             GoalId: null,
             "Original workspace",
             DeveloperExecutionOperation.Test,
-            new(new(test.ProjectPath.Value), null, null),
+            new(new(projectPath), null, null),
             EntryPoint: null,
             state,
             DateTimeOffset.Parse("2026-08-29T11:00:00Z"),
@@ -173,7 +209,7 @@ public sealed class TestExplorerToolTests
             IsOutputAvailable: false,
             ErrorCode: state is DeveloperExecutionState.Failed ? "process_failed" : null,
             Error: state is DeveloperExecutionState.Failed ? "The test failed." : null,
-            new(new(test.Id.Value), new(test.FullyQualifiedName.Value)));
+            test);
 
     private static AvaloniaShellState TrustedShell()
     {

@@ -36,6 +36,11 @@ qualified test name, and inspected project as semantic values. Business Logic
 re-resolves the exact trusted source context and project and accepts only the bounded
 closed test-name grammar. Data Access invokes `dotnet test <project> --no-restore
 --filter FullyQualifiedName=<name>` through the same direct argument-list runner.
+Containing-type and project nodes derive stable scoped identities from their inspected
+project and compiler hierarchy. A closed Exact, Type, or Project scope selects either
+an exact equality filter, a bounded fully-qualified-name prefix filter, or no filter;
+each selection starts exactly one `dotnet test` process rather than fan-out child
+processes. Business Logic recomputes group identities before granting execution.
 There is no shell string, implicit Restore, adapter discovery process outside
 `dotnet test`, or model-facing execution authority. The operation records test
 identity, state, exit code, duration, cancellation, and errors; stdout/stderr remain
@@ -66,6 +71,8 @@ the developer UI does not imply agent authority.
   lifecycle without granting a generic task or shell capability.
 - Compiler-discovered Test Explorer rows can start one exact test and reuse the same
   cancellation, transient-output, failure-history, and restart-reconciliation path.
+- Project and containing-type rows reuse that lifecycle through a closed scoped
+  selector and start one process per user action.
 - Debug is visibly absent rather than misleading until its actual adapter is ready.
 - The same typed target and execution identity can later back Solution, Test Explorer,
   launch profiles, Hot Reload, and debugger UI.

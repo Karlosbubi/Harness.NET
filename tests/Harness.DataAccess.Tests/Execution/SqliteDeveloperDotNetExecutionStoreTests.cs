@@ -60,8 +60,13 @@ public sealed class SqliteDeveloperDotNetExecutionStoreTests : IDisposable
         Assert.Null(execution.DeclarationId);
     }
 
-    [Fact]
-    public async Task Persists_typed_test_identity_without_raw_output()
+    [Theory]
+    [InlineData(StoredDeveloperTestScope.Exact, "Demo.CalculatorTests.Adds")]
+    [InlineData(StoredDeveloperTestScope.Type, "Demo.CalculatorTests")]
+    [InlineData(StoredDeveloperTestScope.Project, "tests/App.Tests.csproj")]
+    public async Task Persists_typed_test_identity_without_raw_output(
+        StoredDeveloperTestScope scope,
+        string selector)
     {
         StubPaths paths = new(Paths());
         DatabaseInitializationResult initialized =
@@ -75,15 +80,80 @@ public sealed class SqliteDeveloperDotNetExecutionStoreTests : IDisposable
             new("tests/App.Tests.csproj"), new("net10.0"), new("Release"), null,
             started,
             new(new string('a', 64)),
-            new("Demo.CalculatorTests.Adds")));
+            new(selector),
+            scope));
 
         StoredDeveloperExecution execution = Assert.Single(await store.ListAsync(
             new("workspace-a"), null, 10));
-        Assert.Equal(33, initialized.SchemaVersion.Value);
+        Assert.Equal(34, initialized.SchemaVersion.Value);
         Assert.Equal(StoredDeveloperExecutionOperation.Test, execution.Operation);
         Assert.Equal(new string('a', 64), execution.TestId?.Value);
-        Assert.Equal("Demo.CalculatorTests.Adds", execution.TestName?.Value);
+        Assert.Equal(selector, execution.TestName?.Value);
+        Assert.Equal(scope, execution.TestScope);
         Assert.Null(execution.DeclarationId);
+    }
+
+    [Fact]
+    public async Task Migration_classifies_schema_33_tests_as_exact()
+    {
+        StubPaths paths = new(Paths());
+        await new SqliteDatabaseInitializer(paths).InitializeAsync();
+        await using (SqliteConnection connection = new($"Data Source={paths.Current.DatabasePath}"))
+        {
+            await connection.OpenAsync();
+            await using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = """
+                DROP TABLE developer_dotnet_executions;
+                CREATE TABLE developer_dotnet_executions (
+                    id TEXT PRIMARY KEY,
+                    workspace_id TEXT NOT NULL,
+                    goal_id TEXT NULL,
+                    source_description TEXT NOT NULL,
+                    project_path TEXT NOT NULL,
+                    target_framework TEXT NULL,
+                    declaration_id TEXT NOT NULL,
+                    state TEXT NOT NULL CHECK (state IN ('Running', 'Succeeded', 'Failed', 'Cancelled', 'Interrupted')),
+                    started_at TEXT NOT NULL,
+                    completed_at TEXT NULL,
+                    exit_code INTEGER NULL,
+                    duration_milliseconds INTEGER NOT NULL DEFAULT 0 CHECK (duration_milliseconds >= 0),
+                    error_code TEXT NULL,
+                    error TEXT NULL,
+                    operation TEXT NOT NULL CHECK (operation IN ('Run', 'Build', 'Rebuild', 'Test')),
+                    configuration TEXT NULL,
+                    test_id TEXT NULL,
+                    test_name TEXT NULL,
+                    CHECK ((operation = 'Run' AND declaration_id <> '') OR
+                        (operation <> 'Run' AND declaration_id = '')),
+                    CHECK ((operation = 'Test' AND test_id IS NOT NULL AND test_name IS NOT NULL) OR
+                        (operation <> 'Test' AND test_id IS NULL AND test_name IS NULL))
+                ) STRICT;
+                CREATE INDEX ix_developer_dotnet_executions_context_started
+                ON developer_dotnet_executions (workspace_id, goal_id, started_at DESC);
+                INSERT INTO developer_dotnet_executions (
+                    id, workspace_id, source_description, project_path, declaration_id,
+                    state, started_at, operation, test_id, test_name)
+                VALUES (
+                    'test-before-scope', 'workspace-a', 'Original workspace',
+                    'tests/App.Tests.csproj', '', 'Succeeded',
+                    '2026-08-29T11:00:00.0000000+00:00', 'Test',
+                    'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+                    'Demo.Tests.Passes');
+                DELETE FROM SchemaVersions
+                WHERE ScriptName LIKE '%034_DeveloperDotNetTestScopes.sql';
+                UPDATE application_metadata SET value = '33' WHERE key = 'schema_version';
+                """;
+            await command.ExecuteNonQueryAsync();
+        }
+
+        DatabaseInitializationResult migrated =
+            await new SqliteDatabaseInitializer(paths).InitializeAsync();
+        StoredDeveloperExecution execution = Assert.Single(
+            await new SqliteDeveloperDotNetExecutionStore(paths).ListAsync(
+                new("workspace-a"), null, 10));
+
+        Assert.Equal(34, migrated.SchemaVersion.Value);
+        Assert.Equal(StoredDeveloperTestScope.Exact, execution.TestScope);
     }
 
     [Fact]
@@ -123,7 +193,8 @@ public sealed class SqliteDeveloperDotNetExecutionStoreTests : IDisposable
                     'M:Program.Main', 'Succeeded', '2026-08-29T10:00:00.0000000+00:00');
                 DELETE FROM SchemaVersions
                 WHERE ScriptName LIKE '%032_DeveloperDotNetBuildOperations.sql'
-                   OR ScriptName LIKE '%033_DeveloperDotNetTestOperations.sql';
+                   OR ScriptName LIKE '%033_DeveloperDotNetTestOperations.sql'
+                   OR ScriptName LIKE '%034_DeveloperDotNetTestScopes.sql';
                 UPDATE application_metadata SET value = '31' WHERE key = 'schema_version';
                 """;
             await command.ExecuteNonQueryAsync();
@@ -135,7 +206,7 @@ public sealed class SqliteDeveloperDotNetExecutionStoreTests : IDisposable
             await new SqliteDeveloperDotNetExecutionStore(paths).ListAsync(
                 new("workspace-a"), null, 10));
 
-        Assert.Equal(33, migrated.SchemaVersion.Value);
+        Assert.Equal(34, migrated.SchemaVersion.Value);
         Assert.Equal(StoredDeveloperExecutionOperation.Run, execution.Operation);
         Assert.Null(execution.Configuration);
         Assert.Equal("M:Program.Main", execution.DeclarationId?.Value);

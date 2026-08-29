@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using Harness.BusinessLogic.CodeIntelligence;
 using Harness.BusinessLogic.Goals;
 using Harness.BusinessLogic.Workspaces;
@@ -25,9 +27,37 @@ public sealed record DeveloperProjectTarget(
     DeveloperTargetFramework? TargetFramework,
     DeveloperConfigurationName? Configuration);
 
+public enum DeveloperTestScope
+{
+    Exact,
+    Type,
+    Project,
+}
+
 public sealed record DeveloperTestTarget(
     DeveloperTestId Id,
-    DeveloperTestName FullyQualifiedName);
+    DeveloperTestName FullyQualifiedName,
+    DeveloperTestScope Scope = DeveloperTestScope.Exact)
+{
+    public static DeveloperTestTarget ForType(
+        DeveloperProjectPath project,
+        DeveloperTestName type) => Group(DeveloperTestScope.Type, project, type);
+
+    public static DeveloperTestTarget ForProject(DeveloperProjectPath project) =>
+        Group(DeveloperTestScope.Project, project, new(project.Value));
+
+    private static DeveloperTestTarget Group(
+        DeveloperTestScope scope,
+        DeveloperProjectPath project,
+        DeveloperTestName name)
+    {
+        string input = $"{scope}\n{project.Value}\n{name.Value}";
+        return new(
+            new(Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(input)))),
+            name,
+            scope);
+    }
+}
 
 public enum DeveloperExecutionState
 {
