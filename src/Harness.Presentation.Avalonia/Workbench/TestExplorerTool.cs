@@ -34,6 +34,10 @@ internal sealed class TestExplorerTool
         SelectedIndex = 0,
     };
     private readonly StatusIndicator status = new() { TextWrapping = TextWrapping.Wrap };
+    private readonly Button runSelected = new() { Content = "Run selected", IsEnabled = false };
+    private readonly Dictionary<string, WorkbenchCodeTestCase> catalog =
+        new(StringComparer.Ordinal);
+    private readonly HashSet<string> selected = new(StringComparer.Ordinal);
     private bool busy;
     private string? workspaceId;
     private string? goalId;
@@ -61,6 +65,7 @@ internal sealed class TestExplorerTool
     internal TextBox Filter => filter;
     internal ComboBox FrameworkFilter => frameworkFilter;
     internal ComboBox StateFilter => stateFilter;
+    internal Button RunSelected => runSelected;
     internal string StatusText => status.Message ?? string.Empty;
 
     internal ValueTask NavigateAsync(WorkbenchCodeTestCase test) =>
@@ -159,17 +164,21 @@ internal sealed class TestExplorerTool
             Margin = new Thickness(8),
             RowSpacing = 6,
         };
-        Grid header = new() { ColumnDefinitions = new("*,Auto"), ColumnSpacing = 6 };
+        Grid header = new() { ColumnDefinitions = new("*,Auto,Auto"), ColumnSpacing = 6 };
         header.Children.Add(new TextBlock
         {
             Text = "Test Explorer",
             FontWeight = global::Avalonia.Media.FontWeight.SemiBold,
             VerticalAlignment = VerticalAlignment.Center,
         });
+        AutomationProperties.SetName(runSelected, "Run selected tests");
+        runSelected.Click += async (_, _) => await StartSelectedAsync();
+        Grid.SetColumn(runSelected, 1);
+        header.Children.Add(runSelected);
         Button refresh = new() { Content = "Refresh" };
         AutomationProperties.SetName(refresh, "Refresh Test Explorer");
         refresh.Click += async (_, _) => await RefreshAsync();
-        Grid.SetColumn(refresh, 1);
+        Grid.SetColumn(refresh, 2);
         header.Children.Add(refresh);
         grid.Children.Add(header);
 
@@ -219,6 +228,15 @@ internal sealed class TestExplorerTool
             Orientation = Orientation.Horizontal,
             Spacing = 6,
         };
+        CheckBox select = new() { IsChecked = selected.Contains(test.Id.Value) };
+        AutomationProperties.SetName(select,
+            $"Select test {test.FullyQualifiedName.Value} for one run");
+        select.IsCheckedChanged += (_, _) =>
+        {
+            if (!SelectTestForRun(test, select.IsChecked is true))
+                select.IsChecked = false;
+        };
+        actions.Children.Add(select);
         Button open = new()
         {
             Content = test.DisplayName.Value +
@@ -289,6 +307,61 @@ internal sealed class TestExplorerTool
         new(new(test.ProjectPath.Value), TargetFramework: null, Configuration: null),
         new(new(test.Id.Value), new(test.FullyQualifiedName.Value)),
         test.DisplayName.Value);
+
+    internal async ValueTask StartSelectedAsync()
+    {
+        WorkbenchCodeTestCase[] tests = selected
+            .Select(id => catalog.GetValueOrDefault(id))
+            .OfType<WorkbenchCodeTestCase>()
+            .OrderBy(test => test.FullyQualifiedName.Value, StringComparer.Ordinal)
+            .ToArray();
+        if (tests.Length is < 2 or > 24 ||
+            tests.Select(test => test.ProjectPath.Value).Distinct(StringComparer.Ordinal).Count() != 1)
+        {
+            status.Message = "Select 2–24 tests from one project for a single run.";
+            status.Severity = StatusSeverity.Warning;
+            return;
+        }
+        DeveloperProjectTarget project = new(
+            new(tests[0].ProjectPath.Value), TargetFramework: null, Configuration: null);
+        DeveloperTestTarget target = DeveloperTestTarget.ForSelection(
+            project.ProjectPath,
+            tests.Select(test => new DeveloperTestName(test.FullyQualifiedName.Value)));
+        await StartSelectionAsync(project, target, target.FullyQualifiedName.Value);
+    }
+
+    internal bool SelectTestForRun(WorkbenchCodeTestCase test, bool isSelected)
+    {
+        if (isSelected)
+        {
+            WorkbenchCodeTestCase? existing = selected
+                .Select(id => catalog.GetValueOrDefault(id))
+                .FirstOrDefault(item => item is not null);
+            if (existing is not null && !existing.ProjectPath.Value.Equals(
+                    test.ProjectPath.Value, StringComparison.Ordinal))
+            {
+                status.Message = "A single test run can select tests from only one project.";
+                status.Severity = StatusSeverity.Warning;
+                return false;
+            }
+            if (selected.Count >= 24)
+            {
+                status.Message = "A single test run is bounded to 24 selected tests.";
+                status.Severity = StatusSeverity.Warning;
+                return false;
+            }
+            selected.Add(test.Id.Value);
+        }
+        else
+        {
+            selected.Remove(test.Id.Value);
+        }
+        runSelected.IsEnabled = selected.Count >= 2;
+        runSelected.Content = selected.Count == 0
+            ? "Run selected"
+            : $"Run selected ({selected.Count})";
+        return true;
+    }
 
     internal async ValueTask StartSelectionAsync(
         DeveloperProjectTarget project,
@@ -362,6 +435,14 @@ internal sealed class TestExplorerTool
         WorkbenchCodeTestDiscoveryView result,
         DeveloperExecutionListResult history)
     {
+        catalog.Clear();
+        foreach (WorkbenchCodeTestCase test in result.Tests)
+            catalog[test.Id.Value] = test;
+        selected.RemoveWhere(id => !catalog.ContainsKey(id));
+        runSelected.IsEnabled = selected.Count >= 2;
+        runSelected.Content = selected.Count == 0
+            ? "Run selected"
+            : $"Run selected ({selected.Count})";
         Dictionary<string, DeveloperExecutionView> latest = history.Executions
             .Where(item => item.Operation is DeveloperExecutionOperation.Test &&
                 item.Test is not null)
@@ -454,6 +535,10 @@ internal sealed class TestExplorerTool
         string message,
         StatusSeverity severity = StatusSeverity.Information)
     {
+        catalog.Clear();
+        selected.Clear();
+        runSelected.IsEnabled = false;
+        runSelected.Content = "Run selected";
         tree.ItemsSource = Array.Empty<TestTreeNode>();
         status.Message = message;
         status.Severity = severity;
@@ -472,6 +557,7 @@ internal sealed class TestExplorerTool
             DeveloperTestScope.Type => $"tests in type {selection.FullyQualifiedName.Value}",
             DeveloperTestScope.Project =>
                 $"tests in project {selection.FullyQualifiedName.Value}",
+            DeveloperTestScope.Selection => selection.FullyQualifiedName.Value,
             _ => "selected tests",
         };
 

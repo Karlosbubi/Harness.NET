@@ -195,6 +195,36 @@ public sealed class DeveloperProjectExecutionServiceTests
     }
 
     [Fact]
+    public async Task Starts_one_process_for_a_deterministic_exact_test_selection()
+    {
+        Runner runner = new();
+        Store store = new();
+        using DeveloperProjectExecutionService service = CreateService(runner, store);
+        DeveloperProjectPath projectPath = new("App.csproj");
+        DeveloperTestTarget selection = DeveloperTestTarget.ForSelection(projectPath,
+        [
+            new("Demo.CalculatorTests.Subtracts"),
+            new("Demo.CalculatorTests.Adds"),
+        ]);
+
+        DeveloperExecutionStartResult started = await service.StartTestAsync(new(
+            new(new("workspace-a"), null),
+            new(projectPath, null, null),
+            selection));
+
+        Assert.NotNull(started.Execution);
+        Assert.Equal(1, runner.Calls);
+        Assert.Equal(DotNetTestScope.Selection, runner.LastRequest?.TestScope);
+        Assert.Equal([
+            "Demo.CalculatorTests.Adds", "Demo.CalculatorTests.Subtracts",
+        ], runner.LastRequest?.SelectedTests.Select(item => item.Value));
+        runner.Complete();
+        DeveloperExecutionView completed = await WaitForCompletionAsync(service);
+        Assert.Equal(selection.Id, completed.Test?.Id);
+        Assert.Equal(selection.SelectedTests, completed.Test?.SelectedTests);
+    }
+
+    [Fact]
     public async Task Rejects_a_non_discovery_test_identity_before_starting_dotnet()
     {
         Runner runner = new();
@@ -368,7 +398,8 @@ public sealed class DeveloperProjectExecutionServiceTests
                 execution.TargetFramework, execution.Configuration, execution.DeclarationId,
                 StoredDeveloperExecutionState.Running,
                 execution.StartedAt, null, null, 0, null, null,
-                execution.TestId, execution.TestName, execution.TestScope);
+                execution.TestId, execution.TestName, execution.TestScope,
+                execution.SelectedTests);
             lock (gate) Items.Add(stored);
             return ValueTask.FromResult(stored);
         }

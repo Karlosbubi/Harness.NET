@@ -658,8 +658,11 @@ history join. Name and trait search remains bounded and compiler-session scoped.
 eighth adds deterministic project and containing-type selections with the same
 Run/Rerun/Stop/history lifecycle; a closed Exact/Type/Project selector starts one
 confined no-Restore process per action and schema 34 persists its scope. Multi-test
-selection, per-case adapter results, test Debug, coverage, typed one-run overrides,
-Hot Reload, and Debug remain open.
+selection is delivered by the ninth slice: accessible leaf checkboxes select 2–24
+exact tests from one project, Business Logic derives a stable sorted identity, and
+Data Access constructs one bounded VSTest OR filter for one process. Schema 35 stores
+the exact members. Per-case adapter results, test Debug, coverage, typed one-run
+overrides, Hot Reload, and Debug remain open.
 
 Acceptance criteria:
 

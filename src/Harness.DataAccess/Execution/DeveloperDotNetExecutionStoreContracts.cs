@@ -1,3 +1,5 @@
+using System.Collections.Immutable;
+
 namespace Harness.DataAccess.Execution;
 
 public sealed record StoredDeveloperExecutionId(string Value);
@@ -21,6 +23,7 @@ public enum StoredDeveloperTestScope
     Exact,
     Type,
     Project,
+    Selection,
 }
 
 public enum StoredDeveloperExecutionState
@@ -51,7 +54,8 @@ public sealed record StoredDeveloperExecution(
     string? Error,
     StoredDeveloperTestId? TestId = null,
     StoredDeveloperTestName? TestName = null,
-    StoredDeveloperTestScope? TestScope = null);
+    StoredDeveloperTestScope? TestScope = null,
+    ImmutableArray<StoredDeveloperTestName> SelectedTests = default);
 
 public sealed record StoredDeveloperExecutionStart(
     StoredDeveloperExecutionId Id,
@@ -66,7 +70,8 @@ public sealed record StoredDeveloperExecutionStart(
     DateTimeOffset StartedAt,
     StoredDeveloperTestId? TestId = null,
     StoredDeveloperTestName? TestName = null,
-    StoredDeveloperTestScope? TestScope = null);
+    StoredDeveloperTestScope? TestScope = null,
+    ImmutableArray<StoredDeveloperTestName> SelectedTests = default);
 
 public sealed record StoredDeveloperExecutionCompletion(
     StoredDeveloperExecutionId Id,

@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Text;
@@ -82,9 +83,11 @@ internal sealed class DotNetProjectRunner : IDotNetProjectRunner
                     IsValidTestName(request.Test.Value),
                 DotNetTestScope.Project => request.Test.Value.Equals(
                     confined.ProjectPath.Value, StringComparison.Ordinal),
+                DotNetTestScope.Selection => IsValidSelection(request.SelectedTests),
                 _ => false,
             };
-            if (!valid)
+            if (!valid || request.TestScope is not DotNetTestScope.Selection &&
+                !request.SelectedTests.IsDefaultOrEmpty)
             {
                 return Failure(confined, "test_name_invalid",
                     "A bounded fully qualified test name is required.");
@@ -105,7 +108,8 @@ internal sealed class DotNetProjectRunner : IDotNetProjectRunner
             CreateNoWindow = true,
         };
         foreach (string argument in Arguments(
-                     request.Operation, projectPath, request.Test, request.TestScope))
+                     request.Operation, projectPath, request.Test, request.TestScope,
+                     request.SelectedTests))
         {
             startInfo.ArgumentList.Add(argument);
         }
@@ -175,7 +179,9 @@ internal sealed class DotNetProjectRunner : IDotNetProjectRunner
         DotNetProjectOperation operation,
         string projectPath,
         DotNetTestFullyQualifiedName? test,
-        DotNetTestScope testScope) => operation switch
+        DotNetTestScope testScope,
+        ImmutableArray<DotNetTestFullyQualifiedName> selectedTests) =>
+        operation switch
     {
         DotNetProjectOperation.Build => ["build", projectPath, "--no-restore"],
         DotNetProjectOperation.Rebuild =>
@@ -186,6 +192,10 @@ internal sealed class DotNetProjectRunner : IDotNetProjectRunner
         DotNetProjectOperation.Test when testScope is DotNetTestScope.Type =>
             ["test", projectPath, "--no-restore", "--filter",
                 $"FullyQualifiedName~{test!.Value}."],
+        DotNetProjectOperation.Test when testScope is DotNetTestScope.Selection =>
+            ["test", projectPath, "--no-restore", "--filter",
+                string.Join('|', selectedTests.Select(item =>
+                    $"FullyQualifiedName={item.Value}"))],
         DotNetProjectOperation.Test => ["test", projectPath, "--no-restore"],
         _ => ["run", "--project", projectPath, "--no-restore", "--no-launch-profile"],
     };
@@ -205,6 +215,13 @@ internal sealed class DotNetProjectRunner : IDotNetProjectRunner
         value.Equals(value.Trim(), StringComparison.Ordinal) &&
         value.All(character => char.IsLetterOrDigit(character) ||
             character is '.' or '_' or '+' or '`');
+
+    private static bool IsValidSelection(
+        ImmutableArray<DotNetTestFullyQualifiedName> tests) =>
+        !tests.IsDefault && tests.Length is >= 2 and <= 24 &&
+        tests.Select(test => test.Value).Distinct(StringComparer.Ordinal).Count() == tests.Length &&
+        tests.All(test => IsValidTestName(test.Value)) &&
+        tests.Sum(test => test.Value.Length) <= 12_000;
 
     private static async Task<BoundedText> ReadBoundedAsync(StreamReader reader)
     {

@@ -1,3 +1,5 @@
+using System.Collections.Immutable;
+using System.Text.Json;
 using Dapper;
 using Harness.DataAccess.Configuration;
 using Microsoft.Data.Sqlite;
@@ -17,11 +19,11 @@ internal sealed class SqliteDeveloperDotNetExecutionStore(
             INSERT INTO developer_dotnet_executions (
                 id, workspace_id, goal_id, source_description, project_path,
                 operation, target_framework, configuration, declaration_id,
-                test_id, test_name, test_scope, state, started_at)
+                test_id, test_name, test_scope, test_selection_json, state, started_at)
             VALUES (
                 @id, @workspaceId, @goalId, @sourceDescription, @projectPath,
                 @operation, @targetFramework, @configuration, @declarationId,
-                @testId, @testName, @testScope, 'Running', @startedAt);
+                @testId, @testName, @testScope, @testSelectionJson, 'Running', @startedAt);
             """, new
         {
             id = execution.Id.Value,
@@ -36,6 +38,10 @@ internal sealed class SqliteDeveloperDotNetExecutionStore(
             testId = execution.TestId?.Value,
             testName = execution.TestName?.Value,
             testScope = execution.TestScope?.ToString(),
+            testSelectionJson = execution.SelectedTests.IsDefaultOrEmpty
+                ? null
+                : JsonSerializer.Serialize(
+                    execution.SelectedTests.Select(item => item.Value)),
             startedAt = execution.StartedAt.ToString("O"),
         }, cancellationToken: cancellationToken));
         return new(
@@ -44,7 +50,8 @@ internal sealed class SqliteDeveloperDotNetExecutionStore(
             execution.TargetFramework, execution.Configuration,
             execution.DeclarationId, StoredDeveloperExecutionState.Running,
             execution.StartedAt, null, null, 0, null, null,
-            execution.TestId, execution.TestName, execution.TestScope);
+            execution.TestId, execution.TestName, execution.TestScope,
+            execution.SelectedTests);
     }
 
     public async ValueTask CompleteAsync(
@@ -102,6 +109,7 @@ internal sealed class SqliteDeveloperDotNetExecutionStore(
                    test_id AS TestId,
                    test_name AS TestName,
                    test_scope AS TestScope,
+                   test_selection_json AS TestSelectionJson,
                    state AS State,
                    started_at AS StartedAt,
                    completed_at AS CompletedAt,
@@ -162,6 +170,7 @@ internal sealed class SqliteDeveloperDotNetExecutionStore(
         public string? TestId { get; init; }
         public string? TestName { get; init; }
         public string? TestScope { get; init; }
+        public string? TestSelectionJson { get; init; }
         public string State { get; init; } = string.Empty;
         public string StartedAt { get; init; } = string.Empty;
         public string? CompletedAt { get; init; }
@@ -183,6 +192,10 @@ internal sealed class SqliteDeveloperDotNetExecutionStore(
             DurationMilliseconds, ErrorCode, Error,
             TestId is null ? null : new(TestId),
             TestName is null ? null : new(TestName),
-            TestScope is null ? null : Enum.Parse<StoredDeveloperTestScope>(TestScope));
+            TestScope is null ? null : Enum.Parse<StoredDeveloperTestScope>(TestScope),
+            TestSelectionJson is null
+                ? []
+                : (JsonSerializer.Deserialize<string[]>(TestSelectionJson) ?? [])
+                    .Select(item => new StoredDeveloperTestName(item)).ToImmutableArray());
     }
 }

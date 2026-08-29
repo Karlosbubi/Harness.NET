@@ -85,12 +85,35 @@ public sealed class SqliteDeveloperDotNetExecutionStoreTests : IDisposable
 
         StoredDeveloperExecution execution = Assert.Single(await store.ListAsync(
             new("workspace-a"), null, 10));
-        Assert.Equal(34, initialized.SchemaVersion.Value);
+        Assert.Equal(35, initialized.SchemaVersion.Value);
         Assert.Equal(StoredDeveloperExecutionOperation.Test, execution.Operation);
         Assert.Equal(new string('a', 64), execution.TestId?.Value);
         Assert.Equal(selector, execution.TestName?.Value);
         Assert.Equal(scope, execution.TestScope);
         Assert.Null(execution.DeclarationId);
+    }
+
+    [Fact]
+    public async Task Persists_a_bounded_test_selection_as_typed_members()
+    {
+        StubPaths paths = new(Paths());
+        await new SqliteDatabaseInitializer(paths).InitializeAsync();
+        SqliteDeveloperDotNetExecutionStore store = new(paths);
+
+        await store.StartAsync(new(
+            new("selection-a"), new("workspace-a"), null, new("Original workspace"),
+            StoredDeveloperExecutionOperation.Test,
+            new("tests/App.Tests.csproj"), null, null, null,
+            DateTimeOffset.Parse("2026-08-29T12:00:00Z"),
+            new(new string('c', 64)), new("2 selected tests"),
+            StoredDeveloperTestScope.Selection,
+            [new("Demo.Tests.First"), new("Demo.Tests.Second")]));
+
+        StoredDeveloperExecution execution = Assert.Single(await store.ListAsync(
+            new("workspace-a"), null, 10));
+        Assert.Equal(StoredDeveloperTestScope.Selection, execution.TestScope);
+        Assert.Equal(["Demo.Tests.First", "Demo.Tests.Second"],
+            execution.SelectedTests.Select(item => item.Value));
     }
 
     [Fact]
@@ -140,7 +163,8 @@ public sealed class SqliteDeveloperDotNetExecutionStoreTests : IDisposable
                     'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
                     'Demo.Tests.Passes');
                 DELETE FROM SchemaVersions
-                WHERE ScriptName LIKE '%034_DeveloperDotNetTestScopes.sql';
+                WHERE ScriptName LIKE '%034_DeveloperDotNetTestScopes.sql'
+                   OR ScriptName LIKE '%035_DeveloperDotNetTestSelections.sql';
                 UPDATE application_metadata SET value = '33' WHERE key = 'schema_version';
                 """;
             await command.ExecuteNonQueryAsync();
@@ -152,7 +176,7 @@ public sealed class SqliteDeveloperDotNetExecutionStoreTests : IDisposable
             await new SqliteDeveloperDotNetExecutionStore(paths).ListAsync(
                 new("workspace-a"), null, 10));
 
-        Assert.Equal(34, migrated.SchemaVersion.Value);
+        Assert.Equal(35, migrated.SchemaVersion.Value);
         Assert.Equal(StoredDeveloperTestScope.Exact, execution.TestScope);
     }
 
@@ -194,7 +218,8 @@ public sealed class SqliteDeveloperDotNetExecutionStoreTests : IDisposable
                 DELETE FROM SchemaVersions
                 WHERE ScriptName LIKE '%032_DeveloperDotNetBuildOperations.sql'
                    OR ScriptName LIKE '%033_DeveloperDotNetTestOperations.sql'
-                   OR ScriptName LIKE '%034_DeveloperDotNetTestScopes.sql';
+                   OR ScriptName LIKE '%034_DeveloperDotNetTestScopes.sql'
+                   OR ScriptName LIKE '%035_DeveloperDotNetTestSelections.sql';
                 UPDATE application_metadata SET value = '31' WHERE key = 'schema_version';
                 """;
             await command.ExecuteNonQueryAsync();
@@ -206,7 +231,7 @@ public sealed class SqliteDeveloperDotNetExecutionStoreTests : IDisposable
             await new SqliteDeveloperDotNetExecutionStore(paths).ListAsync(
                 new("workspace-a"), null, 10));
 
-        Assert.Equal(34, migrated.SchemaVersion.Value);
+        Assert.Equal(35, migrated.SchemaVersion.Value);
         Assert.Equal(StoredDeveloperExecutionOperation.Run, execution.Operation);
         Assert.Null(execution.Configuration);
         Assert.Equal("M:Program.Main", execution.DeclarationId?.Value);

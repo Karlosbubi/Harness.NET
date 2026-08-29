@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Collections.Immutable;
 using System.Security.Cryptography;
 using System.Text;
 using Harness.BusinessLogic.CodeIntelligence;
@@ -168,7 +169,12 @@ internal sealed class DeveloperProjectExecutionService(
                 startedAt,
                 test is null ? null : new(test.Id.Value),
                 test is null ? null : new(test.FullyQualifiedName.Value),
-                test is null ? null : Map(test.Scope)), cancellationToken);
+                test is null ? null : Map(test.Scope),
+                test is null || test.SelectedTests.IsDefaultOrEmpty
+                    ? []
+                    : test.SelectedTests.Select(item =>
+                        new StoredDeveloperTestName(item.Value)).ToImmutableArray()),
+                cancellationToken);
         }
         catch (Exception exception)
         {
@@ -263,8 +269,13 @@ internal sealed class DeveloperProjectExecutionService(
                     DeveloperTestScope.Exact or null => DotNetTestScope.Exact,
                     DeveloperTestScope.Type => DotNetTestScope.Type,
                     DeveloperTestScope.Project => DotNetTestScope.Project,
+                    DeveloperTestScope.Selection => DotNetTestScope.Selection,
                     _ => throw new ArgumentOutOfRangeException(nameof(test)),
-                }),
+                },
+                test is null || test.SelectedTests.IsDefaultOrEmpty
+                    ? []
+                    : test.SelectedTests.Select(item =>
+                        new DotNetTestFullyQualifiedName(item.Value)).ToImmutableArray()),
                 cancellation.Token);
         }
         catch (Exception exception)
@@ -506,8 +517,13 @@ internal sealed class DeveloperProjectExecutionService(
                     StoredDeveloperTestScope.Exact => DeveloperTestScope.Exact,
                     StoredDeveloperTestScope.Type => DeveloperTestScope.Type,
                     StoredDeveloperTestScope.Project => DeveloperTestScope.Project,
+                    StoredDeveloperTestScope.Selection => DeveloperTestScope.Selection,
                     _ => throw new ArgumentOutOfRangeException(nameof(execution)),
-                })
+                },
+                execution.SelectedTests.IsDefaultOrEmpty
+                    ? default
+                    : execution.SelectedTests.Select(item =>
+                        new DeveloperTestName(item.Value)).ToImmutableArray())
             : null;
 
     private static bool IsValidTest(
@@ -531,6 +547,7 @@ internal sealed class DeveloperProjectExecutionService(
                     project.ProjectPath, test.FullyQualifiedName),
             DeveloperTestScope.Project =>
                 test == DeveloperTestTarget.ForProject(project.ProjectPath),
+            DeveloperTestScope.Selection => IsValidSelection(test, project.ProjectPath),
             _ => false,
         };
     }
@@ -546,8 +563,24 @@ internal sealed class DeveloperProjectExecutionService(
         DeveloperTestScope.Exact => StoredDeveloperTestScope.Exact,
         DeveloperTestScope.Type => StoredDeveloperTestScope.Type,
         DeveloperTestScope.Project => StoredDeveloperTestScope.Project,
+        DeveloperTestScope.Selection => StoredDeveloperTestScope.Selection,
         _ => throw new ArgumentOutOfRangeException(nameof(scope)),
     };
+
+    private static bool IsValidSelection(
+        DeveloperTestTarget test,
+        DeveloperProjectPath project)
+    {
+        if (test.SelectedTests.IsDefault || test.SelectedTests.Length is < 2 or > 24 ||
+            test.SelectedTests.Any(item => !IsValidTestName(item.Value)) ||
+            test.SelectedTests.Select(item => item.Value)
+                .Distinct(StringComparer.Ordinal).Count() != test.SelectedTests.Length ||
+            test.SelectedTests.Sum(item => item.Value.Length) > 12_000)
+            return false;
+        DeveloperTestTarget expected = DeveloperTestTarget.ForSelection(
+            project, test.SelectedTests);
+        return test.Id == expected.Id && test.FullyQualifiedName == expected.FullyQualifiedName;
+    }
 
     private void TrimOutput()
     {

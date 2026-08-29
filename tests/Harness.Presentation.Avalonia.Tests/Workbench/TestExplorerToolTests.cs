@@ -114,6 +114,8 @@ public sealed class TestExplorerToolTests
                 AutomationProperties.GetName(tool.FrameworkFilter));
             Assert.Equal("Test lifecycle state filter",
                 AutomationProperties.GetName(tool.StateFilter));
+            Assert.Equal("Run selected tests",
+                AutomationProperties.GetName(tool.RunSelected));
 
             tool.NavigateAsync(first).AsTask().GetAwaiter().GetResult();
             Assert.Same(first, navigated);
@@ -135,9 +137,20 @@ public sealed class TestExplorerToolTests
             Assert.Equal(DeveloperTestScope.Type, execution.Tests[^1].Test.Scope);
             Assert.Equal(3, shown);
             Assert.Equal(3, refreshed);
+            Assert.True(tool.SelectTestForRun(first, true));
+            Assert.True(tool.SelectTestForRun(second, true));
+            Assert.True(tool.RunSelected.IsEnabled);
+            Assert.Equal("Run selected (2)", tool.RunSelected.Content);
+            tool.StartSelectedAsync().AsTask().GetAwaiter().GetResult();
+            Assert.Equal(DeveloperTestScope.Selection, execution.Tests[^1].Test.Scope);
+            Assert.Equal([
+                first.FullyQualifiedName.Value, second.FullyQualifiedName.Value,
+            ], execution.Tests[^1].Test.SelectedTests.Select(item => item.Value));
+            Assert.Equal(4, shown);
+            Assert.Equal(4, refreshed);
             tool.CancelTestAsync(running).AsTask().GetAwaiter().GetResult();
             Assert.Equal("execution-running", Assert.Single(execution.Cancelled).Value);
-            Assert.Equal(4, refreshed);
+            Assert.Equal(5, refreshed);
             Assert.Contains("Stopping", tool.StatusText, StringComparison.Ordinal);
 
             tool.StateFilter.SelectedIndex = 4;

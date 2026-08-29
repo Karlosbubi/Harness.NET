@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Security.Cryptography;
 using System.Text;
 using Harness.BusinessLogic.CodeIntelligence;
@@ -32,12 +33,14 @@ public enum DeveloperTestScope
     Exact,
     Type,
     Project,
+    Selection,
 }
 
 public sealed record DeveloperTestTarget(
     DeveloperTestId Id,
     DeveloperTestName FullyQualifiedName,
-    DeveloperTestScope Scope = DeveloperTestScope.Exact)
+    DeveloperTestScope Scope = DeveloperTestScope.Exact,
+    ImmutableArray<DeveloperTestName> SelectedTests = default)
 {
     public static DeveloperTestTarget ForType(
         DeveloperProjectPath project,
@@ -45,6 +48,23 @@ public sealed record DeveloperTestTarget(
 
     public static DeveloperTestTarget ForProject(DeveloperProjectPath project) =>
         Group(DeveloperTestScope.Project, project, new(project.Value));
+
+    public static DeveloperTestTarget ForSelection(
+        DeveloperProjectPath project,
+        IEnumerable<DeveloperTestName> tests)
+    {
+        ImmutableArray<DeveloperTestName> selected = tests
+            .DistinctBy(test => test.Value, StringComparer.Ordinal)
+            .OrderBy(test => test.Value, StringComparer.Ordinal)
+            .ToImmutableArray();
+        string input = $"{DeveloperTestScope.Selection}\n{project.Value}\n" +
+                       string.Join('\n', selected.Select(test => test.Value));
+        return new(
+            new(Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(input)))),
+            new($"{selected.Length} selected tests"),
+            DeveloperTestScope.Selection,
+            selected);
+    }
 
     private static DeveloperTestTarget Group(
         DeveloperTestScope scope,

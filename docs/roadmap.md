@@ -555,6 +555,14 @@ no filter. Schema 34 preserves the selected scope and upgrades schema-33 Test hi
 to Exact. Multi-selection, adapter-level case results, Test Debug, coverage, typed
 one-run overrides, Hot Reload, and the debugger remain planned.
 
+Delivered ninth slice: Test Explorer adds accessible exact-test checkboxes and a
+Run-selected action for 2–24 tests from one project. Business Logic sorts, deduplicates,
+hashes, and revalidates the exact compiler names. Data Access alone constructs one
+bounded VSTest OR filter and starts one confined `dotnet test --no-restore` process;
+there is no child-process fan-out or raw filter boundary. Schema 35 persists the
+ordered selection for restart-safe history. Adapter-level case results, Test Debug,
+coverage, typed one-run overrides, Hot Reload, and the debugger remain planned.
+
 Use the existing trust and Restore boundaries. Selecting a launch profile does not
 authorize execution; debug attach, expression evaluation, mutation, dumps, network
 listeners, and external processes remain separately classified. ASP.NET endpoint

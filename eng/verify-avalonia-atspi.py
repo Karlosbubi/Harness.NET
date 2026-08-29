@@ -406,6 +406,7 @@ def verify_test_explorer_accessibility(application: AtSpiApplication) -> None:
     application.wait_for_name("Test Explorer search", "entry")
     application.wait_for_name("Roslyn test hierarchy", "tree")
     application.wait_for_name("Refresh Test Explorer", "push button")
+    application.wait_for_name("Run selected tests", "push button")
     application.wait_for_name_containing(
         "1 test(s) discovered", "label", timeout=60
     )

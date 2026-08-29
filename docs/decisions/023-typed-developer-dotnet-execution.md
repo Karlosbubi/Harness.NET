@@ -37,10 +37,13 @@ re-resolves the exact trusted source context and project and accepts only the bo
 closed test-name grammar. Data Access invokes `dotnet test <project> --no-restore
 --filter FullyQualifiedName=<name>` through the same direct argument-list runner.
 Containing-type and project nodes derive stable scoped identities from their inspected
-project and compiler hierarchy. A closed Exact, Type, or Project scope selects either
+project and compiler hierarchy. A closed Exact, Type, Project, or Selection scope selects either
 an exact equality filter, a bounded fully-qualified-name prefix filter, or no filter;
 each selection starts exactly one `dotnet test` process rather than fan-out child
 processes. Business Logic recomputes group identities before granting execution.
+Selection carries 2–24 distinct compiler-discovered exact names from one inspected
+project. Harness sorts and hashes them, then constructs the VSTest OR filter inside
+Data Access; neither Presentation nor a model may supply filter syntax.
 There is no shell string, implicit Restore, adapter discovery process outside
 `dotnet test`, or model-facing execution authority. The operation records test
 identity, state, exit code, duration, cancellation, and errors; stdout/stderr remain
@@ -73,6 +76,8 @@ the developer UI does not imply agent authority.
   cancellation, transient-output, failure-history, and restart-reconciliation path.
 - Project and containing-type rows reuse that lifecycle through a closed scoped
   selector and start one process per user action.
+- Arbitrary same-project multi-selection remains one bounded process and persists its
+  exact sorted member identities for restart-safe history.
 - Debug is visibly absent rather than misleading until its actual adapter is ready.
 - The same typed target and execution identity can later back Solution, Test Explorer,
   launch profiles, Hot Reload, and debugger UI.

@@ -1,3 +1,5 @@
+using System.Collections.Immutable;
+
 namespace Harness.DataAccess.Execution;
 
 public sealed record DotNetProjectPath(string Value);
@@ -19,6 +21,7 @@ public enum DotNetTestScope
     Exact,
     Type,
     Project,
+    Selection,
 }
 
 public sealed record DotNetProjectExecutionRequest(
@@ -27,7 +30,8 @@ public sealed record DotNetProjectExecutionRequest(
     DotNetProjectOperation Operation = DotNetProjectOperation.Run,
     DotNetConfigurationName? Configuration = null,
     DotNetTestFullyQualifiedName? Test = null,
-    DotNetTestScope TestScope = DotNetTestScope.Exact);
+    DotNetTestScope TestScope = DotNetTestScope.Exact,
+    ImmutableArray<DotNetTestFullyQualifiedName> SelectedTests = default);
 
 public sealed record DotNetProjectExecutionResult(
     DotNetProjectPath ProjectPath,

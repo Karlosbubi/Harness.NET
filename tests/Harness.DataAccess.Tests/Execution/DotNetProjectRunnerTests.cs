@@ -145,6 +145,33 @@ public sealed class DotNetProjectRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task Runs_an_exact_test_selection_with_one_internal_filter()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        Directory.CreateDirectory(root);
+        await File.WriteAllTextAsync(Path.Combine(root, "Tests.csproj"), "<Project />");
+        string executable = await CreateExecutableAsync("printf '%s\\n' \"$@\"");
+        DotNetProjectRunner runner = new(executable);
+
+        DotNetProjectExecutionResult result = await runner.RunAsync(root, new(
+            new("Tests.csproj"), null, DotNetProjectOperation.Test,
+            Test: new("2 selected tests"),
+            TestScope: DotNetTestScope.Selection,
+            SelectedTests:
+            [
+                new("Demo.CalculatorTests.Adds"),
+                new("Demo.CalculatorTests.Subtracts"),
+            ]));
+
+        Assert.Null(result.Error);
+        Assert.Equal([
+            "test", Path.Combine(root, "Tests.csproj"), "--no-restore", "--filter",
+            "FullyQualifiedName=Demo.CalculatorTests.Adds|" +
+            "FullyQualifiedName=Demo.CalculatorTests.Subtracts",
+        ], result.StandardOutput.Value.Split('\n'));
+    }
+
+    [Fact]
     public async Task Rejects_an_unbounded_test_filter_before_process_start()
     {
         Directory.CreateDirectory(root);
