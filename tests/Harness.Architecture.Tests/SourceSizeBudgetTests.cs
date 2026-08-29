@@ -19,7 +19,6 @@ public sealed class SourceSizeBudgetTests
             ["src/Harness.DataAccess/Persistence/SqliteApplicationRestore.cs"] = 891,
             ["src/Harness.Presentation.Avalonia/GoalDialog.cs"] = 2_275,
             ["src/Harness.Presentation.Avalonia/MainWindow.cs"] = 1_599,
-            ["src/Harness.Presentation.Avalonia/SettingsWindow.cs"] = 2_335,
             ["src/Harness.Presentation.Terminal/GoalDialog.cs"] = 1_262,
             ["src/Harness.Presentation.Terminal/HarnessWindow.cs"] = 834,
             ["tests/Harness.BusinessLogic.Tests/Agents/AgentRoleRunnerTests.cs"] = 838,
@@ -28,7 +27,7 @@ public sealed class SourceSizeBudgetTests
             ["tests/Harness.BusinessLogic.Tests/Workflows/GoalWorkflowServiceTests.cs"] = 832,
             ["tests/Harness.DataAccess.Tests/CodeIntelligence/RoslynCodeIntelligenceEngineTests.cs"] = 2_019,
             ["tests/Harness.DataAccess.Tests/Inspection/LibGitDeveloperGitRepositoryTests.cs"] = 1_185,
-            ["tests/Harness.Presentation.Avalonia.Tests/PresentationControlTests.cs"] = 4_701,
+            ["tests/Harness.Presentation.Avalonia.Tests/PresentationControlTests.cs"] = 4_218,
         };
 
     [Fact]
