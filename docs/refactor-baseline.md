@@ -21,8 +21,11 @@ overview collaborators leave a 795-line `WorkbenchDockHost` coordinator.
 Slice 060.6 is implemented: store commands and their tests are split into bounded
 conversation, workspace, goal, settings, research, visual-capture, MCP, operations,
 and workflow units. The 523-line state/reducer coordinator and its 448-line shared
-test fixture have both left the source-size allowlist. Slices 060.7–060.8 remain and
-continue to follow the sequencing and evidence rules below.
+test fixture have both left the source-size allowlist. Slice 060.7 is implemented:
+the 397-line settings coordinator, 460-line goal coordinator, and their bounded
+section/dialog units have left the production allowlist, with matching presentation
+tests split from the shared fixture. Slice 060.8 remains and continues to follow the
+sequencing and evidence rules below.
 
 ## Measured baseline (2026-08-24)
 
@@ -164,7 +167,7 @@ slices that touch `WorkbenchDockHost`.
 | 060.4 — implemented | Extract **GitRemotesTool**, **GitHistoryTool**, **GitConflictsTool**. | Remote/history/conflict acceptance records re-verified, including exact conflict save/stage separation, unsaved-result transitions, Roslyn session reuse/cancellation/shutdown, and production AT-SPI; host budget tightened from 5,309 to 4,570 lines and the monolithic test budget from 4,901 to 4,824. |
 | 060.5 — implemented | Extract **RunOutputTool**, **ProblemsTool**, **DocumentsHost** (document sessions, diagnostics views, switcher). Task 052 has no open branch ahead of `main`; its delivered CodeLens-run slice is included. Run output, Problems, Roslyn lifecycle/interactions, rename, transformations, navigation, virtual documents, inspection, CodeLens, layout lifecycle, cross-tool focus, and overview composition are extracted. | `WorkbenchDockHost` is 795 lines and has left the allowlist. |
 | 060.6 — implemented | Store decomposition into per-feature command handlers; `AvaloniaShellState` contract unchanged. | Store tests split per feature; production and test store files leave the allowlist. |
-| 060.7 | `SettingsWindow` and `GoalDialog` section decomposition. | Both leave the allowlist; settings and chat-first workflow acceptance evidence re-verified. |
+| 060.7 — implemented | `SettingsWindow` and `GoalDialog` section decomposition. | Both leave the allowlist; settings and chat-first workflow acceptance evidence re-verified. |
 | 060.8 | UX consistency pass enabled by the units: shared tool chrome (header, busy, empty, error presentation), command-palette and keybinding coverage audit for every tool action. | Palette lists every tool action; keybinding catalog complete; Orca/AT-SPI checks pass; allowlist empty. |
 
 Slice 060.0 is independent and should land first and fast. Slices 060.1–060.5 are

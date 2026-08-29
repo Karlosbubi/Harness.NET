@@ -889,8 +889,9 @@ extracted run output, Problems, document sessions, Roslyn lifecycle/interactions
 rename, transformations, navigation, inspection, CodeLens, layout lifecycle,
 cross-tool focus/accessibility, and overview composition. The 795-line host has left
 the burn-down allowlist. Slice 060.6 has extracted bounded feature command and test
-partials; both the production and test stores have left the allowlist. Slices
-060.7–060.8 remain.
+partials; both the production and test stores have left the allowlist. Slice 060.7
+has extracted bounded settings sections and goal workflow dialogs with matching
+focused tests; both production windows have left the allowlist. Slice 060.8 remains.
 
 Dependencies: 049, 050. Coordinates with in-progress 052.
 
