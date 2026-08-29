@@ -95,22 +95,11 @@ internal sealed class WorkbenchDockHost
     private readonly GitChangesTool gitChangesTool;
     private readonly GitBranchesTool gitBranchesTool;
     private readonly GitWorktreesTool gitWorktreesTool;
+    private readonly GitRemotesTool gitRemotesTool;
+    private readonly GitHistoryTool gitHistoryTool;
     private TextBlock GitStatus => gitChangesTool.Status;
     private string GitFingerprint => gitChangesTool.Fingerprint;
     private WorkbenchWorkspaceContext? CurrentGitContext => gitChangesTool.CurrentContext;
-    private readonly ListBox gitRemotes = new();
-    private readonly TextBox gitRemoteSource = new() { PlaceholderText = "Source branch" };
-    private readonly TextBox gitRemoteDestination = new() { PlaceholderText = "Destination branch" };
-    private readonly CheckBox rebaseGitPull = new() { Content = "Rebase integration" };
-    private readonly CheckBox forceWithLeaseGitPush = new() { Content = "Force with lease" };
-    private readonly TextBlock gitRemoteStatus = new() { TextWrapping = TextWrapping.Wrap };
-    private DeveloperGitRemoteInspectionResult? currentRemoteInspection;
-    private readonly TextBox gitHistoryPath = new() { PlaceholderText = "Optional repository path" };
-    private readonly ListBox gitHistory = new();
-    private readonly TextEditor gitHistoryDetails = CodeEditorView.Create(
-        string.Empty, isReadOnly: true, wordWrap: false, showLineNumbers: false,
-        path: "git-history.patch");
-    private DeveloperGitHistoryPageView? currentHistoryPage;
     private readonly ListBox gitConflicts = new();
     private readonly TextEditor gitConflictBase = CodeEditorView.Create(
         string.Empty, isReadOnly: true, wordWrap: false, showLineNumbers: true,
@@ -261,6 +250,13 @@ internal sealed class WorkbenchDockHost
             gitChangesTool.Render,
             gitChangesTool.ReportStatus,
             async path => await this.manageWorkspaceAt(path));
+        gitRemotesTool = new(
+            toolContext,
+            gitChangesTool.Render,
+            gitChangesTool.ReportStatus,
+            PrepareForWorkspaceChangeAsync,
+            async () => await this.refreshWorkspaceContext());
+        gitHistoryTool = new(toolContext, gitChangesTool.ReportStatus);
 
         Control files = filesTool.Content;
         Control sourceControl = BuildSourceControlTool();
@@ -815,12 +811,12 @@ internal sealed class WorkbenchDockHost
                 DeveloperGitStashInspectionResult stashes = await developerGitService.InspectStashesAsync(
                     WorkbenchRequest(active), cancellationToken);
                 gitWorktreesTool.RenderStashes(stashes);
-                RenderGitRemotes(await developerGitService.InspectRemotesAsync(
+                gitRemotesTool.Render(await developerGitService.InspectRemotesAsync(
                     WorkbenchRequest(active), cancellationToken));
             }
             if (developerGitService is not null)
             {
-                await RefreshGitHistoryCoreAsync(active, append: false);
+                await gitHistoryTool.RefreshCoreAsync(active, append: false);
                 if (!IsConflictDirty()) await RefreshGitConflictsCoreAsync(active);
                 else gitConflictStatus.Text =
                     "Merge result has unsaved edits; automatic Git refresh preserved this buffer.";
@@ -866,154 +862,13 @@ internal sealed class WorkbenchDockHost
 
     internal ValueTask DropSelectedGitStashAsync() => gitWorktreesTool.DropSelectedStashAsync();
 
-    internal async ValueTask RefreshGitRemotesAsync()
-    {
-        WorkspaceView? active = ActiveWorkspace();
-        if (busy || active is null || developerGitService is null) return;
-        await RunAsync(async () => RenderGitRemotes(await developerGitService.InspectRemotesAsync(
-            WorkbenchRequest(active), cancellationToken)));
-    }
+    internal ValueTask RefreshGitRemotesAsync() => gitRemotesTool.RefreshAsync();
 
-    private void RenderGitRemotes(DeveloperGitRemoteInspectionResult result)
-    {
-        currentRemoteInspection = result;
-        gitRemotes.ItemsSource = result.Remotes.Select(remote => new RemoteChoice(remote)).ToArray();
-        int selected = result.UpstreamRemote is null ? 0 : result.Remotes.ToList().FindIndex(remote =>
-            remote.Name == result.UpstreamRemote);
-        gitRemotes.SelectedIndex = result.Remotes.Count == 0 ? -1 : Math.Max(0, selected);
-        if (string.IsNullOrWhiteSpace(gitRemoteSource.Text))
-            gitRemoteSource.Text = result.LocalBranch?.Value ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(gitRemoteDestination.Text))
-            gitRemoteDestination.Text = result.UpstreamBranch?.Value ?? result.LocalBranch?.Value ?? string.Empty;
-        gitRemoteStatus.Text = result.Error ??
-            $"Local {result.LocalSha ?? "unborn"} · remote tracking {result.RemoteTrackingSha ?? "unknown"} · " +
-            $"ahead {result.Ahead?.ToString() ?? "?"} · behind {result.Behind?.ToString() ?? "?"}";
-    }
+    internal ValueTask SynchronizeGitRemoteAsync(DeveloperGitRemoteAction action) =>
+        gitRemotesTool.SynchronizeAsync(action);
 
-    internal async ValueTask SynchronizeGitRemoteAsync(DeveloperGitRemoteAction action)
-    {
-        WorkspaceView? active = ActiveWorkspace();
-        if (busy || active is null || developerGitService is null ||
-            currentRemoteInspection?.State is null || gitRemotes.SelectedItem is not RemoteChoice selected)
-        {
-            GitStatus.Text = "Refresh and select a configured Git remote first.";
-            return;
-        }
-        string source = gitRemoteSource.Text?.Trim() ?? string.Empty;
-        string destination = gitRemoteDestination.Text?.Trim() ?? string.Empty;
-        DeveloperGitPushPolicy policy = forceWithLeaseGitPush.IsChecked == true
-            ? DeveloperGitPushPolicy.ForceWithLease : DeveloperGitPushPolicy.FastForwardOnly;
-        if ((action is DeveloperGitRemoteAction.PullMerge or DeveloperGitRemoteAction.PullRebase) &&
-            !await PrepareForWorkspaceChangeAsync())
-        {
-            GitStatus.Text = "Remote integration cancelled; unsaved documents remain open.";
-            return;
-        }
-        await RunAsync(async () =>
-        {
-            DeveloperGitRemotePreviewResult result = await developerGitService.PreviewRemoteAsync(new(
-                WorkbenchRequest(active), new(currentRemoteInspection.State.Fingerprint), action,
-                selected.Remote.Name, new(source), new(destination), policy), cancellationToken);
-            RenderGitRemotes(result.Inspection);
-            if (result.Preview is null)
-            {
-                GitStatus.Text = result.Error ?? "The Git remote operation preview is unavailable.";
-                return;
-            }
-            if (!await documentPrompt.ConfirmGitRemoteAsync(result.Preview, OwnerWindow()))
-            {
-                GitStatus.Text = "Git remote operation cancelled; no network or integration action ran.";
-                return;
-            }
-            DeveloperGitRemoteInspectionResult applied = await developerGitService.ApplyRemoteAsync(
-                result.Preview, cancellationToken);
-            RenderGitRemotes(applied);
-            if (applied.State is not null) RenderGitState(applied.Context, applied.State);
-            GitStatus.Text = applied.Error ?? $"Git {action} completed for {selected.Remote.Name.Value}.";
-            if (applied.Error is null &&
-                (action is DeveloperGitRemoteAction.PullMerge or DeveloperGitRemoteAction.PullRebase))
-                await refreshWorkspaceContext();
-        });
-    }
-
-    internal async ValueTask RefreshGitHistoryAsync(bool append = false)
-    {
-        WorkspaceView? active = ActiveWorkspace();
-        if (busy || active is null || developerGitService is null) return;
-        await RunAsync(() => RefreshGitHistoryCoreAsync(active, append));
-    }
-
-    private async ValueTask RefreshGitHistoryCoreAsync(WorkspaceView active, bool append)
-    {
-        string pathText = gitHistoryPath.Text?.Trim() ?? string.Empty;
-        DeveloperGitPath? path = pathText.Length == 0 ? null : new(pathText);
-        DeveloperGitHistoryPageView? previous = currentHistoryPage;
-        DeveloperGitHistoryCursor? cursor = append && previous is not null && previous.Path == path
-            ? previous.NextCursor : null;
-        DeveloperGitHistoryPageView page = await developerGitService!.InspectHistoryAsync(new(
-            WorkbenchRequest(active), path, cursor, MaximumResults: 100), cancellationToken);
-        if (append && previous is not null && page.Error is null)
-            page = page with { Commits = previous.Commits.Concat(page.Commits).ToArray() };
-        currentHistoryPage = page;
-        gitHistory.ItemsSource = BuildHistoryChoices(page.Commits);
-        if (!append) gitHistory.SelectedIndex = page.Commits.Count > 0 ? 0 : -1;
-        GitStatus.Text = page.Error ?? (page.Path is null
-            ? $"Showing {page.Commits.Count} commits." :
-            $"Showing {page.Commits.Count} commits for {page.Path.Value}.");
-    }
-
-    private async ValueTask ShowSelectedGitCommitAsync()
-    {
-        WorkspaceView? active = ActiveWorkspace();
-        if (busy || active is null || developerGitService is null ||
-            gitHistory.SelectedItem is not HistoryChoice selected) return;
-        await RunAsync(async () =>
-        {
-            DeveloperGitCommitDetailResult result = await developerGitService.InspectCommitAsync(
-                WorkbenchRequest(active), selected.Commit.Sha, cancellationToken);
-            if (result.Detail is null)
-            {
-                gitHistoryDetails.Text = result.Error ?? "The selected commit is unavailable.";
-                return;
-            }
-            DeveloperGitCommitDetailView detail = result.Detail;
-            string parents = detail.Parents.Count == 0 ? "root" :
-                string.Join(", ", detail.Parents.Select(parent => parent.Value));
-            string references = detail.References.Count == 0 ? "none" :
-                string.Join(", ", detail.References);
-            string diffs = string.Join("\n\n", detail.ParentDiffs.Select(diff =>
-                $"--- {(diff.Parent is null ? "empty tree" : diff.Parent.Value)} -> {detail.Sha.Value} " +
-                $"({diff.Paths.Count} path(s)){(diff.IsTruncated ? " · truncated" : string.Empty)} ---\n" +
-                diff.Patch));
-            gitHistoryDetails.Text = $"Commit {detail.Sha.Value}\nParents {parents}\nReferences {references}\n" +
-                $"Author {detail.AuthorName} <{detail.AuthorEmail}> · {detail.AuthoredAt:u}\n" +
-                $"Committer {detail.CommitterName} <{detail.CommitterEmail}> · {detail.CommittedAt:u}\n\n" +
-                $"{detail.Message}{(detail.MessageIsTruncated ? "\n[message truncated]" : string.Empty)}\n\n{diffs}";
-            GitStatus.Text = $"Showing exact parent/child diff for {detail.Sha.Value}.";
-        });
-    }
-
-    private async ValueTask ShowGitBlameAsync()
-    {
-        WorkspaceView? active = ActiveWorkspace();
-        string path = gitHistoryPath.Text?.Trim() ?? string.Empty;
-        if (busy || active is null || developerGitService is null || path.Length == 0)
-        {
-            GitStatus.Text = "Enter a repository path before opening blame.";
-            return;
-        }
-        await RunAsync(async () =>
-        {
-            DeveloperGitBlamePageView page = await developerGitService.InspectBlameAsync(new(
-                WorkbenchRequest(active), new(path), StartLine: 1, MaximumLines: 500), cancellationToken);
-            gitHistoryDetails.Text = page.Error ?? string.Join('\n', page.Lines.Select(line =>
-                $"{line.LineNumber,6} {line.Commit.Value[..Math.Min(8, line.Commit.Value.Length)]} " +
-                $"{line.AuthorName} {line.OriginalPath.Value}:{line.OriginalLineNumber}  {line.Text}")) +
-                (page.NextStartLine is null ? string.Empty :
-                    $"\n\nBlame is paged; next line is {page.NextStartLine.Value}.");
-            GitStatus.Text = page.Error ?? $"Showing blame for {path}.";
-        });
-    }
+    internal ValueTask RefreshGitHistoryAsync(bool append = false) =>
+        gitHistoryTool.RefreshAsync(append);
 
     internal async ValueTask RefreshGitConflictsAsync()
     {
@@ -1699,82 +1554,8 @@ internal sealed class WorkbenchDockHost
         Control tagPanel = gitBranchesTool.TagsContent;
         Control worktreePanel = gitWorktreesTool.WorktreesContent;
         Control stashPanel = gitWorktreesTool.StashesContent;
-
-        WrapPanel remoteActions = new() { Orientation = AvaloniaOrientation.Horizontal };
-        Button refreshRemotes = new() { Content = "Refresh remotes" };
-        Button fetchRemote = new() { Content = "Fetch…" };
-        Button pullRemote = new() { Content = "Integrate fetched…" };
-        Button pushRemote = new() { Content = "Push…" };
-        foreach (Button button in new[] { refreshRemotes, fetchRemote, pullRemote, pushRemote })
-            button.Margin = new Thickness(0, 0, 6, 6);
-        AutomationProperties.SetName(gitRemotes, "Configured Git remotes with sanitized URLs");
-        AutomationProperties.SetName(gitRemoteSource, "Git remote source branch");
-        AutomationProperties.SetName(gitRemoteDestination, "Git remote destination branch");
-        AutomationProperties.SetName(gitRemoteStatus, "Git remote divergence and observed commits");
-        AutomationProperties.SetName(refreshRemotes, "Refresh Git remotes and divergence");
-        AutomationProperties.SetName(fetchRemote, "Preview explicit Git fetch");
-        AutomationProperties.SetName(pullRemote, "Preview integration of already fetched commits");
-        AutomationProperties.SetName(pushRemote, "Preview explicit Git push");
-        AutomationProperties.SetName(rebaseGitPull, "Use rebase when integrating fetched commits");
-        AutomationProperties.SetName(forceWithLeaseGitPush, "Use force with exact lease for Git push");
-        refreshRemotes.Click += async (_, _) => await RefreshGitRemotesAsync();
-        fetchRemote.Click += async (_, _) => await SynchronizeGitRemoteAsync(DeveloperGitRemoteAction.Fetch);
-        pullRemote.Click += async (_, _) => await SynchronizeGitRemoteAsync(rebaseGitPull.IsChecked == true
-            ? DeveloperGitRemoteAction.PullRebase : DeveloperGitRemoteAction.PullMerge);
-        pushRemote.Click += async (_, _) => await SynchronizeGitRemoteAsync(DeveloperGitRemoteAction.Push);
-        remoteActions.Children.Add(refreshRemotes);
-        remoteActions.Children.Add(fetchRemote);
-        remoteActions.Children.Add(pullRemote);
-        remoteActions.Children.Add(pushRemote);
-        remoteActions.Children.Add(rebaseGitPull);
-        remoteActions.Children.Add(forceWithLeaseGitPush);
-        Grid remoteRefs = new() { ColumnDefinitions = new("*,*"), ColumnSpacing = 8 };
-        remoteRefs.Children.Add(gitRemoteSource);
-        Grid.SetColumn(gitRemoteDestination, 1);
-        remoteRefs.Children.Add(gitRemoteDestination);
-        Grid remotePanel = new() { RowDefinitions = new("Auto,Auto,Auto,*,Auto"), RowSpacing = 8 };
-        remotePanel.Children.Add(gitRemoteStatus);
-        Grid.SetRow(remoteRefs, 1);
-        remotePanel.Children.Add(remoteRefs);
-        Grid.SetRow(remoteActions, 2);
-        remotePanel.Children.Add(remoteActions);
-        Grid.SetRow(gitRemotes, 3);
-        remotePanel.Children.Add(gitRemotes);
-        TextBlock remoteGuidance = new()
-        {
-            Text = "Pull is deliberately split: Fetch first, review divergence, then integrate the fetched tracking ref.",
-            TextWrapping = TextWrapping.Wrap,
-        };
-        Grid.SetRow(remoteGuidance, 4);
-        remotePanel.Children.Add(remoteGuidance);
-
-        WrapPanel historyActions = new() { Orientation = AvaloniaOrientation.Horizontal };
-        Button refreshHistory = new() { Content = "Refresh history" };
-        Button moreHistory = new() { Content = "Load more" };
-        Button blamePath = new() { Content = "Blame path" };
-        foreach (Button button in new[] { refreshHistory, moreHistory, blamePath })
-            button.Margin = new Thickness(0, 0, 6, 6);
-        AutomationProperties.SetName(gitHistoryPath, "Optional path for Git file history and blame");
-        AutomationProperties.SetName(refreshHistory, "Refresh Git history or file timeline");
-        AutomationProperties.SetName(moreHistory, "Load next page of Git history");
-        AutomationProperties.SetName(blamePath, "Show blame for repository path");
-        AutomationProperties.SetName(gitHistory, "Paged Git commit history");
-        AutomationProperties.SetName(gitHistoryDetails, "Selected Git commit details and parent diffs");
-        refreshHistory.Click += async (_, _) => await RefreshGitHistoryAsync();
-        moreHistory.Click += async (_, _) => await RefreshGitHistoryAsync(append: true);
-        blamePath.Click += async (_, _) => await ShowGitBlameAsync();
-        gitHistory.SelectionChanged += async (_, _) => await ShowSelectedGitCommitAsync();
-        historyActions.Children.Add(refreshHistory);
-        historyActions.Children.Add(moreHistory);
-        historyActions.Children.Add(blamePath);
-        Grid historyPanel = new() { RowDefinitions = new("Auto,Auto,*,2*"), RowSpacing = 8 };
-        historyPanel.Children.Add(gitHistoryPath);
-        Grid.SetRow(historyActions, 1);
-        historyPanel.Children.Add(historyActions);
-        Grid.SetRow(gitHistory, 2);
-        historyPanel.Children.Add(gitHistory);
-        Grid.SetRow(gitHistoryDetails, 3);
-        historyPanel.Children.Add(gitHistoryDetails);
+        Control remotePanel = gitRemotesTool.Content;
+        Control historyPanel = gitHistoryTool.Content;
 
         WrapPanel conflictActions = new() { Orientation = AvaloniaOrientation.Horizontal };
         Button refreshConflicts = new() { Content = "Refresh conflicts" };
@@ -5193,48 +4974,6 @@ internal sealed class WorkbenchDockHost
         finally
         {
             busy = false;
-        }
-    }
-
-    private sealed record RemoteChoice(DeveloperGitRemoteView Remote)
-    {
-        public override string ToString() => $"{Remote.Name.Value} · {Remote.SanitizedUrl}";
-    }
-
-    private static IReadOnlyList<HistoryChoice> BuildHistoryChoices(
-        IReadOnlyList<DeveloperGitHistoryCommitView> commits)
-    {
-        var lanes = new List<string>();
-        var choices = new List<HistoryChoice>(commits.Count);
-        foreach (DeveloperGitHistoryCommitView commit in commits)
-        {
-            int lane = lanes.IndexOf(commit.Sha.Value);
-            if (lane < 0)
-            {
-                lane = lanes.Count;
-                lanes.Add(commit.Sha.Value);
-            }
-            string graph = string.Join(' ', Enumerable.Range(0, lanes.Count)
-                .Select(index => index == lane ? "●" : "│"));
-            lanes.RemoveAt(lane);
-            for (int parent = commit.Parents.Count - 1; parent >= 0; parent--)
-                if (!lanes.Contains(commit.Parents[parent].Value, StringComparer.Ordinal))
-                    lanes.Insert(Math.Min(lane, lanes.Count), commit.Parents[parent].Value);
-            choices.Add(new(graph, commit));
-        }
-        return choices;
-    }
-
-    private sealed record HistoryChoice(string Graph, DeveloperGitHistoryCommitView Commit)
-    {
-        public override string ToString()
-        {
-            string sha = Commit.Sha.Value[..Math.Min(8, Commit.Sha.Value.Length)];
-            string references = Commit.References.Count == 0 ? string.Empty :
-                $" · {string.Join(", ", Commit.References)}";
-            string merge = Commit.Parents.Count > 1 ? " · merge" : string.Empty;
-            return $"{Graph} {sha} · {Commit.Subject} · {Commit.AuthorName} · " +
-                   $"{Commit.AuthoredAt.LocalDateTime:g}{references}{merge}";
         }
     }
 

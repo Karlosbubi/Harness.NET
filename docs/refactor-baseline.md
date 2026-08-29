@@ -13,8 +13,9 @@ source-size test shared with Task 061. Slice 060.1 is implemented: `FilesTool`,
 tests. Slices 060.2 and 060.3 are also implemented: `GitChangesTool` owns exact
 staging, patch units, destructive previews, and developer commit entry;
 `GitBranchesTool` and `GitWorktreesTool` own branches, tags, linked worktrees, and
-stashes. Slices 060.4–060.8 remain and continue to follow the sequencing and evidence
-rules below.
+stashes. Slice 060.4 is in progress: `GitRemotesTool` and `GitHistoryTool` are
+extracted, while `GitConflictsTool` remains. Slices 060.5–060.8 remain and continue
+to follow the sequencing and evidence rules below.
 
 ## Measured baseline (2026-08-24)
 
