@@ -7,18 +7,12 @@ public sealed class SourceSizeBudgetTests
     private static readonly IReadOnlyDictionary<string, int> BurnDownAllowlist =
         new Dictionary<string, int>(StringComparer.Ordinal)
         {
-            ["src/Harness.BusinessLogic/Agents/AgentRoleRunner.cs"] = 889,
-            ["src/Harness.BusinessLogic/CodeIntelligence/WorkbenchCodeIntelligenceInteractions.cs"] = 920,
             ["src/Harness.BusinessLogic/Inspection/DeveloperGitService.cs"] = 1_244,
             ["src/Harness.BusinessLogic/Mcp/InboundMcpApplicationService.cs"] = 1_083,
             ["src/Harness.BusinessLogic/Workflows/GoalWorkflowService.cs"] = 1_337,
             ["src/Harness.DataAccess/CodeIntelligence/RoslynCodeIntelligenceEngine.cs"] = 1_896,
-            ["src/Harness.DataAccess/CodeIntelligence/RoslynCodeIntelligencePresentation.cs"] = 853,
             ["src/Harness.DataAccess/Inspection/LibGitDeveloperGitRepository.cs"] = 1_962,
-            ["src/Harness.DataAccess/Models/OpenRouter/OpenRouterModelProvider.cs"] = 861,
-            ["src/Harness.DataAccess/Persistence/SqliteApplicationRestore.cs"] = 891,
             ["src/Harness.Presentation.Terminal/GoalDialog.cs"] = 1_262,
-            ["src/Harness.Presentation.Terminal/HarnessWindow.cs"] = 834,
             ["tests/Harness.BusinessLogic.Tests/Agents/AgentRoleRunnerTests.cs"] = 838,
             ["tests/Harness.BusinessLogic.Tests/CodeIntelligence/WorkbenchCodeIntelligenceServiceTests.cs"] = 944,
             ["tests/Harness.BusinessLogic.Tests/Mutations/WorkspaceMutationServiceTests.cs"] = 1_217,
